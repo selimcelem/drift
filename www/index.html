@@ -268,6 +268,34 @@
     transition: all 0.25s;
     backdrop-filter: blur(4px);
   }
+
+  #muteBtn {
+    position: absolute;
+    top: 16px;
+    left: 16px;
+    width: 36px;
+    height: 36px;
+    background: rgba(0,0,10,0.35);
+    border: 1px solid rgba(100,200,255,0.25);
+    border-radius: 4px;
+    color: rgba(100,200,255,0.85);
+    font-size: 14px;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 25;
+    transition: all 0.25s;
+    backdrop-filter: blur(4px);
+    padding: 0;
+  }
+  #muteBtn:hover {
+    background: rgba(100,200,255,0.12);
+    border-color: rgba(100,200,255,0.7);
+    color: rgba(100,200,255,1);
+    box-shadow: 0 0 18px rgba(100,200,255,0.25);
+  }
   #pauseBtn.visible { display: flex; }
   #pauseBtn:hover {
     background: rgba(100,200,255,0.12);
@@ -369,6 +397,7 @@
     </div>
     <button id="startBtn">ENTER THE VOID</button>
   </div>
+  <button id="muteBtn" aria-label="Mute">🔊</button>
   <button id="pauseBtn" aria-label="Pause">❚❚</button>
   <div id="pauseOverlay">
     <div class="pause-title">PAUSED</div>
@@ -424,6 +453,413 @@ const SHIELD_DURATION = 300;   // 5s @ 60fps
 const SLOWMO_DURATION = 300;   // 5s
 const GHOST_DURATION  = 240;   // 4s
 const SHIELD_BLINK_FRAMES = 90; // last 1.5s blink
+
+// --- Audio (procedural Web Audio synthesis) ---
+// Self-contained module. All sounds synthesized on demand. Errors are
+// swallowed so audio failures never crash gameplay. Init lazily on the
+// first user gesture so we don't trip the autoplay policy.
+const SFX = (function() {
+  let ctx = null, masterGain = null;
+  let initialized = false, muted = false;
+  let lastAttract = -100, lastRepel = -100;
+  let musicPlaying = false, musicGain = null;
+  let musicNodes = [];
+
+  try { muted = localStorage.getItem('drift_muted') === '1'; } catch {}
+
+  function init() {
+    if (initialized) return;
+    try {
+      const Ctor = window.AudioContext || window.webkitAudioContext;
+      if (!Ctor) return;
+      ctx = new Ctor();
+      masterGain = ctx.createGain();
+      masterGain.gain.value = muted ? 0 : 1;
+      masterGain.connect(ctx.destination);
+      initialized = true;
+    } catch {}
+  }
+
+  function ensureRunning() {
+    if (!initialized) init();
+    if (!ctx) return false;
+    if (ctx.state === 'suspended') {
+      try { ctx.resume(); } catch {}
+    }
+    return true;
+  }
+
+  function safe(fn) {
+    if (muted) return;
+    if (!ensureRunning()) return;
+    try { fn(ctx.currentTime); } catch {}
+  }
+
+  function setMuted(m) {
+    muted = m;
+    try { localStorage.setItem('drift_muted', m ? '1' : '0'); } catch {}
+    if (masterGain) {
+      try {
+        const t = ctx.currentTime;
+        masterGain.gain.cancelScheduledValues(t);
+        masterGain.gain.setValueAtTime(masterGain.gain.value, t);
+        masterGain.gain.linearRampToValueAtTime(m ? 0 : 1, t + 0.05);
+      } catch {}
+    }
+  }
+
+  function isMuted() { return muted; }
+
+  // Tiny noise buffer factory
+  function noiseBuffer(durationSec, shape) {
+    const len = Math.max(1, Math.floor(ctx.sampleRate * durationSec));
+    const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) {
+      const env = shape ? shape(i / len) : 1;
+      data[i] = (Math.random() * 2 - 1) * env;
+    }
+    return buf;
+  }
+
+  // ---- one-shot sound effects ----
+
+  function attract(currentFrame) {
+    if (currentFrame - lastAttract < 8) return;
+    lastAttract = currentFrame;
+    safe(t => {
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = 'sine';
+      o.frequency.value = 90 + Math.random() * 25;
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(0.06, t + 0.012);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.09);
+      o.connect(g); g.connect(masterGain);
+      o.start(t); o.stop(t + 0.11);
+    });
+  }
+
+  function repel(currentFrame) {
+    if (currentFrame - lastRepel < 8) return;
+    lastRepel = currentFrame;
+    safe(t => {
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      const f = ctx.createBiquadFilter();
+      o.type = 'triangle';
+      o.frequency.setValueAtTime(380 + Math.random() * 30, t);
+      o.frequency.exponentialRampToValueAtTime(260, t + 0.06);
+      f.type = 'highpass';
+      f.frequency.value = 220;
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(0.06, t + 0.005);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.07);
+      o.connect(f); f.connect(g); g.connect(masterGain);
+      o.start(t); o.stop(t + 0.09);
+    });
+  }
+
+  function pickup(type) {
+    safe(t => {
+      if (type === 'shield') {
+        // Bright ascending major arpeggio: C5 E5 G5 C6
+        const notes = [523.25, 659.25, 783.99, 1046.50];
+        notes.forEach((freq, i) => {
+          const o = ctx.createOscillator();
+          const g = ctx.createGain();
+          o.type = 'triangle';
+          o.frequency.value = freq;
+          const start = t + i * 0.06;
+          g.gain.setValueAtTime(0, start);
+          g.gain.linearRampToValueAtTime(0.13, start + 0.008);
+          g.gain.exponentialRampToValueAtTime(0.001, start + 0.42);
+          o.connect(g); g.connect(masterGain);
+          o.start(start); o.stop(start + 0.45);
+        });
+      } else if (type === 'nova') {
+        // Deep boom + rising whoosh
+        const boom = ctx.createOscillator();
+        const bg = ctx.createGain();
+        boom.type = 'sine';
+        boom.frequency.setValueAtTime(140, t);
+        boom.frequency.exponentialRampToValueAtTime(40, t + 0.4);
+        bg.gain.setValueAtTime(0, t);
+        bg.gain.linearRampToValueAtTime(0.32, t + 0.02);
+        bg.gain.exponentialRampToValueAtTime(0.001, t + 0.6);
+        boom.connect(bg); bg.connect(masterGain);
+        boom.start(t); boom.stop(t + 0.62);
+
+        const noise = ctx.createBufferSource();
+        noise.buffer = noiseBuffer(0.55, x => 1 - x);
+        const f = ctx.createBiquadFilter();
+        f.type = 'bandpass';
+        f.Q.value = 2.2;
+        f.frequency.setValueAtTime(420, t);
+        f.frequency.exponentialRampToValueAtTime(2400, t + 0.5);
+        const ng = ctx.createGain();
+        ng.gain.setValueAtTime(0, t);
+        ng.gain.linearRampToValueAtTime(0.16, t + 0.05);
+        ng.gain.exponentialRampToValueAtTime(0.001, t + 0.55);
+        noise.connect(f); f.connect(ng); ng.connect(masterGain);
+        noise.start(t); noise.stop(t + 0.58);
+      } else if (type === 'slowmo') {
+        // Descending dreamy glissando, two slightly detuned voices
+        for (let i = 0; i < 2; i++) {
+          const o = ctx.createOscillator();
+          const g = ctx.createGain();
+          const f = ctx.createBiquadFilter();
+          o.type = 'sine';
+          const detune = i === 0 ? 1 : 1.004;
+          o.frequency.setValueAtTime(880 * detune, t);
+          o.frequency.exponentialRampToValueAtTime(220 * detune, t + 0.7);
+          f.type = 'lowpass';
+          f.frequency.value = 1500;
+          f.Q.value = 5;
+          g.gain.setValueAtTime(0, t);
+          g.gain.linearRampToValueAtTime(i === 0 ? 0.16 : 0.10, t + 0.05);
+          g.gain.exponentialRampToValueAtTime(0.001, t + 0.85);
+          o.connect(f); f.connect(g); g.connect(masterGain);
+          o.start(t); o.stop(t + 0.88);
+        }
+      } else if (type === 'ghost') {
+        // Eerie ascending tritone (C4 - F#4 - C5)
+        const notes = [261.63, 369.99, 523.25];
+        notes.forEach((freq, i) => {
+          const o = ctx.createOscillator();
+          const g = ctx.createGain();
+          const f = ctx.createBiquadFilter();
+          o.type = 'sawtooth';
+          o.frequency.value = freq;
+          f.type = 'lowpass';
+          f.frequency.value = 1100;
+          f.Q.value = 4;
+          const start = t + i * 0.13;
+          g.gain.setValueAtTime(0, start);
+          g.gain.linearRampToValueAtTime(0.07, start + 0.04);
+          g.gain.exponentialRampToValueAtTime(0.001, start + 0.55);
+          o.connect(f); f.connect(g); g.connect(masterGain);
+          o.start(start); o.stop(start + 0.58);
+        });
+      }
+    });
+  }
+
+  function planetDestroyed(kind) {
+    safe(t => {
+      if (kind === 'shield') {
+        // Sharp crunch + low rumble
+        const noise = ctx.createBufferSource();
+        noise.buffer = noiseBuffer(0.28, x => Math.pow(1 - x, 1.5));
+        const f = ctx.createBiquadFilter();
+        f.type = 'bandpass';
+        f.frequency.value = 850;
+        f.Q.value = 1.4;
+        const ng = ctx.createGain();
+        ng.gain.setValueAtTime(0.22, t);
+        ng.gain.exponentialRampToValueAtTime(0.001, t + 0.28);
+        noise.connect(f); f.connect(ng); ng.connect(masterGain);
+        noise.start(t); noise.stop(t + 0.3);
+
+        const o = ctx.createOscillator();
+        const og = ctx.createGain();
+        o.type = 'sine';
+        o.frequency.setValueAtTime(75, t);
+        o.frequency.exponentialRampToValueAtTime(38, t + 0.25);
+        og.gain.setValueAtTime(0.22, t);
+        og.gain.exponentialRampToValueAtTime(0.001, t + 0.32);
+        o.connect(og); og.connect(masterGain);
+        o.start(t); o.stop(t + 0.35);
+      } else if (kind === 'ghost') {
+        // Soft whomp + ethereal high shimmer (muted)
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.type = 'sine';
+        o.frequency.setValueAtTime(180, t);
+        o.frequency.exponentialRampToValueAtTime(60, t + 0.25);
+        g.gain.setValueAtTime(0.09, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
+        o.connect(g); g.connect(masterGain);
+        o.start(t); o.stop(t + 0.32);
+
+        const n = ctx.createBufferSource();
+        n.buffer = noiseBuffer(0.4);
+        const f = ctx.createBiquadFilter();
+        f.type = 'highpass';
+        f.frequency.value = 3500;
+        const ng = ctx.createGain();
+        ng.gain.setValueAtTime(0, t);
+        ng.gain.linearRampToValueAtTime(0.05, t + 0.05);
+        ng.gain.exponentialRampToValueAtTime(0.001, t + 0.42);
+        n.connect(f); f.connect(ng); ng.connect(masterGain);
+        n.start(t); n.stop(t + 0.45);
+      } else if (kind === 'nova') {
+        // Deep reverberant explosion, bigger than shield kill
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.type = 'sine';
+        o.frequency.setValueAtTime(150, t);
+        o.frequency.exponentialRampToValueAtTime(32, t + 0.5);
+        g.gain.setValueAtTime(0.32, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.55);
+        o.connect(g); g.connect(masterGain);
+        o.start(t); o.stop(t + 0.58);
+
+        const n = ctx.createBufferSource();
+        n.buffer = noiseBuffer(0.5, x => Math.pow(1 - x, 0.65));
+        const f = ctx.createBiquadFilter();
+        f.type = 'lowpass';
+        f.frequency.setValueAtTime(2200, t);
+        f.frequency.exponentialRampToValueAtTime(380, t + 0.45);
+        const ng = ctx.createGain();
+        ng.gain.setValueAtTime(0.24, t);
+        ng.gain.exponentialRampToValueAtTime(0.001, t + 0.55);
+        n.connect(f); f.connect(ng); ng.connect(masterGain);
+        n.start(t); n.stop(t + 0.55);
+      }
+    });
+  }
+
+  function death() {
+    safe(t => {
+      // Sawtooth screaming descent
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      const f = ctx.createBiquadFilter();
+      o.type = 'sawtooth';
+      o.frequency.setValueAtTime(440, t);
+      o.frequency.exponentialRampToValueAtTime(38, t + 1.2);
+      f.type = 'lowpass';
+      f.frequency.setValueAtTime(2200, t);
+      f.frequency.exponentialRampToValueAtTime(300, t + 1.2);
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(0.22, t + 0.05);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 1.4);
+      o.connect(f); f.connect(g); g.connect(masterGain);
+      o.start(t); o.stop(t + 1.42);
+
+      // Sub boom
+      const o2 = ctx.createOscillator();
+      const g2 = ctx.createGain();
+      o2.type = 'sine';
+      o2.frequency.setValueAtTime(120, t);
+      o2.frequency.exponentialRampToValueAtTime(25, t + 1.0);
+      g2.gain.setValueAtTime(0.34, t);
+      g2.gain.exponentialRampToValueAtTime(0.001, t + 1.2);
+      o2.connect(g2); g2.connect(masterGain);
+      o2.start(t); o2.stop(t + 1.25);
+    });
+  }
+
+  function milestone() {
+    safe(t => {
+      const notes = [880, 1108.73, 1318.51];
+      notes.forEach((freq, i) => {
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.type = 'sine';
+        o.frequency.value = freq;
+        const start = t + i * 0.045;
+        g.gain.setValueAtTime(0, start);
+        g.gain.linearRampToValueAtTime(0.07, start + 0.005);
+        g.gain.exponentialRampToValueAtTime(0.001, start + 0.28);
+        o.connect(g); g.connect(masterGain);
+        o.start(start); o.stop(start + 0.3);
+      });
+    });
+  }
+
+  // ---- Background music: layered evolving drone ----
+
+  function startMusic() {
+    if (musicPlaying) return;
+    if (!ensureRunning()) return;
+    try {
+      const t = ctx.currentTime;
+      musicGain = ctx.createGain();
+      musicGain.gain.setValueAtTime(0, t);
+      musicGain.gain.linearRampToValueAtTime(0.20, t + 1.6);
+      musicGain.connect(masterGain);
+
+      // Base drones at A1, E2, A2, E3 — fifth-stacked, slightly detuned per voice
+      const baseFreqs = [55, 82.5, 110, 165];
+      musicNodes = [];
+      baseFreqs.forEach((freq, i) => {
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        const f = ctx.createBiquadFilter();
+        o.type = i === 1 ? 'triangle' : 'sine';
+        o.frequency.value = freq * (1 + (Math.random() - 0.5) * 0.006);
+        f.type = 'lowpass';
+        f.frequency.value = 380 + i * 200;
+        f.Q.value = 1.1;
+        g.gain.value = 0.42 / (i + 1);
+        o.connect(f); f.connect(g); g.connect(musicGain);
+        o.start(t);
+        musicNodes.push(o);
+
+        // Slow LFO drifting filter cutoff for movement
+        const lfo = ctx.createOscillator();
+        const lfoGain = ctx.createGain();
+        lfo.frequency.value = 0.04 + i * 0.013;
+        lfoGain.gain.value = 140 + i * 30;
+        lfo.connect(lfoGain); lfoGain.connect(f.frequency);
+        lfo.start(t);
+        musicNodes.push(lfo);
+      });
+      musicPlaying = true;
+    } catch {}
+  }
+
+  function stopMusic(fadeSec) {
+    if (!musicPlaying || !ctx) return;
+    const fade = typeof fadeSec === 'number' ? fadeSec : 0.9;
+    try {
+      const t = ctx.currentTime;
+      if (musicGain) {
+        musicGain.gain.cancelScheduledValues(t);
+        musicGain.gain.setValueAtTime(musicGain.gain.value, t);
+        musicGain.gain.linearRampToValueAtTime(0, t + fade);
+      }
+      const stopAt = t + fade + 0.05;
+      for (const n of musicNodes) { try { n.stop(stopAt); } catch {} }
+    } catch {}
+    const nodesRef = musicNodes;
+    const gainRef = musicGain;
+    musicPlaying = false;
+    musicNodes = [];
+    musicGain = null;
+    setTimeout(() => {
+      try { if (gainRef) gainRef.disconnect(); } catch {}
+    }, (fade + 0.2) * 1000);
+  }
+
+  function pauseMusic() {
+    if (!musicPlaying || !ctx || !musicGain) return;
+    try {
+      const t = ctx.currentTime;
+      musicGain.gain.cancelScheduledValues(t);
+      musicGain.gain.setValueAtTime(musicGain.gain.value, t);
+      musicGain.gain.linearRampToValueAtTime(0, t + 0.25);
+    } catch {}
+  }
+
+  function resumeMusic() {
+    if (!musicPlaying || !ctx || !musicGain) return;
+    try {
+      const t = ctx.currentTime;
+      musicGain.gain.cancelScheduledValues(t);
+      musicGain.gain.setValueAtTime(musicGain.gain.value, t);
+      musicGain.gain.linearRampToValueAtTime(0.20, t + 0.45);
+    } catch {}
+  }
+
+  return {
+    init, attract, repel, pickup, planetDestroyed, death, milestone,
+    startMusic, stopMusic, pauseMusic, resumeMusic,
+    setMuted, isMuted,
+  };
+})();
 
 // --- Highscores (localStorage, top 5) ---
 // Schema: [{ score: number, difficulty: 'NORMAL'|'HARD'|'EXTREME' }, ...]
@@ -537,6 +973,7 @@ function emitDestroyBurst(x, y, rgb) {
 
 function activatePowerup(type, x, y) {
   emitPickupParticles(x, y, type);
+  SFX.pickup(type);
   if (type === 'shield')      activeEffects.shield = SHIELD_DURATION;
   else if (type === 'slowmo') activeEffects.slowmo = SLOWMO_DURATION;
   else if (type === 'ghost')  activeEffects.ghost  = GHOST_DURATION;
@@ -606,6 +1043,7 @@ function checkCollisions() {
         if (!b._rippleCd || b._rippleCd <= 0) {
           planetRipples.push({ x: b.x, y: b.y, baseR: b.radius, expand: 0, life: 1 });
           b._rippleCd = 18;
+          SFX.planetDestroyed('ghost');
         }
       }
       if (b._rippleCd) b._rippleCd--;
@@ -619,6 +1057,7 @@ function checkCollisions() {
     for (const b of bodies) {
       if (dist(player, b) < b.radius + PLAYER_R) {
         emitDestroyBurst(b.x, b.y, POWERUP_COLORS.shield.rgb);
+        SFX.planetDestroyed('shield');
       } else {
         survivors.push(b);
       }
@@ -649,6 +1088,7 @@ function update() {
     if (!b.passed && b.y > H * 0.75) {
       b.passed = true; score++;
       document.getElementById('score').textContent = score;
+      if (score > 0 && score % 25 === 0) SFX.milestone();
     }
   }
   bodies = bodies.filter(b => b.y < H + 80);
@@ -690,6 +1130,7 @@ function update() {
         if (dd < r.radius && dd >= r.prevR - 6 && r.radius < 230) {
           killed = true;
           emitDestroyBurst(b.x, b.y, POWERUP_COLORS.nova.rgb);
+          SFX.planetDestroyed('nova');
           break;
         }
       }
@@ -712,6 +1153,10 @@ function update() {
   findClosest();
   applyForce();
 
+  // Throttled audio for held attract/repel input
+  if (leftDown)  SFX.attract(frame);
+  if (rightDown) SFX.repel(frame);
+
   trail.push({ x: player.x, y: player.y });
   if (trail.length > 38) trail.shift();
 
@@ -721,6 +1166,8 @@ function update() {
 function triggerDeath() {
   state = 'dead';
   pauseBtn.classList.remove('visible');
+  SFX.death();
+  SFX.stopMusic();
   const scores = saveScore(score, difficulty);
   deathParticles = [];
   for (let i = 0; i < 50; i++) {
@@ -1157,7 +1604,9 @@ const quitMsg = document.getElementById('quitMsg');
 document.getElementById('startBtn').addEventListener('click', ()=>{
   // Defense in depth: ignore stray clicks unless we're actually on a menu screen
   if (state !== 'idle' && state !== 'dead') return;
+  SFX.init();
   resetGame(); state='playing';
+  SFX.startMusic();
   document.getElementById('overlay').classList.add('hidden');
   pauseBtn.classList.add('visible');
 });
@@ -1166,6 +1615,7 @@ function pauseGame() {
   if (state !== 'playing') return;
   state = 'paused';
   leftDown = false; rightDown = false;
+  SFX.pauseMusic();
   pauseBtn.classList.remove('visible');
   pauseOverlay.classList.add('visible');
 }
@@ -1173,6 +1623,7 @@ function pauseGame() {
 function resumeGame() {
   if (state !== 'paused') return;
   state = 'playing';
+  SFX.resumeMusic();
   pauseOverlay.classList.remove('visible');
   quitMsg.style.display = 'none';
   pauseBtn.classList.add('visible');
@@ -1181,6 +1632,7 @@ function resumeGame() {
 function restartFromPause() {
   resetGame();
   state = 'playing';
+  SFX.resumeMusic();
   pauseOverlay.classList.remove('visible');
   quitMsg.style.display = 'none';
   pauseBtn.classList.add('visible');
@@ -1194,6 +1646,7 @@ function goToMainMenu() {
   pickupParticles = [];
   planetRipples = [];
   activeEffects = { shield: 0, slowmo: 0, ghost: 0 };
+  SFX.stopMusic();
   pauseOverlay.classList.remove('visible');
   pauseBtn.classList.remove('visible');
   quitMsg.style.display = 'none';
@@ -1232,6 +1685,29 @@ document.querySelectorAll('.diff-btn').forEach(btn => {
     difficulty = btn.dataset.diff;
   });
 });
+
+// Mute button
+const muteBtn = document.getElementById('muteBtn');
+function updateMuteIcon() { muteBtn.textContent = SFX.isMuted() ? '🔇' : '🔊'; }
+updateMuteIcon();
+muteBtn.addEventListener('click', () => {
+  SFX.init();
+  SFX.setMuted(!SFX.isMuted());
+  updateMuteIcon();
+});
+
+// Initialize the audio context on the very first user gesture so the
+// browser autoplay policy is satisfied even if the player taps the canvas
+// before clicking ENTER THE VOID.
+function _firstAudioGesture() {
+  SFX.init();
+  document.removeEventListener('pointerdown', _firstAudioGesture, true);
+  document.removeEventListener('touchstart',  _firstAudioGesture, true);
+  document.removeEventListener('keydown',     _firstAudioGesture, true);
+}
+document.addEventListener('pointerdown', _firstAudioGesture, true);
+document.addEventListener('touchstart',  _firstAudioGesture, true);
+document.addEventListener('keydown',     _firstAudioGesture, true);
 
 initBgStars(); initBodies(); loop();
 </script>
