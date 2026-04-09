@@ -1087,7 +1087,20 @@ function applyForce() {
   const nx = dx / d, ny = dy / d;
   // Influence tapers with distance so far-away pulls feel proportional
   const influence = Math.min(140 / d, 1.8);
-  const f = FORCE * influence;
+
+  // Scale player responsiveness with current scroll speed so the controls
+  // don't feel sluggish when the world is screaming past. NORMAL.startSpeed
+  // (1.2) is the baseline — at that speed the multiplier is exactly 1.0 and
+  // the feel is identical to the original tuning. EXTREME max (6.0) gives
+  // ratio 5.0. The 0.4 factor keeps scaling sub-linear so it never goes
+  // twitchy. Clamped at >=1 so slow-mo doesn't reduce baseline responsiveness.
+  const speedRatio = Math.max(1, scrollSpeed() / DIFFICULTIES.NORMAL.startSpeed);
+  const forceMult  = 1 + (speedRatio - 1) * 0.4;
+  // Drag eases from 0.91 → 0.94 as speed ratio climbs from 1 → 5, letting
+  // the player glide further per input at higher speeds.
+  const dragCoef   = 0.91 + Math.min((speedRatio - 1) / 4, 1) * 0.03;
+
+  const f = FORCE * influence * forceMult;
 
   if (leftDown)  { player.vx += nx*f; player.vy += ny*f; }
   if (rightDown) { player.vx -= nx*f; player.vy -= ny*f; }
@@ -1095,9 +1108,11 @@ function applyForce() {
   // Very gentle upward bias so player doesn't just sink
   player.vy -= 0.016;
 
-  player.vx *= 0.91; player.vy *= 0.91;
+  player.vx *= dragCoef; player.vy *= dragCoef;
   const spd = Math.hypot(player.vx, player.vy);
-  if (spd > 4.5) { player.vx = player.vx/spd*4.5; player.vy = player.vy/spd*4.5; }
+  // EXTREME loosens the cap so players can actually outrun dense clusters
+  const speedCap = difficulty === 'EXTREME' ? 5.5 : 4.5;
+  if (spd > speedCap) { player.vx = player.vx/spd*speedCap; player.vy = player.vy/spd*speedCap; }
 
   player.x += player.vx; player.y += player.vy;
   player.angle = Math.atan2(player.vy, player.vx);
