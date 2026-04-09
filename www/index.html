@@ -77,6 +77,56 @@
   }
   .hs-row:first-child { color: rgba(100,200,255,0.9); }
   .hs-rank { color: rgba(255,255,255,0.25); margin-right: 12px; }
+  .hs-val { flex: 1; text-align: right; margin-right: 10px; }
+  .hs-diff {
+    font-size: 8px;
+    letter-spacing: 1px;
+    color: rgba(255,255,255,0.35);
+    min-width: 48px;
+    text-align: right;
+  }
+  .hs-diff.HARD { color: rgba(255,180,80,0.7); }
+  .hs-diff.EXTREME { color: rgba(255,90,120,0.85); }
+
+  #difficultySelect {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 36px;
+  }
+  .diff-btn {
+    background: transparent;
+    border: 1px solid rgba(255,255,255,0.18);
+    color: rgba(255,255,255,0.45);
+    font-family: 'Orbitron', monospace;
+    font-size: 9px;
+    letter-spacing: 2px;
+    padding: 7px 14px;
+    cursor: pointer;
+    text-transform: uppercase;
+    transition: all 0.25s;
+  }
+  .diff-btn:hover {
+    color: rgba(255,255,255,0.8);
+    border-color: rgba(255,255,255,0.4);
+  }
+  .diff-btn.selected {
+    border-color: rgba(100,200,255,0.9);
+    color: rgba(100,220,255,1);
+    background: rgba(100,200,255,0.08);
+    box-shadow: 0 0 14px rgba(100,200,255,0.25);
+  }
+  .diff-btn.selected[data-diff="HARD"] {
+    border-color: rgba(255,180,80,0.9);
+    color: rgba(255,200,100,1);
+    background: rgba(255,180,80,0.08);
+    box-shadow: 0 0 14px rgba(255,180,80,0.25);
+  }
+  .diff-btn.selected[data-diff="EXTREME"] {
+    border-color: rgba(255,90,120,0.95);
+    color: rgba(255,120,150,1);
+    background: rgba(255,90,120,0.1);
+    box-shadow: 0 0 16px rgba(255,90,120,0.3);
+  }
 
   #overlay {
     position: absolute;
@@ -269,6 +319,11 @@
   <div id="overlay">
     <div class="title-word">DRIFT</div>
     <div class="subtitle">gravity surfing</div>
+    <div id="difficultySelect">
+      <button class="diff-btn selected" data-diff="NORMAL">NORMAL</button>
+      <button class="diff-btn" data-diff="HARD">HARD</button>
+      <button class="diff-btn" data-diff="EXTREME">EXTREME</button>
+    </div>
     <div id="deathScore"></div>
     <div id="highscores"></div>
     <div class="controls-hint">
@@ -300,33 +355,64 @@ const PLAYER_R = 6;
 const GRACE_FRAMES = 90;
 const BODY_SPACING = 290;
 const FORCE = 0.18;
-// Speed: starts at 1.2, caps at 3.2 (~score 200). Human reaction ~250ms @ 60fps = ~15 frames.
-// At max speed a body crosses the visible zone in ~110 frames — totally readable.
-const SPEED_MIN = 1.2;
-const SPEED_MAX = 3.2;
-const SPEED_SCORE_CAP = 200;
+
+// --- Difficulty ---
+const DIFFICULTIES = {
+  NORMAL:  { startSpeed: 1.2, maxSpeed: 3.2, speedCapScore: 200, maxBodies: 5, powerupFrequency: 1.0 },
+  HARD:    { startSpeed: 1.8, maxSpeed: 4.2, speedCapScore: 180, maxBodies: 7, powerupFrequency: 1.4 },
+  EXTREME: { startSpeed: 2.4, maxSpeed: 6.0, speedCapScore: 150, maxBodies: 9, powerupFrequency: 2.0 },
+};
+let difficulty = 'NORMAL';
+function diff() { return DIFFICULTIES[difficulty]; }
 
 let state = 'idle', score = 0, frame = 0;
 let player = {}, bodies = [], trail = [], bgStars = [], deathParticles = [];
 let leftDown = false, rightDown = false;
 let closestBody = null;
 
+// --- Powerups ---
+const POWERUP_TYPES = ['shield','nova','slowmo','ghost'];
+const POWERUP_COLORS = {
+  shield: { rgb: '120,230,255', name: 'cyan' },
+  nova:   { rgb: '255,180,80',  name: 'orange' },
+  slowmo: { rgb: '160,200,255', name: 'blue' },
+  ghost:  { rgb: '200,120,255', name: 'purple' },
+};
+let powerups = [];
+let novaRings = [];
+let pickupParticles = [];
+let planetRipples = [];
+let activeEffects = { shield: 0, slowmo: 0, ghost: 0 };
+let lastPowerupSpawn = 0;
+const SHIELD_DURATION = 300;   // 5s @ 60fps
+const SLOWMO_DURATION = 300;   // 5s
+const GHOST_DURATION  = 240;   // 4s
+const SHIELD_BLINK_FRAMES = 90; // last 1.5s blink
+
 // --- Highscores (localStorage, top 5) ---
+// Schema: [{ score: number, difficulty: 'NORMAL'|'HARD'|'EXTREME' }, ...]
+// Old schema (numbers) is migrated transparently.
 function getScores() {
-  try { return JSON.parse(localStorage.getItem('drift_scores') || '[]'); } catch { return []; }
+  try {
+    const raw = JSON.parse(localStorage.getItem('drift_scores') || '[]');
+    return raw.map(s => typeof s === 'number' ? { score: s, difficulty: 'NORMAL' } : s);
+  } catch { return []; }
 }
-function saveScore(s) {
+function saveScore(s, d) {
   const scores = getScores();
-  scores.push(s);
-  scores.sort((a,b)=>b-a);
+  scores.push({ score: s, difficulty: d });
+  scores.sort((a,b) => b.score - a.score);
   scores.splice(5);
   localStorage.setItem('drift_scores', JSON.stringify(scores));
   return scores;
 }
 
 function scrollSpeed() {
-  const t = Math.min(score / SPEED_SCORE_CAP, 1);
-  return SPEED_MIN + (SPEED_MAX - SPEED_MIN) * t;
+  const d = diff();
+  const t = Math.min(score / d.speedCapScore, 1);
+  let s = d.startSpeed + (d.maxSpeed - d.startSpeed) * t;
+  if (activeEffects.slowmo > 0) s *= 0.3;
+  return s;
 }
 
 function dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
@@ -361,8 +447,64 @@ function spawnBody(yBase) {
 
 function initBodies() {
   bodies = [];
-  for (let i = 0; i < 5; i++)
+  const max = diff().maxBodies;
+  for (let i = 0; i < max; i++)
     bodies.push(spawnBody(H * 0.05 - i * BODY_SPACING));
+}
+
+// --- Powerup helpers ---
+function spawnPowerup() {
+  const type = POWERUP_TYPES[Math.floor(Math.random() * POWERUP_TYPES.length)];
+  // Spawn above the visible area, scrolling down with the world
+  const topBodyY = bodies.length ? Math.min(...bodies.map(b => b.y)) : -100;
+  const y = Math.min(-30, topBodyY - 60 - Math.random() * 80);
+  powerups.push({
+    type,
+    x: 60 + Math.random() * (W - 120),
+    y,
+    radius: 13,
+    pulse: Math.random() * 6.28,
+    collected: false,
+  });
+}
+
+function emitPickupParticles(x, y, type) {
+  const rgb = POWERUP_COLORS[type].rgb;
+  for (let i = 0; i < 24; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const sp = Math.random() * 4.5 + 1.2;
+    pickupParticles.push({
+      x, y,
+      vx: Math.cos(a) * sp,
+      vy: Math.sin(a) * sp,
+      life: 1,
+      size: Math.random() * 2.4 + 0.9,
+      rgb,
+    });
+  }
+}
+
+function emitDestroyBurst(x, y, rgb) {
+  for (let i = 0; i < 18; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const sp = Math.random() * 3.5 + 0.8;
+    pickupParticles.push({
+      x, y,
+      vx: Math.cos(a) * sp,
+      vy: Math.sin(a) * sp,
+      life: 1,
+      size: Math.random() * 2.2 + 0.8,
+      rgb,
+    });
+  }
+}
+
+function activatePowerup(type, x, y) {
+  emitPickupParticles(x, y, type);
+  if (type === 'shield')      activeEffects.shield = SHIELD_DURATION;
+  else if (type === 'slowmo') activeEffects.slowmo = SLOWMO_DURATION;
+  else if (type === 'ghost')  activeEffects.ghost  = GHOST_DURATION;
+  else if (type === 'nova')   novaRings.push({ x: player.x, y: player.y, radius: 0, life: 1, prevR: 0 });
 }
 
 // --- Game state ---
@@ -372,6 +514,12 @@ function resetGame() {
   initBodies();
   score = 0; frame = 0;
   closestBody = null;
+  powerups = [];
+  novaRings = [];
+  pickupParticles = [];
+  planetRipples = [];
+  activeEffects = { shield: 0, slowmo: 0, ghost: 0 };
+  lastPowerupSpawn = 0;
   document.getElementById('score').textContent = '0';
 }
 
@@ -411,8 +559,38 @@ function applyForce() {
 
 function checkCollisions() {
   if (frame < GRACE_FRAMES) return false;
+  // Borders are always lethal — shield/ghost only protect against bodies
   if (player.x < PLAYER_R+3 || player.x > W-PLAYER_R-3) return true;
   if (player.y > H+50 || player.y < -50) return true;
+
+  // GHOST: pass through bodies, emit a shimmer ripple when clipping one
+  if (activeEffects.ghost > 0) {
+    for (const b of bodies) {
+      if (dist(player, b) < b.radius + PLAYER_R) {
+        if (!b._rippleCd || b._rippleCd <= 0) {
+          planetRipples.push({ x: b.x, y: b.y, baseR: b.radius, expand: 0, life: 1 });
+          b._rippleCd = 18;
+        }
+      }
+      if (b._rippleCd) b._rippleCd--;
+    }
+    return false;
+  }
+
+  // SHIELD: destroy any body the player touches
+  if (activeEffects.shield > 0) {
+    const survivors = [];
+    for (const b of bodies) {
+      if (dist(player, b) < b.radius + PLAYER_R) {
+        emitDestroyBurst(b.x, b.y, POWERUP_COLORS.shield.rgb);
+      } else {
+        survivors.push(b);
+      }
+    }
+    bodies = survivors;
+    return false;
+  }
+
   for (const b of bodies)
     if (dist(player, b) < b.radius + PLAYER_R - 3) return true;
   return false;
@@ -423,6 +601,12 @@ function update() {
   if (state !== 'playing') return;
   frame++;
   const spd = scrollSpeed();
+  const d = diff();
+
+  // Decrement active effect timers
+  if (activeEffects.shield > 0) activeEffects.shield--;
+  if (activeEffects.slowmo > 0) activeEffects.slowmo--;
+  if (activeEffects.ghost  > 0) activeEffects.ghost--;
 
   for (const b of bodies) {
     b.y += spd; b.pulse += 0.038;
@@ -432,10 +616,60 @@ function update() {
     }
   }
   bodies = bodies.filter(b => b.y < H + 80);
-  while (bodies.length < 5) {
+  while (bodies.length < d.maxBodies) {
     const topY = Math.min(...bodies.map(b => b.y));
     bodies.push(spawnBody(topY - BODY_SPACING - Math.random()*50));
   }
+
+  // Powerup spawning: cooldown scales with frequency, max 2 visible at once
+  const spawnInterval = 220 / d.powerupFrequency;
+  if (powerups.length < 2 && frame - lastPowerupSpawn > spawnInterval && Math.random() < 0.025) {
+    spawnPowerup();
+    lastPowerupSpawn = frame;
+  }
+
+  // Powerup scroll + pickup detection
+  for (const p of powerups) {
+    p.y += spd;
+    p.pulse += 0.11;
+    if (!p.collected && dist(player, p) < p.radius + PLAYER_R + 6) {
+      p.collected = true;
+      activatePowerup(p.type, p.x, p.y);
+    }
+  }
+  powerups = powerups.filter(p => !p.collected && p.y < H + 30);
+
+  // Nova rings: expand and destroy bodies they sweep past
+  for (const r of novaRings) {
+    r.prevR = r.radius;
+    r.radius += 5.5;
+    if (r.radius > 200) r.life *= 0.9;
+  }
+  if (novaRings.length) {
+    const survivors = [];
+    for (const b of bodies) {
+      let killed = false;
+      for (const r of novaRings) {
+        const dd = dist(r, b);
+        if (dd < r.radius && dd >= r.prevR - 6 && r.radius < 230) {
+          killed = true;
+          emitDestroyBurst(b.x, b.y, POWERUP_COLORS.nova.rgb);
+          break;
+        }
+      }
+      if (!killed) survivors.push(b);
+    }
+    bodies = survivors;
+    novaRings = novaRings.filter(r => r.life > 0.05 && r.radius < 260);
+  }
+
+  // Planet ripples scroll with the world
+  for (const r of planetRipples) {
+    r.y += spd;
+    r.expand += 1.6;
+    r.life *= 0.92;
+  }
+  planetRipples = planetRipples.filter(r => r.life > 0.05);
 
   for (const s of bgStars) { s.y += s.spd * spd * 0.28; if (s.y > H) s.y = -2; }
 
@@ -450,7 +684,8 @@ function update() {
 
 function triggerDeath() {
   state = 'dead';
-  const scores = saveScore(score);
+  pauseBtn.classList.remove('visible');
+  const scores = saveScore(score, difficulty);
   deathParticles = [];
   for (let i = 0; i < 50; i++) {
     const a = Math.random()*Math.PI*2, s = Math.random()*3.5+0.8;
@@ -459,10 +694,12 @@ function triggerDeath() {
   setTimeout(() => {
     const overlay = document.getElementById('overlay');
     document.getElementById('deathScore').style.display = 'block';
-    document.getElementById('deathScore').textContent = `DISTANCE  ${score}`;
-    // Render highscores
+    document.getElementById('deathScore').textContent = `${score} — ${difficulty}`;
+    // Render highscores with difficulty badges
     const hsel = document.getElementById('highscores');
-    hsel.innerHTML = scores.map((s,i) => `<div class="hs-row"><span class="hs-rank">${i+1}</span><span class="hs-val">${s}</span></div>`).join('');
+    hsel.innerHTML = scores.map((s,i) =>
+      `<div class="hs-row"><span class="hs-rank">${i+1}</span><span class="hs-val">${s.score}</span><span class="hs-diff ${s.difficulty}">${s.difficulty}</span></div>`
+    ).join('');
     hsel.style.display = 'block';
     document.getElementById('startBtn').textContent = 'DRIFT AGAIN';
     overlay.classList.remove('hidden');
@@ -559,26 +796,181 @@ function drawTrail() {
 function drawPlayer() {
   const inGrace = frame < GRACE_FRAMES;
   const gf = inGrace ? Math.sin(frame*0.26)*0.5+0.5 : 1;
+  const shielded = activeEffects.shield > 0;
+  const ghosting = activeEffects.ghost  > 0;
+
+  // Shield blink in last 1.5s of duration
+  let shieldVis = 1;
+  if (shielded && activeEffects.shield < SHIELD_BLINK_FRAMES) {
+    shieldVis = (Math.floor(activeEffects.shield / 5) % 2) ? 1 : 0.25;
+  }
+
+  // Ghost makes the whole player translucent
+  const ghostAlpha = ghosting ? 0.5 : 1;
+
   ctx.save(); ctx.translate(player.x, player.y); ctx.rotate(player.angle);
+
+  // Shield outer aura (drawn behind the player so it haloes around)
+  if (shielded) {
+    ctx.globalAlpha = 0.55 * shieldVis;
+    const sg = ctx.createRadialGradient(0,0,0,0,0,PLAYER_R*4.2);
+    sg.addColorStop(0,'rgba(120,230,255,0.55)');
+    sg.addColorStop(0.55,'rgba(80,200,255,0.28)');
+    sg.addColorStop(1,'rgba(80,200,255,0)');
+    ctx.fillStyle = sg;
+    ctx.beginPath(); ctx.arc(0,0,PLAYER_R*4.2,0,6.28); ctx.fill();
+    ctx.globalAlpha = 0.85 * shieldVis;
+    ctx.strokeStyle = 'rgba(180,240,255,0.85)';
+    ctx.lineWidth = 1.4;
+    ctx.beginPath(); ctx.arc(0,0,PLAYER_R*3.6,0,6.28); ctx.stroke();
+    ctx.globalAlpha = 0.4 * shieldVis;
+    ctx.lineWidth = 0.8;
+    ctx.beginPath(); ctx.arc(0,0,PLAYER_R*4.0,0,6.28); ctx.stroke();
+  }
+
   if (inGrace) {
-    ctx.globalAlpha=0.28*gf; ctx.strokeStyle='#4af'; ctx.lineWidth=2;
+    ctx.globalAlpha = 0.28*gf*ghostAlpha;
+    ctx.strokeStyle = '#4af'; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.arc(0,0,PLAYER_R*(2.4-gf*0.4),0,6.28); ctx.stroke();
   }
-  ctx.globalAlpha=inGrace?gf:1;
-  const aura=ctx.createRadialGradient(0,0,0,0,0,PLAYER_R*2.8);
+
+  ctx.globalAlpha = (inGrace?gf:1) * ghostAlpha;
+  const aura = ctx.createRadialGradient(0,0,0,0,0,PLAYER_R*2.8);
   aura.addColorStop(0,'rgba(100,220,255,0.38)'); aura.addColorStop(1,'rgba(0,0,0,0)');
-  ctx.fillStyle=aura; ctx.beginPath(); ctx.arc(0,0,PLAYER_R*2.8,0,6.28); ctx.fill();
-  ctx.globalAlpha=1;
-  const core=ctx.createRadialGradient(-1.5,-1.5,0,0,0,PLAYER_R);
+  ctx.fillStyle = aura; ctx.beginPath(); ctx.arc(0,0,PLAYER_R*2.8,0,6.28); ctx.fill();
+
+  ctx.globalAlpha = ghostAlpha;
+  const core = ctx.createRadialGradient(-1.5,-1.5,0,0,0,PLAYER_R);
   core.addColorStop(0,'#fff'); core.addColorStop(0.4,'#7de8ff'); core.addColorStop(1,'rgba(30,110,190,0.5)');
-  ctx.fillStyle=core; ctx.beginPath(); ctx.arc(0,0,PLAYER_R,0,6.28); ctx.fill();
-  const spd=Math.hypot(player.vx,player.vy);
-  if (spd>0.9) {
-    ctx.globalAlpha=Math.min(spd/4,0.55); ctx.strokeStyle='rgba(100,220,255,0.8)';
-    ctx.lineWidth=1.8; ctx.lineCap='round';
+  ctx.fillStyle = core; ctx.beginPath(); ctx.arc(0,0,PLAYER_R,0,6.28); ctx.fill();
+
+  const spd = Math.hypot(player.vx, player.vy);
+  if (spd > 0.9) {
+    ctx.globalAlpha = Math.min(spd/4,0.55) * ghostAlpha;
+    ctx.strokeStyle = 'rgba(100,220,255,0.8)';
+    ctx.lineWidth = 1.8; ctx.lineCap = 'round';
     ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(-player.vx*2.8,-player.vy*2.8); ctx.stroke();
   }
-  ctx.restore(); ctx.globalAlpha=1;
+  ctx.restore(); ctx.globalAlpha = 1;
+}
+
+function drawPowerups() {
+  for (const p of powerups) {
+    const pulse = Math.sin(p.pulse) * 0.35 + 0.65;
+    const r = p.radius * (0.95 + Math.sin(p.pulse) * 0.18);
+    const rgb = POWERUP_COLORS[p.type].rgb;
+
+    // Outer pulsing halo
+    ctx.globalAlpha = 0.55 * pulse;
+    const grd = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, r * 3.4);
+    grd.addColorStop(0, `rgba(${rgb},0.65)`);
+    grd.addColorStop(0.5, `rgba(${rgb},0.22)`);
+    grd.addColorStop(1, `rgba(${rgb},0)`);
+    ctx.fillStyle = grd;
+    ctx.beginPath(); ctx.arc(p.x, p.y, r * 3.4, 0, 6.28); ctx.fill();
+
+    // Bright inner ring
+    ctx.globalAlpha = 0.85;
+    ctx.strokeStyle = `rgba(${rgb},0.9)`;
+    ctx.lineWidth = 1.6;
+    ctx.beginPath(); ctx.arc(p.x, p.y, r * 1.55, 0, 6.28); ctx.stroke();
+
+    // Icon
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = `rgba(${rgb},1)`;
+    ctx.strokeStyle = `rgba(${rgb},1)`;
+    ctx.lineWidth = 1.8;
+
+    if (p.type === 'shield') {
+      // Diamond
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y - r);
+      ctx.lineTo(p.x + r*0.78, p.y);
+      ctx.lineTo(p.x, p.y + r);
+      ctx.lineTo(p.x - r*0.78, p.y);
+      ctx.closePath(); ctx.fill();
+      ctx.globalAlpha = 0.85;
+      ctx.fillStyle = '#fff';
+      ctx.beginPath(); ctx.arc(p.x, p.y, r*0.28, 0, 6.28); ctx.fill();
+    } else if (p.type === 'nova') {
+      // Concentric burst rings
+      ctx.beginPath(); ctx.arc(p.x, p.y, r*0.42, 0, 6.28); ctx.fill();
+      ctx.lineWidth = 1.6;
+      ctx.beginPath(); ctx.arc(p.x, p.y, r*0.78, 0, 6.28); ctx.stroke();
+      ctx.lineWidth = 1.1;
+      ctx.beginPath(); ctx.arc(p.x, p.y, r*1.12, 0, 6.28); ctx.stroke();
+    } else if (p.type === 'slowmo') {
+      // Hourglass
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.moveTo(p.x - r*0.7, p.y - r*0.85);
+      ctx.lineTo(p.x + r*0.7, p.y - r*0.85);
+      ctx.lineTo(p.x - r*0.7, p.y + r*0.85);
+      ctx.lineTo(p.x + r*0.7, p.y + r*0.85);
+      ctx.closePath(); ctx.stroke();
+      // Sand bulbs
+      ctx.beginPath();
+      ctx.moveTo(p.x - r*0.55, p.y - r*0.7);
+      ctx.lineTo(p.x + r*0.55, p.y - r*0.7);
+      ctx.lineTo(p.x, p.y - r*0.05);
+      ctx.closePath(); ctx.fill();
+    } else { // ghost
+      // Wispy round head with three "feet" tails
+      ctx.beginPath();
+      ctx.arc(p.x, p.y - r*0.15, r*0.85, Math.PI, 0);
+      ctx.lineTo(p.x + r*0.85, p.y + r*0.65);
+      ctx.lineTo(p.x + r*0.5,  p.y + r*0.35);
+      ctx.lineTo(p.x + r*0.15, p.y + r*0.65);
+      ctx.lineTo(p.x - r*0.15, p.y + r*0.35);
+      ctx.lineTo(p.x - r*0.5,  p.y + r*0.65);
+      ctx.lineTo(p.x - r*0.85, p.y + r*0.35);
+      ctx.closePath(); ctx.fill();
+      // Eyes
+      ctx.fillStyle = '#fff';
+      ctx.beginPath(); ctx.arc(p.x - r*0.28, p.y - r*0.2, r*0.13, 0, 6.28); ctx.fill();
+      ctx.beginPath(); ctx.arc(p.x + r*0.28, p.y - r*0.2, r*0.13, 0, 6.28); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+}
+
+function drawNovaRings() {
+  for (const r of novaRings) {
+    ctx.globalAlpha = r.life * 0.85;
+    ctx.strokeStyle = `rgba(255,200,90,${r.life})`;
+    ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.arc(r.x, r.y, r.radius, 0, 6.28); ctx.stroke();
+    ctx.globalAlpha = r.life * 0.35;
+    ctx.lineWidth = 14;
+    ctx.beginPath(); ctx.arc(r.x, r.y, r.radius, 0, 6.28); ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawPlanetRipples() {
+  for (const r of planetRipples) {
+    ctx.globalAlpha = r.life * 0.7;
+    ctx.strokeStyle = `rgba(220,150,255,${r.life})`;
+    ctx.lineWidth = 1.6;
+    ctx.beginPath(); ctx.arc(r.x, r.y, r.baseR + r.expand, 0, 6.28); ctx.stroke();
+    ctx.globalAlpha = r.life * 0.35;
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(r.x, r.y, r.baseR + r.expand * 1.6, 0, 6.28); ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawPickupParticles() {
+  pickupParticles = pickupParticles.filter(p => p.life > 0.05);
+  for (const p of pickupParticles) {
+    p.x += p.vx; p.y += p.vy;
+    p.vx *= 0.92; p.vy *= 0.92;
+    p.life *= 0.93;
+    ctx.globalAlpha = p.life;
+    ctx.fillStyle = `rgba(${p.rgb},1)`;
+    ctx.beginPath(); ctx.arc(p.x, p.y, p.size * p.life, 0, 6.28); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
 }
 
 function drawDeathParticles() {
@@ -592,10 +984,25 @@ function drawDeathParticles() {
 }
 
 function render() {
-  drawBg(); drawBodies();
+  drawBg();
+  drawBodies();
+
+  // Slow-mo blue tint over the world
+  if (activeEffects.slowmo > 0) {
+    const fade = Math.min(activeEffects.slowmo / 30, 1);
+    ctx.globalAlpha = 0.18 * fade;
+    ctx.fillStyle = 'rgba(80,140,220,1)';
+    ctx.fillRect(0, 0, W, H);
+    ctx.globalAlpha = 1;
+  }
+
   if (state==='playing'||state==='dead'||state==='paused') {
+    drawPowerups();
+    drawNovaRings();
+    drawPlanetRipples();
     drawTrail();
     if (state==='playing'||state==='paused') drawPlayer();
+    drawPickupParticles();
     drawDeathParticles();
   }
 }
@@ -669,6 +1076,11 @@ function restartFromPause() {
 function goToMainMenu() {
   state = 'idle';
   leftDown = false; rightDown = false;
+  powerups = [];
+  novaRings = [];
+  pickupParticles = [];
+  planetRipples = [];
+  activeEffects = { shield: 0, slowmo: 0, ghost: 0 };
   pauseOverlay.classList.remove('visible');
   pauseBtn.classList.remove('visible');
   quitMsg.style.display = 'none';
@@ -696,6 +1108,16 @@ document.addEventListener('keydown', e => {
     if (state === 'playing') pauseGame();
     else if (state === 'paused') resumeGame();
   }
+});
+
+// Difficulty selection
+document.querySelectorAll('.diff-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    if (state !== 'idle' && state !== 'dead') return;
+    document.querySelectorAll('.diff-btn').forEach(b => b.classList.remove('selected'));
+    btn.classList.add('selected');
+    difficulty = btn.dataset.diff;
+  });
 });
 
 initBgStars(); initBodies(); loop();
