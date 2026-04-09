@@ -1,0 +1,129 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <!-- Deep space background -->
+    <radialGradient id="bg" cx="50%" cy="45%" r="78%">
+      <stop offset="0%" stop-color="#0b0b22"/>
+      <stop offset="55%" stop-color="#03030c"/>
+      <stop offset="100%" stop-color="#000000"/>
+    </radialGradient>
+
+    <!-- Planet body: dark with subtle highlight from upper-left -->
+    <radialGradient id="planet" cx="36%" cy="34%" r="78%">
+      <stop offset="0%" stop-color="#1c1c34"/>
+      <stop offset="45%" stop-color="#0a0a1c"/>
+      <stop offset="100%" stop-color="#000000"/>
+    </radialGradient>
+
+    <!-- Atmospheric outer glow around planet -->
+    <radialGradient id="atmo" cx="50%" cy="50%" r="50%">
+      <stop offset="78%" stop-color="rgba(80,180,255,0)"/>
+      <stop offset="92%" stop-color="rgba(80,180,255,0.18)"/>
+      <stop offset="100%" stop-color="rgba(80,180,255,0)"/>
+    </radialGradient>
+
+    <!-- Trail gradient: faint at the tail, bright cyan->white at the head -->
+    <linearGradient id="trail" x1="10%" y1="95%" x2="95%" y2="10%">
+      <stop offset="0%" stop-color="rgba(80,180,255,0)"/>
+      <stop offset="35%" stop-color="rgba(80,200,255,0.55)"/>
+      <stop offset="80%" stop-color="rgba(180,240,255,1)"/>
+      <stop offset="100%" stop-color="#ffffff"/>
+    </linearGradient>
+
+    <linearGradient id="trailCore" x1="10%" y1="95%" x2="95%" y2="10%">
+      <stop offset="0%" stop-color="rgba(255,255,255,0)"/>
+      <stop offset="60%" stop-color="rgba(255,255,255,0.7)"/>
+      <stop offset="100%" stop-color="#ffffff"/>
+    </linearGradient>
+
+    <!-- Glowing orb -->
+    <radialGradient id="orbGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="rgba(255,255,255,0.95)"/>
+      <stop offset="20%" stop-color="rgba(200,240,255,0.6)"/>
+      <stop offset="55%" stop-color="rgba(100,200,255,0.25)"/>
+      <stop offset="100%" stop-color="rgba(80,180,255,0)"/>
+    </radialGradient>
+
+    <radialGradient id="orbCore" cx="42%" cy="40%" r="60%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="55%" stop-color="#e8f8ff"/>
+      <stop offset="100%" stop-color="#a0d8ff"/>
+    </radialGradient>
+
+    <filter id="softBlur" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="6"/>
+    </filter>
+    <filter id="microBlur" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="1.2"/>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="512" height="512" fill="url(#bg)"/>
+
+  <!-- Distant nebula tints -->
+  <circle cx="120" cy="400" r="220" fill="rgba(90,40,180,0.10)"/>
+  <circle cx="420" cy="110" r="200" fill="rgba(40,110,210,0.10)"/>
+
+  <!-- Background stars -->
+  <g fill="#ffffff">
+    <circle cx="58"  cy="74"  r="1.4" opacity="0.75"/>
+    <circle cx="118" cy="38"  r="0.9" opacity="0.45"/>
+    <circle cx="196" cy="28"  r="0.7" opacity="0.35"/>
+    <circle cx="338" cy="42"  r="1.0" opacity="0.5"/>
+    <circle cx="478" cy="158" r="1.0" opacity="0.55"/>
+    <circle cx="44"  cy="208" r="1.1" opacity="0.5"/>
+    <circle cx="30"  cy="318" r="0.8" opacity="0.4"/>
+    <circle cx="84"  cy="466" r="1.3" opacity="0.6"/>
+    <circle cx="228" cy="490" r="0.9" opacity="0.45"/>
+    <circle cx="364" cy="478" r="1.1" opacity="0.55"/>
+    <circle cx="466" cy="436" r="1.4" opacity="0.7"/>
+    <circle cx="492" cy="298" r="0.8" opacity="0.4"/>
+  </g>
+
+  <!-- Planet atmospheric glow -->
+  <circle cx="290" cy="310" r="190" fill="url(#atmo)"/>
+
+  <!-- Trail glow halo (drawn before planet so the planet covers the segment that should pass behind) -->
+  <path d="M 50 470 C 10 250, 110 60, 470 78"
+        fill="none"
+        stroke="rgba(80,200,255,0.30)"
+        stroke-width="34"
+        stroke-linecap="round"
+        filter="url(#softBlur)"/>
+
+  <!-- Planet -->
+  <circle cx="290" cy="310" r="158" fill="url(#planet)"/>
+
+  <!-- Planet rim crescent (cyan light catching the upper-left edge) -->
+  <circle cx="290" cy="310" r="158" fill="none"
+          stroke="rgba(120,210,255,0.35)" stroke-width="1.6"/>
+  <path d="M 158 220 A 158 158 0 0 1 360 168"
+        fill="none"
+        stroke="rgba(150,220,255,0.85)"
+        stroke-width="2.4"
+        stroke-linecap="round"/>
+  <path d="M 168 232 A 158 158 0 0 1 348 175"
+        fill="none"
+        stroke="rgba(200,235,255,0.45)"
+        stroke-width="4"
+        stroke-linecap="round"
+        filter="url(#microBlur)"/>
+
+  <!-- Trail body (visible portion in front of planet) -->
+  <path d="M 50 470 C 10 250, 110 60, 470 78"
+        fill="none"
+        stroke="url(#trail)"
+        stroke-width="11"
+        stroke-linecap="round"/>
+  <path d="M 50 470 C 10 250, 110 60, 470 78"
+        fill="none"
+        stroke="url(#trailCore)"
+        stroke-width="3.4"
+        stroke-linecap="round"/>
+
+  <!-- Glowing orb at the head of the trail -->
+  <circle cx="470" cy="78" r="62" fill="url(#orbGlow)"/>
+  <circle cx="470" cy="78" r="26" fill="rgba(180,235,255,0.55)" filter="url(#microBlur)"/>
+  <circle cx="470" cy="78" r="13" fill="url(#orbCore)"/>
+  <circle cx="466" cy="74" r="3.2" fill="#ffffff"/>
+</svg>
