@@ -48,6 +48,38 @@
     text-shadow: 0 0 20px rgba(100,200,255,0.8);
   }
 
+  #powerupTimer {
+    position: absolute;
+    top: 72px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+    pointer-events: none;
+  }
+  #powerupTimer.visible { display: flex; }
+  .pt-label {
+    font-family: 'Space Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 3px;
+    color: rgba(255,255,255,0.7);
+    text-transform: uppercase;
+  }
+  .pt-bar {
+    width: 120px;
+    height: 4px;
+    background: rgba(255,255,255,0.08);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .pt-fill {
+    height: 100%;
+    width: 100%;
+    border-radius: 2px;
+  }
+
   #hintLeft, #hintRight {
     position: absolute;
     bottom: 80px;
@@ -313,6 +345,10 @@
   <canvas id="c" width="400" height="700"></canvas>
   <div id="ui">
     <div id="score">0</div>
+    <div id="powerupTimer">
+      <div class="pt-label" id="ptLabel">SHIELD</div>
+      <div class="pt-bar"><div class="pt-fill" id="ptFill"></div></div>
+    </div>
     <div id="hintLeft">◀ ATTRACT</div>
     <div id="hintRight">REPEL ▶</div>
   </div>
@@ -785,9 +821,16 @@ function drawBodies() {
 }
 
 function drawTrail() {
+  const ghosting = activeEffects.ghost > 0;
   for (let i=0; i<trail.length; i++) {
     const t=i/trail.length;
-    ctx.globalAlpha=t*0.6; ctx.fillStyle=`hsl(${185+t*55},100%,78%)`;
+    ctx.globalAlpha = t * (ghosting ? 0.55 : 0.6);
+    if (ghosting) {
+      // Purple wispy trail while ghost is active
+      ctx.fillStyle = `hsl(${278 + t*12}, 75%, ${62 + t*12}%)`;
+    } else {
+      ctx.fillStyle = `hsl(${185+t*55},100%,78%)`;
+    }
     ctx.beginPath(); ctx.arc(trail[i].x,trail[i].y,t*4.5,0,6.28); ctx.fill();
   }
   ctx.globalAlpha=1;
@@ -826,6 +869,40 @@ function drawPlayer() {
     ctx.globalAlpha = 0.4 * shieldVis;
     ctx.lineWidth = 0.8;
     ctx.beginPath(); ctx.arc(0,0,PLAYER_R*4.0,0,6.28); ctx.stroke();
+  }
+
+  // Ghost wispy aura: 3 concentric pulsing rings out of phase + soft purple halo
+  if (ghosting) {
+    const f1 = Math.sin(frame * 0.10)         * 0.5 + 0.5;
+    const f2 = Math.sin(frame * 0.10 + 2.094) * 0.5 + 0.5; // +120deg
+    const f3 = Math.sin(frame * 0.10 + 4.189) * 0.5 + 0.5; // +240deg
+
+    // Soft purple gradient halo
+    ctx.globalAlpha = 0.35;
+    const gg = ctx.createRadialGradient(0, 0, PLAYER_R, 0, 0, PLAYER_R * 4.4);
+    gg.addColorStop(0,   'rgba(190,110,240,0.5)');
+    gg.addColorStop(0.5, 'rgba(170,90,220,0.22)');
+    gg.addColorStop(1,   'rgba(170,90,220,0)');
+    ctx.fillStyle = gg;
+    ctx.beginPath(); ctx.arc(0, 0, PLAYER_R * 4.4, 0, 6.28); ctx.fill();
+
+    // Inner ring
+    ctx.globalAlpha = 0.55 + 0.3 * f1;
+    ctx.strokeStyle = 'rgba(210,140,255,0.95)';
+    ctx.lineWidth = 1.6;
+    ctx.beginPath(); ctx.arc(0, 0, PLAYER_R * (2.0 + f1 * 0.45), 0, 6.28); ctx.stroke();
+
+    // Middle ring
+    ctx.globalAlpha = 0.4 + 0.25 * f2;
+    ctx.strokeStyle = 'rgba(185,105,240,0.85)';
+    ctx.lineWidth = 1.3;
+    ctx.beginPath(); ctx.arc(0, 0, PLAYER_R * (3.0 + f2 * 0.55), 0, 6.28); ctx.stroke();
+
+    // Outer ring
+    ctx.globalAlpha = 0.28 + 0.2 * f3;
+    ctx.strokeStyle = 'rgba(160,80,220,0.75)';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(0, 0, PLAYER_R * (4.0 + f3 * 0.6), 0, 6.28); ctx.stroke();
   }
 
   if (inGrace) {
@@ -973,6 +1050,40 @@ function drawPickupParticles() {
   ctx.globalAlpha = 1;
 }
 
+// --- Powerup timer bar (DOM) ---
+const powerupTimerEl = document.getElementById('powerupTimer');
+const ptLabelEl = document.getElementById('ptLabel');
+const ptFillEl = document.getElementById('ptFill');
+
+function updatePowerupTimer() {
+  // Priority: shield > ghost > slowmo (most game-relevant first)
+  let label = null, remaining = 0, max = 0, fillColor = '';
+  if (activeEffects.shield > 0) {
+    label = 'SHIELD'; remaining = activeEffects.shield; max = SHIELD_DURATION;
+    fillColor = 'rgba(120,230,255,0.95)';
+  } else if (activeEffects.ghost > 0) {
+    label = 'GHOST'; remaining = activeEffects.ghost; max = GHOST_DURATION;
+    fillColor = 'rgba(200,120,255,0.95)';
+  } else if (activeEffects.slowmo > 0) {
+    label = 'SLOW-MO'; remaining = activeEffects.slowmo; max = SLOWMO_DURATION;
+    fillColor = 'rgba(160,200,255,0.95)';
+  }
+
+  if (!label) {
+    if (powerupTimerEl.classList.contains('visible'))
+      powerupTimerEl.classList.remove('visible');
+    return;
+  }
+
+  const pct = Math.max(0, Math.min(1, remaining / max));
+  if (!powerupTimerEl.classList.contains('visible'))
+    powerupTimerEl.classList.add('visible');
+  if (ptLabelEl.textContent !== label) ptLabelEl.textContent = label;
+  ptFillEl.style.width = (pct * 100) + '%';
+  ptFillEl.style.background = fillColor;
+  ptFillEl.style.boxShadow = `0 0 8px ${fillColor}`;
+}
+
 function drawDeathParticles() {
   deathParticles=deathParticles.filter(p=>p.life>0.01);
   for (const p of deathParticles) {
@@ -1005,6 +1116,8 @@ function render() {
     drawPickupParticles();
     drawDeathParticles();
   }
+
+  updatePowerupTimer();
 }
 
 function loop() { update(); render(); requestAnimationFrame(loop); }
