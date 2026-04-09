@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>DRIFT</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Space+Mono&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: #000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    overflow: hidden;
+    font-family: 'Orbitron', monospace;
+  }
+
+  #gameWrapper {
+    position: relative;
+    width: 400px;
+    height: 700px;
+  }
+
+  canvas {
+    display: block;
+    border-radius: 4px;
+  }
+
+  #ui {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    pointer-events: none;
+  }
+
+  #score {
+    position: absolute;
+    top: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: rgba(255,255,255,0.9);
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: 4px;
+    text-shadow: 0 0 20px rgba(100,200,255,0.8);
+  }
+
+  #hintLeft, #hintRight {
+    position: absolute;
+    bottom: 80px;
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 2px;
+    color: rgba(255,255,255,0.35);
+    text-transform: uppercase;
+  }
+  #hintLeft { left: 20px; }
+  #hintRight { right: 20px; }
+
+  #highscores {
+    display: none;
+    margin-bottom: 28px;
+    width: 180px;
+  }
+  .hs-row {
+    display: flex;
+    justify-content: space-between;
+    font-family: 'Space Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 2px;
+    padding: 4px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.07);
+    color: rgba(255,255,255,0.5);
+  }
+  .hs-row:first-child { color: rgba(100,200,255,0.9); }
+  .hs-rank { color: rgba(255,255,255,0.25); margin-right: 12px; }
+
+  #overlay {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0,0,5,0.88);
+    backdrop-filter: blur(8px);
+    border-radius: 4px;
+    transition: opacity 0.6s;
+  }
+
+  #overlay.hidden {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .title-word {
+    font-size: 72px;
+    font-weight: 900;
+    letter-spacing: 16px;
+    background: linear-gradient(135deg, #4af, #a4f, #4af);
+    background-size: 200% 200%;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    animation: gradShift 3s ease infinite;
+    margin-bottom: 6px;
+  }
+
+  @keyframes gradShift {
+    0%,100% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+  }
+
+  .subtitle {
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 4px;
+    color: rgba(255,255,255,0.4);
+    margin-bottom: 48px;
+    text-transform: uppercase;
+  }
+
+  .controls-hint {
+    font-family: 'Space Mono', monospace;
+    font-size: 11px;
+    color: rgba(255,255,255,0.5);
+    text-align: center;
+    line-height: 2;
+    letter-spacing: 2px;
+    margin-bottom: 40px;
+  }
+
+  .controls-hint span {
+    color: rgba(100,200,255,0.9);
+  }
+
+  #startBtn {
+    background: transparent;
+    border: 1px solid rgba(100,200,255,0.5);
+    color: rgba(100,200,255,0.9);
+    font-family: 'Orbitron', monospace;
+    font-size: 12px;
+    letter-spacing: 4px;
+    padding: 14px 36px;
+    cursor: pointer;
+    text-transform: uppercase;
+    transition: all 0.3s;
+    pointer-events: all;
+  }
+  #startBtn:hover {
+    background: rgba(100,200,255,0.1);
+    border-color: rgba(100,200,255,0.9);
+    box-shadow: 0 0 30px rgba(100,200,255,0.3);
+  }
+
+  #deathScore {
+    font-size: 14px;
+    letter-spacing: 4px;
+    color: rgba(255,255,255,0.6);
+    margin-bottom: 20px;
+    display: none;
+  }
+</style>
+</head>
+<body>
+<div id="gameWrapper">
+  <canvas id="c" width="400" height="700"></canvas>
+  <div id="ui">
+    <div id="score">0</div>
+    <div id="hintLeft">◀ ATTRACT</div>
+    <div id="hintRight">REPEL ▶</div>
+  </div>
+  <div id="overlay">
+    <div class="title-word">DRIFT</div>
+    <div class="subtitle">gravity surfing</div>
+    <div id="deathScore"></div>
+    <div id="highscores"></div>
+    <div class="controls-hint">
+      <span>LEFT</span> — pull toward nearest body<br>
+      <span>RIGHT</span> — push away from nearest body<br>
+      thread the cosmos. don't get absorbed.
+    </div>
+    <button id="startBtn">ENTER THE VOID</button>
+  </div>
+</div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const W = 400, H = 700;
+
+const PLAYER_R = 6;
+const GRACE_FRAMES = 90;
+const BODY_SPACING = 290;
+const FORCE = 0.18;
+// Speed: starts at 1.2, caps at 3.2 (~score 200). Human reaction ~250ms @ 60fps = ~15 frames.
+// At max speed a body crosses the visible zone in ~110 frames — totally readable.
+const SPEED_MIN = 1.2;
+const SPEED_MAX = 3.2;
+const SPEED_SCORE_CAP = 200;
+
+let state = 'idle', score = 0, frame = 0;
+let player = {}, bodies = [], trail = [], bgStars = [], deathParticles = [];
+let leftDown = false, rightDown = false;
+let closestBody = null;
+
+// --- Highscores (localStorage, top 5) ---
+function getScores() {
+  try { return JSON.parse(localStorage.getItem('drift_scores') || '[]'); } catch { return []; }
+}
+function saveScore(s) {
+  const scores = getScores();
+  scores.push(s);
+  scores.sort((a,b)=>b-a);
+  scores.splice(5);
+  localStorage.setItem('drift_scores', JSON.stringify(scores));
+  return scores;
+}
+
+function scrollSpeed() {
+  const t = Math.min(score / SPEED_SCORE_CAP, 1);
+  return SPEED_MIN + (SPEED_MAX - SPEED_MIN) * t;
+}
+
+function dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
+
+// --- Background stars ---
+function initBgStars() {
+  bgStars = [];
+  for (let i = 0; i < 160; i++)
+    bgStars.push({ x: Math.random()*W, y: Math.random()*H, r: Math.random()*1.3+0.2, phase: Math.random()*6.28, spd: Math.random()*0.3+0.08 });
+}
+
+// --- Bodies ---
+function spawnBody(yBase) {
+  const types = ['star','star','planet','blackhole'];
+  const type = types[Math.floor(Math.random() * types.length)];
+  const x = 70 + Math.random() * (W - 140);
+  let radius, color, glowColor;
+  if (type === 'star') {
+    radius = 13 + Math.random() * 9;
+    const hue = Math.random() < 0.5 ? 42 : 200;
+    color = `hsl(${hue},100%,80%)`; glowColor = `hsl(${hue},100%,65%)`;
+  } else if (type === 'planet') {
+    radius = 17 + Math.random() * 13;
+    const hue = 100 + Math.random() * 220;
+    color = `hsl(${hue},55%,50%)`; glowColor = `hsl(${hue},80%,58%)`;
+  } else {
+    radius = 11 + Math.random() * 7;
+    color = '#080808'; glowColor = 'rgba(170,70,255,0.9)';
+  }
+  return { x, y: yBase, radius, type, color, glowColor, passed: false, pulse: Math.random()*6.28 };
+}
+
+function initBodies() {
+  bodies = [];
+  for (let i = 0; i < 5; i++)
+    bodies.push(spawnBody(H * 0.05 - i * BODY_SPACING));
+}
+
+// --- Game state ---
+function resetGame() {
+  player = { x: W/2, y: H*0.72, vx: 0, vy: 0, angle: 0 };
+  trail = []; deathParticles = [];
+  initBodies();
+  score = 0; frame = 0;
+  closestBody = null;
+  document.getElementById('score').textContent = '0';
+}
+
+// --- Physics: only closest body matters ---
+function findClosest() {
+  let best = null, bd = Infinity;
+  for (const b of bodies) {
+    const d = dist(player, b);
+    if (d < bd) { bd = d; best = b; }
+  }
+  closestBody = best;
+}
+
+function applyForce() {
+  if (!closestBody) return;
+  const dx = closestBody.x - player.x;
+  const dy = closestBody.y - player.y;
+  const d = Math.max(Math.hypot(dx, dy), closestBody.radius * 2.2);
+  const nx = dx / d, ny = dy / d;
+  // Influence tapers with distance so far-away pulls feel proportional
+  const influence = Math.min(140 / d, 1.8);
+  const f = FORCE * influence;
+
+  if (leftDown)  { player.vx += nx*f; player.vy += ny*f; }
+  if (rightDown) { player.vx -= nx*f; player.vy -= ny*f; }
+
+  // Very gentle upward bias so player doesn't just sink
+  player.vy -= 0.016;
+
+  player.vx *= 0.91; player.vy *= 0.91;
+  const spd = Math.hypot(player.vx, player.vy);
+  if (spd > 4.5) { player.vx = player.vx/spd*4.5; player.vy = player.vy/spd*4.5; }
+
+  player.x += player.vx; player.y += player.vy;
+  player.angle = Math.atan2(player.vy, player.vx);
+}
+
+function checkCollisions() {
+  if (frame < GRACE_FRAMES) return false;
+  if (player.x < PLAYER_R+3 || player.x > W-PLAYER_R-3) return true;
+  if (player.y > H+50 || player.y < -50) return true;
+  for (const b of bodies)
+    if (dist(player, b) < b.radius + PLAYER_R - 3) return true;
+  return false;
+}
+
+// --- Update ---
+function update() {
+  if (state !== 'playing') return;
+  frame++;
+  const spd = scrollSpeed();
+
+  for (const b of bodies) {
+    b.y += spd; b.pulse += 0.038;
+    if (!b.passed && b.y > H * 0.75) {
+      b.passed = true; score++;
+      document.getElementById('score').textContent = score;
+    }
+  }
+  bodies = bodies.filter(b => b.y < H + 80);
+  while (bodies.length < 5) {
+    const topY = Math.min(...bodies.map(b => b.y));
+    bodies.push(spawnBody(topY - BODY_SPACING - Math.random()*50));
+  }
+
+  for (const s of bgStars) { s.y += s.spd * spd * 0.28; if (s.y > H) s.y = -2; }
+
+  findClosest();
+  applyForce();
+
+  trail.push({ x: player.x, y: player.y });
+  if (trail.length > 38) trail.shift();
+
+  if (checkCollisions()) triggerDeath();
+}
+
+function triggerDeath() {
+  state = 'dead';
+  const scores = saveScore(score);
+  deathParticles = [];
+  for (let i = 0; i < 50; i++) {
+    const a = Math.random()*Math.PI*2, s = Math.random()*3.5+0.8;
+    deathParticles.push({ x: player.x, y: player.y, vx: Math.cos(a)*s, vy: Math.sin(a)*s, life: 1, size: Math.random()*2.5+0.8 });
+  }
+  setTimeout(() => {
+    const overlay = document.getElementById('overlay');
+    document.getElementById('deathScore').style.display = 'block';
+    document.getElementById('deathScore').textContent = `DISTANCE  ${score}`;
+    // Render highscores
+    const hsel = document.getElementById('highscores');
+    hsel.innerHTML = scores.map((s,i) => `<div class="hs-row"><span class="hs-rank">${i+1}</span><span class="hs-val">${s}</span></div>`).join('');
+    hsel.style.display = 'block';
+    document.getElementById('startBtn').textContent = 'DRIFT AGAIN';
+    overlay.classList.remove('hidden');
+  }, 800);
+}
+
+// --- Draw ---
+function drawBg() {
+  ctx.fillStyle = '#00000a'; ctx.fillRect(0,0,W,H);
+  // Nebula
+  ctx.save(); ctx.globalAlpha = 0.055;
+  const t = frame*0.0018;
+  [['rgba(70,30,160',0,2.1],['rgba(15,70,170',2.1,1.7],['rgba(140,30,70',4.2,2.3]].forEach(([c,o,f])=>{
+    const nx2=W*0.2+Math.sin(t+o)*W*0.32, ny2=H*0.3+Math.cos(t*f+o)*H*0.28;
+    const ng=ctx.createRadialGradient(nx2,ny2,0,nx2,ny2,W*0.48);
+    ng.addColorStop(0,c+',0.55)'); ng.addColorStop(1,'rgba(0,0,0,0)');
+    ctx.fillStyle=ng; ctx.fillRect(0,0,W,H);
+  });
+  ctx.restore();
+  // Stars
+  for (const s of bgStars) {
+    ctx.globalAlpha = (0.35+0.5*Math.sin(frame*0.05+s.phase));
+    ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(s.x,s.y,s.r,0,6.28); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawBodies() {
+  for (const b of bodies) {
+    const isTarget = b === closestBody && state === 'playing';
+    const pulse = Math.sin(b.pulse)*0.3+0.7;
+    const glowR = b.radius * (2.6+Math.sin(b.pulse)*0.35);
+
+    // Glow
+    const grd = ctx.createRadialGradient(b.x,b.y,b.radius*0.4,b.x,b.y,glowR);
+    grd.addColorStop(0,b.glowColor); grd.addColorStop(1,'rgba(0,0,0,0)');
+    ctx.globalAlpha = 0.32*pulse; ctx.fillStyle=grd;
+    ctx.beginPath(); ctx.arc(b.x,b.y,glowR,0,6.28); ctx.fill();
+
+    // Body
+    ctx.globalAlpha=1;
+    if (b.type==='blackhole') {
+      ctx.save(); ctx.globalAlpha=0.45;
+      const dg=ctx.createRadialGradient(b.x,b.y,b.radius,b.x,b.y,b.radius*2.4);
+      dg.addColorStop(0,'rgba(170,70,255,0.8)'); dg.addColorStop(1,'rgba(0,0,0,0)');
+      ctx.fillStyle=dg; ctx.scale(1,0.3);
+      ctx.beginPath(); ctx.arc(b.x,b.y/0.3,b.radius*2.4,0,6.28); ctx.fill();
+      ctx.restore();
+      ctx.fillStyle='#000'; ctx.beginPath(); ctx.arc(b.x,b.y,b.radius,0,6.28); ctx.fill();
+      ctx.strokeStyle='rgba(160,70,255,0.65)'; ctx.lineWidth=1.5;
+      ctx.beginPath(); ctx.arc(b.x,b.y,b.radius+1.5,0,6.28); ctx.stroke();
+    } else {
+      const bg=ctx.createRadialGradient(b.x-b.radius*0.28,b.y-b.radius*0.28,0,b.x,b.y,b.radius);
+      bg.addColorStop(0,'#fff'); bg.addColorStop(0.3,b.color); bg.addColorStop(1,'rgba(0,0,0,0.5)');
+      ctx.fillStyle=bg; ctx.beginPath(); ctx.arc(b.x,b.y,b.radius,0,6.28); ctx.fill();
+    }
+
+    // Target indicator: bright ring + line to player when active
+    if (isTarget) {
+      const lineColor = leftDown ? 'rgba(80,200,255,' : rightDown ? 'rgba(255,120,80,' : 'rgba(255,255,255,';
+      ctx.globalAlpha = 0.55 + 0.25*Math.sin(frame*0.18);
+      ctx.strokeStyle = lineColor+'0.7)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(b.x,b.y,b.radius+5+Math.sin(frame*0.18)*2,0,6.28); ctx.stroke();
+
+      if (leftDown || rightDown) {
+        ctx.globalAlpha = 0.3;
+        ctx.strokeStyle = lineColor+'0.8)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([5,5]);
+        ctx.beginPath(); ctx.moveTo(player.x,player.y); ctx.lineTo(b.x,b.y); ctx.stroke();
+        ctx.setLineDash([]);
+      }
+    }
+
+    // Subtle rings always
+    ctx.globalAlpha = 0.05+0.03*Math.sin(b.pulse*1.4);
+    ctx.strokeStyle = b.type==='blackhole'?'rgba(160,70,255,1)':b.glowColor;
+    ctx.lineWidth=1;
+    [b.radius*2, b.radius*3.5].forEach(r=>{ ctx.beginPath(); ctx.arc(b.x,b.y,r,0,6.28); ctx.stroke(); });
+    ctx.globalAlpha=1;
+  }
+}
+
+function drawTrail() {
+  for (let i=0; i<trail.length; i++) {
+    const t=i/trail.length;
+    ctx.globalAlpha=t*0.6; ctx.fillStyle=`hsl(${185+t*55},100%,78%)`;
+    ctx.beginPath(); ctx.arc(trail[i].x,trail[i].y,t*4.5,0,6.28); ctx.fill();
+  }
+  ctx.globalAlpha=1;
+}
+
+function drawPlayer() {
+  const inGrace = frame < GRACE_FRAMES;
+  const gf = inGrace ? Math.sin(frame*0.26)*0.5+0.5 : 1;
+  ctx.save(); ctx.translate(player.x, player.y); ctx.rotate(player.angle);
+  if (inGrace) {
+    ctx.globalAlpha=0.28*gf; ctx.strokeStyle='#4af'; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.arc(0,0,PLAYER_R*(2.4-gf*0.4),0,6.28); ctx.stroke();
+  }
+  ctx.globalAlpha=inGrace?gf:1;
+  const aura=ctx.createRadialGradient(0,0,0,0,0,PLAYER_R*2.8);
+  aura.addColorStop(0,'rgba(100,220,255,0.38)'); aura.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.fillStyle=aura; ctx.beginPath(); ctx.arc(0,0,PLAYER_R*2.8,0,6.28); ctx.fill();
+  ctx.globalAlpha=1;
+  const core=ctx.createRadialGradient(-1.5,-1.5,0,0,0,PLAYER_R);
+  core.addColorStop(0,'#fff'); core.addColorStop(0.4,'#7de8ff'); core.addColorStop(1,'rgba(30,110,190,0.5)');
+  ctx.fillStyle=core; ctx.beginPath(); ctx.arc(0,0,PLAYER_R,0,6.28); ctx.fill();
+  const spd=Math.hypot(player.vx,player.vy);
+  if (spd>0.9) {
+    ctx.globalAlpha=Math.min(spd/4,0.55); ctx.strokeStyle='rgba(100,220,255,0.8)';
+    ctx.lineWidth=1.8; ctx.lineCap='round';
+    ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(-player.vx*2.8,-player.vy*2.8); ctx.stroke();
+  }
+  ctx.restore(); ctx.globalAlpha=1;
+}
+
+function drawDeathParticles() {
+  deathParticles=deathParticles.filter(p=>p.life>0.01);
+  for (const p of deathParticles) {
+    p.x+=p.vx; p.y+=p.vy; p.vx*=0.95; p.vy*=0.95; p.life*=0.93;
+    ctx.globalAlpha=p.life; ctx.fillStyle=`hsl(${185+(1-p.life)*80},100%,72%)`;
+    ctx.beginPath(); ctx.arc(p.x,p.y,p.size*p.life,0,6.28); ctx.fill();
+  }
+  ctx.globalAlpha=1;
+}
+
+function render() {
+  drawBg(); drawBodies();
+  if (state==='playing'||state==='dead') {
+    drawTrail();
+    if (state==='playing') drawPlayer();
+    drawDeathParticles();
+  }
+}
+
+function loop() { update(); render(); requestAnimationFrame(loop); }
+
+// --- Input ---
+function readInput(e) {
+  if (state!=='playing') return;
+  const rect=canvas.getBoundingClientRect();
+  leftDown=false; rightDown=false;
+  const pts=e.touches||[e];
+  for (const t of pts) {
+    const cx=(t.clientX-rect.left)*(W/rect.width);
+    if (cx<W/2) leftDown=true; else rightDown=true;
+  }
+  e.preventDefault();
+}
+function clearInput(e) {
+  leftDown=false; rightDown=false;
+  if (e.touches) for (const t of e.touches) {
+    const cx=(t.clientX-canvas.getBoundingClientRect().left)*(W/canvas.getBoundingClientRect().width);
+    if (cx<W/2) leftDown=true; else rightDown=true;
+  }
+}
+canvas.addEventListener('touchstart',readInput,{passive:false});
+canvas.addEventListener('touchmove',readInput,{passive:false});
+canvas.addEventListener('touchend',clearInput);
+canvas.addEventListener('mousedown',readInput);
+canvas.addEventListener('mousemove',e=>{ if(e.buttons) readInput(e); });
+canvas.addEventListener('mouseup',clearInput);
+document.addEventListener('keydown',e=>{ if(e.key==='ArrowLeft'||e.key==='a'||e.key==='A') leftDown=true; if(e.key==='ArrowRight'||e.key==='d'||e.key==='D') rightDown=true; });
+document.addEventListener('keyup',e=>{ if(e.key==='ArrowLeft'||e.key==='a'||e.key==='A') leftDown=false; if(e.key==='ArrowRight'||e.key==='d'||e.key==='D') rightDown=false; });
+
+document.getElementById('startBtn').addEventListener('click', ()=>{
+  resetGame(); state='playing';
+  document.getElementById('overlay').classList.add('hidden');
+});
+
+initBgStars(); initBodies(); loop();
+</script>
+</body>
+</html>
