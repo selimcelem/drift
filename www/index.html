@@ -461,7 +461,14 @@ const SHIELD_BLINK_FRAMES = 90; // last 1.5s blink
 const SFX = (function() {
   let ctx = null, masterGain = null;
   let initialized = false, muted = false;
+  // Throttle trackers use ctx.currentTime (audio-clock seconds), NOT game
+  // frame numbers — frame counters reset to 0 on game restart, which would
+  // make `frame - lastFrame` negative and silently disable the throttle for
+  // thousands of frames. Audio time is monotonic across the AudioContext's
+  // entire lifetime, so this can't happen.
   let lastAttract = -100, lastRepel = -100;
+  const ATTRACT_THROTTLE = 0.13; // ~8 frames @ 60fps
+  const REPEL_THROTTLE   = 0.13;
   let musicPlaying = false, musicGain = null;
   let musicNodes = [];
 
@@ -480,10 +487,13 @@ const SFX = (function() {
     } catch {}
   }
 
+  // Aggressively try to bring the AudioContext into the running state.
+  // Handles 'suspended' (Chrome autoplay), 'interrupted' (iOS), and any
+  // other non-running state by calling resume() unconditionally.
   function ensureRunning() {
     if (!initialized) init();
     if (!ctx) return false;
-    if (ctx.state === 'suspended') {
+    if (ctx.state !== 'running') {
       try { ctx.resume(); } catch {}
     }
     return true;
@@ -493,6 +503,30 @@ const SFX = (function() {
     if (muted) return;
     if (!ensureRunning()) return;
     try { fn(ctx.currentTime); } catch {}
+  }
+
+  // When a one-shot oscillator/buffer source ends, disconnect it and any
+  // nodes it was connected through so the audio graph doesn't accumulate
+  // dead branches. Without this, long sessions can choke as orphaned nodes
+  // pile up and the browser stops scheduling new ones.
+  function killOnEnd(node, ...others) {
+    if (!node) return;
+    node.onended = () => {
+      try { node.disconnect(); } catch {}
+      for (const n of others) {
+        try { n.disconnect(); } catch {}
+      }
+      node.onended = null;
+    };
+  }
+
+  // Reset the attract/repel throttle tracker. Called from startMusic so a
+  // fresh game session always starts able to play sounds immediately. With
+  // time-based throttling this is belt-and-braces — the throttle would
+  // recover on its own — but explicit reset documents the intent.
+  function resetThrottles() {
+    lastAttract = -100;
+    lastRepel = -100;
   }
 
   function setMuted(m) {
@@ -524,10 +558,10 @@ const SFX = (function() {
 
   // ---- one-shot sound effects ----
 
-  function attract(currentFrame) {
-    if (currentFrame - lastAttract < 8) return;
-    lastAttract = currentFrame;
+  function attract(_frame) {
     safe(t => {
+      if (t - lastAttract < ATTRACT_THROTTLE) return;
+      lastAttract = t;
       const o = ctx.createOscillator();
       const g = ctx.createGain();
       o.type = 'sine';
@@ -537,13 +571,14 @@ const SFX = (function() {
       g.gain.exponentialRampToValueAtTime(0.001, t + 0.09);
       o.connect(g); g.connect(masterGain);
       o.start(t); o.stop(t + 0.11);
+      killOnEnd(o, g);
     });
   }
 
-  function repel(currentFrame) {
-    if (currentFrame - lastRepel < 8) return;
-    lastRepel = currentFrame;
+  function repel(_frame) {
     safe(t => {
+      if (t - lastRepel < REPEL_THROTTLE) return;
+      lastRepel = t;
       const o = ctx.createOscillator();
       const g = ctx.createGain();
       const f = ctx.createBiquadFilter();
@@ -557,6 +592,7 @@ const SFX = (function() {
       g.gain.exponentialRampToValueAtTime(0.001, t + 0.07);
       o.connect(f); f.connect(g); g.connect(masterGain);
       o.start(t); o.stop(t + 0.09);
+      killOnEnd(o, f, g);
     });
   }
 
@@ -576,6 +612,7 @@ const SFX = (function() {
           g.gain.exponentialRampToValueAtTime(0.001, start + 0.42);
           o.connect(g); g.connect(masterGain);
           o.start(start); o.stop(start + 0.45);
+          killOnEnd(o, g);
         });
       } else if (type === 'nova') {
         // Deep boom + rising whoosh
@@ -589,6 +626,7 @@ const SFX = (function() {
         bg.gain.exponentialRampToValueAtTime(0.001, t + 0.6);
         boom.connect(bg); bg.connect(masterGain);
         boom.start(t); boom.stop(t + 0.62);
+        killOnEnd(boom, bg);
 
         const noise = ctx.createBufferSource();
         noise.buffer = noiseBuffer(0.55, x => 1 - x);
@@ -603,6 +641,7 @@ const SFX = (function() {
         ng.gain.exponentialRampToValueAtTime(0.001, t + 0.55);
         noise.connect(f); f.connect(ng); ng.connect(masterGain);
         noise.start(t); noise.stop(t + 0.58);
+        killOnEnd(noise, f, ng);
       } else if (type === 'slowmo') {
         // Descending dreamy glissando, two slightly detuned voices
         for (let i = 0; i < 2; i++) {
@@ -621,6 +660,7 @@ const SFX = (function() {
           g.gain.exponentialRampToValueAtTime(0.001, t + 0.85);
           o.connect(f); f.connect(g); g.connect(masterGain);
           o.start(t); o.stop(t + 0.88);
+          killOnEnd(o, f, g);
         }
       } else if (type === 'ghost') {
         // Eerie ascending tritone (C4 - F#4 - C5)
@@ -640,6 +680,7 @@ const SFX = (function() {
           g.gain.exponentialRampToValueAtTime(0.001, start + 0.55);
           o.connect(f); f.connect(g); g.connect(masterGain);
           o.start(start); o.stop(start + 0.58);
+          killOnEnd(o, f, g);
         });
       }
     });
@@ -660,6 +701,7 @@ const SFX = (function() {
         ng.gain.exponentialRampToValueAtTime(0.001, t + 0.28);
         noise.connect(f); f.connect(ng); ng.connect(masterGain);
         noise.start(t); noise.stop(t + 0.3);
+        killOnEnd(noise, f, ng);
 
         const o = ctx.createOscillator();
         const og = ctx.createGain();
@@ -670,6 +712,7 @@ const SFX = (function() {
         og.gain.exponentialRampToValueAtTime(0.001, t + 0.32);
         o.connect(og); og.connect(masterGain);
         o.start(t); o.stop(t + 0.35);
+        killOnEnd(o, og);
       } else if (kind === 'ghost') {
         // Soft whomp + ethereal high shimmer (muted)
         const o = ctx.createOscillator();
@@ -681,6 +724,7 @@ const SFX = (function() {
         g.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
         o.connect(g); g.connect(masterGain);
         o.start(t); o.stop(t + 0.32);
+        killOnEnd(o, g);
 
         const n = ctx.createBufferSource();
         n.buffer = noiseBuffer(0.4);
@@ -693,6 +737,7 @@ const SFX = (function() {
         ng.gain.exponentialRampToValueAtTime(0.001, t + 0.42);
         n.connect(f); f.connect(ng); ng.connect(masterGain);
         n.start(t); n.stop(t + 0.45);
+        killOnEnd(n, f, ng);
       } else if (kind === 'nova') {
         // Deep reverberant explosion, bigger than shield kill
         const o = ctx.createOscillator();
@@ -704,6 +749,7 @@ const SFX = (function() {
         g.gain.exponentialRampToValueAtTime(0.001, t + 0.55);
         o.connect(g); g.connect(masterGain);
         o.start(t); o.stop(t + 0.58);
+        killOnEnd(o, g);
 
         const n = ctx.createBufferSource();
         n.buffer = noiseBuffer(0.5, x => Math.pow(1 - x, 0.65));
@@ -716,6 +762,7 @@ const SFX = (function() {
         ng.gain.exponentialRampToValueAtTime(0.001, t + 0.55);
         n.connect(f); f.connect(ng); ng.connect(masterGain);
         n.start(t); n.stop(t + 0.55);
+        killOnEnd(n, f, ng);
       }
     });
   }
@@ -737,6 +784,7 @@ const SFX = (function() {
       g.gain.exponentialRampToValueAtTime(0.001, t + 1.4);
       o.connect(f); f.connect(g); g.connect(masterGain);
       o.start(t); o.stop(t + 1.42);
+      killOnEnd(o, f, g);
 
       // Sub boom
       const o2 = ctx.createOscillator();
@@ -748,6 +796,7 @@ const SFX = (function() {
       g2.gain.exponentialRampToValueAtTime(0.001, t + 1.2);
       o2.connect(g2); g2.connect(masterGain);
       o2.start(t); o2.stop(t + 1.25);
+      killOnEnd(o2, g2);
     });
   }
 
@@ -765,6 +814,7 @@ const SFX = (function() {
         g.gain.exponentialRampToValueAtTime(0.001, start + 0.28);
         o.connect(g); g.connect(masterGain);
         o.start(start); o.stop(start + 0.3);
+        killOnEnd(o, g);
       });
     });
   }
@@ -774,6 +824,27 @@ const SFX = (function() {
   function startMusic() {
     if (musicPlaying) return;
     if (!ensureRunning()) return;
+
+    // Defensive: tear down any leftover music graph from a previous session
+    // before creating a new one. Even though `musicPlaying` is false here,
+    // this protects against any state-tracking edge case where nodes might
+    // still be connected — preventing duplicate drone layers from stacking
+    // on repeated restarts.
+    for (const n of musicNodes) {
+      try { n.stop(); } catch {}
+      try { n.disconnect(); } catch {}
+    }
+    musicNodes = [];
+    if (musicGain) {
+      try { musicGain.disconnect(); } catch {}
+      musicGain = null;
+    }
+
+    // Reset attract/repel throttles so the first input frame of a new
+    // session always plays immediately (belt-and-braces alongside the
+    // time-based throttle).
+    resetThrottles();
+
     try {
       const t = ctx.currentTime;
       musicGain = ctx.createGain();
@@ -783,7 +854,6 @@ const SFX = (function() {
 
       // Base drones at A1, E2, A2, E3 — fifth-stacked, slightly detuned per voice
       const baseFreqs = [55, 82.5, 110, 165];
-      musicNodes = [];
       baseFreqs.forEach((freq, i) => {
         const o = ctx.createOscillator();
         const g = ctx.createGain();
@@ -796,6 +866,8 @@ const SFX = (function() {
         g.gain.value = 0.42 / (i + 1);
         o.connect(f); f.connect(g); g.connect(musicGain);
         o.start(t);
+        // When stopMusic schedules this drone to stop, disconnect its chain
+        killOnEnd(o, f, g);
         musicNodes.push(o);
 
         // Slow LFO drifting filter cutoff for movement
@@ -805,6 +877,7 @@ const SFX = (function() {
         lfoGain.gain.value = 140 + i * 30;
         lfo.connect(lfoGain); lfoGain.connect(f.frequency);
         lfo.start(t);
+        killOnEnd(lfo, lfoGain);
         musicNodes.push(lfo);
       });
       musicPlaying = true;
