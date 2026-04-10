@@ -445,6 +445,7 @@ const POWERUP_COLORS = {
 };
 let powerups = [];
 let novaRings = [];
+let screenShake = 0;
 let pickupParticles = [];
 let planetRipples = [];
 let activeEffects = { shield: 0, slowmo: 0, ghost: 0 };
@@ -1030,7 +1031,7 @@ function emitPickupParticles(x, y, type) {
 }
 
 function emitDestroyBurst(x, y, rgb) {
-  for (let i = 0; i < 18; i++) {
+  for (let i = 0; i < 30; i++) {
     const a = Math.random() * Math.PI * 2;
     const sp = Math.random() * 3.5 + 0.8;
     pickupParticles.push({
@@ -1050,7 +1051,7 @@ function activatePowerup(type, x, y) {
   if (type === 'shield')      activeEffects.shield = SHIELD_DURATION;
   else if (type === 'slowmo') activeEffects.slowmo = SLOWMO_DURATION;
   else if (type === 'ghost')  activeEffects.ghost  = GHOST_DURATION;
-  else if (type === 'nova')   novaRings.push({ x: player.x, y: player.y, radius: 0, life: 1, prevR: 0 });
+  else if (type === 'nova') { novaRings.push({ x: player.x, y: player.y, radius: 0, life: 1, prevR: 0 }); screenShake = 10; }
 }
 
 // --- Game state ---
@@ -1061,7 +1062,7 @@ function resetGame() {
   score = 0; frame = 0;
   closestBody = null;
   powerups = [];
-  novaRings = [];
+  novaRings = []; screenShake = 0;
   pickupParticles = [];
   planetRipples = [];
   activeEffects = { shield: 0, slowmo: 0, ghost: 0 };
@@ -1206,8 +1207,8 @@ function update() {
   // Nova rings: expand and destroy bodies they sweep past
   for (const r of novaRings) {
     r.prevR = r.radius;
-    r.radius += 5.5;
-    if (r.radius > 200) r.life *= 0.9;
+    r.radius += 7;
+    if (r.radius > 320) r.life *= 0.9;
   }
   if (novaRings.length) {
     const survivors = [];
@@ -1215,7 +1216,7 @@ function update() {
       let killed = false;
       for (const r of novaRings) {
         const dd = dist(r, b);
-        if (dd < r.radius && dd >= r.prevR - 6 && r.radius < 230) {
+        if (dd < r.radius && dd >= r.prevR - 6 && r.radius < 360) {
           killed = true;
           emitDestroyBurst(b.x, b.y, POWERUP_COLORS.nova.rgb);
           SFX.planetDestroyed('nova');
@@ -1225,7 +1226,7 @@ function update() {
       if (!killed) survivors.push(b);
     }
     bodies = survivors;
-    novaRings = novaRings.filter(r => r.life > 0.05 && r.radius < 260);
+    novaRings = novaRings.filter(r => r.life > 0.05 && r.radius < 400);
   }
 
   // Planet ripples scroll with the world
@@ -1548,12 +1549,19 @@ function drawPowerups() {
 
 function drawNovaRings() {
   for (const r of novaRings) {
+    // Inner trailing ring (shockwave)
+    const innerR = Math.max(0, r.radius - 20);
+    ctx.globalAlpha = r.life * 0.5;
+    ctx.strokeStyle = `rgba(255,160,60,${r.life * 0.7})`;
+    ctx.lineWidth = 10;
+    ctx.beginPath(); ctx.arc(r.x, r.y, innerR, 0, 6.28); ctx.stroke();
+    // Main outer ring
     ctx.globalAlpha = r.life * 0.85;
     ctx.strokeStyle = `rgba(255,200,90,${r.life})`;
-    ctx.lineWidth = 4;
+    ctx.lineWidth = 6;
     ctx.beginPath(); ctx.arc(r.x, r.y, r.radius, 0, 6.28); ctx.stroke();
     ctx.globalAlpha = r.life * 0.35;
-    ctx.lineWidth = 14;
+    ctx.lineWidth = 18;
     ctx.beginPath(); ctx.arc(r.x, r.y, r.radius, 0, 6.28); ctx.stroke();
   }
   ctx.globalAlpha = 1;
@@ -1630,6 +1638,15 @@ function drawDeathParticles() {
 }
 
 function render() {
+  ctx.save();
+  // Screen shake
+  if (screenShake > 0) {
+    const intensity = screenShake * 0.6;
+    const sx = (Math.random() - 0.5) * intensity * 2;
+    const sy = (Math.random() - 0.5) * intensity * 2;
+    ctx.translate(sx, sy);
+    screenShake--;
+  }
   drawBg();
   drawBodies();
 
@@ -1653,6 +1670,7 @@ function render() {
   }
 
   updatePowerupTimer();
+  ctx.restore();
 }
 
 function loop() { update(); render(); requestAnimationFrame(loop); }
