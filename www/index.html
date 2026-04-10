@@ -366,6 +366,126 @@
     text-align: center;
     text-transform: uppercase;
   }
+
+  /* Username prompt overlay */
+  #usernameOverlay {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0,0,5,0.94);
+    backdrop-filter: blur(10px);
+    border-radius: 4px;
+    z-index: 30;
+  }
+  #usernameOverlay.visible { display: flex; }
+  .username-title {
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 4px;
+    color: rgba(100,200,255,0.9);
+    margin-bottom: 28px;
+    text-transform: uppercase;
+  }
+  #usernameInput {
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(100,200,255,0.4);
+    color: rgba(255,255,255,0.9);
+    font-family: 'Space Mono', monospace;
+    font-size: 16px;
+    letter-spacing: 3px;
+    padding: 12px 18px;
+    width: 240px;
+    text-align: center;
+    outline: none;
+    border-radius: 2px;
+    margin-bottom: 18px;
+  }
+  #usernameInput:focus {
+    border-color: rgba(100,200,255,0.8);
+    box-shadow: 0 0 20px rgba(100,200,255,0.2);
+  }
+  #usernameInput::placeholder {
+    color: rgba(255,255,255,0.2);
+    letter-spacing: 2px;
+  }
+  #usernameConfirm {
+    background: transparent;
+    border: 1px solid rgba(100,200,255,0.5);
+    color: rgba(100,200,255,0.9);
+    font-family: 'Orbitron', monospace;
+    font-size: 11px;
+    letter-spacing: 3px;
+    padding: 12px 32px;
+    cursor: pointer;
+    text-transform: uppercase;
+    transition: all 0.3s;
+  }
+  #usernameConfirm:hover {
+    background: rgba(100,200,255,0.1);
+    border-color: rgba(100,200,255,0.9);
+    box-shadow: 0 0 24px rgba(100,200,255,0.3);
+  }
+  #usernameConfirm:disabled {
+    opacity: 0.3;
+    cursor: default;
+  }
+
+  /* Leaderboard tabs */
+  .lb-tabs {
+    display: flex;
+    gap: 0;
+    margin-bottom: 10px;
+    width: 220px;
+  }
+  .lb-tab {
+    flex: 1;
+    background: transparent;
+    border: 1px solid rgba(255,255,255,0.12);
+    color: rgba(255,255,255,0.35);
+    font-family: 'Space Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 2px;
+    padding: 6px 0;
+    cursor: pointer;
+    text-transform: uppercase;
+    transition: all 0.2s;
+  }
+  .lb-tab:first-child { border-radius: 2px 0 0 2px; }
+  .lb-tab:last-child { border-radius: 0 2px 2px 0; border-left: none; }
+  .lb-tab.active {
+    color: rgba(100,200,255,0.9);
+    border-color: rgba(100,200,255,0.5);
+    background: rgba(100,200,255,0.08);
+  }
+  #globalScores {
+    width: 220px;
+    display: none;
+  }
+  .gs-row {
+    display: flex;
+    justify-content: space-between;
+    font-family: 'Space Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 2px;
+    padding: 4px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.07);
+    color: rgba(255,255,255,0.5);
+  }
+  .gs-row.self { color: rgba(100,220,255,0.95); }
+  .gs-rank { color: rgba(255,255,255,0.25); margin-right: 10px; min-width: 18px; }
+  .gs-name { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+  .gs-val { text-align: right; margin-left: 10px; }
+  .gs-status {
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 2px;
+    color: rgba(255,255,255,0.3);
+    text-align: center;
+    padding: 16px 0;
+  }
 </style>
 </head>
 <body>
@@ -389,7 +509,12 @@
       <button class="diff-btn" data-diff="EXTREME">EXTREME</button>
     </div>
     <div id="deathScore"></div>
+    <div class="lb-tabs" id="lbTabs" style="display:none">
+      <button class="lb-tab active" data-tab="local">LOCAL</button>
+      <button class="lb-tab" data-tab="global">GLOBAL</button>
+    </div>
     <div id="highscores"></div>
+    <div id="globalScores"></div>
     <div class="controls-hint">
       <span>LEFT</span> — pull toward nearest body<br>
       <span>RIGHT</span> — push away from nearest body<br>
@@ -404,10 +529,16 @@
     <div class="pause-menu">
       <button class="pause-btn" id="resumeBtn">RESUME</button>
       <button class="pause-btn" id="restartBtn">RESTART</button>
+      <button class="pause-btn" id="changeNameBtn">CHANGE NAME</button>
       <button class="pause-btn" id="menuBtn">MAIN MENU</button>
       <button class="pause-btn" id="quitBtn">QUIT GAME</button>
     </div>
     <div id="quitMsg">close the app to quit</div>
+  </div>
+  <div id="usernameOverlay">
+    <div class="username-title">ENTER YOUR PILOT NAME</div>
+    <input type="text" id="usernameInput" maxlength="20" placeholder="pilot name" autocomplete="off" spellcheck="false">
+    <button id="usernameConfirm" disabled>CONFIRM</button>
   </div>
 </div>
 
@@ -953,6 +1084,34 @@ function saveScore(s, d) {
   return scores;
 }
 
+// --- Online leaderboard ---
+const API_URL = 'https://s3dtdgsg29.execute-api.eu-west-1.amazonaws.com';
+
+function getUsername() {
+  try { return localStorage.getItem('drift_username') || ''; } catch { return ''; }
+}
+
+function setUsername(name) {
+  try { localStorage.setItem('drift_username', name); } catch {}
+}
+
+function submitScoreOnline(username, s, d) {
+  try {
+    fetch(API_URL + '/score', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, score: s, difficulty: d }),
+    }).catch(() => {});
+  } catch {}
+}
+
+function fetchLeaderboard(d, callback) {
+  fetch(API_URL + '/leaderboard?difficulty=' + encodeURIComponent(d))
+    .then(r => r.json())
+    .then(data => callback(null, data.leaderboard || []))
+    .catch(() => callback('unavailable', []));
+}
+
 function scrollSpeed() {
   const d = diff();
   const t = Math.min(score / d.speedCapScore, 1);
@@ -1263,6 +1422,28 @@ function triggerDeath() {
     const a = Math.random()*Math.PI*2, s = Math.random()*3.5+0.8;
     deathParticles.push({ x: player.x, y: player.y, vx: Math.cos(a)*s, vy: Math.sin(a)*s, life: 1, size: Math.random()*2.5+0.8 });
   }
+  // Submit score online (fire and forget)
+  const uname = getUsername();
+  if (uname) submitScoreOnline(uname, score, difficulty);
+
+  // Fetch global leaderboard
+  const deathDifficulty = difficulty;
+  const deathUsername = uname;
+  const globalEl = document.getElementById('globalScores');
+  globalEl.innerHTML = '<div class="gs-status">connecting...</div>';
+  fetchLeaderboard(deathDifficulty, (err, entries) => {
+    if (err) {
+      globalEl.innerHTML = '<div class="gs-status">unavailable</div>';
+    } else if (entries.length === 0) {
+      globalEl.innerHTML = '<div class="gs-status">no scores yet</div>';
+    } else {
+      globalEl.innerHTML = entries.map((e, i) => {
+        const isSelf = deathUsername && e.username.toLowerCase() === deathUsername.toLowerCase();
+        return `<div class="gs-row${isSelf ? ' self' : ''}"><span class="gs-rank">${e.rank || i+1}</span><span class="gs-name">${e.username}</span><span class="gs-val">${e.score}</span></div>`;
+      }).join('');
+    }
+  });
+
   setTimeout(() => {
     const overlay = document.getElementById('overlay');
     document.getElementById('deathScore').style.display = 'block';
@@ -1273,6 +1454,11 @@ function triggerDeath() {
       `<div class="hs-row"><span class="hs-rank">${i+1}</span><span class="hs-val">${s.score}</span><span class="hs-diff ${s.difficulty}">${s.difficulty}</span></div>`
     ).join('');
     hsel.style.display = 'block';
+    // Show leaderboard tabs, default to local
+    const lbTabs = document.getElementById('lbTabs');
+    lbTabs.style.display = 'flex';
+    lbTabs.querySelectorAll('.lb-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === 'local'));
+    globalEl.style.display = 'none';
     document.getElementById('startBtn').textContent = 'DRIFT AGAIN';
     overlay.classList.remove('hidden');
   }, 800);
@@ -1758,6 +1944,8 @@ function goToMainMenu() {
   quitMsg.style.display = 'none';
   document.getElementById('deathScore').style.display = 'none';
   document.getElementById('highscores').style.display = 'none';
+  document.getElementById('globalScores').style.display = 'none';
+  document.getElementById('lbTabs').style.display = 'none';
   document.getElementById('startBtn').textContent = 'ENTER THE VOID';
   document.getElementById('score').textContent = '0';
   document.getElementById('overlay').classList.remove('hidden');
@@ -1772,6 +1960,7 @@ function quitGame() {
 pauseBtn.addEventListener('click', pauseGame);
 document.getElementById('resumeBtn').addEventListener('click', resumeGame);
 document.getElementById('restartBtn').addEventListener('click', restartFromPause);
+document.getElementById('changeNameBtn').addEventListener('click', () => { showUsernamePrompt(); });
 document.getElementById('menuBtn').addEventListener('click', goToMainMenu);
 document.getElementById('quitBtn').addEventListener('click', quitGame);
 
@@ -1814,6 +2003,56 @@ function _firstAudioGesture() {
 document.addEventListener('pointerdown', _firstAudioGesture, true);
 document.addEventListener('touchstart',  _firstAudioGesture, true);
 document.addEventListener('keydown',     _firstAudioGesture, true);
+
+// --- Leaderboard tab switching ---
+document.getElementById('lbTabs').addEventListener('click', e => {
+  const tab = e.target.closest('.lb-tab');
+  if (!tab) return;
+  document.querySelectorAll('.lb-tab').forEach(t => t.classList.remove('active'));
+  tab.classList.add('active');
+  const isLocal = tab.dataset.tab === 'local';
+  document.getElementById('highscores').style.display = isLocal ? 'block' : 'none';
+  document.getElementById('globalScores').style.display = isLocal ? 'none' : 'block';
+});
+
+// --- Username prompt ---
+const usernameOverlay = document.getElementById('usernameOverlay');
+const usernameInput = document.getElementById('usernameInput');
+const usernameConfirm = document.getElementById('usernameConfirm');
+let usernameCallback = null;
+
+function showUsernamePrompt(onDone) {
+  usernameCallback = onDone || null;
+  usernameInput.value = getUsername();
+  usernameConfirm.disabled = !usernameInput.value.length;
+  usernameOverlay.classList.add('visible');
+  usernameInput.focus();
+}
+
+usernameInput.addEventListener('input', () => {
+  usernameInput.value = usernameInput.value.replace(/[^a-zA-Z0-9]/g, '');
+  usernameConfirm.disabled = !usernameInput.value.length;
+});
+
+usernameInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && usernameInput.value.length > 0) confirmUsername();
+});
+
+function confirmUsername() {
+  const name = usernameInput.value.trim();
+  if (!name) return;
+  setUsername(name);
+  usernameOverlay.classList.remove('visible');
+  if (usernameCallback) usernameCallback();
+  usernameCallback = null;
+}
+
+usernameConfirm.addEventListener('click', confirmUsername);
+
+// Show username prompt on first launch, then start
+if (!getUsername()) {
+  showUsernamePrompt();
+}
 
 initBgStars(); initBodies(); loop();
 </script>
