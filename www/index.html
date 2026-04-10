@@ -690,7 +690,6 @@ let state = 'idle', score = 0, frame = 0;
 let player = {}, bodies = [], trail = [], bgStars = [], deathParticles = [];
 let leftDown = false, rightDown = false;
 let closestBody = null;
-let lateralEscapeDir = null;
 
 // Streak scoring
 let destroyStreak = 0;
@@ -1544,18 +1543,16 @@ function applyForce() {
 
   if (leftDown)  { player.vx += nx*f; player.vy += ny*f; }
   if (rightDown) {
-    player.vx -= nx*f; player.vy -= ny*f;
-    // Dead zone escape: when body is in a narrow 30° cone directly above and
-    // the player is falling, nudge laterally so repel has an escape route.
-    // Direction is locked once chosen until the condition clears.
-    const angle = Math.atan2(-dy, dx);
-    const inDeadZone = angle > Math.PI * 5/12 && angle < Math.PI * 7/12 && player.vy > 0;
-    if (inDeadZone) {
-      if (lateralEscapeDir === null) lateralEscapeDir = (player.x < W / 2) ? 1 : -1;
-      player.vx += lateralEscapeDir * f * 0.2;
-    } else {
-      lateralEscapeDir = null;
+    // Dead zone fix: when planet is directly above and repel vector is nearly
+    // vertical, nudge it horizontally based on actual relative position.
+    let rnx = -nx, rny = -ny;
+    if (closestBody.y < player.y && Math.abs(rnx) < 0.15) {
+      const side = player.x - closestBody.x;
+      rnx = (side === 0 ? -1 : Math.sign(side)) * 0.15;
+      const mag = Math.hypot(rnx, rny);
+      rnx /= mag; rny /= mag;
     }
+    player.vx += rnx*f; player.vy += rny*f;
   }
 
   // Very gentle upward bias so player doesn't just sink
