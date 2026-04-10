@@ -94,8 +94,10 @@
 
   #highscores {
     display: none;
-    margin-bottom: 10px;
+    margin-bottom: 16px;
     width: 220px;
+    max-height: 180px;
+    overflow-y: auto;
   }
   .hs-row {
     display: flex;
@@ -277,12 +279,11 @@
   }
   .rs-row {
     display: flex;
-    justify-content: space-between;
     padding: 1px 0;
   }
-  .rs-label { color: rgba(255,255,255,0.4); }
-  .rs-val { color: rgba(255,255,255,0.7); text-align: right; }
-  .rs-pts { color: rgba(255,255,255,0.35); font-size: 8px; text-align: right; min-width: 44px; }
+  .rs-label { color: rgba(255,255,255,0.4); flex: 1; }
+  .rs-val { color: rgba(255,255,255,0.7); width: 30px; text-align: right; }
+  .rs-pts { color: rgba(255,255,255,0.35); font-size: 8px; text-align: right; width: 48px; }
   .rs-sep {
     border: none;
     border-top: 1px solid rgba(255,255,255,0.1);
@@ -567,6 +568,9 @@
   #globalScores {
     width: 220px;
     display: none;
+    margin-bottom: 16px;
+    max-height: 180px;
+    overflow-y: auto;
   }
   .gs-row {
     display: flex;
@@ -686,6 +690,7 @@ let state = 'idle', score = 0, frame = 0;
 let player = {}, bodies = [], trail = [], bgStars = [], deathParticles = [];
 let leftDown = false, rightDown = false;
 let closestBody = null;
+let lateralEscapeDir = null;
 
 // Streak scoring
 let destroyStreak = 0;
@@ -1542,10 +1547,14 @@ function applyForce() {
     player.vx -= nx*f; player.vy -= ny*f;
     // Dead zone escape: when body is in a narrow 30° cone directly above and
     // the player is falling, nudge laterally so repel has an escape route.
+    // Direction is locked once chosen until the condition clears.
     const angle = Math.atan2(-dy, dx);
-    if (angle > Math.PI * 5/12 && angle < Math.PI * 7/12 && player.vy > 0) {
-      const lateral = (player.x < W / 2) ? 1 : -1;
-      player.vx += lateral * f * 0.2;
+    const inDeadZone = angle > Math.PI * 5/12 && angle < Math.PI * 7/12 && player.vy > 0;
+    if (inDeadZone) {
+      if (lateralEscapeDir === null) lateralEscapeDir = (player.x < W / 2) ? 1 : -1;
+      player.vx += lateralEscapeDir * f * 0.2;
+    } else {
+      lateralEscapeDir = null;
     }
   }
 
@@ -1767,7 +1776,7 @@ function triggerDeath() {
       } else if (entries.length === 0) {
         globalEl.innerHTML = '<div class="gs-status">no scores yet</div>';
       } else {
-        globalEl.innerHTML = entries.slice(0, 5).map((e, i) => {
+        globalEl.innerHTML = entries.map((e, i) => {
           const isSelf = deathUsername && e.username.toLowerCase() === deathUsername.toLowerCase();
           return `<div class="gs-row${isSelf ? ' self' : ''}"><span class="gs-rank">${e.rank || i+1}</span><span class="gs-name">${e.username}</span><span class="gs-val">${e.score}</span><span class="gs-diff ${e.difficulty || ''}">${e.difficulty || ''}</span></div>`;
         }).join('');
@@ -1778,7 +1787,7 @@ function triggerDeath() {
 
   function renderLocalScores(diff) {
     const hsel = document.getElementById('highscores');
-    const filtered = getScores().filter(s => s.difficulty === diff).slice(0, 5);
+    const filtered = getScores().filter(s => s.difficulty === diff);
     if (filtered.length === 0) {
       hsel.innerHTML = '<div class="gs-status">no local scores</div>';
     } else {
