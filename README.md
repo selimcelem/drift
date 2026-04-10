@@ -71,6 +71,36 @@ const SPEED_SCORE_CAP = 200;
 
 Want heavier gravity? Bump `FORCE`. Want a more forgiving ramp? Raise `SPEED_SCORE_CAP`. Want bodies closer together? Lower `BODY_SPACING`.
 
+## Architecture
+
+```
+┌──────────────┐     ┌───────────────────┐     ┌──────────────────┐     ┌──────────────┐
+│              │     │                   │     │                  │     │              │
+│  Game        │────▶│  API Gateway      │────▶│  Lambda          │────▶│  DynamoDB    │
+│  (Canvas)    │     │  (HTTP API)       │     │  (Node.js 20)    │     │  (on-demand) │
+│              │     │                   │     │                  │     │              │
+└──────────────┘     └───────────────────┘     └──────────────────┘     └──────────────┘
+                            CORS *                POST /score           drift-leaderboard
+                                                  GET /leaderboard      TTL: 90 days
+```
+
+## Online leaderboard
+
+The game has a serverless AWS backend for global leaderboards. Two endpoints:
+
+- **POST /score** — submit a score with `{username, score, difficulty}`. Validated server-side (alphanumeric username, score < 10000, difficulty must be NORMAL/HARD/EXTREME). Scores expire after 90 days via DynamoDB TTL.
+- **GET /leaderboard?difficulty=NORMAL** — returns the top 10 scores for a difficulty tier, sorted descending.
+
+All infrastructure is defined as Terraform in `/infrastructure`. No hardcoded account IDs — everything is parameterized.
+
+## CI/CD
+
+Infrastructure deploys automatically via GitHub Actions when files under `infrastructure/` change on `main`.
+
+Authentication uses **OIDC federation** — GitHub Actions assumes an IAM role via OpenID Connect. No long-lived AWS credentials are stored anywhere. The trust policy is locked to `repo:selimcelem/drift:ref:refs/heads/main` so only pushes to main on this repo can deploy.
+
+Pipeline: `terraform init` → `plan` → `apply -auto-approve`
+
 ## Screenshots
 
 _coming soon_

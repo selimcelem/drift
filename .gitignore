@@ -54,6 +54,11 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
+# terraform
+infrastructure/.terraform/
+infrastructure/*.tfstate*
+infrastructure/lambda/*.zip
+
 # env
 .env
 .env.local
