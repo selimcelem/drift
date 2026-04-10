@@ -24,27 +24,51 @@
 <body>
 
 <h1>Privacy Policy for Drift</h1>
-<p class="updated">Last updated: 9 April 2026</p>
+<p class="updated">Last updated: 10 April 2026</p>
 
 <p>
-  Drift is a free, offline, single-player mobile game developed by Selim Celem.
+  Drift is a free single-player mobile game developed by Selim Celem.
   This policy explains what data the app does and does not handle.
 </p>
 
 <h2>Data we collect</h2>
-<p><strong>None.</strong> Drift does not collect, transmit, or share any personal information, device identifiers, usage analytics, advertising IDs, or telemetry of any kind.</p>
+<p>Drift collects the following data when you use the online leaderboard:</p>
+<ul>
+  <li><strong>Username</strong> — a name you choose freely on first launch. This is not your real name, email, or any account identifier. You can change it at any time from the pause menu.</li>
+  <li><strong>Score and difficulty</strong> — your score and the difficulty mode you were playing when the score was achieved.</li>
+</ul>
+<p>That's it. Drift does not collect your real name, email address, device identifiers, IP addresses, usage analytics, advertising IDs, or telemetry of any kind. No account registration is required.</p>
 
 <h2>Data stored on your device</h2>
-<p>Drift stores your top 5 high scores locally on your device using the browser's <code>localStorage</code> API. This data never leaves your device. Uninstalling the app or clearing its storage removes it permanently.</p>
+<p>Drift stores the following locally on your device using the browser's <code>localStorage</code> API:</p>
+<ul>
+  <li>Your chosen username</li>
+  <li>Your top 5 local high scores</li>
+  <li>Your mute preference</li>
+</ul>
+<p>This data never leaves your device except for the username and scores submitted to the online leaderboard as described below. Uninstalling the app or clearing its storage removes it permanently.</p>
+
+<h2>Online leaderboard</h2>
+<p>When you die in the game, your username, score, and difficulty are submitted to an online leaderboard. This data is:</p>
+<ul>
+  <li>Sent to an API hosted on Amazon Web Services (AWS) in the <strong>eu-west-1 (Ireland)</strong> region</li>
+  <li>Stored in AWS DynamoDB with a <strong>90-day time-to-live (TTL)</strong>, after which it is automatically deleted</li>
+  <li>Visible to other players on the global leaderboard (username and score only)</li>
+</ul>
+<p>The leaderboard submission is fire-and-forget — if you are offline or the request fails, no data is sent and the game continues normally.</p>
 
 <h2>Third-party services</h2>
-<p>Drift does not integrate with any third-party analytics, advertising networks, crash reporters, or cloud services. It does not require an internet connection to run. The app does load one web font (Google Fonts) on first launch if a connection is available; if no connection is available, a system fallback is used.</p>
+<p>Drift does not integrate with any third-party analytics, advertising networks, or crash reporters. The only external services used are:</p>
+<ul>
+  <li><strong>AWS API Gateway + Lambda + DynamoDB</strong> — for the online leaderboard, hosted in eu-west-1 (Ireland)</li>
+  <li><strong>Google Fonts</strong> — a web font loaded on first launch if a connection is available; if offline, a system fallback is used</li>
+</ul>
 
 <h2>Permissions</h2>
-<p>Drift does not request any Android runtime permissions. It does not access your camera, microphone, location, contacts, storage, or any other sensitive APIs.</p>
+<p>Drift does not request any Android runtime permissions. It does not access your camera, microphone, location, contacts, storage, or any other sensitive APIs. An internet connection is used for the leaderboard but is not required to play.</p>
 
 <h2>Children's privacy</h2>
-<p>Drift is safe for all ages. Because the app collects no data whatsoever, it is compliant with COPPA and similar regulations protecting children's privacy.</p>
+<p>Drift is safe for all ages. The only data collected is a self-chosen username and game scores — no personal information, no real names, no contact details. The app is compliant with COPPA and similar regulations protecting children's privacy.</p>
 
 <h2>Changes to this policy</h2>
 <p>If this policy changes, the updated version will be posted at this URL with a new "Last updated" date.</p>
