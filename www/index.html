@@ -239,6 +239,110 @@
     box-shadow: 0 0 30px rgba(100,200,255,0.3);
   }
 
+  #streakDisplay {
+    position: absolute;
+    top: 58px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-family: 'Space Mono', monospace;
+    font-size: 13px;
+    letter-spacing: 2px;
+    color: rgba(255,200,80,0.9);
+    text-shadow: 0 0 10px rgba(255,180,60,0.5);
+    opacity: 0;
+    transition: opacity 0.15s;
+    pointer-events: none;
+  }
+  #streakDisplay.visible { opacity: 1; }
+
+  #runSummary {
+    display: none;
+    width: 280px;
+    margin-bottom: 16px;
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 1.5px;
+    color: rgba(255,255,255,0.5);
+    line-height: 1.8;
+  }
+  .rs-title {
+    font-family: 'Orbitron', monospace;
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: 4px;
+    color: rgba(255,255,255,0.85);
+    text-align: center;
+    margin-bottom: 14px;
+    text-shadow: 0 0 16px rgba(100,200,255,0.5);
+  }
+  .rs-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 2px 0;
+  }
+  .rs-label { color: rgba(255,255,255,0.4); }
+  .rs-val { color: rgba(255,255,255,0.7); text-align: right; }
+  .rs-pts { color: rgba(255,255,255,0.35); font-size: 9px; text-align: right; min-width: 50px; }
+  .rs-sep {
+    border: none;
+    border-top: 1px solid rgba(255,255,255,0.1);
+    margin: 6px 0;
+  }
+  .rs-total {
+    display: flex;
+    justify-content: space-between;
+    padding: 4px 0;
+    color: rgba(255,255,255,0.85);
+    font-size: 11px;
+    letter-spacing: 2px;
+  }
+  .rs-total .rs-diff {
+    font-size: 8px;
+    letter-spacing: 1px;
+    margin-left: 6px;
+  }
+  .rs-diff.NORMAL { color: rgba(100,200,255,0.8); }
+  .rs-diff.HARD { color: rgba(255,180,80,0.8); }
+  .rs-diff.EXTREME { color: rgba(255,90,120,0.85); }
+
+  .lb-diff-tabs {
+    display: none;
+    gap: 0;
+    width: 220px;
+    margin-bottom: 6px;
+  }
+  .lb-diff-tab {
+    flex: 1;
+    background: transparent;
+    border: 1px solid rgba(255,255,255,0.08);
+    color: rgba(255,255,255,0.3);
+    font-family: 'Space Mono', monospace;
+    font-size: 8px;
+    letter-spacing: 1px;
+    padding: 4px 0;
+    cursor: pointer;
+    text-transform: uppercase;
+    transition: all 0.2s;
+  }
+  .lb-diff-tab:first-child { border-radius: 2px 0 0 2px; }
+  .lb-diff-tab:last-child { border-radius: 0 2px 2px 0; border-left: none; }
+  .lb-diff-tab:not(:first-child):not(:last-child) { border-left: none; }
+  .lb-diff-tab.active[data-diff="NORMAL"] {
+    color: rgba(100,200,255,0.9);
+    border-color: rgba(100,200,255,0.4);
+    background: rgba(100,200,255,0.06);
+  }
+  .lb-diff-tab.active[data-diff="HARD"] {
+    color: rgba(255,200,100,0.9);
+    border-color: rgba(255,180,80,0.4);
+    background: rgba(255,180,80,0.06);
+  }
+  .lb-diff-tab.active[data-diff="EXTREME"] {
+    color: rgba(255,120,150,0.9);
+    border-color: rgba(255,90,120,0.4);
+    background: rgba(255,90,120,0.06);
+  }
+
   #deathScore {
     font-size: 14px;
     letter-spacing: 4px;
@@ -507,6 +611,7 @@
       <div class="pt-label" id="ptLabel">SHIELD</div>
       <div class="pt-bar"><div class="pt-fill" id="ptFill"></div></div>
     </div>
+    <div id="streakDisplay"></div>
     <div id="hintLeft">◀ ATTRACT</div>
     <div id="hintRight">REPEL ▶</div>
   </div>
@@ -519,9 +624,15 @@
       <button class="diff-btn" data-diff="EXTREME">EXTREME</button>
     </div>
     <div id="deathScore"></div>
+    <div id="runSummary"></div>
     <div class="lb-tabs" id="lbTabs" style="display:none">
       <button class="lb-tab active" data-tab="local">LOCAL</button>
       <button class="lb-tab" data-tab="global">GLOBAL</button>
+    </div>
+    <div class="lb-diff-tabs" id="lbDiffTabs">
+      <button class="lb-diff-tab" data-diff="NORMAL">NORMAL</button>
+      <button class="lb-diff-tab" data-diff="HARD">HARD</button>
+      <button class="lb-diff-tab" data-diff="EXTREME">EXTREME</button>
     </div>
     <div id="highscores"></div>
     <div id="globalScores"></div>
@@ -575,6 +686,10 @@ let state = 'idle', score = 0, frame = 0;
 let player = {}, bodies = [], trail = [], bgStars = [], deathParticles = [];
 let leftDown = false, rightDown = false;
 let closestBody = null;
+
+// Streak scoring
+let destroyStreak = 0;
+let runStats = { totalPassed: 0, totalDestroyed: 0, pointsFromPassing: 0, pointsFromDestroying: 0, longestStreak: 0, powerupsUsed: 0 };
 
 // --- Powerups ---
 const POWERUP_TYPES = ['shield','nova','hyperspeed','ghost'];
@@ -1309,9 +1424,25 @@ function emitDestroyBurst(x, y, rgb) {
   }
 }
 
+function addDestroyPoints() {
+  destroyStreak++;
+  const pts = destroyStreak * destroyStreak;
+  score += pts;
+  runStats.totalDestroyed++;
+  runStats.pointsFromDestroying += pts;
+  if (destroyStreak > runStats.longestStreak) runStats.longestStreak = destroyStreak;
+  document.getElementById('score').textContent = score;
+  const sd = document.getElementById('streakDisplay');
+  if (destroyStreak > 1) {
+    sd.textContent = '\uD83D\uDD25 x' + destroyStreak;
+    sd.classList.add('visible');
+  }
+}
+
 function activatePowerup(type, x, y) {
   emitPickupParticles(x, y, type);
   SFX.pickup(type);
+  runStats.powerupsUsed++;
   if (type === 'shield') {
     activeEffects.shield = SHIELD_DURATION;
     shieldBroken = false;
@@ -1352,6 +1483,9 @@ function resetGame() {
   initBodies();
   score = 0; frame = 0;
   closestBody = null;
+  destroyStreak = 0;
+  runStats = { totalPassed: 0, totalDestroyed: 0, pointsFromPassing: 0, pointsFromDestroying: 0, longestStreak: 0, powerupsUsed: 0 };
+  document.getElementById('streakDisplay').classList.remove('visible');
   powerups = [];
   novaRings = []; screenShake = 0;
   pickupParticles = [];
@@ -1432,6 +1566,7 @@ function checkCollisions() {
         if (!b._rippleCd || b._rippleCd <= 0) {
           planetRipples.push({ x: b.x, y: b.y, baseR: b.radius, expand: 0, life: 1 });
           b._rippleCd = 18;
+          if (!b._ghostScored) { b._ghostScored = true; addDestroyPoints(); }
           SFX.planetDestroyed('ghost');
         }
       }
@@ -1446,6 +1581,7 @@ function checkCollisions() {
       if (dist(player, bodies[i]) < bodies[i].radius + PLAYER_R) {
         emitDestroyBurst(bodies[i].x, bodies[i].y, POWERUP_COLORS.shield.rgb);
         SFX.shieldBreak();
+        addDestroyPoints();
         bodies.splice(i, 1);
         activeEffects.shield = 0;
         shieldBroken = true;
@@ -1487,7 +1623,13 @@ function update() {
   for (const b of bodies) {
     b.y += spd; b.pulse += 0.038;
     if (!b.passed && b.y > H * 0.75) {
-      b.passed = true; score++;
+      b.passed = true;
+      score++;
+      runStats.totalPassed++;
+      runStats.pointsFromPassing++;
+      // Passing a planet resets destroy streak
+      destroyStreak = 0;
+      document.getElementById('streakDisplay').classList.remove('visible');
       document.getElementById('score').textContent = score;
       if (score > 0 && score % 25 === 0) SFX.milestone();
     }
@@ -1531,6 +1673,7 @@ function update() {
         if (dd < r.radius && dd >= r.prevR - 6 && r.radius < 360) {
           killed = true;
           emitDestroyBurst(b.x, b.y, POWERUP_COLORS.nova.rgb);
+          addDestroyPoints();
           SFX.planetDestroyed('nova');
           break;
         }
@@ -1551,6 +1694,7 @@ function update() {
       if (b.y < barrierY + b.radius + 20 && b.y > barrierY - 30 &&
           Math.abs(b.x - player.x) < barrierHalfW + b.radius) {
         emitDestroyBurst(b.x, b.y, POWERUP_COLORS.hyperspeed.rgb);
+        addDestroyPoints();
         SFX.planetDestroyed('nova');
       } else {
         bSurvivors.push(b);
@@ -1597,39 +1741,87 @@ function triggerDeath() {
   const uname = getUsername();
   if (uname) submitScoreOnline(uname, score, difficulty);
 
-  // Fetch global leaderboard
+  // Save run stats snapshot for the death screen
   const deathDifficulty = difficulty;
   const deathUsername = uname;
+  const deathScore = score;
+  const deathStats = { ...runStats };
+  let lbViewDifficulty = deathDifficulty;
+
+  // Fetch global leaderboard for current difficulty
   const globalEl = document.getElementById('globalScores');
-  globalEl.innerHTML = '<div class="gs-status">connecting...</div>';
-  setTimeout(() => fetchLeaderboard(deathDifficulty, (err, entries) => {
-    if (err) {
-      globalEl.innerHTML = '<div class="gs-status">unavailable</div>';
-    } else if (entries.length === 0) {
-      globalEl.innerHTML = '<div class="gs-status">no scores yet</div>';
+  function fetchAndRenderGlobal(diff) {
+    globalEl.innerHTML = '<div class="gs-status">connecting...</div>';
+    fetchLeaderboard(diff, (err, entries) => {
+      if (err) {
+        globalEl.innerHTML = '<div class="gs-status">unavailable</div>';
+      } else if (entries.length === 0) {
+        globalEl.innerHTML = '<div class="gs-status">no scores yet</div>';
+      } else {
+        globalEl.innerHTML = entries.map((e, i) => {
+          const isSelf = deathUsername && e.username.toLowerCase() === deathUsername.toLowerCase();
+          return `<div class="gs-row${isSelf ? ' self' : ''}"><span class="gs-rank">${e.rank || i+1}</span><span class="gs-name">${e.username}</span><span class="gs-val">${e.score}</span><span class="gs-diff ${e.difficulty || ''}">${e.difficulty || ''}</span></div>`;
+        }).join('');
+      }
+    });
+  }
+  setTimeout(() => fetchAndRenderGlobal(deathDifficulty), 1000);
+
+  function renderLocalScores(diff) {
+    const hsel = document.getElementById('highscores');
+    const filtered = getScores().filter(s => s.difficulty === diff);
+    if (filtered.length === 0) {
+      hsel.innerHTML = '<div class="gs-status">no local scores</div>';
     } else {
-      globalEl.innerHTML = entries.map((e, i) => {
-        const isSelf = deathUsername && e.username.toLowerCase() === deathUsername.toLowerCase();
-        return `<div class="gs-row${isSelf ? ' self' : ''}"><span class="gs-rank">${e.rank || i+1}</span><span class="gs-name">${e.username}</span><span class="gs-val">${e.score}</span><span class="gs-diff ${e.difficulty || ''}">${e.difficulty || ''}</span></div>`;
-      }).join('');
+      hsel.innerHTML = filtered.map((s,i) =>
+        `<div class="hs-row"><span class="hs-rank">${i+1}</span><span class="hs-val">${s.score}</span><span class="hs-diff ${s.difficulty}">${s.difficulty}</span></div>`
+      ).join('');
     }
-  }), 1000);
+  }
+
+  // Store handlers so tab switching works
+  window._deathLbHandlers = {
+    fetchGlobal: fetchAndRenderGlobal,
+    renderLocal: renderLocalScores,
+    getDifficulty: () => lbViewDifficulty,
+    setDifficulty: (d) => { lbViewDifficulty = d; },
+  };
 
   setTimeout(() => {
     const overlay = document.getElementById('overlay');
-    document.getElementById('deathScore').style.display = 'block';
-    document.getElementById('deathScore').textContent = `${score} — ${difficulty}`;
-    // Render highscores with difficulty badges
-    const hsel = document.getElementById('highscores');
-    hsel.innerHTML = scores.map((s,i) =>
-      `<div class="hs-row"><span class="hs-rank">${i+1}</span><span class="hs-val">${s.score}</span><span class="hs-diff ${s.difficulty}">${s.difficulty}</span></div>`
-    ).join('');
-    hsel.style.display = 'block';
+    document.getElementById('deathScore').style.display = 'none';
+
+    // Run summary
+    const rs = document.getElementById('runSummary');
+    rs.innerHTML = `
+      <div class="rs-title">${deathScore}</div>
+      <div class="rs-row"><span class="rs-label">PLANETS PASSED</span><span class="rs-val">${deathStats.totalPassed}</span><span class="rs-pts">${deathStats.pointsFromPassing} pts</span></div>
+      <div class="rs-row"><span class="rs-label">PLANETS DESTROYED</span><span class="rs-val">${deathStats.totalDestroyed}</span><span class="rs-pts">${deathStats.pointsFromDestroying} pts</span></div>
+      <div class="rs-row"><span class="rs-label">LONGEST STREAK</span><span class="rs-val">${deathStats.longestStreak}</span><span class="rs-pts"></span></div>
+      <div class="rs-row"><span class="rs-label">POWERUPS USED</span><span class="rs-val">${deathStats.powerupsUsed}</span><span class="rs-pts"></span></div>
+      <hr class="rs-sep">
+      <div class="rs-total"><span>TOTAL</span><span>${deathScore} pts <span class="rs-diff ${deathDifficulty}">${deathDifficulty}</span></span></div>
+    `;
+    rs.style.display = 'block';
+
+    // Render local scores filtered by difficulty
+    renderLocalScores(deathDifficulty);
+    document.getElementById('highscores').style.display = 'block';
+
     // Show leaderboard tabs, default to local
     const lbTabs = document.getElementById('lbTabs');
     lbTabs.style.display = 'flex';
     lbTabs.querySelectorAll('.lb-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === 'local'));
     globalEl.style.display = 'none';
+
+    // Show difficulty sub-tabs
+    const diffTabs = document.getElementById('lbDiffTabs');
+    diffTabs.style.display = 'flex';
+    lbViewDifficulty = deathDifficulty;
+    diffTabs.querySelectorAll('.lb-diff-tab').forEach(t => {
+      t.classList.toggle('active', t.dataset.diff === deathDifficulty);
+    });
+
     document.getElementById('startBtn').textContent = 'DRIFT AGAIN';
     overlay.classList.remove('hidden');
   }, 800);
@@ -2175,9 +2367,11 @@ function goToMainMenu() {
   pauseBtn.classList.remove('visible');
   quitMsg.style.display = 'none';
   document.getElementById('deathScore').style.display = 'none';
+  document.getElementById('runSummary').style.display = 'none';
   document.getElementById('highscores').style.display = 'none';
   document.getElementById('globalScores').style.display = 'none';
   document.getElementById('lbTabs').style.display = 'none';
+  document.getElementById('lbDiffTabs').style.display = 'none';
   document.getElementById('startBtn').textContent = 'ENTER THE VOID';
   document.getElementById('score').textContent = '0';
   document.getElementById('overlay').classList.remove('hidden');
@@ -2237,6 +2431,11 @@ document.addEventListener('touchstart',  _firstAudioGesture, true);
 document.addEventListener('keydown',     _firstAudioGesture, true);
 
 // --- Leaderboard tab switching ---
+function isLocalTabActive() {
+  const active = document.querySelector('.lb-tab.active');
+  return active && active.dataset.tab === 'local';
+}
+
 document.getElementById('lbTabs').addEventListener('click', e => {
   const tab = e.target.closest('.lb-tab');
   if (!tab) return;
@@ -2245,6 +2444,27 @@ document.getElementById('lbTabs').addEventListener('click', e => {
   const isLocal = tab.dataset.tab === 'local';
   document.getElementById('highscores').style.display = isLocal ? 'block' : 'none';
   document.getElementById('globalScores').style.display = isLocal ? 'none' : 'block';
+  // Re-render for current difficulty selection
+  if (window._deathLbHandlers) {
+    const diff = window._deathLbHandlers.getDifficulty();
+    if (isLocal) window._deathLbHandlers.renderLocal(diff);
+    else window._deathLbHandlers.fetchGlobal(diff);
+  }
+});
+
+document.getElementById('lbDiffTabs').addEventListener('click', e => {
+  const tab = e.target.closest('.lb-diff-tab');
+  if (!tab || !window._deathLbHandlers) return;
+  const diff = tab.dataset.diff;
+  document.querySelectorAll('.lb-diff-tab').forEach(t => t.classList.remove('active'));
+  tab.classList.add('active');
+  window._deathLbHandlers.setDifficulty(diff);
+  // Re-render whichever tab is active
+  if (isLocalTabActive()) {
+    window._deathLbHandlers.renderLocal(diff);
+  } else {
+    window._deathLbHandlers.fetchGlobal(diff);
+  }
 });
 
 // --- Username prompt ---
