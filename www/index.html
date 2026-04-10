@@ -567,24 +567,32 @@ let leftDown = false, rightDown = false;
 let closestBody = null;
 
 // --- Powerups ---
-const POWERUP_TYPES = ['shield','nova','slowmo','ghost'];
+const POWERUP_TYPES = ['shield','nova','hyperspeed','ghost'];
 const POWERUP_COLORS = {
-  shield: { rgb: '120,230,255', name: 'cyan' },
-  nova:   { rgb: '255,180,80',  name: 'orange' },
-  slowmo: { rgb: '160,200,255', name: 'blue' },
-  ghost:  { rgb: '200,120,255', name: 'purple' },
+  shield:     { rgb: '120,230,255', name: 'cyan' },
+  nova:       { rgb: '255,180,80',  name: 'orange' },
+  hyperspeed: { rgb: '255,220,60',  name: 'gold' },
+  ghost:      { rgb: '200,120,255', name: 'purple' },
 };
 let powerups = [];
 let novaRings = [];
 let screenShake = 0;
 let pickupParticles = [];
 let planetRipples = [];
-let activeEffects = { shield: 0, slowmo: 0, ghost: 0 };
+let activeEffects = { shield: 0, hyperspeed: 0, ghost: 0 };
 let lastPowerupSpawn = 0;
-const SHIELD_DURATION = 300;   // 5s @ 60fps
-const SLOWMO_DURATION = 300;   // 5s
-const GHOST_DURATION  = 240;   // 4s
-const SHIELD_BLINK_FRAMES = 90; // last 1.5s blink
+const SHIELD_DURATION = 900;    // 15s @ 60fps
+const HYPERSPEED_DURATION = 180; // 3s deceleration window
+const GHOST_DURATION  = 480;    // 8s
+const SHIELD_BLINK_FRAMES = 180; // last 3s blink
+
+// Hyperspeed state
+let hyperspeedTargetSpeed = 0;   // the normal speed to decelerate back to
+let hyperspeedCurrentMult = 1;   // current speed multiplier (starts at 3, decays to 1)
+let hyperspeedWhooshNodes = null; // audio nodes for sustained whoosh
+
+// Shield break tracking
+let shieldBroken = false;
 
 // --- Audio (procedural Web Audio synthesis) ---
 // Self-contained module. All sounds synthesized on demand. Errors are
@@ -774,26 +782,33 @@ const SFX = (function() {
         noise.connect(f); f.connect(ng); ng.connect(masterGain);
         noise.start(t); noise.stop(t + 0.58);
         killOnEnd(noise, f, ng);
-      } else if (type === 'slowmo') {
-        // Descending dreamy glissando, two slightly detuned voices
-        for (let i = 0; i < 2; i++) {
-          const o = ctx.createOscillator();
-          const g = ctx.createGain();
-          const f = ctx.createBiquadFilter();
-          o.type = 'sine';
-          const detune = i === 0 ? 1 : 1.004;
-          o.frequency.setValueAtTime(880 * detune, t);
-          o.frequency.exponentialRampToValueAtTime(220 * detune, t + 0.7);
-          f.type = 'lowpass';
-          f.frequency.value = 1500;
-          f.Q.value = 5;
-          g.gain.setValueAtTime(0, t);
-          g.gain.linearRampToValueAtTime(i === 0 ? 0.16 : 0.10, t + 0.05);
-          g.gain.exponentialRampToValueAtTime(0.001, t + 0.85);
-          o.connect(f); f.connect(g); g.connect(masterGain);
-          o.start(t); o.stop(t + 0.88);
-          killOnEnd(o, f, g);
-        }
+      } else if (type === 'hyperspeed') {
+        // Rising aggressive whoosh + high sine sweep
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.type = 'sawtooth';
+        o.frequency.setValueAtTime(120, t);
+        o.frequency.exponentialRampToValueAtTime(1200, t + 0.35);
+        g.gain.setValueAtTime(0, t);
+        g.gain.linearRampToValueAtTime(0.18, t + 0.04);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
+        const f = ctx.createBiquadFilter();
+        f.type = 'bandpass'; f.frequency.value = 800; f.Q.value = 1.5;
+        o.connect(f); f.connect(g); g.connect(masterGain);
+        o.start(t); o.stop(t + 0.52);
+        killOnEnd(o, f, g);
+
+        const n = ctx.createBufferSource();
+        n.buffer = noiseBuffer(0.6, x => Math.min(x * 4, 1) * (1 - x));
+        const nf = ctx.createBiquadFilter();
+        nf.type = 'bandpass'; nf.frequency.value = 2000; nf.Q.value = 0.8;
+        const ng2 = ctx.createGain();
+        ng2.gain.setValueAtTime(0, t);
+        ng2.gain.linearRampToValueAtTime(0.2, t + 0.1);
+        ng2.gain.exponentialRampToValueAtTime(0.001, t + 0.6);
+        n.connect(nf); nf.connect(ng2); ng2.connect(masterGain);
+        n.start(t); n.stop(t + 0.62);
+        killOnEnd(n, nf, ng2);
       } else if (type === 'ghost') {
         // Eerie ascending tritone (C4 - F#4 - C5)
         const notes = [261.63, 369.99, 523.25];
@@ -897,6 +912,81 @@ const SFX = (function() {
         killOnEnd(n, f, ng);
       }
     });
+  }
+
+  function shieldBreak() {
+    safe(t => {
+      // Sharp glass-crack + low thud
+      const n = ctx.createBufferSource();
+      n.buffer = noiseBuffer(0.2, x => Math.pow(1 - x, 2));
+      const f = ctx.createBiquadFilter();
+      f.type = 'highpass'; f.frequency.value = 1800;
+      const ng = ctx.createGain();
+      ng.gain.setValueAtTime(0.35, t);
+      ng.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
+      n.connect(f); f.connect(ng); ng.connect(masterGain);
+      n.start(t); n.stop(t + 0.22);
+      killOnEnd(n, f, ng);
+
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = 'sine';
+      o.frequency.setValueAtTime(200, t);
+      o.frequency.exponentialRampToValueAtTime(50, t + 0.18);
+      g.gain.setValueAtTime(0.3, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
+      o.connect(g); g.connect(masterGain);
+      o.start(t); o.stop(t + 0.27);
+      killOnEnd(o, g);
+
+      // High pitched crack/shatter
+      const o2 = ctx.createOscillator();
+      const g2 = ctx.createGain();
+      o2.type = 'square';
+      o2.frequency.setValueAtTime(3200, t);
+      o2.frequency.exponentialRampToValueAtTime(800, t + 0.08);
+      g2.gain.setValueAtTime(0.12, t);
+      g2.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+      o2.connect(g2); g2.connect(masterGain);
+      o2.start(t); o2.stop(t + 0.12);
+      killOnEnd(o2, g2);
+    });
+  }
+
+  // Sustained hyperspeed whoosh — returns { stop() } handle
+  function startHyperspeedWhoosh() {
+    if (!ensureRunning()) return null;
+    if (muted) return null;
+    try {
+      const t = ctx.currentTime;
+      const n = ctx.createBufferSource();
+      // Long noise buffer for sustained effect
+      n.buffer = noiseBuffer(10, () => 1);
+      n.loop = true;
+      const f = ctx.createBiquadFilter();
+      f.type = 'bandpass';
+      f.frequency.setValueAtTime(600, t);
+      f.frequency.linearRampToValueAtTime(1800, t + 0.5);
+      f.Q.value = 1.2;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(0.14, t + 0.15);
+      n.connect(f); f.connect(g); g.connect(masterGain);
+      n.start(t);
+      return {
+        stop(fadeSec) {
+          try {
+            const now = ctx.currentTime;
+            g.gain.cancelScheduledValues(now);
+            g.gain.setValueAtTime(g.gain.value, now);
+            g.gain.linearRampToValueAtTime(0, now + (fadeSec || 0.5));
+            n.stop(now + (fadeSec || 0.5) + 0.1);
+            killOnEnd(n, f, g);
+          } catch {}
+        }
+      };
+    } catch {}
+    return null;
   }
 
   function death() {
@@ -1061,6 +1151,7 @@ const SFX = (function() {
 
   return {
     init, attract, repel, pickup, planetDestroyed, death, milestone,
+    shieldBreak, startHyperspeedWhoosh,
     startMusic, stopMusic, pauseMusic, resumeMusic,
     setMuted, isMuted,
   };
@@ -1112,11 +1203,15 @@ function fetchLeaderboard(d, callback) {
     .catch(() => callback('unavailable', []));
 }
 
-function scrollSpeed() {
+function normalScrollSpeed() {
   const d = diff();
   const t = Math.min(score / d.speedCapScore, 1);
-  let s = d.startSpeed + (d.maxSpeed - d.startSpeed) * t;
-  if (activeEffects.slowmo > 0) s *= 0.3;
+  return d.startSpeed + (d.maxSpeed - d.startSpeed) * t;
+}
+
+function scrollSpeed() {
+  let s = normalScrollSpeed();
+  if (activeEffects.hyperspeed > 0) s *= hyperspeedCurrentMult;
   return s;
 }
 
@@ -1207,10 +1302,37 @@ function emitDestroyBurst(x, y, rgb) {
 function activatePowerup(type, x, y) {
   emitPickupParticles(x, y, type);
   SFX.pickup(type);
-  if (type === 'shield')      activeEffects.shield = SHIELD_DURATION;
-  else if (type === 'slowmo') activeEffects.slowmo = SLOWMO_DURATION;
-  else if (type === 'ghost')  activeEffects.ghost  = GHOST_DURATION;
-  else if (type === 'nova') { novaRings.push({ x: player.x, y: player.y, radius: 0, life: 1, prevR: 0 }); screenShake = 10; }
+  if (type === 'shield') {
+    activeEffects.shield = SHIELD_DURATION;
+    shieldBroken = false;
+  } else if (type === 'hyperspeed') {
+    hyperspeedCurrentMult = 3;
+    hyperspeedTargetSpeed = normalScrollSpeed();
+    activeEffects.hyperspeed = HYPERSPEED_DURATION;
+    // Start sustained whoosh audio
+    if (hyperspeedWhooshNodes) { try { hyperspeedWhooshNodes.stop(0.1); } catch {} }
+    hyperspeedWhooshNodes = SFX.startHyperspeedWhoosh();
+  } else if (type === 'ghost') {
+    activeEffects.ghost = GHOST_DURATION;
+  } else if (type === 'nova') {
+    // Triple blast: 3 rings with 400ms (24 frame) delays
+    novaRings.push({ x: player.x, y: player.y, radius: 0, life: 1, prevR: 0 });
+    screenShake = 10;
+    setTimeout(() => {
+      if (state === 'playing') {
+        novaRings.push({ x: player.x, y: player.y, radius: 0, life: 0.8, prevR: 0 });
+        screenShake = Math.max(screenShake, 7);
+        SFX.pickup('nova');
+      }
+    }, 400);
+    setTimeout(() => {
+      if (state === 'playing') {
+        novaRings.push({ x: player.x, y: player.y, radius: 0, life: 0.6, prevR: 0 });
+        screenShake = Math.max(screenShake, 5);
+        SFX.pickup('nova');
+      }
+    }, 800);
+  }
 }
 
 // --- Game state ---
@@ -1224,7 +1346,10 @@ function resetGame() {
   novaRings = []; screenShake = 0;
   pickupParticles = [];
   planetRipples = [];
-  activeEffects = { shield: 0, slowmo: 0, ghost: 0 };
+  activeEffects = { shield: 0, hyperspeed: 0, ghost: 0 };
+  hyperspeedCurrentMult = 1; hyperspeedTargetSpeed = 0;
+  if (hyperspeedWhooshNodes) { try { hyperspeedWhooshNodes.stop(0.1); } catch {} hyperspeedWhooshNodes = null; }
+  shieldBroken = false;
   lastPowerupSpawn = 0;
   document.getElementById('score').textContent = '0';
 }
@@ -1235,6 +1360,12 @@ function findClosest() {
   for (const b of bodies) {
     const d = dist(player, b);
     if (d < bd) { bd = d; best = b; }
+  }
+  // Powerups participate as gravity objects
+  for (const p of powerups) {
+    if (p.collected) continue;
+    const d = dist(player, p);
+    if (d < bd) { bd = d; best = p; }
   }
   closestBody = best;
 }
@@ -1299,18 +1430,20 @@ function checkCollisions() {
     return false;
   }
 
-  // SHIELD: destroy any body the player touches
+  // SHIELD: destroy the planet on first collision, then shield breaks
   if (activeEffects.shield > 0) {
-    const survivors = [];
-    for (const b of bodies) {
-      if (dist(player, b) < b.radius + PLAYER_R) {
-        emitDestroyBurst(b.x, b.y, POWERUP_COLORS.shield.rgb);
-        SFX.planetDestroyed('shield');
-      } else {
-        survivors.push(b);
+    for (let i = 0; i < bodies.length; i++) {
+      if (dist(player, bodies[i]) < bodies[i].radius + PLAYER_R) {
+        emitDestroyBurst(bodies[i].x, bodies[i].y, POWERUP_COLORS.shield.rgb);
+        SFX.shieldBreak();
+        bodies.splice(i, 1);
+        activeEffects.shield = 0;
+        shieldBroken = true;
+        break;
       }
     }
-    bodies = survivors;
+    if (activeEffects.shield > 0) return false;
+    // Shield just broke — don't die this frame
     return false;
   }
 
@@ -1328,7 +1461,17 @@ function update() {
 
   // Decrement active effect timers
   if (activeEffects.shield > 0) activeEffects.shield--;
-  if (activeEffects.slowmo > 0) activeEffects.slowmo--;
+  if (activeEffects.hyperspeed > 0) {
+    activeEffects.hyperspeed--;
+    // Decelerate from 3x back to 1x over the duration
+    const t_hs = 1 - (activeEffects.hyperspeed / HYPERSPEED_DURATION);
+    hyperspeedCurrentMult = 3 - (3 - 1) * t_hs;
+    if (hyperspeedCurrentMult < 1.05) hyperspeedCurrentMult = 1;
+    if (activeEffects.hyperspeed <= 0) {
+      hyperspeedCurrentMult = 1;
+      if (hyperspeedWhooshNodes) { try { hyperspeedWhooshNodes.stop(0.5); } catch {} hyperspeedWhooshNodes = null; }
+    }
+  }
   if (activeEffects.ghost  > 0) activeEffects.ghost--;
 
   for (const b of bodies) {
@@ -1386,6 +1529,24 @@ function update() {
     }
     bodies = survivors;
     novaRings = novaRings.filter(r => r.life > 0.05 && r.radius < 400);
+  }
+
+  // Hyperspeed barrier: destroy planets touching the wedge in front of the player
+  if (activeEffects.hyperspeed > 0 && hyperspeedCurrentMult > 1.05) {
+    const barrierY = player.y - 60;
+    const barrierHalfW = 60;
+    const bSurvivors = [];
+    for (const b of bodies) {
+      // Check if body center is within barrier zone
+      if (b.y < barrierY + b.radius + 20 && b.y > barrierY - 30 &&
+          Math.abs(b.x - player.x) < barrierHalfW + b.radius) {
+        emitDestroyBurst(b.x, b.y, POWERUP_COLORS.hyperspeed.rgb);
+        SFX.planetDestroyed('nova');
+      } else {
+        bSurvivors.push(b);
+      }
+    }
+    bodies = bSurvivors;
   }
 
   // Planet ripples scroll with the world
@@ -1698,20 +1859,15 @@ function drawPowerups() {
       ctx.beginPath(); ctx.arc(p.x, p.y, r*0.78, 0, 6.28); ctx.stroke();
       ctx.lineWidth = 1.1;
       ctx.beginPath(); ctx.arc(p.x, p.y, r*1.12, 0, 6.28); ctx.stroke();
-    } else if (p.type === 'slowmo') {
-      // Hourglass
-      ctx.lineWidth = 1.6;
+    } else if (p.type === 'hyperspeed') {
+      // Lightning bolt / arrow pointing up
       ctx.beginPath();
-      ctx.moveTo(p.x - r*0.7, p.y - r*0.85);
-      ctx.lineTo(p.x + r*0.7, p.y - r*0.85);
-      ctx.lineTo(p.x - r*0.7, p.y + r*0.85);
-      ctx.lineTo(p.x + r*0.7, p.y + r*0.85);
-      ctx.closePath(); ctx.stroke();
-      // Sand bulbs
-      ctx.beginPath();
-      ctx.moveTo(p.x - r*0.55, p.y - r*0.7);
-      ctx.lineTo(p.x + r*0.55, p.y - r*0.7);
-      ctx.lineTo(p.x, p.y - r*0.05);
+      ctx.moveTo(p.x + r*0.15, p.y - r*0.95);
+      ctx.lineTo(p.x - r*0.45, p.y + r*0.1);
+      ctx.lineTo(p.x - r*0.05, p.y + r*0.1);
+      ctx.lineTo(p.x - r*0.15, p.y + r*0.95);
+      ctx.lineTo(p.x + r*0.45, p.y - r*0.1);
+      ctx.lineTo(p.x + r*0.05, p.y - r*0.1);
       ctx.closePath(); ctx.fill();
     } else { // ghost
       // Wispy round head with three "feet" tails
@@ -1728,6 +1884,23 @@ function drawPowerups() {
       ctx.fillStyle = '#fff';
       ctx.beginPath(); ctx.arc(p.x - r*0.28, p.y - r*0.2, r*0.13, 0, 6.28); ctx.fill();
       ctx.beginPath(); ctx.arc(p.x + r*0.28, p.y - r*0.2, r*0.13, 0, 6.28); ctx.fill();
+    }
+
+    // Target indicator when powerup is closest body
+    if (p === closestBody && state === 'playing') {
+      const lineColor = leftDown ? 'rgba(80,200,255,' : rightDown ? 'rgba(255,120,80,' : 'rgba(255,255,255,';
+      ctx.globalAlpha = 0.55 + 0.25*Math.sin(frame*0.18);
+      ctx.strokeStyle = lineColor+'0.7)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(p.x,p.y,r*1.55+5+Math.sin(frame*0.18)*2,0,6.28); ctx.stroke();
+      if (leftDown || rightDown) {
+        ctx.globalAlpha = 0.3;
+        ctx.strokeStyle = lineColor+'0.8)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([5,5]);
+        ctx.beginPath(); ctx.moveTo(player.x,player.y); ctx.lineTo(p.x,p.y); ctx.stroke();
+        ctx.setLineDash([]);
+      }
     }
     ctx.globalAlpha = 1;
   }
@@ -1793,9 +1966,9 @@ function updatePowerupTimer() {
   } else if (activeEffects.ghost > 0) {
     label = 'GHOST'; remaining = activeEffects.ghost; max = GHOST_DURATION;
     fillColor = 'rgba(200,120,255,0.95)';
-  } else if (activeEffects.slowmo > 0) {
-    label = 'SLOW-MO'; remaining = activeEffects.slowmo; max = SLOWMO_DURATION;
-    fillColor = 'rgba(160,200,255,0.95)';
+  } else if (activeEffects.hyperspeed > 0) {
+    label = 'HYPERSPEED'; remaining = activeEffects.hyperspeed; max = HYPERSPEED_DURATION;
+    fillColor = 'rgba(255,220,60,0.95)';
   }
 
   if (!label) {
@@ -1811,6 +1984,49 @@ function updatePowerupTimer() {
   ptFillEl.style.width = (pct * 100) + '%';
   ptFillEl.style.background = fillColor;
   ptFillEl.style.boxShadow = `0 0 8px ${fillColor}`;
+}
+
+function drawHyperspeedBarrier() {
+  if (activeEffects.hyperspeed <= 0 || hyperspeedCurrentMult <= 1.05) return;
+  const intensity = (hyperspeedCurrentMult - 1) / 2; // 0..1
+  const barrierY = player.y - 60;
+  const halfW = 60;
+
+  // Glowing wedge/barrier shape
+  ctx.save();
+  ctx.globalAlpha = 0.6 * intensity;
+
+  // Main barrier glow
+  const grd = ctx.createLinearGradient(player.x, barrierY - 15, player.x, barrierY + 20);
+  grd.addColorStop(0, 'rgba(255,220,60,0)');
+  grd.addColorStop(0.4, `rgba(255,220,60,${0.7 * intensity})`);
+  grd.addColorStop(1, 'rgba(255,180,30,0)');
+  ctx.fillStyle = grd;
+  ctx.beginPath();
+  ctx.moveTo(player.x - halfW, barrierY + 15);
+  ctx.quadraticCurveTo(player.x, barrierY - 18, player.x + halfW, barrierY + 15);
+  ctx.quadraticCurveTo(player.x, barrierY + 5, player.x - halfW, barrierY + 15);
+  ctx.fill();
+
+  // Bright edge line
+  ctx.globalAlpha = 0.85 * intensity;
+  ctx.strokeStyle = `rgba(255,240,120,${0.9 * intensity})`;
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  ctx.moveTo(player.x - halfW, barrierY + 15);
+  ctx.quadraticCurveTo(player.x, barrierY - 18, player.x + halfW, barrierY + 15);
+  ctx.stroke();
+
+  // Outer glow halo
+  ctx.globalAlpha = 0.25 * intensity;
+  const halo = ctx.createRadialGradient(player.x, barrierY, 0, player.x, barrierY, halfW * 1.5);
+  halo.addColorStop(0, 'rgba(255,220,60,0.5)');
+  halo.addColorStop(1, 'rgba(255,220,60,0)');
+  ctx.fillStyle = halo;
+  ctx.fillRect(player.x - halfW * 1.5, barrierY - halfW, halfW * 3, halfW * 2);
+
+  ctx.restore();
+  ctx.globalAlpha = 1;
 }
 
 function drawDeathParticles() {
@@ -1836,11 +2052,11 @@ function render() {
   drawBg();
   drawBodies();
 
-  // Slow-mo blue tint over the world
-  if (activeEffects.slowmo > 0) {
-    const fade = Math.min(activeEffects.slowmo / 30, 1);
-    ctx.globalAlpha = 0.18 * fade;
-    ctx.fillStyle = 'rgba(80,140,220,1)';
+  // Hyperspeed gold tint over the world
+  if (activeEffects.hyperspeed > 0 && hyperspeedCurrentMult > 1.05) {
+    const fade = Math.min(activeEffects.hyperspeed / 30, 1);
+    ctx.globalAlpha = 0.12 * fade * ((hyperspeedCurrentMult - 1) / 2);
+    ctx.fillStyle = 'rgba(255,220,60,1)';
     ctx.fillRect(0, 0, W, H);
     ctx.globalAlpha = 1;
   }
@@ -1850,7 +2066,10 @@ function render() {
     drawNovaRings();
     drawPlanetRipples();
     drawTrail();
-    if (state==='playing'||state==='paused') drawPlayer();
+    if (state==='playing'||state==='paused') {
+      drawHyperspeedBarrier();
+      drawPlayer();
+    }
     drawPickupParticles();
     drawDeathParticles();
   }
@@ -1937,7 +2156,10 @@ function goToMainMenu() {
   novaRings = [];
   pickupParticles = [];
   planetRipples = [];
-  activeEffects = { shield: 0, slowmo: 0, ghost: 0 };
+  activeEffects = { shield: 0, hyperspeed: 0, ghost: 0 };
+  hyperspeedCurrentMult = 1; hyperspeedTargetSpeed = 0;
+  if (hyperspeedWhooshNodes) { try { hyperspeedWhooshNodes.stop(0.1); } catch {} hyperspeedWhooshNodes = null; }
+  shieldBroken = false;
   SFX.stopMusic();
   pauseOverlay.classList.remove('visible');
   pauseBtn.classList.remove('visible');
