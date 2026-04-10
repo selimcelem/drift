@@ -1431,7 +1431,7 @@ function triggerDeath() {
   const deathUsername = uname;
   const globalEl = document.getElementById('globalScores');
   globalEl.innerHTML = '<div class="gs-status">connecting...</div>';
-  fetchLeaderboard(deathDifficulty, (err, entries) => {
+  setTimeout(() => fetchLeaderboard(deathDifficulty, (err, entries) => {
     if (err) {
       globalEl.innerHTML = '<div class="gs-status">unavailable</div>';
     } else if (entries.length === 0) {
@@ -1442,7 +1442,7 @@ function triggerDeath() {
         return `<div class="gs-row${isSelf ? ' self' : ''}"><span class="gs-rank">${e.rank || i+1}</span><span class="gs-name">${e.username}</span><span class="gs-val">${e.score}</span></div>`;
       }).join('');
     }
-  });
+  }), 1000);
 
   setTimeout(() => {
     const overlay = document.getElementById('overlay');
