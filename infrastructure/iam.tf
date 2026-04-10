@@ -1,3 +1,8 @@
+import {
+  to = aws_iam_role.github_actions
+  id = "drift-github-actions"
+}
+
 data "aws_iam_openid_connect_provider" "github" {
   url = "https://token.actions.githubusercontent.com"
 }
