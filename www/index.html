@@ -94,16 +94,16 @@
 
   #highscores {
     display: none;
-    margin-bottom: 28px;
-    width: 180px;
+    margin-bottom: 10px;
+    width: 220px;
   }
   .hs-row {
     display: flex;
     justify-content: space-between;
     font-family: 'Space Mono', monospace;
-    font-size: 11px;
-    letter-spacing: 2px;
-    padding: 4px 0;
+    font-size: 10px;
+    letter-spacing: 1px;
+    padding: 2px 0;
     border-bottom: 1px solid rgba(255,255,255,0.07);
     color: rgba(255,255,255,0.5);
   }
@@ -257,43 +257,43 @@
 
   #runSummary {
     display: none;
-    width: 280px;
-    margin-bottom: 16px;
+    width: 260px;
+    margin-bottom: 8px;
     font-family: 'Space Mono', monospace;
-    font-size: 10px;
-    letter-spacing: 1.5px;
+    font-size: 9px;
+    letter-spacing: 1px;
     color: rgba(255,255,255,0.5);
-    line-height: 1.8;
+    line-height: 1.5;
   }
   .rs-title {
     font-family: 'Orbitron', monospace;
-    font-size: 22px;
+    font-size: 18px;
     font-weight: 700;
     letter-spacing: 4px;
     color: rgba(255,255,255,0.85);
     text-align: center;
-    margin-bottom: 14px;
+    margin-bottom: 8px;
     text-shadow: 0 0 16px rgba(100,200,255,0.5);
   }
   .rs-row {
     display: flex;
     justify-content: space-between;
-    padding: 2px 0;
+    padding: 1px 0;
   }
   .rs-label { color: rgba(255,255,255,0.4); }
   .rs-val { color: rgba(255,255,255,0.7); text-align: right; }
-  .rs-pts { color: rgba(255,255,255,0.35); font-size: 9px; text-align: right; min-width: 50px; }
+  .rs-pts { color: rgba(255,255,255,0.35); font-size: 8px; text-align: right; min-width: 44px; }
   .rs-sep {
     border: none;
     border-top: 1px solid rgba(255,255,255,0.1);
-    margin: 6px 0;
+    margin: 4px 0;
   }
   .rs-total {
     display: flex;
     justify-content: space-between;
-    padding: 4px 0;
+    padding: 2px 0;
     color: rgba(255,255,255,0.85);
-    font-size: 11px;
+    font-size: 10px;
     letter-spacing: 2px;
   }
   .rs-total .rs-diff {
@@ -309,7 +309,7 @@
     display: none;
     gap: 0;
     width: 220px;
-    margin-bottom: 6px;
+    margin-bottom: 4px;
   }
   .lb-diff-tab {
     flex: 1;
@@ -317,9 +317,9 @@
     border: 1px solid rgba(255,255,255,0.08);
     color: rgba(255,255,255,0.3);
     font-family: 'Space Mono', monospace;
-    font-size: 8px;
+    font-size: 7px;
     letter-spacing: 1px;
-    padding: 4px 0;
+    padding: 3px 0;
     cursor: pointer;
     text-transform: uppercase;
     transition: all 0.2s;
@@ -541,7 +541,7 @@
   .lb-tabs {
     display: flex;
     gap: 0;
-    margin-bottom: 10px;
+    margin-bottom: 4px;
     width: 220px;
   }
   .lb-tab {
@@ -552,7 +552,7 @@
     font-family: 'Space Mono', monospace;
     font-size: 9px;
     letter-spacing: 2px;
-    padding: 6px 0;
+    padding: 4px 0;
     cursor: pointer;
     text-transform: uppercase;
     transition: all 0.2s;
@@ -572,9 +572,9 @@
     display: flex;
     justify-content: space-between;
     font-family: 'Space Mono', monospace;
-    font-size: 11px;
-    letter-spacing: 2px;
-    padding: 4px 0;
+    font-size: 10px;
+    letter-spacing: 1px;
+    padding: 2px 0;
     border-bottom: 1px solid rgba(255,255,255,0.07);
     color: rgba(255,255,255,0.5);
   }
@@ -636,7 +636,7 @@
     </div>
     <div id="highscores"></div>
     <div id="globalScores"></div>
-    <div class="controls-hint">
+    <div class="controls-hint" id="controlsHint">
       <span>LEFT</span> — pull toward nearest body<br>
       <span>RIGHT</span> — push away from nearest body<br>
       thread the cosmos. don't get absorbed.
@@ -1540,14 +1540,12 @@ function applyForce() {
   if (leftDown)  { player.vx += nx*f; player.vy += ny*f; }
   if (rightDown) {
     player.vx -= nx*f; player.vy -= ny*f;
-    // Dead zone escape: when body is in a 60° cone directly above the player,
-    // add a lateral push so repel doesn't just push straight down into nothing.
-    // atan2(-dy, dx) gives angle from player to body; body directly above = ~PI/2.
+    // Dead zone escape: when body is in a narrow 30° cone directly above and
+    // the player is falling, nudge laterally so repel has an escape route.
     const angle = Math.atan2(-dy, dx);
-    if (angle > Math.PI / 6 && angle < 5 * Math.PI / 6) {
-      // Push toward whichever side has more room
+    if (angle > Math.PI * 5/12 && angle < Math.PI * 7/12 && player.vy > 0) {
       const lateral = (player.x < W / 2) ? 1 : -1;
-      player.vx += lateral * f * 0.4;
+      player.vx += lateral * f * 0.2;
     }
   }
 
@@ -1769,7 +1767,7 @@ function triggerDeath() {
       } else if (entries.length === 0) {
         globalEl.innerHTML = '<div class="gs-status">no scores yet</div>';
       } else {
-        globalEl.innerHTML = entries.map((e, i) => {
+        globalEl.innerHTML = entries.slice(0, 5).map((e, i) => {
           const isSelf = deathUsername && e.username.toLowerCase() === deathUsername.toLowerCase();
           return `<div class="gs-row${isSelf ? ' self' : ''}"><span class="gs-rank">${e.rank || i+1}</span><span class="gs-name">${e.username}</span><span class="gs-val">${e.score}</span><span class="gs-diff ${e.difficulty || ''}">${e.difficulty || ''}</span></div>`;
         }).join('');
@@ -1780,7 +1778,7 @@ function triggerDeath() {
 
   function renderLocalScores(diff) {
     const hsel = document.getElementById('highscores');
-    const filtered = getScores().filter(s => s.difficulty === diff);
+    const filtered = getScores().filter(s => s.difficulty === diff).slice(0, 5);
     if (filtered.length === 0) {
       hsel.innerHTML = '<div class="gs-status">no local scores</div>';
     } else {
@@ -1833,6 +1831,7 @@ function triggerDeath() {
       t.classList.toggle('active', t.dataset.diff === deathDifficulty);
     });
 
+    document.getElementById('controlsHint').style.display = 'none';
     document.getElementById('startBtn').textContent = 'DRIFT AGAIN';
     overlay.classList.remove('hidden');
   }, 800);
@@ -2383,6 +2382,7 @@ function goToMainMenu() {
   document.getElementById('globalScores').style.display = 'none';
   document.getElementById('lbTabs').style.display = 'none';
   document.getElementById('lbDiffTabs').style.display = 'none';
+  document.getElementById('controlsHint').style.display = '';
   document.getElementById('startBtn').textContent = 'ENTER THE VOID';
   document.getElementById('score').textContent = '0';
   document.getElementById('overlay').classList.remove('hidden');
