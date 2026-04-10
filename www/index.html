@@ -478,6 +478,16 @@
   .gs-rank { color: rgba(255,255,255,0.25); margin-right: 10px; min-width: 18px; }
   .gs-name { flex: 1; overflow: hidden; text-overflow: ellipsis; }
   .gs-val { text-align: right; margin-left: 10px; }
+  .gs-diff {
+    font-size: 8px;
+    letter-spacing: 1px;
+    color: rgba(255,255,255,0.35);
+    min-width: 48px;
+    text-align: right;
+    margin-left: 6px;
+  }
+  .gs-diff.HARD { color: rgba(255,180,80,0.7); }
+  .gs-diff.EXTREME { color: rgba(255,90,120,0.85); }
   .gs-status {
     font-family: 'Space Mono', monospace;
     font-size: 10px;
@@ -1600,7 +1610,7 @@ function triggerDeath() {
     } else {
       globalEl.innerHTML = entries.map((e, i) => {
         const isSelf = deathUsername && e.username.toLowerCase() === deathUsername.toLowerCase();
-        return `<div class="gs-row${isSelf ? ' self' : ''}"><span class="gs-rank">${e.rank || i+1}</span><span class="gs-name">${e.username}</span><span class="gs-val">${e.score}</span></div>`;
+        return `<div class="gs-row${isSelf ? ' self' : ''}"><span class="gs-rank">${e.rank || i+1}</span><span class="gs-name">${e.username}</span><span class="gs-val">${e.score}</span><span class="gs-diff ${e.difficulty || ''}">${e.difficulty || ''}</span></div>`;
       }).join('');
     }
   }), 1000);
