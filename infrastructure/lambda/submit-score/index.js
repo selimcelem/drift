@@ -6,13 +6,17 @@ const ddb = DynamoDBDocumentClient.from(client);
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST",
   "Access-Control-Allow-Headers": "Content-Type",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
 };
 
 const VALID_DIFFICULTIES = ["NORMAL", "HARD", "EXTREME"];
 
 exports.handler = async (event) => {
+  if (event.requestContext?.http?.method === "OPTIONS") {
+    return { statusCode: 200, headers: CORS_HEADERS, body: "" };
+  }
+
   let body;
   try {
     body = JSON.parse(event.body || "{}");
