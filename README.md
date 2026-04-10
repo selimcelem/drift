@@ -113,4 +113,4 @@ _coming soon_
 
 ## License
 
-MIT. Do whatever you want with it.
+Copyright (c) 2026 Selim Celem. Source available for portfolio and educational viewing only. No permission is granted to redistribute, resell, or commercially use this software without explicit written permission.
