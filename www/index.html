@@ -1538,7 +1538,18 @@ function applyForce() {
   const f = FORCE * influence * forceMult;
 
   if (leftDown)  { player.vx += nx*f; player.vy += ny*f; }
-  if (rightDown) { player.vx -= nx*f; player.vy -= ny*f; }
+  if (rightDown) {
+    player.vx -= nx*f; player.vy -= ny*f;
+    // Dead zone escape: when body is in a 60° cone directly above the player,
+    // add a lateral push so repel doesn't just push straight down into nothing.
+    // atan2(-dy, dx) gives angle from player to body; body directly above = ~PI/2.
+    const angle = Math.atan2(-dy, dx);
+    if (angle > Math.PI / 6 && angle < 5 * Math.PI / 6) {
+      // Push toward whichever side has more room
+      const lateral = (player.x < W / 2) ? 1 : -1;
+      player.vx += lateral * f * 0.4;
+    }
+  }
 
   // Very gentle upward bias so player doesn't just sink
   player.vy -= 0.016;
