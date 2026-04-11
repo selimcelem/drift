@@ -1298,10 +1298,20 @@ function getScores() {
 function saveScore(s, d) {
   const scores = getScores();
   scores.push({ score: s, difficulty: d });
-  scores.sort((a,b) => b.score - a.score);
-  scores.splice(5);
-  localStorage.setItem('drift_scores', JSON.stringify(scores));
-  return scores;
+  // Keep top 5 per difficulty (not 5 total) so one difficulty can't push out another
+  const byDiff = {};
+  for (const sc of scores) {
+    (byDiff[sc.difficulty] = byDiff[sc.difficulty] || []).push(sc);
+  }
+  const kept = [];
+  for (const arr of Object.values(byDiff)) {
+    arr.sort((a,b) => b.score - a.score);
+    kept.push(...arr.slice(0, 5));
+  }
+  kept.sort((a,b) => b.score - a.score);
+  localStorage.setItem('drift_scores', JSON.stringify(kept));
+  console.log('[drift] saved scores:', JSON.stringify(kept));
+  return kept;
 }
 
 // --- Online leaderboard ---
@@ -1784,7 +1794,9 @@ function triggerDeath() {
 
   function renderLocalScores(diff) {
     const hsel = document.getElementById('highscores');
-    const filtered = getScores().filter(s => s.difficulty === diff);
+    const allScores = getScores();
+    console.log('[drift] renderLocalScores diff=' + diff, 'allScores:', JSON.stringify(allScores));
+    const filtered = allScores.filter(s => s.difficulty === diff);
     if (filtered.length === 0) {
       hsel.innerHTML = '<div class="gs-status">no local scores</div>';
     } else {
