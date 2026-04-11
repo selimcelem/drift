@@ -11,6 +11,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Live streak counter display during gameplay
 - Run summary on death screen (planets passed, destroyed, streak, powerups, total breakdown)
 - Leaderboard difficulty tabs on death screen for both local and global
+- Repel target locking — target body is locked for the duration of a repel press, preventing mid-repel direction switching
+
+### Fixed
+- Local highscores eviction bug — scores now kept top 5 per difficulty instead of top 5 globally
+- Leaderboard difficulty tabs not filtering local scores correctly
+- www folder gitignore causing game files to not be tracked
 
 ## [1.0.0] - 2026-04-10
 
