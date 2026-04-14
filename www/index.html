@@ -697,7 +697,7 @@ const DIFFICULTIES = {
 let difficulty = 'NORMAL';
 function diff() { return DIFFICULTIES[difficulty]; }
 
-let state = 'idle', score = 0, frame = 0;
+let state = 'idle', score = 0, frame = 0, planetsPassed = 0;
 let player = {}, bodies = [], trail = [], bgStars = [], deathParticles = [];
 let leftDown = false, rightDown = false;
 let closestBody = null;
@@ -1389,7 +1389,7 @@ function fetchLeaderboard(d, callback) {
 
 function normalScrollSpeed() {
   const d = diff();
-  const t = Math.min(score / d.speedCapScore, 1);
+  const t = Math.min(planetsPassed / d.speedCapScore, 1);
   return d.startSpeed + (d.maxSpeed - d.startSpeed) * t;
 }
 
@@ -1713,7 +1713,7 @@ function resetGame() {
   player = { x: W/2, y: H*0.72, vx: 0, vy: 0, angle: 0 };
   trail = []; deathParticles = [];
   initBodies();
-  score = 0; frame = 0;
+  score = 0; frame = 0; planetsPassed = 0;
   closestBody = null;
   destroyStreak = 0;
   runStats = { totalPassed: 0, totalDestroyed: 0, pointsFromPassing: 0, pointsFromDestroying: 0, longestStreak: 0, powerupsUsed: 0 };
@@ -1971,6 +1971,7 @@ function update() {
     if (!b.passed && b.y > H * 0.75) {
       b.passed = true;
       score++;
+      planetsPassed++;
       runStats.totalPassed++;
       runStats.pointsFromPassing++;
       // Passing a planet resets destroy streak
@@ -2100,6 +2101,7 @@ function triggerDeath() {
   const deathDifficulty = difficulty;
   const deathUsername = uname;
   const deathScore = score;
+  const deathPlanetsPassed = planetsPassed;
   const deathStats = { ...runStats };
   let lbViewDifficulty = deathDifficulty;
 
@@ -2152,7 +2154,7 @@ function triggerDeath() {
     const rs = document.getElementById('runSummary');
     rs.innerHTML = `
       <div class="rs-title">${deathScore}</div>
-      <div class="rs-row"><span class="rs-label">PLANETS PASSED</span><span class="rs-val">${deathStats.totalPassed}</span><span class="rs-pts">${deathStats.pointsFromPassing} pts</span></div>
+      <div class="rs-row"><span class="rs-label">PLANETS PASSED</span><span class="rs-val">${deathPlanetsPassed}</span><span class="rs-pts">${deathStats.pointsFromPassing} pts</span></div>
       <div class="rs-row"><span class="rs-label">PLANETS DESTROYED</span><span class="rs-val">${deathStats.totalDestroyed}</span><span class="rs-pts">${deathStats.pointsFromDestroying} pts</span></div>
       <div class="rs-row"><span class="rs-label">LONGEST STREAK</span><span class="rs-val">${deathStats.longestStreak}</span><span class="rs-pts"></span></div>
       <div class="rs-row"><span class="rs-label">POWERUPS USED</span><span class="rs-val">${deathStats.powerupsUsed}</span><span class="rs-pts"></span></div>
