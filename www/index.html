@@ -719,6 +719,8 @@ let novaRings = [];
 let screenShake = 0;
 let pickupParticles = [];
 let planetRipples = [];
+let pendingNovaTimeouts = [];
+const PARTICLE_CAP = 200;
 let activeEffects = { shield: 0, hyperspeed: 0, ghost: 0 };
 let lastPowerupSpawn = 0;
 const SHIELD_DURATION = 900;        // 15s @ 60fps
@@ -1490,6 +1492,11 @@ function spawnPowerup() {
   });
 }
 
+function trimParticles() {
+  const excess = pickupParticles.length + deathParticles.length - PARTICLE_CAP;
+  if (excess > 0) pickupParticles.splice(0, Math.min(excess, pickupParticles.length));
+}
+
 function emitPickupParticles(x, y, type) {
   const rgb = POWERUP_COLORS[type].rgb;
   for (let i = 0; i < 24; i++) {
@@ -1504,6 +1511,7 @@ function emitPickupParticles(x, y, type) {
       rgb,
     });
   }
+  trimParticles();
 }
 
 function emitDestroyBurst(x, y, rgb) {
@@ -1519,6 +1527,7 @@ function emitDestroyBurst(x, y, rgb) {
       rgb,
     });
   }
+  trimParticles();
 }
 
 function addDestroyPoints() {
@@ -1576,7 +1585,7 @@ function activateCombo(key, x, y) {
   if (key === 'nova_nova') {
     // SUPERNOVA: 6 red/crimson waves at 400ms intervals, each larger
     for (let i = 0; i < 6; i++) {
-      setTimeout(() => {
+      pendingNovaTimeouts.push(setTimeout(() => {
         if (state !== 'playing') return;
         novaRings.push({
           x: player.x, y: player.y, radius: 0, life: 1, prevR: 0,
@@ -1585,7 +1594,7 @@ function activateCombo(key, x, y) {
         });
         screenShake = Math.max(screenShake, 10 + i);
         SFX.pickup('nova');
-      }, i * 400);
+      }, i * 400));
     }
     activeCombos[key] = { def, framesLeft: 170 };
   } else if (key === 'nova_hyperspeed') {
@@ -1667,20 +1676,25 @@ function rawActivate(type, x, y) {
 function fireTripleNova(px, py) {
   novaRings.push({ x: px, y: py, radius: 0, life: 1, prevR: 0 });
   screenShake = Math.max(screenShake, 10);
-  setTimeout(() => {
+  pendingNovaTimeouts.push(setTimeout(() => {
     if (state === 'playing') {
       novaRings.push({ x: player.x, y: player.y, radius: 0, life: 0.8, prevR: 0 });
       screenShake = Math.max(screenShake, 7);
       SFX.pickup('nova');
     }
-  }, 400);
-  setTimeout(() => {
+  }, 400));
+  pendingNovaTimeouts.push(setTimeout(() => {
     if (state === 'playing') {
       novaRings.push({ x: player.x, y: player.y, radius: 0, life: 0.6, prevR: 0 });
       screenShake = Math.max(screenShake, 5);
       SFX.pickup('nova');
     }
-  }, 800);
+  }, 800));
+}
+
+function clearPendingNovaTimeouts() {
+  for (const id of pendingNovaTimeouts) clearTimeout(id);
+  pendingNovaTimeouts = [];
 }
 
 function activateHyperspeed(durationOverride, peakScale) {
@@ -1722,6 +1736,7 @@ function resetGame() {
   novaRings = []; screenShake = 0;
   pickupParticles = [];
   planetRipples = [];
+  clearPendingNovaTimeouts();
   activeEffects = { shield: 0, hyperspeed: 0, ghost: 0 };
   hyperspeedCurrentMult = 1; hyperspeedTargetSpeed = 0;
   hyperspeedPeakMult = 1; hyperspeedActiveDuration = HYPERSPEED_DURATION;
@@ -2011,12 +2026,17 @@ function update() {
   }
   powerups = powerups.filter(p => !p.collected && p.y < H + 30);
 
-  // Nova rings: expand and destroy bodies they sweep past
-  for (const r of novaRings) {
-    r.prevR = r.radius;
-    r.radius += 7;
-    const maxR = 320 * (r.radiusMult || 1);
-    if (r.radius > maxR) r.life *= 0.9;
+  // Nova rings: expand, drop dead rings immediately, then destroy bodies they sweep past
+  if (novaRings.length) {
+    const live = [];
+    for (const r of novaRings) {
+      r.prevR = r.radius;
+      r.radius += 7;
+      const rm = r.radiusMult || 1;
+      if (r.radius > 320 * rm) r.life *= 0.9;
+      if (r.life > 0.05 && r.radius < 400 * rm) live.push(r);
+    }
+    novaRings = live;
   }
   if (novaRings.length) {
     const survivors = [];
@@ -2037,7 +2057,6 @@ function update() {
       if (!killed) survivors.push(b);
     }
     bodies = survivors;
-    novaRings = novaRings.filter(r => r.life > 0.05 && r.radius < 400 * (r.radiusMult || 1));
   }
 
   // Hyperspeed barrier: destroy planets touching the wedge in front of the player
@@ -2087,6 +2106,7 @@ function triggerDeath() {
   pauseBtn.classList.remove('visible');
   SFX.death();
   SFX.stopMusic();
+  clearPendingNovaTimeouts();
   const scores = saveScore(score, difficulty);
   deathParticles = [];
   for (let i = 0; i < 50; i++) {
@@ -2810,6 +2830,7 @@ function goToMainMenu() {
   novaRings = [];
   pickupParticles = [];
   planetRipples = [];
+  clearPendingNovaTimeouts();
   activeEffects = { shield: 0, hyperspeed: 0, ghost: 0 };
   hyperspeedCurrentMult = 1; hyperspeedTargetSpeed = 0;
   hyperspeedPeakMult = 1; hyperspeedActiveDuration = HYPERSPEED_DURATION;
