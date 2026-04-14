@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-04-14
+
 ### Added
 - Quadratic streak scoring system (destroy streak² points, pass = 1 point)
 - Live streak counter display during gameplay
