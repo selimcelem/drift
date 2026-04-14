@@ -24,6 +24,15 @@ Survive. Your score is the number of bodies you've drifted past. Speed ramps up 
 
 Top 5 scores are kept locally in `localStorage` and shown on the death screen.
 
+## Features
+
+- **Combo system** — 9 powerup combinations (Supernova, Warp Time, Phantom Blast, Pulsar, Spectral Rush, Juggernaut, Wraith, Eternal Phantom, Fortress Shield), each with its own mechanics and visual identity
+- **Pair spawning** — 1 in 5 powerup spawns is a tethered pair connected by a cosmic energy beam; grabbing either one triggers the matching combo instantly
+- **Quadratic streak scoring** — destroy a planet via Nova, Hyperspeed barrier, or Phantom Blast and your next destroy is worth more (streak² points, capped at 12 to prevent runaway scores)
+- **Run summary on death** — full breakdown of planets passed, planets destroyed, longest streak, powerups used, and points from each source
+- **3 difficulties** — Normal, Hard, Extreme — with progressively faster scroll, more bodies, and more frequent powerup drops
+- **Local + global leaderboards** — top 5 per difficulty stored locally; global top 10 served from a serverless AWS backend
+
 ## Tech stack
 
 - **Vanilla HTML5 Canvas + JS** — the entire game is one `www/index.html`. No build step, no bundler, no framework. Just a `requestAnimationFrame` loop and some trig.

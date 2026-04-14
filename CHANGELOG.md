@@ -9,14 +9,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [1.1.0] - 2026-04-14
 
 ### Added
-- Quadratic streak scoring system (destroy streak² points, pass = 1 point)
+- Combo system: 9 powerup combinations with unique mechanics (Supernova, Warp Time, Phantom Blast, Pulsar, Spectral Rush, Juggernaut, Wraith, Eternal Phantom, Fortress Shield)
+- Pair spawning: 1 in 5 powerup spawns as a deliberate tethered pair, picking up either gives both and activates combo
+- Combo label display on powerup timer bar
+- Quadratic streak scoring system (destroy streak² points capped at 12, pass = 1 point)
 - Live streak counter display during gameplay
 - Run summary on death screen (planets passed, destroyed, streak, powerups, total breakdown)
 - Leaderboard difficulty tabs on death screen for both local and global
-- Repel target locking — target body is locked for the duration of a repel press, preventing mid-repel direction switching
+- Repel target locking for duration of press
+
+### Changed
+- Difficulty rebalanced for broader audience and longer runs
+- Hyperspeed reworked: always meaningful speed spike regardless of current game speed, 6s duration, landing sequence pulls player back to spawn position
+- Supernova radius tuned to not clear entire screen
+- Game speed now scales on time survived not score
+- Streak scoring cap at 12 (max 144 pts per destroy)
+- Nova spawn blocked when nova-type effect already active, rerolls to other powerup type
+- Local highscores keep top 5 per difficulty instead of top 5 globally
+- Score validation limit raised to 99999
 
 ### Fixed
-- Local highscores eviction bug — scores now kept top 5 per difficulty instead of top 5 globally
+- Wraith combo destroy-on-contact now works correctly after Ghost+Ghost chain
+- Vertical drift during long combos pulls player back to safe zone
+- Upward drift off-screen during extended combos
 - Leaderboard difficulty tabs not filtering local scores correctly
 - www folder gitignore causing game files to not be tracked
 - Dead zone fix — when repelling with planet directly above, horizontal nudge ensures escape in correct direction based on relative position
