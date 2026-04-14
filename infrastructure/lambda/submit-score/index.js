@@ -46,18 +46,18 @@ exports.handler = async (event) => {
     };
   }
 
-  // Validate score: positive integer under 10000
+  // Validate score: positive integer under 99999
   if (
     typeof score !== "number" ||
     !Number.isInteger(score) ||
     score < 1 ||
-    score >= 10000
+    score >= 99999
   ) {
     return {
       statusCode: 400,
       headers: CORS_HEADERS,
       body: JSON.stringify({
-        error: "score must be a positive integer under 10000",
+        error: "score must be a positive integer under 99999",
       }),
     };
   }

@@ -762,8 +762,6 @@ let supernovaQueue = [];
 let phantomBlastFrames = 0;
 // Juggernaut pending shield refresh (when hyperspeed ends)
 let juggernautPendingShieldRefresh = false;
-// Wraith pending shield protection (when ghost ends)
-let wraithPendingShield = false;
 // Fortress shield tracking
 let fortressShield = false;
 
@@ -1511,7 +1509,8 @@ function emitDestroyBurst(x, y, rgb) {
 
 function addDestroyPoints() {
   destroyStreak++;
-  const pts = destroyStreak * destroyStreak;
+  const streakForScore = Math.min(destroyStreak, 20);
+  const pts = streakForScore * streakForScore;
   score += pts;
   runStats.totalDestroyed++;
   runStats.pointsFromDestroying += pts;
@@ -1606,7 +1605,6 @@ function activateCombo(key, x, y) {
     // WRAITH: during ghost destroy on contact; when ghost ends, shield absorbs 1 hit
     if (activeEffects.ghost <= 0) activeEffects.ghost = GHOST_DURATION;
     if (activeEffects.shield <= 0) { activeEffects.shield = SHIELD_DURATION; shieldBroken = false; }
-    wraithPendingShield = true;
     activeCombos[key] = { def, deps: ['ghost'] };
   } else if (key === 'ghost_ghost') {
     // ETERNAL PHANTOM: 16s ghost
@@ -1724,7 +1722,6 @@ function resetGame() {
   warpTimeNovaTimer = 0;
   pulsarNovaTimer = 0;
   juggernautPendingShieldRefresh = false;
-  wraithPendingShield = false;
   lastPowerupSpawn = 0;
   document.getElementById('score').textContent = '0';
 }
@@ -1790,6 +1787,18 @@ function applyForce() {
   // Very gentle upward bias so player doesn't just sink
   player.vy -= 0.016;
 
+  // Soft vertical centering: pull the player back down when drifting off the
+  // top, with a stronger pull during hyperspeed when speed makes the top edge
+  // easier to hit.
+  let ay = 0;
+  if (player.y < H * 0.2) {
+    ay += 0.04 * ((H * 0.2 - player.y) / (H * 0.2));
+  }
+  if (activeEffects.hyperspeed > 0) {
+    ay += (H * 0.45 - player.y) * 0.0008;
+  }
+  player.vy += ay;
+
   player.vx *= dragCoef; player.vy *= dragCoef;
   const spd = Math.hypot(player.vx, player.vy);
   // EXTREME loosens the cap so players can actually outrun dense clusters
@@ -1807,9 +1816,9 @@ function checkCollisions() {
   if (player.y > H+50 || player.y < -50) return true;
 
   // GHOST: pass through bodies, emit a shimmer ripple when clipping one.
-  // WRAITH (ghost + shield): destroy on contact during ghost.
+  // WRAITH (ghost + shield active): destroy on contact during ghost.
   if (activeEffects.ghost > 0) {
-    const wraith = !!activeCombos.ghost_shield;
+    const wraith = activeEffects.shield > 0;
     for (let i = bodies.length - 1; i >= 0; i--) {
       const b = bodies[i];
       if (dist(player, b) < b.radius + PLAYER_R) {
