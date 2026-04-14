@@ -44,7 +44,8 @@ resource "aws_iam_role_policy" "lambda_dynamodb" {
         Action = [
           "dynamodb:PutItem",
           "dynamodb:Query",
-          "dynamodb:GetItem"
+          "dynamodb:GetItem",
+          "dynamodb:DeleteItem"
         ]
         Resource = [
           aws_dynamodb_table.leaderboard.arn,

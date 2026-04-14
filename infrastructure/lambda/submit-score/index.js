@@ -1,5 +1,10 @@
 const { DynamoDBClient } = require("@aws-sdk/client-dynamodb");
-const { DynamoDBDocumentClient, PutCommand } = require("@aws-sdk/lib-dynamodb");
+const {
+  DynamoDBDocumentClient,
+  PutCommand,
+  QueryCommand,
+  DeleteCommand,
+} = require("@aws-sdk/lib-dynamodb");
 
 const client = new DynamoDBClient({});
 const ddb = DynamoDBDocumentClient.from(client);
@@ -73,7 +78,7 @@ exports.handler = async (event) => {
     };
   }
 
-  const ttl = Math.floor(Date.now() / 1000) + 90 * 24 * 60 * 60;
+  const ttl = Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60;
 
   await ddb.send(
     new PutCommand({
@@ -87,6 +92,31 @@ exports.handler = async (event) => {
       },
     })
   );
+
+  // Trim the table down to the top 10 for this difficulty: query ascending
+  // and delete everything beyond the top 10 (the lowest scores).
+  const all = await ddb.send(
+    new QueryCommand({
+      TableName: "drift-leaderboard",
+      KeyConditionExpression: "difficulty = :d",
+      ExpressionAttributeValues: { ":d": difficulty },
+      ScanIndexForward: true,
+    })
+  );
+  const items = all.Items || [];
+  if (items.length > 10) {
+    const toDelete = items.slice(0, items.length - 10);
+    await Promise.all(
+      toDelete.map((item) =>
+        ddb.send(
+          new DeleteCommand({
+            TableName: "drift-leaderboard",
+            Key: { difficulty: item.difficulty, score: item.score },
+          })
+        )
+      )
+    );
+  }
 
   return {
     statusCode: 200,
