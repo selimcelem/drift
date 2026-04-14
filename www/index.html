@@ -1465,7 +1465,21 @@ function spawnPowerup() {
     powerups.push(a, b);
     return;
   }
-  const type = POWERUP_TYPES[Math.floor(Math.random() * POWERUP_TYPES.length)];
+  let type = POWERUP_TYPES[Math.floor(Math.random() * POWERUP_TYPES.length)];
+  // Nova overload guard: don't drop a nova if any nova-flavored effect is
+  // already running (in-flight rings or nova-based combo). Reroll to a
+  // non-nova type so the spawn slot stays useful.
+  if (type === 'nova') {
+    const novaActive = novaRings.length > 0
+      || activeCombos.nova_nova
+      || activeCombos.nova_hyperspeed
+      || activeCombos.nova_ghost
+      || activeCombos.nova_shield;
+    if (novaActive) {
+      const alt = ['shield', 'ghost', 'hyperspeed'];
+      type = alt[Math.floor(Math.random() * alt.length)];
+    }
+  }
   powerups.push({
     type,
     x: 60 + Math.random() * (W - 120),
