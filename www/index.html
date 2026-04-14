@@ -1788,14 +1788,15 @@ function applyForce() {
   player.vy -= 0.016;
 
   // Soft vertical centering: pull the player back down when drifting off the
-  // top, with a stronger pull during hyperspeed when speed makes the top edge
-  // easier to hit.
+  // top. During the final 2s of hyperspeed, gently nudge toward the spawn
+  // position so the player isn't dumped at the top edge when speed snaps back.
   let ay = 0;
   if (player.y < H * 0.2) {
     ay += 0.04 * ((H * 0.2 - player.y) / (H * 0.2));
   }
-  if (activeEffects.hyperspeed > 0) {
-    ay += (H * 0.45 - player.y) * 0.0008;
+  if (activeEffects.hyperspeed > 0 && activeEffects.hyperspeed < 120) {
+    const pullStrength = (1 - activeEffects.hyperspeed / 120) * 0.0012;
+    ay += (H * 0.72 - player.y) * pullStrength;
   }
   player.vy += ay;
 
