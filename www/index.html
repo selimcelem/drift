@@ -79,6 +79,16 @@
     width: 100%;
     border-radius: 2px;
   }
+  .pt-combo {
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 2.5px;
+    text-transform: uppercase;
+    text-shadow: 0 0 8px currentColor;
+    margin-top: 2px;
+    display: none;
+  }
+  .pt-combo.visible { display: block; }
 
   #hintLeft, #hintRight {
     position: absolute;
@@ -614,6 +624,7 @@
     <div id="powerupTimer">
       <div class="pt-label" id="ptLabel">SHIELD</div>
       <div class="pt-bar"><div class="pt-fill" id="ptFill"></div></div>
+      <div class="pt-combo" id="ptCombo"></div>
     </div>
     <div id="streakDisplay"></div>
     <div id="hintLeft">◀ ATTRACT</div>
@@ -679,9 +690,9 @@ const FORCE = 0.18;
 
 // --- Difficulty ---
 const DIFFICULTIES = {
-  NORMAL:  { startSpeed: 1.2, maxSpeed: 3.2, speedCapScore: 200, maxBodies: 5, powerupFrequency: 1.0 },
-  HARD:    { startSpeed: 1.8, maxSpeed: 4.2, speedCapScore: 180, maxBodies: 7, powerupFrequency: 1.4 },
-  EXTREME: { startSpeed: 2.4, maxSpeed: 6.0, speedCapScore: 150, maxBodies: 9, powerupFrequency: 2.0 },
+  NORMAL:  { startSpeed: 1.0, maxSpeed: 2.2, speedCapScore: 300, maxBodies: 4, powerupFrequency: 1.0 },
+  HARD:    { startSpeed: 1.3, maxSpeed: 3.0, speedCapScore: 250, maxBodies: 6, powerupFrequency: 1.3 },
+  EXTREME: { startSpeed: 1.6, maxSpeed: 4.0, speedCapScore: 200, maxBodies: 8, powerupFrequency: 1.8 },
 };
 let difficulty = 'NORMAL';
 function diff() { return DIFFICULTIES[difficulty]; }
@@ -710,15 +721,51 @@ let pickupParticles = [];
 let planetRipples = [];
 let activeEffects = { shield: 0, hyperspeed: 0, ghost: 0 };
 let lastPowerupSpawn = 0;
-const SHIELD_DURATION = 900;    // 15s @ 60fps
-const HYPERSPEED_DURATION = 180; // 3s deceleration window
-const GHOST_DURATION  = 480;    // 8s
-const SHIELD_BLINK_FRAMES = 180; // last 3s blink
+const SHIELD_DURATION = 900;        // 15s @ 60fps
+const HYPERSPEED_DURATION = 360;    // 6s base
+const HYPERSPEED_COMBO_DURATION = 480; // 8s for warp time / spectral rush
+const GHOST_DURATION  = 480;        // 8s
+const GHOST_ETERNAL_DURATION = 960; // 16s for eternal phantom
+const SHIELD_BLINK_FRAMES = 180;    // last 3s blink
 
 // Hyperspeed state
-let hyperspeedTargetSpeed = 0;   // the normal speed to decelerate back to
-let hyperspeedCurrentMult = 1;   // current speed multiplier (starts at 3, decays to 1)
+let hyperspeedTargetSpeed = 0;    // the normal speed to decelerate back to
+let hyperspeedCurrentMult = 1;    // current speed multiplier (peaks then decays to 1)
+let hyperspeedPeakMult = 1;       // this instance's peak multiplier
+let hyperspeedActiveDuration = HYPERSPEED_DURATION; // duration used for deceleration curve
 let hyperspeedWhooshNodes = null; // audio nodes for sustained whoosh
+
+// Shield hitpoints (fortress shield = 2)
+let shieldHits = 1;
+
+// --- Combos ---
+const COMBO_DEFS = {
+  nova_nova:        { name: 'SUPERNOVA',       color: '255,80,80',    labelColor: 'rgba(255,120,120,0.95)' },
+  nova_hyperspeed:  { name: 'WARP TIME',       color: '255,180,40',   labelColor: 'rgba(255,200,80,0.95)' },
+  nova_ghost:       { name: 'PHANTOM BLAST',   color: '255,140,60',   labelColor: 'rgba(255,160,80,0.95)' },
+  nova_shield:      { name: 'PULSAR',          color: '180,255,220',  labelColor: 'rgba(180,255,220,0.95)' },
+  hyperspeed_ghost: { name: 'SPECTRAL RUSH',   color: '230,200,255',  labelColor: 'rgba(230,200,255,0.95)' },
+  hyperspeed_shield:{ name: 'JUGGERNAUT',      color: '255,200,100',  labelColor: 'rgba(255,200,100,0.95)' },
+  ghost_shield:     { name: 'WRAITH',          color: '160,100,255',  labelColor: 'rgba(180,140,255,0.95)' },
+  ghost_ghost:      { name: 'ETERNAL PHANTOM', color: '110,40,180',   labelColor: 'rgba(160,80,230,0.95)' },
+  shield_shield:    { name: 'FORTRESS SHIELD', color: '120,255,255',  labelColor: 'rgba(120,255,255,0.95)' },
+};
+// Active combo state: map key -> { framesLeft (for purely-timed combos like supernova), ... }
+let activeCombos = {};
+// Pulsar automatic nova scheduling
+let pulsarNovaTimer = 0;
+// Warp time automatic nova scheduling
+let warpTimeNovaTimer = 0;
+// Supernova sequencing
+let supernovaQueue = [];
+// Phantom blast flag: turns ghost into a damage aura
+let phantomBlastFrames = 0;
+// Juggernaut pending shield refresh (when hyperspeed ends)
+let juggernautPendingShieldRefresh = false;
+// Wraith pending shield protection (when ghost ends)
+let wraithPendingShield = false;
+// Fortress shield tracking
+let fortressShield = false;
 
 // Shield break tracking
 let shieldBroken = false;
@@ -1392,11 +1439,35 @@ function initBodies() {
 }
 
 // --- Powerup helpers ---
+const PAIR_COMBOS = [
+  ['nova','nova'], ['nova','hyperspeed'], ['nova','ghost'], ['nova','shield'],
+  ['hyperspeed','ghost'], ['hyperspeed','shield'],
+  ['ghost','shield'], ['ghost','ghost'], ['shield','shield'],
+];
+let nextPairId = 1;
+
 function spawnPowerup() {
-  const type = POWERUP_TYPES[Math.floor(Math.random() * POWERUP_TYPES.length)];
-  // Spawn above the visible area, scrolling down with the world
   const topBodyY = bodies.length ? Math.min(...bodies.map(b => b.y)) : -100;
   const y = Math.min(-30, topBodyY - 60 - Math.random() * 80);
+  // 1 in 5 spawns is a tethered pair
+  if (Math.random() < 0.2) {
+    const combo = PAIR_COMBOS[Math.floor(Math.random() * PAIR_COMBOS.length)];
+    const gap = 60;
+    const cx = 80 + Math.random() * (W - 160);
+    const id = nextPairId++;
+    const a = {
+      type: combo[0], x: cx - gap/2, y, radius: 13,
+      pulse: Math.random() * 6.28, collected: false, pairId: id, pairSibling: null,
+    };
+    const b = {
+      type: combo[1], x: cx + gap/2, y, radius: 13,
+      pulse: Math.random() * 6.28, collected: false, pairId: id, pairSibling: null,
+    };
+    a.pairSibling = b; b.pairSibling = a;
+    powerups.push(a, b);
+    return;
+  }
+  const type = POWERUP_TYPES[Math.floor(Math.random() * POWERUP_TYPES.length)];
   powerups.push({
     type,
     x: 60 + Math.random() * (W - 120),
@@ -1453,41 +1524,176 @@ function addDestroyPoints() {
   }
 }
 
+// --- Combo helpers ---
+let recentNovaFrames = 0;
+let lastComboLabel = null; // which combo key is currently shown on the timer bar
+
+function comboKey(a, b) {
+  const order = { nova: 0, hyperspeed: 1, ghost: 2, shield: 3 };
+  const [x, y] = [a, b].sort((p, q) => order[p] - order[q]);
+  const k = x + '_' + y;
+  return COMBO_DEFS[k] ? k : null;
+}
+
+function detectCombo(newType) {
+  // Same-type chain first
+  if (newType === 'nova' && recentNovaFrames > 0) return 'nova_nova';
+  if (newType !== 'nova' && activeEffects[newType] > 0) {
+    const k = comboKey(newType, newType);
+    if (k) return k;
+  }
+  // Cross-type: first matching active effect
+  const others = ['nova', 'hyperspeed', 'ghost', 'shield'].filter(t => t !== newType);
+  for (const o of others) {
+    const hasOther = o === 'nova' ? recentNovaFrames > 0 : activeEffects[o] > 0;
+    if (hasOther) {
+      const k = comboKey(newType, o);
+      if (k) return k;
+    }
+  }
+  return null;
+}
+
+function activateCombo(key, x, y) {
+  const def = COMBO_DEFS[key];
+  if (!def) return;
+  lastComboLabel = key;
+  screenShake = Math.max(screenShake, 8);
+
+  if (key === 'nova_nova') {
+    // SUPERNOVA: 6 red/crimson waves at 400ms intervals, each larger
+    for (let i = 0; i < 6; i++) {
+      setTimeout(() => {
+        if (state !== 'playing') return;
+        novaRings.push({
+          x: player.x, y: player.y, radius: 0, life: 1, prevR: 0,
+          radiusMult: 1 + i * 0.3,
+          supernova: true,
+        });
+        screenShake = Math.max(screenShake, 10 + i);
+        SFX.pickup('nova');
+      }, i * 400);
+    }
+    activeCombos[key] = { def, framesLeft: 170 };
+  } else if (key === 'nova_hyperspeed') {
+    // WARP TIME: 8s hyperspeed + auto full nova every 2s
+    activateHyperspeed(HYPERSPEED_COMBO_DURATION);
+    warpTimeNovaTimer = 0;
+    activeCombos[key] = { def, deps: ['hyperspeed'] };
+  } else if (key === 'nova_ghost') {
+    // PHANTOM BLAST: 8s damage aura
+    activeEffects.ghost = GHOST_DURATION;
+    phantomBlastFrames = GHOST_DURATION;
+    activeCombos[key] = { def, deps: ['ghost'] };
+  } else if (key === 'nova_shield') {
+    // PULSAR: full shield + auto nova every 4s
+    activeEffects.shield = SHIELD_DURATION;
+    shieldBroken = false;
+    pulsarNovaTimer = 0;
+    activeCombos[key] = { def, deps: ['shield'] };
+  } else if (key === 'hyperspeed_ghost') {
+    // SPECTRAL RUSH: 8s, 2x spike, barrier fires during ghost
+    activateHyperspeed(HYPERSPEED_COMBO_DURATION, 2);
+    activeEffects.ghost = HYPERSPEED_COMBO_DURATION;
+    activeCombos[key] = { def, deps: ['hyperspeed', 'ghost'] };
+  } else if (key === 'hyperspeed_shield') {
+    // JUGGERNAUT: barrier + shield + refresh shield on hyperspeed end
+    if (activeEffects.hyperspeed <= 0) activateHyperspeed();
+    if (activeEffects.shield <= 0) { activeEffects.shield = SHIELD_DURATION; shieldBroken = false; }
+    juggernautPendingShieldRefresh = true;
+    activeCombos[key] = { def, deps: ['hyperspeed'] };
+  } else if (key === 'ghost_shield') {
+    // WRAITH: during ghost destroy on contact; when ghost ends, shield absorbs 1 hit
+    if (activeEffects.ghost <= 0) activeEffects.ghost = GHOST_DURATION;
+    if (activeEffects.shield <= 0) { activeEffects.shield = SHIELD_DURATION; shieldBroken = false; }
+    wraithPendingShield = true;
+    activeCombos[key] = { def, deps: ['ghost'] };
+  } else if (key === 'ghost_ghost') {
+    // ETERNAL PHANTOM: 16s ghost
+    activeEffects.ghost = GHOST_ETERNAL_DURATION;
+    activeCombos[key] = { def, deps: ['ghost'] };
+  } else if (key === 'shield_shield') {
+    // FORTRESS SHIELD: 15s, 2 hits
+    activeEffects.shield = SHIELD_DURATION;
+    shieldBroken = false;
+    shieldHits = 2;
+    fortressShield = true;
+    activeCombos[key] = { def, deps: ['shield'] };
+  }
+}
+
+function activatePair(a, b) {
+  emitPickupParticles(a.x, a.y, a.type);
+  emitPickupParticles(b.x, b.y, b.type);
+  SFX.pickup(a.type);
+  runStats.powerupsUsed += 2;
+  const key = comboKey(a.type, b.type);
+  if (key) {
+    activateCombo(key, a.x, a.y);
+  } else {
+    // Fallback: activate both individually (e.g. hyperspeed+hyperspeed)
+    rawActivate(a.type, a.x, a.y);
+    rawActivate(b.type, b.x, b.y);
+  }
+}
+
+function rawActivate(type, x, y) {
+  if (type === 'shield') {
+    activeEffects.shield = SHIELD_DURATION;
+    shieldBroken = false;
+    shieldHits = Math.max(shieldHits, 1);
+  } else if (type === 'hyperspeed') {
+    activateHyperspeed();
+  } else if (type === 'ghost') {
+    activeEffects.ghost = GHOST_DURATION;
+  } else if (type === 'nova') {
+    fireTripleNova(player.x, player.y);
+    recentNovaFrames = 90;
+  }
+}
+
+function fireTripleNova(px, py) {
+  novaRings.push({ x: px, y: py, radius: 0, life: 1, prevR: 0 });
+  screenShake = Math.max(screenShake, 10);
+  setTimeout(() => {
+    if (state === 'playing') {
+      novaRings.push({ x: player.x, y: player.y, radius: 0, life: 0.8, prevR: 0 });
+      screenShake = Math.max(screenShake, 7);
+      SFX.pickup('nova');
+    }
+  }, 400);
+  setTimeout(() => {
+    if (state === 'playing') {
+      novaRings.push({ x: player.x, y: player.y, radius: 0, life: 0.6, prevR: 0 });
+      screenShake = Math.max(screenShake, 5);
+      SFX.pickup('nova');
+    }
+  }, 800);
+}
+
+function activateHyperspeed(durationOverride, peakScale) {
+  const normSpd = normalScrollSpeed();
+  // Peak speed: max(normSpd * 3.5, 6.0). Convert to a multiplier.
+  const basePeak = Math.max(3.5, 6.0 / Math.max(normSpd, 0.01));
+  hyperspeedPeakMult = basePeak * (peakScale || 1);
+  hyperspeedCurrentMult = hyperspeedPeakMult;
+  hyperspeedTargetSpeed = normSpd;
+  hyperspeedActiveDuration = durationOverride || HYPERSPEED_DURATION;
+  activeEffects.hyperspeed = hyperspeedActiveDuration;
+  if (hyperspeedWhooshNodes) { try { hyperspeedWhooshNodes.stop(0.1); } catch {} }
+  hyperspeedWhooshNodes = SFX.startHyperspeedWhoosh();
+}
+
 function activatePowerup(type, x, y) {
   emitPickupParticles(x, y, type);
   SFX.pickup(type);
   runStats.powerupsUsed++;
-  if (type === 'shield') {
-    activeEffects.shield = SHIELD_DURATION;
-    shieldBroken = false;
-  } else if (type === 'hyperspeed') {
-    hyperspeedCurrentMult = 3;
-    hyperspeedTargetSpeed = normalScrollSpeed();
-    activeEffects.hyperspeed = HYPERSPEED_DURATION;
-    // Start sustained whoosh audio
-    if (hyperspeedWhooshNodes) { try { hyperspeedWhooshNodes.stop(0.1); } catch {} }
-    hyperspeedWhooshNodes = SFX.startHyperspeedWhoosh();
-  } else if (type === 'ghost') {
-    activeEffects.ghost = GHOST_DURATION;
-  } else if (type === 'nova') {
-    // Triple blast: 3 rings with 400ms (24 frame) delays
-    novaRings.push({ x: player.x, y: player.y, radius: 0, life: 1, prevR: 0 });
-    screenShake = 10;
-    setTimeout(() => {
-      if (state === 'playing') {
-        novaRings.push({ x: player.x, y: player.y, radius: 0, life: 0.8, prevR: 0 });
-        screenShake = Math.max(screenShake, 7);
-        SFX.pickup('nova');
-      }
-    }, 400);
-    setTimeout(() => {
-      if (state === 'playing') {
-        novaRings.push({ x: player.x, y: player.y, radius: 0, life: 0.6, prevR: 0 });
-        screenShake = Math.max(screenShake, 5);
-        SFX.pickup('nova');
-      }
-    }, 800);
+  const key = detectCombo(type);
+  if (key) {
+    activateCombo(key, x, y);
+    return;
   }
+  rawActivate(type, x, y);
 }
 
 // --- Game state ---
@@ -1506,8 +1712,19 @@ function resetGame() {
   planetRipples = [];
   activeEffects = { shield: 0, hyperspeed: 0, ghost: 0 };
   hyperspeedCurrentMult = 1; hyperspeedTargetSpeed = 0;
+  hyperspeedPeakMult = 1; hyperspeedActiveDuration = HYPERSPEED_DURATION;
   if (hyperspeedWhooshNodes) { try { hyperspeedWhooshNodes.stop(0.1); } catch {} hyperspeedWhooshNodes = null; }
   shieldBroken = false;
+  shieldHits = 1;
+  fortressShield = false;
+  activeCombos = {};
+  lastComboLabel = null;
+  recentNovaFrames = 0;
+  phantomBlastFrames = 0;
+  warpTimeNovaTimer = 0;
+  pulsarNovaTimer = 0;
+  juggernautPendingShieldRefresh = false;
+  wraithPendingShield = false;
   lastPowerupSpawn = 0;
   document.getElementById('score').textContent = '0';
 }
@@ -1554,11 +1771,16 @@ function applyForce() {
   if (leftDown)  { player.vx += nx*f; player.vy += ny*f; }
   if (rightDown) {
     // Dead zone fix: when planet is directly above and repel vector is nearly
-    // vertical, nudge it horizontally based on actual relative position.
+    // vertical, nudge it horizontally based on actual relative position. Nudge
+    // strength scales with scroll speed — faster world, less reaction time.
     let rnx = -nx, rny = -ny;
     if (closestBody.y < player.y && Math.abs(rnx) < 0.15) {
+      const nudgeStrength = Math.min(
+        0.45,
+        0.15 + (scrollSpeed() / DIFFICULTIES.NORMAL.startSpeed) * 0.08
+      );
       const side = player.x - closestBody.x;
-      rnx = (side === 0 ? -1 : Math.sign(side)) * 0.15;
+      rnx = (side === 0 ? -1 : Math.sign(side)) * nudgeStrength;
       const mag = Math.hypot(rnx, rny);
       rnx /= mag; rny /= mag;
     }
@@ -1584,10 +1806,20 @@ function checkCollisions() {
   if (player.x < PLAYER_R+3 || player.x > W-PLAYER_R-3) return true;
   if (player.y > H+50 || player.y < -50) return true;
 
-  // GHOST: pass through bodies, emit a shimmer ripple when clipping one
+  // GHOST: pass through bodies, emit a shimmer ripple when clipping one.
+  // WRAITH (ghost + shield): destroy on contact during ghost.
   if (activeEffects.ghost > 0) {
-    for (const b of bodies) {
+    const wraith = !!activeCombos.ghost_shield;
+    for (let i = bodies.length - 1; i >= 0; i--) {
+      const b = bodies[i];
       if (dist(player, b) < b.radius + PLAYER_R) {
+        if (wraith) {
+          emitDestroyBurst(b.x, b.y, POWERUP_COLORS.ghost.rgb);
+          addDestroyPoints();
+          SFX.planetDestroyed('ghost');
+          bodies.splice(i, 1);
+          continue;
+        }
         if (!b._rippleCd || b._rippleCd <= 0) {
           planetRipples.push({ x: b.x, y: b.y, baseR: b.radius, expand: 0, life: 1 });
           b._rippleCd = 18;
@@ -1600,7 +1832,7 @@ function checkCollisions() {
     return false;
   }
 
-  // SHIELD: destroy the planet on first collision, then shield breaks
+  // SHIELD: absorb hit(s). FORTRESS SHIELD has 2 hit points.
   if (activeEffects.shield > 0) {
     for (let i = 0; i < bodies.length; i++) {
       if (dist(player, bodies[i]) < bodies[i].radius + PLAYER_R) {
@@ -1608,13 +1840,16 @@ function checkCollisions() {
         SFX.shieldBreak();
         addDestroyPoints();
         bodies.splice(i, 1);
-        activeEffects.shield = 0;
-        shieldBroken = true;
+        shieldHits--;
+        if (shieldHits <= 0) {
+          activeEffects.shield = 0;
+          shieldBroken = true;
+          fortressShield = false;
+          shieldHits = 1;
+        }
         break;
       }
     }
-    if (activeEffects.shield > 0) return false;
-    // Shield just broke — don't die this frame
     return false;
   }
 
@@ -1634,16 +1869,78 @@ function update() {
   if (activeEffects.shield > 0) activeEffects.shield--;
   if (activeEffects.hyperspeed > 0) {
     activeEffects.hyperspeed--;
-    // Decelerate from 3x back to 1x over the duration
-    const t_hs = 1 - (activeEffects.hyperspeed / HYPERSPEED_DURATION);
-    hyperspeedCurrentMult = 3 - (3 - 1) * t_hs;
+    // Decelerate from peakMult back to 1x over the (per-instance) duration
+    const t_hs = 1 - (activeEffects.hyperspeed / hyperspeedActiveDuration);
+    hyperspeedCurrentMult = hyperspeedPeakMult - (hyperspeedPeakMult - 1) * t_hs;
     if (hyperspeedCurrentMult < 1.05) hyperspeedCurrentMult = 1;
     if (activeEffects.hyperspeed <= 0) {
       hyperspeedCurrentMult = 1;
       if (hyperspeedWhooshNodes) { try { hyperspeedWhooshNodes.stop(0.5); } catch {} hyperspeedWhooshNodes = null; }
+      // JUGGERNAUT: refresh shield to a fresh 15s when hyperspeed ends
+      if (juggernautPendingShieldRefresh) {
+        activeEffects.shield = SHIELD_DURATION;
+        shieldBroken = false;
+        juggernautPendingShieldRefresh = false;
+      }
     }
   }
   if (activeEffects.ghost  > 0) activeEffects.ghost--;
+  if (phantomBlastFrames > 0) phantomBlastFrames--;
+  if (recentNovaFrames > 0) recentNovaFrames--;
+  // PHANTOM BLAST aura ends when its frames run out, even if ghost was extended
+  if (activeCombos.nova_ghost && phantomBlastFrames <= 0) {
+    delete activeCombos.nova_ghost;
+    if (lastComboLabel === 'nova_ghost') lastComboLabel = null;
+  }
+
+  // Combo bookkeeping: expire when deps run out or frame counter hits zero
+  for (const k of Object.keys(activeCombos)) {
+    const c = activeCombos[k];
+    if (c.deps) {
+      let alive = true;
+      for (const dep of c.deps) {
+        if (activeEffects[dep] <= 0) { alive = false; break; }
+      }
+      if (!alive) {
+        delete activeCombos[k];
+        if (lastComboLabel === k) lastComboLabel = null;
+      }
+    } else if (c.framesLeft !== undefined) {
+      c.framesLeft--;
+      if (c.framesLeft <= 0) {
+        delete activeCombos[k];
+        if (lastComboLabel === k) lastComboLabel = null;
+      }
+    }
+  }
+
+  // Warp Time: auto full triple nova every 2s during hyperspeed
+  if (activeCombos.nova_hyperspeed && activeEffects.hyperspeed > 0) {
+    if (warpTimeNovaTimer <= 0) {
+      fireTripleNova(player.x, player.y);
+      warpTimeNovaTimer = 120;
+    } else warpTimeNovaTimer--;
+  }
+  // Pulsar: auto full triple nova every 4s during shield
+  if (activeCombos.nova_shield && activeEffects.shield > 0) {
+    if (pulsarNovaTimer <= 0) {
+      fireTripleNova(player.x, player.y);
+      pulsarNovaTimer = 240;
+    } else pulsarNovaTimer--;
+  }
+  // Phantom Blast: damage aura around player
+  if (phantomBlastFrames > 0 && activeEffects.ghost > 0) {
+    const auraR = 120;
+    const survivors = [];
+    for (const b of bodies) {
+      if (dist(player, b) < auraR + b.radius) {
+        emitDestroyBurst(b.x, b.y, POWERUP_COLORS.nova.rgb);
+        addDestroyPoints();
+        SFX.planetDestroyed('nova');
+      } else survivors.push(b);
+    }
+    bodies = survivors;
+  }
 
   for (const b of bodies) {
     b.y += spd; b.pulse += 0.038;
@@ -1677,8 +1974,14 @@ function update() {
     p.y += spd;
     p.pulse += 0.11;
     if (!p.collected && dist(player, p) < p.radius + PLAYER_R + 6) {
-      p.collected = true;
-      activatePowerup(p.type, p.x, p.y);
+      if (p.pairSibling && !p.pairSibling.collected) {
+        p.collected = true;
+        p.pairSibling.collected = true;
+        activatePair(p, p.pairSibling);
+      } else {
+        p.collected = true;
+        activatePowerup(p.type, p.x, p.y);
+      }
     }
   }
   powerups = powerups.filter(p => !p.collected && p.y < H + 30);
@@ -1687,7 +1990,8 @@ function update() {
   for (const r of novaRings) {
     r.prevR = r.radius;
     r.radius += 7;
-    if (r.radius > 320) r.life *= 0.9;
+    const maxR = 320 * (r.radiusMult || 1);
+    if (r.radius > maxR) r.life *= 0.9;
   }
   if (novaRings.length) {
     const survivors = [];
@@ -1695,9 +1999,11 @@ function update() {
       let killed = false;
       for (const r of novaRings) {
         const dd = dist(r, b);
-        if (dd < r.radius && dd >= r.prevR - 6 && r.radius < 360) {
+        const rm = r.radiusMult || 1;
+        if (dd < r.radius * rm && dd >= (r.prevR * rm) - 6 && r.radius < 360 * rm) {
           killed = true;
-          emitDestroyBurst(b.x, b.y, POWERUP_COLORS.nova.rgb);
+          const color = r.supernova ? '255,90,80' : POWERUP_COLORS.nova.rgb;
+          emitDestroyBurst(b.x, b.y, color);
           addDestroyPoints();
           SFX.planetDestroyed('nova');
           break;
@@ -1706,7 +2012,7 @@ function update() {
       if (!killed) survivors.push(b);
     }
     bodies = survivors;
-    novaRings = novaRings.filter(r => r.life > 0.05 && r.radius < 400);
+    novaRings = novaRings.filter(r => r.life > 0.05 && r.radius < 400 * (r.radiusMult || 1));
   }
 
   // Hyperspeed barrier: destroy planets touching the wedge in front of the player
@@ -1954,6 +2260,8 @@ function drawPlayer() {
   const gf = inGrace ? Math.sin(frame*0.26)*0.5+0.5 : 1;
   const shielded = activeEffects.shield > 0;
   const ghosting = activeEffects.ghost  > 0;
+  const eternal = !!activeCombos.ghost_ghost;
+  const phantomBlast = phantomBlastFrames > 0 && ghosting;
 
   // Shield blink in last 1.5s of duration
   let shieldVis = 1;
@@ -1961,8 +2269,8 @@ function drawPlayer() {
     shieldVis = (Math.floor(activeEffects.shield / 5) % 2) ? 1 : 0.25;
   }
 
-  // Ghost makes the whole player translucent
-  const ghostAlpha = ghosting ? 0.5 : 1;
+  // ETERNAL PHANTOM uses 30% opacity instead of 50%
+  const ghostAlpha = ghosting ? (eternal ? 0.3 : 0.5) : 1;
 
   ctx.save(); ctx.translate(player.x, player.y); ctx.rotate(player.angle);
 
@@ -1982,6 +2290,29 @@ function drawPlayer() {
     ctx.globalAlpha = 0.4 * shieldVis;
     ctx.lineWidth = 0.8;
     ctx.beginPath(); ctx.arc(0,0,PLAYER_R*4.0,0,6.28); ctx.stroke();
+    // FORTRESS SHIELD: extra inner concentric ring while 2 hits remain
+    if (fortressShield && shieldHits >= 2) {
+      ctx.globalAlpha = 0.9 * shieldVis;
+      ctx.strokeStyle = 'rgba(120,255,255,0.95)';
+      ctx.lineWidth = 1.6;
+      ctx.beginPath(); ctx.arc(0,0,PLAYER_R*2.6,0,6.28); ctx.stroke();
+    }
+  }
+  // PHANTOM BLAST: red/orange damage aura around player
+  if (phantomBlast) {
+    const auraR = 120;
+    const pulse = Math.sin(frame * 0.18) * 0.15 + 0.85;
+    ctx.globalAlpha = 0.18 * pulse;
+    const pg = ctx.createRadialGradient(0, 0, PLAYER_R, 0, 0, auraR);
+    pg.addColorStop(0, 'rgba(255,140,60,0.55)');
+    pg.addColorStop(0.6, 'rgba(255,80,40,0.18)');
+    pg.addColorStop(1, 'rgba(255,60,20,0)');
+    ctx.fillStyle = pg;
+    ctx.beginPath(); ctx.arc(0,0,auraR,0,6.28); ctx.fill();
+    ctx.globalAlpha = 0.55 * pulse;
+    ctx.strokeStyle = 'rgba(255,120,50,0.85)';
+    ctx.lineWidth = 1.4;
+    ctx.beginPath(); ctx.arc(0,0,auraR,0,6.28); ctx.stroke();
   }
 
   // Ghost wispy aura: 3 concentric pulsing rings out of phase + soft purple halo
@@ -2044,7 +2375,48 @@ function drawPlayer() {
   ctx.restore(); ctx.globalAlpha = 1;
 }
 
+function drawPairTethers() {
+  const drawn = new Set();
+  for (const p of powerups) {
+    if (!p.pairSibling || p.collected) continue;
+    const key = Math.min(p.pairId, p.pairSibling.pairId) + '_' + Math.max(p.pairId, p.pairSibling.pairId);
+    if (drawn.has(key)) continue;
+    drawn.add(key);
+    const q = p.pairSibling;
+    if (q.collected) continue;
+    const rgb1 = POWERUP_COLORS[p.type].rgb;
+    const rgb2 = POWERUP_COLORS[q.type].rgb;
+    // Mixed color by averaging
+    const mix = rgb1.split(',').map((n, i) => Math.round((+n + +rgb2.split(',')[i]) / 2)).join(',');
+    const pulse = Math.sin(frame * 0.18) * 0.3 + 0.7;
+    const segments = 6;
+    ctx.save();
+    // Outer glow beam
+    ctx.globalAlpha = 0.35 * pulse;
+    ctx.strokeStyle = `rgba(${mix},0.9)`;
+    ctx.lineWidth = 5;
+    ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(q.x, q.y); ctx.stroke();
+    // Inner bright beam
+    ctx.globalAlpha = 0.85 * pulse;
+    ctx.strokeStyle = `rgba(${mix},1)`;
+    ctx.lineWidth = 1.6;
+    ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(q.x, q.y); ctx.stroke();
+    // Energy particles travelling along the beam
+    for (let i = 0; i < segments; i++) {
+      const t = ((frame * 0.02 + i / segments) % 1);
+      const ex = p.x + (q.x - p.x) * t;
+      const ey = p.y + (q.y - p.y) * t;
+      ctx.globalAlpha = (1 - Math.abs(t - 0.5) * 2) * 0.9;
+      ctx.fillStyle = `rgba(${mix},1)`;
+      ctx.beginPath(); ctx.arc(ex, ey, 2.2, 0, 6.28); ctx.fill();
+    }
+    ctx.restore();
+    ctx.globalAlpha = 1;
+  }
+}
+
 function drawPowerups() {
+  drawPairTethers();
   for (const p of powerups) {
     const pulse = Math.sin(p.pulse) * 0.35 + 0.65;
     const r = p.radius * (0.95 + Math.sin(p.pulse) * 0.18);
@@ -2138,20 +2510,23 @@ function drawPowerups() {
 
 function drawNovaRings() {
   for (const r of novaRings) {
-    // Inner trailing ring (shockwave)
-    const innerR = Math.max(0, r.radius - 20);
+    const rm = r.radiusMult || 1;
+    const drawR = r.radius * rm;
+    const innerR = Math.max(0, drawR - 20);
+    const sn = r.supernova;
+    const innerCol = sn ? '255,80,80' : '255,160,60';
+    const outerCol = sn ? '255,60,60' : '255,200,90';
     ctx.globalAlpha = r.life * 0.5;
-    ctx.strokeStyle = `rgba(255,160,60,${r.life * 0.7})`;
+    ctx.strokeStyle = `rgba(${innerCol},${r.life * 0.7})`;
     ctx.lineWidth = 10;
     ctx.beginPath(); ctx.arc(r.x, r.y, innerR, 0, 6.28); ctx.stroke();
-    // Main outer ring
     ctx.globalAlpha = r.life * 0.85;
-    ctx.strokeStyle = `rgba(255,200,90,${r.life})`;
+    ctx.strokeStyle = `rgba(${outerCol},${r.life})`;
     ctx.lineWidth = 6;
-    ctx.beginPath(); ctx.arc(r.x, r.y, r.radius, 0, 6.28); ctx.stroke();
+    ctx.beginPath(); ctx.arc(r.x, r.y, drawR, 0, 6.28); ctx.stroke();
     ctx.globalAlpha = r.life * 0.35;
     ctx.lineWidth = 18;
-    ctx.beginPath(); ctx.arc(r.x, r.y, r.radius, 0, 6.28); ctx.stroke();
+    ctx.beginPath(); ctx.arc(r.x, r.y, drawR, 0, 6.28); ctx.stroke();
   }
   ctx.globalAlpha = 1;
 }
@@ -2186,24 +2561,29 @@ function drawPickupParticles() {
 const powerupTimerEl = document.getElementById('powerupTimer');
 const ptLabelEl = document.getElementById('ptLabel');
 const ptFillEl = document.getElementById('ptFill');
+const ptComboEl = document.getElementById('ptCombo');
 
 function updatePowerupTimer() {
-  // Priority: shield > ghost > slowmo (most game-relevant first)
+  // Priority: shield > ghost > hyperspeed (most game-relevant first)
   let label = null, remaining = 0, max = 0, fillColor = '';
   if (activeEffects.shield > 0) {
     label = 'SHIELD'; remaining = activeEffects.shield; max = SHIELD_DURATION;
     fillColor = 'rgba(120,230,255,0.95)';
   } else if (activeEffects.ghost > 0) {
-    label = 'GHOST'; remaining = activeEffects.ghost; max = GHOST_DURATION;
+    label = 'GHOST'; remaining = activeEffects.ghost;
+    max = activeCombos.ghost_ghost ? GHOST_ETERNAL_DURATION : GHOST_DURATION;
     fillColor = 'rgba(200,120,255,0.95)';
   } else if (activeEffects.hyperspeed > 0) {
-    label = 'HYPERSPEED'; remaining = activeEffects.hyperspeed; max = HYPERSPEED_DURATION;
+    label = 'HYPERSPEED'; remaining = activeEffects.hyperspeed;
+    max = hyperspeedActiveDuration;
     fillColor = 'rgba(255,220,60,0.95)';
   }
 
   if (!label) {
     if (powerupTimerEl.classList.contains('visible'))
       powerupTimerEl.classList.remove('visible');
+    if (ptComboEl.classList.contains('visible'))
+      ptComboEl.classList.remove('visible');
     return;
   }
 
@@ -2214,6 +2594,24 @@ function updatePowerupTimer() {
   ptFillEl.style.width = (pct * 100) + '%';
   ptFillEl.style.background = fillColor;
   ptFillEl.style.boxShadow = `0 0 8px ${fillColor}`;
+
+  // Combo label as a second line — most recently activated combo
+  let activeKey = lastComboLabel;
+  if (activeKey && !activeCombos[activeKey]) activeKey = null;
+  if (!activeKey) {
+    const keys = Object.keys(activeCombos);
+    if (keys.length) activeKey = keys[keys.length - 1];
+  }
+  if (activeKey) {
+    const def = COMBO_DEFS[activeKey];
+    const text = '\u26A1 ' + def.name;
+    if (ptComboEl.textContent !== text) ptComboEl.textContent = text;
+    ptComboEl.style.color = def.labelColor;
+    if (!ptComboEl.classList.contains('visible'))
+      ptComboEl.classList.add('visible');
+  } else if (ptComboEl.classList.contains('visible')) {
+    ptComboEl.classList.remove('visible');
+  }
 }
 
 function drawHyperspeedBarrier() {
@@ -2388,8 +2786,15 @@ function goToMainMenu() {
   planetRipples = [];
   activeEffects = { shield: 0, hyperspeed: 0, ghost: 0 };
   hyperspeedCurrentMult = 1; hyperspeedTargetSpeed = 0;
+  hyperspeedPeakMult = 1; hyperspeedActiveDuration = HYPERSPEED_DURATION;
   if (hyperspeedWhooshNodes) { try { hyperspeedWhooshNodes.stop(0.1); } catch {} hyperspeedWhooshNodes = null; }
   shieldBroken = false;
+  shieldHits = 1;
+  fortressShield = false;
+  activeCombos = {};
+  lastComboLabel = null;
+  recentNovaFrames = 0;
+  phantomBlastFrames = 0;
   SFX.stopMusic();
   pauseOverlay.classList.remove('visible');
   pauseBtn.classList.remove('visible');
