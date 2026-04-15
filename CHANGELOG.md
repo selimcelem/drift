@@ -6,6 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-04-16
+
+### Added
+- Three separate music tracks: menu, gameplay, death screen
+- Stacking hyperspeed system up to 4x speed with step-down expiry, color tints, blinking stack counter
+- Planet destruction visual effects: flash, ring pulse, debris particles per destruction type
+- Death orb shatter animation with polygon shards
+- Retro button click sounds throughout all menus
+
+### Changed
+- Music system supports crossfade looping for all three tracks
+- Hyperspeed stacks scale landing pull strength
+- Nova and Supernova destruction sounds enhanced
+
+### Fixed
+- Pause and settings music toggle bug
+- Combo duration sync on component pickup
+- Android crash resilience: error handlers, audio recovery, memory pressure relief, back button
+
 ## [1.2.0] - 2026-04-15
 
 ### Added
