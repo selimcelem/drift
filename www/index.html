@@ -4028,12 +4028,14 @@ updateBannerEl.addEventListener('click', e => {
 
 function checkForUpdate() {
   try {
+    console.log('[update] fetching...');
     fetch('https://api.github.com/repos/selimcelem/drift/releases/latest', {
       headers: { 'Accept': 'application/vnd.github+json' },
     })
       .then(r => r.ok ? r.json() : null)
       .then(data => {
         if (!data || !data.tag_name) return;
+        console.log('[update] response:', data.tag_name, 'vs', GAME_VERSION);
         if (compareVersions(GAME_VERSION, data.tag_name) < 0) {
           updateAvailable = true;
           syncUpdateBanner();
