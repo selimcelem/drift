@@ -1136,6 +1136,30 @@ const SFX = (function() {
     killOnEnd(o, g);
   }
 
+  // Cinematic 4-layer nova explosion — sub boom, mid noise, high crack, pitch
+  // drop. `vScale` lets Supernova play the same shape 30% louder on each layer.
+  function novaBoom(t, vScale) {
+    const s = vScale || 1;
+    // Layer 1: massive sub boom — sine 40→15hz, 0.4s, vol 0.5.
+    chipSweep('sine', 40, 15, t, 0.4, 0.5 * s);
+    // Layer 2: mid explosion — bandpass noise centered at 250hz (covers
+    // ~100-400hz), 0.3s, vol 0.45.
+    noiseBurst(t, 0.3, 250, 0.85, 0.45 * s, x => Math.pow(1 - x, 1.0));
+    // Layer 3: high crack — highpass noise 2000hz, 0.1s, vol 0.25.
+    const n = ctx.createBufferSource();
+    n.buffer = noiseBuffer(0.1, x => 1 - x);
+    const hf = ctx.createBiquadFilter();
+    hf.type = 'highpass'; hf.frequency.value = 2000;
+    const ng = ctx.createGain();
+    ng.gain.setValueAtTime(0.25 * s, t);
+    ng.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+    n.connect(hf); hf.connect(ng); ng.connect(sfxGain);
+    n.start(t); n.stop(t + 0.12);
+    killOnEnd(n, hf, ng);
+    // Layer 4: pitch drop — square 200→30hz, 0.2s, vol 0.3.
+    chipSweep('square', 200, 30, t, 0.2, 0.3 * s);
+  }
+
   function attract(_frame) {
     safeSfx(t => {
       // Throttled at ~8 frames @ 60fps via ATTRACT_THROTTLE (0.13s).
@@ -1230,10 +1254,8 @@ const SFX = (function() {
         chipSweep('sine', 2000, 800, t, 0.08, 0.12);
 
       } else if (kind === 'nova') {
-        // Bigger explosion: bandpass noise 150-400hz 0.2s + sub square
-        // 50→25hz 0.15s. Feels MASSIVE.
-        noiseBurst(t, 0.2, 275, 1.0, 0.38, x => Math.pow(1 - x, 1.0));
-        chipSweep('square', 50, 25, t, 0.15, 0.38);
+        // MASSIVE cinematic explosion — 4 simultaneous layers (see novaBoom).
+        novaBoom(t, 1);
 
       } else if (kind === 'barrier') {
         // Hyperspeed barrier kill: sharp square 300→60hz zap-crunch + a
@@ -1357,6 +1379,21 @@ const SFX = (function() {
           shimmer(t + 0.64, 0.12, 0.25, 6000);
           break;
         }
+      }
+    });
+  }
+
+  // Per-combo planet destruction sound — used in place of the regular
+  // planetDestroyed() variant when a combo wants a beefier kill cue.
+  // Currently only Supernova (nova_nova) overrides; everything else falls
+  // back to the normal nova boom.
+  function comboDestroySound(key) {
+    safeSfx(t => {
+      if (key === 'nova_nova') {
+        // Same 4-layer nova boom, every layer 30% louder.
+        novaBoom(t, 1.3);
+      } else {
+        novaBoom(t, 1);
       }
     });
   }
@@ -1610,7 +1647,7 @@ const SFX = (function() {
 
   return {
     init, attract, repel, pickup, planetDestroyed, death,
-    shieldBreak, comboActivate, startHyperspeedWhoosh,
+    shieldBreak, comboActivate, comboDestroySound, startHyperspeedWhoosh,
     startMusic, stopMusic, pauseMusic, resumeMusic,
     setMusicEnabled, setSfxEnabled, isMusicEnabled, isSfxEnabled,
   };
@@ -1904,6 +1941,28 @@ function detectCombo(newType) {
   return null;
 }
 
+// Bring all listed timed-effect components up to the longest one's remaining
+// duration. Stops a combo's "shorter" half (e.g. shield at 60 frames when ghost
+// is freshly picked up at 480) from expiring mid-combo. Only acts on effects
+// that are actually active (>0); never reactivates a dead one.
+function syncComboDurations(...effectKeys) {
+  let max = 0;
+  for (const k of effectKeys) {
+    if (activeEffects[k] > max) max = activeEffects[k];
+  }
+  if (max <= 0) return;
+  for (const k of effectKeys) {
+    if (activeEffects[k] > 0 && activeEffects[k] < max) {
+      activeEffects[k] = max;
+    }
+  }
+  // Hyperspeed deceleration uses hyperspeedActiveDuration as the curve
+  // denominator — bump it so the curve stays valid when we extend the timer.
+  if (effectKeys.includes('hyperspeed') && hyperspeedActiveDuration < max) {
+    hyperspeedActiveDuration = max;
+  }
+}
+
 function activateCombo(key, x, y) {
   const def = COMBO_DEFS[key];
   if (!def) return;
@@ -1924,9 +1983,17 @@ function activateCombo(key, x, y) {
     } else if (key === 'hyperspeed_ghost') {
       activateHyperspeed(HYPERSPEED_COMBO_DURATION, 2);
       activeEffects.ghost = HYPERSPEED_COMBO_DURATION;
+      syncComboDurations('hyperspeed', 'ghost');
     } else if (key === 'hyperspeed_shield') {
       if (activeEffects.hyperspeed <= 0) activateHyperspeed();
       if (activeEffects.shield <= 0) { activeEffects.shield = SHIELD_DURATION; shieldBroken = false; }
+      syncComboDurations('hyperspeed', 'shield');
+    } else if (key === 'ghost_shield') {
+      // Wraith refresh wasn't previously handled — make sure both halves
+      // come up to whichever timer is longest so the combo doesn't die mid-effect.
+      if (activeEffects.ghost <= 0) activeEffects.ghost = GHOST_DURATION;
+      if (activeEffects.shield <= 0) { activeEffects.shield = SHIELD_DURATION; shieldBroken = false; }
+      syncComboDurations('ghost', 'shield');
     }
     lastComboLabel = key;
     screenShake = Math.max(screenShake, 6);
@@ -1971,17 +2038,20 @@ function activateCombo(key, x, y) {
     // SPECTRAL RUSH: 8s, 2x spike, barrier fires during ghost
     activateHyperspeed(HYPERSPEED_COMBO_DURATION, 2);
     activeEffects.ghost = HYPERSPEED_COMBO_DURATION;
+    syncComboDurations('hyperspeed', 'ghost');
     activeCombos[key] = { def, deps: ['hyperspeed', 'ghost'] };
   } else if (key === 'hyperspeed_shield') {
     // JUGGERNAUT: barrier + shield + refresh shield on hyperspeed end
     if (activeEffects.hyperspeed <= 0) activateHyperspeed();
     if (activeEffects.shield <= 0) { activeEffects.shield = SHIELD_DURATION; shieldBroken = false; }
+    syncComboDurations('hyperspeed', 'shield');
     juggernautPendingShieldRefresh = true;
     activeCombos[key] = { def, deps: ['hyperspeed'] };
   } else if (key === 'ghost_shield') {
     // WRAITH: during ghost destroy on contact; when ghost ends, shield absorbs 1 hit
     if (activeEffects.ghost <= 0) activeEffects.ghost = GHOST_DURATION;
     if (activeEffects.shield <= 0) { activeEffects.shield = SHIELD_DURATION; shieldBroken = false; }
+    syncComboDurations('ghost', 'shield');
     activeCombos[key] = { def, deps: ['ghost'] };
   } else if (key === 'ghost_ghost') {
     // ETERNAL PHANTOM: 16s ghost
@@ -2419,7 +2489,8 @@ function update() {
           const color = r.supernova ? '255,90,80' : POWERUP_COLORS.nova.rgb;
           emitDestroyBurst(b.x, b.y, color);
           addDestroyPoints();
-          SFX.planetDestroyed('nova');
+          if (activeCombos.nova_nova) SFX.comboDestroySound('nova_nova');
+          else SFX.planetDestroyed('nova');
           break;
         }
       }
