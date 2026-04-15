@@ -887,6 +887,16 @@ let hyperspeedCurrentMult = 1;    // current speed multiplier (peaks then decays
 let hyperspeedPeakMult = 1;       // this instance's peak multiplier
 let hyperspeedActiveDuration = HYPERSPEED_DURATION; // duration used for deceleration curve
 let hyperspeedWhooshNodes = null; // audio nodes for sustained whoosh
+// --- Stacking hyperspeed ---
+// Each pickup adds 1 stack (max 4) and pushes its own independent 6s timer
+// onto hyperSpeedTimers. When a timer expires, hyperSpeedStacks decrements by
+// one — speed steps down level by level. peakHyperSpeedStacks tracks the
+// highest stack count reached this session so the final landing pull scales
+// with how aggressive the run was.
+const HYPERSPEED_MAX_STACKS = 4;
+let hyperSpeedStacks = 0;
+let hyperSpeedTimers = [];
+let peakHyperSpeedStacks = 0;
 
 // Shield hitpoints (fortress shield = 2)
 let shieldHits = 1;
@@ -1226,7 +1236,7 @@ const SFX = (function() {
     });
   }
 
-  function pickup(type) {
+  function pickup(type, opts) {
     safeSfx(t => {
       if (type === 'shield') {
         // Classic SNES power-up jingle: ascending C5-E5-G5-C6 squares,
@@ -1259,8 +1269,12 @@ const SFX = (function() {
         // Rapid ascending arpeggio A3-C4-E4-A4-C5-E5-A5, each 0.04s,
         // square. ENGAGING WARP DRIVE. (Sustained engine tone is owned
         // separately by startHyperspeedWhoosh.)
+        // opts.stacks pitch-shifts the arpeggio so each additional stack
+        // sounds slightly higher (1.0/1.2/1.4/1.6 for stacks 1/2/3/4).
+        const stacks = (opts && opts.stacks) || 1;
+        const pitchMult = 1 + 0.2 * (Math.max(1, stacks) - 1);
         const arp = [220.00, 261.63, 329.63, 440.00, 523.25, 659.25, 880.00];
-        arp.forEach((freq, i) => chipNote(freq, t + i * 0.04, 0.05, 0.3, 'square'));
+        arp.forEach((freq, i) => chipNote(freq * pitchMult, t + i * 0.04, 0.05, 0.3, 'square'));
 
       } else if (type === 'ghost') {
         // Eerie descending tritone C5→F#4 on sines with slow attack and a
@@ -1440,18 +1454,25 @@ const SFX = (function() {
   // 0.4x, both through a lowpass (cutoff ~200hz, Q=2) modulated by a
   // 0.3hz LFO sweeping between 120 and 280hz for movement. Capped at
   // 0.08. Hard-stop (no fade) when hyperspeed ends.
-  function startHyperspeedWhoosh() {
+  //
+  // `stacks` (1..4) shifts the base pitch up 15% per additional stack so the
+  // engine sounds more aggressive at higher stack counts. Stack 1 keeps the
+  // original 80hz so existing single-pickup behavior is unchanged.
+  function startHyperspeedWhoosh(stacks) {
     if (!ensureRunning()) return null;
     if (!sfxEnabled) return null;
     try {
       const t = ctx.currentTime;
+      const stackLevel = Math.max(1, stacks || 1);
+      const baseFreq = 80 * (1 + 0.15 * (stackLevel - 1));
+
       const f = ctx.createBiquadFilter();
       f.type = 'lowpass';
-      f.frequency.value = 200;
+      // Track the base pitch so the LFO window stays centered relative to it.
+      f.frequency.value = baseFreq * 2.5;
       f.Q.value = 2;
 
-      // LFO sweeps cutoff 120..280hz. A ±80 gain around a 200hz base
-      // gives that window.
+      // LFO sweeps cutoff ±80hz around the base.
       const lfo = ctx.createOscillator();
       const lfoGain = ctx.createGain();
       lfo.type = 'sine';
@@ -1459,17 +1480,17 @@ const SFX = (function() {
       lfoGain.gain.value  = 80;
       lfo.connect(lfoGain); lfoGain.connect(f.frequency);
 
-      // Fundamental
+      // Fundamental at the stack-scaled base.
       const o1 = ctx.createOscillator();
       const g1 = ctx.createGain();
-      o1.type = 'sine'; o1.frequency.value = 80;
+      o1.type = 'sine'; o1.frequency.value = baseFreq;
       g1.gain.value = 1;
       o1.connect(g1); g1.connect(f);
 
       // 2nd harmonic at 0.4x
       const o2 = ctx.createOscillator();
       const g2 = ctx.createGain();
-      o2.type = 'sine'; o2.frequency.value = 160;
+      o2.type = 'sine'; o2.frequency.value = baseFreq * 2;
       g2.gain.value = 0.4;
       o2.connect(g2); g2.connect(f);
 
@@ -2117,8 +2138,17 @@ function syncComboDurations(...effectKeys) {
   }
   // Hyperspeed deceleration uses hyperspeedActiveDuration as the curve
   // denominator — bump it so the curve stays valid when we extend the timer.
+  // Also extend the longest stack timer so the next update tick doesn't
+  // immediately undo the sync by recomputing activeEffects.hyperspeed.
   if (effectKeys.includes('hyperspeed') && hyperspeedActiveDuration < max) {
     hyperspeedActiveDuration = max;
+  }
+  if (effectKeys.includes('hyperspeed') && hyperSpeedTimers.length > 0) {
+    let longestIdx = 0;
+    for (let i = 1; i < hyperSpeedTimers.length; i++) {
+      if (hyperSpeedTimers[i] > hyperSpeedTimers[longestIdx]) longestIdx = i;
+    }
+    if (hyperSpeedTimers[longestIdx] < max) hyperSpeedTimers[longestIdx] = max;
   }
 }
 
@@ -2229,7 +2259,9 @@ function activateCombo(key, x, y) {
 function activatePair(a, b) {
   emitPickupParticles(a.x, a.y, a.type);
   emitPickupParticles(b.x, b.y, b.type);
-  SFX.pickup(a.type);
+  // Defer hyperspeed pickup sound until after activation so it picks up the
+  // new stack count for its pitch shift.
+  if (a.type !== 'hyperspeed') SFX.pickup(a.type);
   runStats.powerupsUsed += 2;
   const key = comboKey(a.type, b.type);
   if (key) {
@@ -2239,6 +2271,7 @@ function activatePair(a, b) {
     rawActivate(a.type, a.x, a.y);
     rawActivate(b.type, b.x, b.y);
   }
+  if (a.type === 'hyperspeed') SFX.pickup('hyperspeed', { stacks: hyperSpeedStacks });
 
   // Both effects were gained simultaneously — identical timestamp triggers
   // Rule 3 (random tie-break) on the next single pickup.
@@ -2285,22 +2318,52 @@ function clearPendingNovaTimeouts() {
   pendingNovaTimeouts = [];
 }
 
-function activateHyperspeed(durationOverride, peakScale) {
+// Recompute the peak speed multiplier for the current stack count. Stacks
+// scale both the speed-relative cap (3.5 * stacks) and the absolute floor
+// (6.0 * stacks). peakScale is an optional combo bonus (e.g. Spectral Rush
+// passes 2 for double the effective speed).
+function computeHyperspeedPeakMult(stacks, peakScale) {
   const normSpd = normalScrollSpeed();
-  // Peak speed: max(normSpd * 3.5, 6.0). Convert to a multiplier.
-  const basePeak = Math.max(3.5, 6.0 / Math.max(normSpd, 0.01));
-  hyperspeedPeakMult = basePeak * (peakScale || 1);
+  const s = Math.max(1, stacks || 1);
+  const basePeak = Math.max(3.5 * s, (6.0 * s) / Math.max(normSpd, 0.01));
+  return basePeak * (peakScale || 1);
+}
+
+// Each pickup adds a 6s timer (or the combo override) and bumps stacks up to
+// HYPERSPEED_MAX_STACKS. At max we refresh the soonest-expiring timer instead
+// of growing the array. The whoosh restarts so the engine pitch can shift up.
+function activateHyperspeed(durationOverride, peakScale) {
+  const newTimer = durationOverride || HYPERSPEED_DURATION;
+  if (hyperSpeedStacks < HYPERSPEED_MAX_STACKS) {
+    hyperSpeedStacks++;
+    hyperSpeedTimers.push(newTimer);
+  } else {
+    // At max: refresh the timer that would expire soonest so the player still
+    // feels the pickup as a duration extension.
+    let minIdx = 0;
+    for (let i = 1; i < hyperSpeedTimers.length; i++) {
+      if (hyperSpeedTimers[i] < hyperSpeedTimers[minIdx]) minIdx = i;
+    }
+    if (newTimer > hyperSpeedTimers[minIdx]) hyperSpeedTimers[minIdx] = newTimer;
+  }
+  if (hyperSpeedStacks > peakHyperSpeedStacks) peakHyperSpeedStacks = hyperSpeedStacks;
+
+  hyperspeedPeakMult = computeHyperspeedPeakMult(hyperSpeedStacks, peakScale);
   hyperspeedCurrentMult = hyperspeedPeakMult;
-  hyperspeedTargetSpeed = normSpd;
-  hyperspeedActiveDuration = durationOverride || HYPERSPEED_DURATION;
+  hyperspeedTargetSpeed = normalScrollSpeed();
+  hyperspeedActiveDuration = Math.max.apply(null, hyperSpeedTimers);
   activeEffects.hyperspeed = hyperspeedActiveDuration;
+
+  // Restart the sustained whoosh at the new stack-scaled pitch.
   if (hyperspeedWhooshNodes) { try { hyperspeedWhooshNodes.stop(0.1); } catch {} }
-  hyperspeedWhooshNodes = SFX.startHyperspeedWhoosh();
+  hyperspeedWhooshNodes = SFX.startHyperspeedWhoosh(hyperSpeedStacks);
 }
 
 function activatePowerup(type, x, y) {
   emitPickupParticles(x, y, type);
-  SFX.pickup(type);
+  // Hyperspeed pickup sound is played AFTER rawActivate so it can use the
+  // new stack count for its pitch shift; everything else plays immediately.
+  if (type !== 'hyperspeed') SFX.pickup(type);
   runStats.powerupsUsed++;
 
   // Detect combo BEFORE updating lastGainedEffects — the partner lookup
@@ -2310,6 +2373,7 @@ function activatePowerup(type, x, y) {
   // The new pickup always activates its own individual effect timer, and
   // the combo (if any) stacks on top with a fresh activation.
   rawActivate(type, x, y);
+  if (type === 'hyperspeed') SFX.pickup('hyperspeed', { stacks: hyperSpeedStacks });
   if (key) activateCombo(key, x, y);
 
   // Record this pickup as the most-recently-gained event.
@@ -2339,6 +2403,9 @@ function resetGame() {
   activeEffects = { shield: 0, hyperspeed: 0, ghost: 0 };
   hyperspeedCurrentMult = 1; hyperspeedTargetSpeed = 0;
   hyperspeedPeakMult = 1; hyperspeedActiveDuration = HYPERSPEED_DURATION;
+  hyperSpeedStacks = 0;
+  hyperSpeedTimers = [];
+  peakHyperSpeedStacks = 0;
   if (hyperspeedWhooshNodes) { try { hyperspeedWhooshNodes.stop(0.1); } catch {} hyperspeedWhooshNodes = null; }
   shieldBroken = false;
   shieldHits = 1;
@@ -2425,7 +2492,10 @@ function applyForce() {
     ay += 0.04 * ((H * 0.2 - player.y) / (H * 0.2));
   }
   if (activeEffects.hyperspeed > 0 && activeEffects.hyperspeed < 180) {
-    const pullStrength = Math.max(0.0004, (1 - activeEffects.hyperspeed / 180) * 0.002);
+    // Stacked hyperspeed lands harder: scale pull by the peak stacks reached
+    // this session. 1 stack = 1× (unchanged from pre-stacking), 4 stack = 4×.
+    const stackBoost = Math.max(1, peakHyperSpeedStacks);
+    const pullStrength = Math.max(0.0004, (1 - activeEffects.hyperspeed / 180) * 0.002 * stackBoost);
     ay += (H * 0.72 - player.y) * pullStrength;
   }
   player.vy += ay;
@@ -2511,14 +2581,46 @@ function update() {
 
   // Decrement active effect timers
   if (activeEffects.shield > 0) activeEffects.shield--;
-  if (activeEffects.hyperspeed > 0) {
-    activeEffects.hyperspeed--;
-    // Decelerate from peakMult back to 1x over the (per-instance) duration
-    const t_hs = 1 - (activeEffects.hyperspeed / hyperspeedActiveDuration);
-    hyperspeedCurrentMult = hyperspeedPeakMult - (hyperspeedPeakMult - 1) * t_hs;
-    if (hyperspeedCurrentMult < 1.05) hyperspeedCurrentMult = 1;
-    if (activeEffects.hyperspeed <= 0) {
+  if (hyperSpeedStacks > 0) {
+    // Decrement every independent stack timer; remove any that hit zero.
+    let expired = 0;
+    for (let i = hyperSpeedTimers.length - 1; i >= 0; i--) {
+      hyperSpeedTimers[i]--;
+      if (hyperSpeedTimers[i] <= 0) {
+        hyperSpeedTimers.splice(i, 1);
+        expired++;
+      }
+    }
+    if (expired > 0) {
+      hyperSpeedStacks -= expired;
+      if (hyperSpeedStacks < 0) hyperSpeedStacks = 0;
+      if (hyperSpeedStacks > 0) {
+        // Step down to the new (lower) peak and restart the whoosh at a
+        // lower pitch. activeDuration follows the longest remaining timer
+        // so the decay curve denominator stays valid.
+        hyperspeedPeakMult = computeHyperspeedPeakMult(hyperSpeedStacks, 1);
+        hyperspeedCurrentMult = Math.min(hyperspeedCurrentMult, hyperspeedPeakMult);
+        hyperspeedActiveDuration = Math.max.apply(null, hyperSpeedTimers);
+        if (hyperspeedWhooshNodes) { try { hyperspeedWhooshNodes.stop(0.1); } catch {} }
+        hyperspeedWhooshNodes = SFX.startHyperspeedWhoosh(hyperSpeedStacks);
+      }
+    }
+
+    // Mirror activeEffects.hyperspeed to the longest remaining timer so all
+    // existing `activeEffects.hyperspeed > 0` checks elsewhere keep working.
+    activeEffects.hyperspeed = hyperSpeedTimers.length ? Math.max.apply(null, hyperSpeedTimers) : 0;
+
+    if (hyperSpeedStacks > 0) {
+      // Decelerate from peakMult toward 1x over the longest timer's duration.
+      const t_hs = 1 - (activeEffects.hyperspeed / hyperspeedActiveDuration);
+      hyperspeedCurrentMult = hyperspeedPeakMult - (hyperspeedPeakMult - 1) * t_hs;
+      if (hyperspeedCurrentMult < 1.05) hyperspeedCurrentMult = 1;
+    } else {
+      // Last stack expired: full landing complete.
       hyperspeedCurrentMult = 1;
+      activeEffects.hyperspeed = 0;
+      hyperSpeedTimers = [];
+      peakHyperSpeedStacks = 0;
       if (hyperspeedWhooshNodes) { try { hyperspeedWhooshNodes.stop(0.5); } catch {} hyperspeedWhooshNodes = null; }
       // JUGGERNAUT: refresh shield to a fresh 15s when hyperspeed ends
       if (juggernautPendingShieldRefresh) {
@@ -3058,6 +3160,30 @@ function drawPlayer() {
     ctx.beginPath(); ctx.arc(0,0,PLAYER_R*(2.4-gf*0.4),0,6.28); ctx.stroke();
   }
 
+  // Stacked hyperspeed glow — added behind the regular cyan aura. Tint shifts
+  // gold→orange→red as stacks climb; stack 4 layers a pulsing white core on
+  // top so it visibly screams "danger".
+  if (hyperSpeedStacks > 0 && hyperspeedCurrentMult > 1.05) {
+    const tint = hyperStackTint(hyperSpeedStacks);
+    const intensity = (hyperspeedCurrentMult - 1) / 2;
+    ctx.globalAlpha = 0.55 * intensity * ghostAlpha;
+    const hg = ctx.createRadialGradient(0,0,0,0,0,PLAYER_R*3.8);
+    hg.addColorStop(0,   `rgba(${tint.r},${tint.g},${tint.b},0.75)`);
+    hg.addColorStop(0.5, `rgba(${tint.r},${tint.g},${tint.b},0.25)`);
+    hg.addColorStop(1,   `rgba(${tint.r},${tint.g},${tint.b},0)`);
+    ctx.fillStyle = hg;
+    ctx.beginPath(); ctx.arc(0,0,PLAYER_R*3.8,0,6.28); ctx.fill();
+    if (tint.white) {
+      const pulse = (Math.sin(frame * 0.3) + 1) * 0.5;
+      ctx.globalAlpha = (0.45 + 0.45 * pulse) * intensity * ghostAlpha;
+      const wg = ctx.createRadialGradient(0,0,0,0,0,PLAYER_R*1.9);
+      wg.addColorStop(0, 'rgba(255,255,255,0.9)');
+      wg.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = wg;
+      ctx.beginPath(); ctx.arc(0,0,PLAYER_R*1.9,0,6.28); ctx.fill();
+    }
+  }
+
   ctx.globalAlpha = (inGrace?gf:1) * ghostAlpha;
   const aura = ctx.createRadialGradient(0,0,0,0,0,PLAYER_R*2.8);
   aura.addColorStop(0,'rgba(100,220,255,0.38)'); aura.addColorStop(1,'rgba(0,0,0,0)');
@@ -3317,11 +3443,33 @@ function updatePowerupTimer() {
   }
 }
 
+// Stack-aware tint for hyperspeed visuals (player glow + barrier).
+// Stack 1 keeps the original gold; higher stacks shift orange→red, and stack
+// 4 sets the `white` flag so renderers can pulse a white core/edge on top.
+function hyperStackTint(stacks) {
+  if (stacks >= 4) return { r: 255, g: 80,  b: 80,  edgeR: 255, edgeG: 200, edgeB: 200, white: true };
+  if (stacks >= 3) return { r: 255, g: 60,  b: 60,  edgeR: 255, edgeG: 140, edgeB: 140 };
+  if (stacks >= 2) return { r: 255, g: 140, b: 40,  edgeR: 255, edgeG: 200, edgeB: 100 };
+  return                  { r: 255, g: 220, b: 60,  edgeR: 255, edgeG: 240, edgeB: 120 };
+}
+
 function drawHyperspeedBarrier() {
   if (activeEffects.hyperspeed <= 0 || hyperspeedCurrentMult <= 1.05) return;
   const intensity = (hyperspeedCurrentMult - 1) / 2; // 0..1
   const barrierY = player.y - 60;
   const halfW = 60;
+
+  const tint = hyperStackTint(hyperSpeedStacks);
+  let r = tint.r, g = tint.g, b = tint.b;
+  // Stack 4: barrier pulses red ↔ white at ~5hz.
+  if (tint.white) {
+    const pulse = (Math.sin(frame * 0.3) + 1) * 0.5; // 0..1
+    const w = pulse * 0.6;
+    r = Math.round(r + (255 - r) * w);
+    g = Math.round(g + (255 - g) * w);
+    b = Math.round(b + (255 - b) * w);
+  }
+  const eR = tint.edgeR, eG = tint.edgeG, eB = tint.edgeB;
 
   // Glowing wedge/barrier shape
   ctx.save();
@@ -3329,9 +3477,9 @@ function drawHyperspeedBarrier() {
 
   // Main barrier glow
   const grd = ctx.createLinearGradient(player.x, barrierY - 15, player.x, barrierY + 20);
-  grd.addColorStop(0, 'rgba(255,220,60,0)');
-  grd.addColorStop(0.4, `rgba(255,220,60,${0.7 * intensity})`);
-  grd.addColorStop(1, 'rgba(255,180,30,0)');
+  grd.addColorStop(0, `rgba(${r},${g},${b},0)`);
+  grd.addColorStop(0.4, `rgba(${r},${g},${b},${0.7 * intensity})`);
+  grd.addColorStop(1, `rgba(${r},${Math.round(g*0.82)},${Math.round(b*0.5)},0)`);
   ctx.fillStyle = grd;
   ctx.beginPath();
   ctx.moveTo(player.x - halfW, barrierY + 15);
@@ -3341,7 +3489,7 @@ function drawHyperspeedBarrier() {
 
   // Bright edge line
   ctx.globalAlpha = 0.85 * intensity;
-  ctx.strokeStyle = `rgba(255,240,120,${0.9 * intensity})`;
+  ctx.strokeStyle = `rgba(${eR},${eG},${eB},${0.9 * intensity})`;
   ctx.lineWidth = 2.5;
   ctx.beginPath();
   ctx.moveTo(player.x - halfW, barrierY + 15);
@@ -3351,8 +3499,8 @@ function drawHyperspeedBarrier() {
   // Outer glow halo
   ctx.globalAlpha = 0.25 * intensity;
   const halo = ctx.createRadialGradient(player.x, barrierY, 0, player.x, barrierY, halfW * 1.5);
-  halo.addColorStop(0, 'rgba(255,220,60,0.5)');
-  halo.addColorStop(1, 'rgba(255,220,60,0)');
+  halo.addColorStop(0, `rgba(${r},${g},${b},0.5)`);
+  halo.addColorStop(1, `rgba(${r},${g},${b},0)`);
   ctx.fillStyle = halo;
   ctx.fillRect(player.x - halfW * 1.5, barrierY - halfW, halfW * 3, halfW * 2);
 
@@ -3368,6 +3516,37 @@ function drawDeathParticles() {
     ctx.beginPath(); ctx.arc(p.x,p.y,p.size*p.life,0,6.28); ctx.fill();
   }
   ctx.globalAlpha=1;
+}
+
+// Stacked hyperspeed banner — only shows for 2+ stacks. Drawn in canvas
+// space so we don't have to retrofit DOM layout. Sits between the score
+// (top ~24px) and the streak counter (top ~58px). Blink rate gets faster
+// as stacks climb so 4× feels noticeably more frantic than 2×.
+function drawHyperStackText() {
+  if (hyperSpeedStacks < 2) return;
+  const tint = hyperStackTint(hyperSpeedStacks);
+  let blinkPeriod = 20;
+  if (hyperSpeedStacks === 3) blinkPeriod = 15;
+  else if (hyperSpeedStacks === 4) blinkPeriod = 10;
+  // On the visible half of the blink cycle, fully draw; otherwise dim.
+  const visible = Math.floor(frame / blinkPeriod) % 2 === 0;
+  const alpha = visible ? 1 : 0.25;
+
+  const label = hyperSpeedStacks + '× HYPERSPEED';
+  ctx.save();
+  ctx.font = '700 13px "Space Mono", monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.globalAlpha = alpha;
+  // Glow
+  ctx.shadowColor = `rgba(${tint.r},${tint.g},${tint.b},0.95)`;
+  ctx.shadowBlur = 12;
+  ctx.fillStyle = tint.white
+    ? `rgba(255,${230 + Math.round(Math.sin(frame * 0.4) * 25)},${230 + Math.round(Math.sin(frame * 0.4) * 25)},1)`
+    : `rgba(${tint.r},${tint.g},${tint.b},1)`;
+  ctx.fillText(label, W / 2, 50);
+  ctx.restore();
+  ctx.globalAlpha = 1;
 }
 
 // Player death shatter — 6-8 irregular polygon shards spawned at the player
@@ -3491,6 +3670,7 @@ function render() {
     drawDestroyFlashes();
     drawDeathShards();
     drawDeathParticles();
+    if (state==='playing') drawHyperStackText();
   }
 
   updatePowerupTimer();
@@ -3625,6 +3805,9 @@ function goToMainMenu() {
   activeEffects = { shield: 0, hyperspeed: 0, ghost: 0 };
   hyperspeedCurrentMult = 1; hyperspeedTargetSpeed = 0;
   hyperspeedPeakMult = 1; hyperspeedActiveDuration = HYPERSPEED_DURATION;
+  hyperSpeedStacks = 0;
+  hyperSpeedTimers = [];
+  peakHyperSpeedStacks = 0;
   if (hyperspeedWhooshNodes) { try { hyperspeedWhooshNodes.stop(0.1); } catch {} hyperspeedWhooshNodes = null; }
   shieldBroken = false;
   shieldHits = 1;
