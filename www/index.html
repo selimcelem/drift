@@ -805,7 +805,7 @@
 </div>
 
 <script>
-const GAME_VERSION = '1.2.0';
+const GAME_VERSION = '1.3.0';
 
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
@@ -4029,7 +4029,7 @@ updateBannerEl.addEventListener('click', e => {
 function checkForUpdate() {
   try {
     console.log('[update] fetching...');
-    fetch('https://api.github.com/repos/selimcelem/drift/releases/latest', {
+    fetch('https://api.github.com/repos/selimcelem/drift/releases/latest?t=' + Date.now(), {
       headers: { 'Accept': 'application/vnd.github+json' },
     })
       .then(r => r.ok ? r.json() : null)
