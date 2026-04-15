@@ -1057,147 +1057,161 @@ const SFX = (function() {
   }
 
   // ---- one-shot sound effects ----
+  //
+  // Helpers below keep the per-cue functions short. Every node ends up wired
+  // through sfxGain so the SFX toggle mutes everything uniformly, and every
+  // schedule call ends in killOnEnd to stop nodes accumulating.
+
+  // Single staccato note — used for chiptune jingles and combo fanfares.
+  function chipNote(freq, start, dur, vol, type) {
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = type || 'square';
+    o.frequency.value = freq;
+    g.gain.setValueAtTime(0.0001, start);
+    g.gain.linearRampToValueAtTime(vol, start + 0.005);
+    g.gain.exponentialRampToValueAtTime(0.001, start + dur);
+    o.connect(g); g.connect(sfxGain);
+    o.start(start); o.stop(start + dur + 0.02);
+    killOnEnd(o, g);
+  }
+
+  // Frequency-swept single oscillator — used for booms, zaps, drops.
+  function chipSweep(type, fStart, fEnd, start, dur, vol) {
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = type;
+    o.frequency.setValueAtTime(fStart, start);
+    o.frequency.exponentialRampToValueAtTime(Math.max(0.0001, fEnd), start + dur);
+    g.gain.setValueAtTime(0.0001, start);
+    g.gain.linearRampToValueAtTime(vol, start + 0.005);
+    g.gain.exponentialRampToValueAtTime(0.001, start + dur);
+    o.connect(g); g.connect(sfxGain);
+    o.start(start); o.stop(start + dur + 0.02);
+    killOnEnd(o, g);
+  }
+
+  // Bandpass noise burst — explosions and crunches.
+  function noiseBurst(start, dur, centerHz, q, vol, fadeShape) {
+    const n = ctx.createBufferSource();
+    n.buffer = noiseBuffer(dur + 0.02, fadeShape || (x => 1 - x));
+    const f = ctx.createBiquadFilter();
+    f.type = 'bandpass';
+    f.frequency.value = centerHz;
+    f.Q.value = q;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(vol, start);
+    g.gain.exponentialRampToValueAtTime(0.001, start + dur);
+    n.connect(f); f.connect(g); g.connect(sfxGain);
+    n.start(start); n.stop(start + dur + 0.04);
+    killOnEnd(n, f, g);
+  }
+
+  // Highpass shimmer — bright noise tail for jingles.
+  function shimmer(start, dur, vol, hp) {
+    const n = ctx.createBufferSource();
+    n.buffer = noiseBuffer(dur + 0.02, x => 1 - x);
+    const f = ctx.createBiquadFilter();
+    f.type = 'highpass';
+    f.frequency.value = hp;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(vol, start);
+    g.gain.exponentialRampToValueAtTime(0.001, start + dur);
+    n.connect(f); f.connect(g); g.connect(sfxGain);
+    n.start(start); n.stop(start + dur + 0.04);
+    killOnEnd(n, f, g);
+  }
+
+  // Slow-attack sine voice with long decay — ghost dimensional tone.
+  function ghostVoice(freq, start, attack, decay, vol) {
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = 'sine';
+    o.frequency.value = freq;
+    g.gain.setValueAtTime(0.0001, start);
+    g.gain.linearRampToValueAtTime(vol, start + attack);
+    g.gain.exponentialRampToValueAtTime(0.001, start + decay);
+    o.connect(g); g.connect(sfxGain);
+    o.start(start); o.stop(start + decay + 0.05);
+    killOnEnd(o, g);
+  }
 
   function attract(_frame) {
     safeSfx(t => {
+      // Throttled at ~8 frames @ 60fps via ATTRACT_THROTTLE (0.13s).
       if (t - lastAttract < ATTRACT_THROTTLE) return;
       lastAttract = t;
-      // Two detuned sines (220 + 224hz), LPF 400, 0.1s fade in/out, vol 0.08.
-      const o1 = ctx.createOscillator();
-      const o2 = ctx.createOscillator();
-      const f  = ctx.createBiquadFilter();
-      const g  = ctx.createGain();
-      o1.type = 'sine'; o1.frequency.value = 220;
-      o2.type = 'sine'; o2.frequency.value = 224;
-      f.type = 'lowpass'; f.frequency.value = 400;
+      // Short low pulse — sine 110hz, 0.06s, soft attack. Subtle gravity hum.
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = 'sine';
+      o.frequency.value = 110;
       g.gain.setValueAtTime(0, t);
-      g.gain.linearRampToValueAtTime(0.08, t + 0.1);
-      g.gain.linearRampToValueAtTime(0,    t + 0.2);
-      o1.connect(f); o2.connect(f); f.connect(g); g.connect(sfxGain);
-      o1.start(t); o2.start(t);
-      o1.stop(t + 0.22); o2.stop(t + 0.22);
-      killOnEnd(o1, o2, f, g);
+      g.gain.linearRampToValueAtTime(0.07, t + 0.015);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.06);
+      o.connect(g); g.connect(sfxGain);
+      o.start(t); o.stop(t + 0.08);
+      killOnEnd(o, g);
     });
   }
 
   function repel(_frame) {
     safeSfx(t => {
+      // Throttled at ~8 frames @ 60fps via REPEL_THROTTLE (0.13s).
       if (t - lastRepel < REPEL_THROTTLE) return;
       lastRepel = t;
-      // Triangle 440→280 sweep over 0.15s, HPF 300, sharp attack / quick decay, vol 0.15.
-      const o = ctx.createOscillator();
-      const g = ctx.createGain();
-      const f = ctx.createBiquadFilter();
-      o.type = 'triangle';
-      o.frequency.setValueAtTime(440, t);
-      o.frequency.exponentialRampToValueAtTime(280, t + 0.15);
-      f.type = 'highpass'; f.frequency.value = 300;
-      g.gain.setValueAtTime(0, t);
-      g.gain.linearRampToValueAtTime(0.15, t + 0.005);
-      g.gain.exponentialRampToValueAtTime(0.001, t + 0.16);
-      o.connect(f); f.connect(g); g.connect(sfxGain);
-      o.start(t); o.stop(t + 0.18);
-      killOnEnd(o, f, g);
+      // Sharp zap — square 440→220hz, 0.08s, snappy push.
+      chipSweep('square', 440, 220, t, 0.08, 0.12);
     });
   }
 
   function pickup(type) {
     safeSfx(t => {
       if (type === 'shield') {
-        // Four-note ascending arpeggio C5-E5-G5-C6 on triangle waves,
-        // each 0.08s with 0.02s overlap, vol 0.3 per note.
+        // Classic SNES power-up jingle: ascending C5-E5-G5-C6 squares,
+        // each 0.07s staccato, then a high-frequency shimmer burst.
         const notes = [523.25, 659.25, 783.99, 1046.50];
-        notes.forEach((freq, i) => {
-          const o = ctx.createOscillator();
-          const g = ctx.createGain();
-          o.type = 'triangle';
-          o.frequency.value = freq;
-          const start = t + i * 0.06;          // 0.08s - 0.02s overlap = 0.06s step
-          const end   = start + 0.08;
-          g.gain.setValueAtTime(0, start);
-          g.gain.linearRampToValueAtTime(0.3, start + 0.008);
-          g.gain.exponentialRampToValueAtTime(0.001, end);
-          o.connect(g); g.connect(sfxGain);
-          o.start(start); o.stop(end + 0.02);
-          killOnEnd(o, g);
-        });
-      } else if (type === 'nova') {
-        // Deep sine sub 80hz boom (0.3s) + rising bandpass noise 200→2000hz (0.4s).
-        // Combined target vol 0.35.
-        const boom = ctx.createOscillator();
-        const bg = ctx.createGain();
-        boom.type = 'sine';
-        boom.frequency.value = 80;
-        bg.gain.setValueAtTime(0, t);
-        bg.gain.linearRampToValueAtTime(0.22, t + 0.01);
-        bg.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
-        boom.connect(bg); bg.connect(sfxGain);
-        boom.start(t); boom.stop(t + 0.32);
-        killOnEnd(boom, bg);
+        notes.forEach((freq, i) => chipNote(freq, t + i * 0.07, 0.07, 0.35, 'square'));
+        shimmer(t + notes.length * 0.07, 0.1, 0.18, 6000);
 
-        const noise = ctx.createBufferSource();
-        noise.buffer = noiseBuffer(0.42, x => 1 - x);
+      } else if (type === 'nova') {
+        // Deep retro BOOM — square sub 60→30hz drop 0.2s, then a rising
+        // noise sweep 100→3000hz over 0.3s. Charging up a massive weapon.
+        chipSweep('square', 60, 30, t, 0.2, 0.4);
+        const sweepStart = t + 0.05;
+        const n = ctx.createBufferSource();
+        n.buffer = noiseBuffer(0.32, x => 1 - x * 0.5);
         const f = ctx.createBiquadFilter();
         f.type = 'bandpass';
-        f.Q.value = 2.0;
-        f.frequency.setValueAtTime(200, t);
-        f.frequency.exponentialRampToValueAtTime(2000, t + 0.4);
+        f.Q.value = 1.5;
+        f.frequency.setValueAtTime(100, sweepStart);
+        f.frequency.exponentialRampToValueAtTime(3000, sweepStart + 0.3);
         const ng = ctx.createGain();
-        ng.gain.setValueAtTime(0, t);
-        ng.gain.linearRampToValueAtTime(0.13, t + 0.04);
-        ng.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
-        noise.connect(f); f.connect(ng); ng.connect(sfxGain);
-        noise.start(t); noise.stop(t + 0.44);
-        killOnEnd(noise, f, ng);
-      } else if (type === 'hyperspeed') {
-        // Rising sawtooth 200→800hz over 0.3s through resonant lowpass, vol 0.25.
-        // The sustained 600hz tone is a SEPARATE node owned by startHyperspeedWhoosh.
-        const o = ctx.createOscillator();
-        const g = ctx.createGain();
-        const f = ctx.createBiquadFilter();
-        o.type = 'sawtooth';
-        o.frequency.setValueAtTime(200, t);
-        o.frequency.exponentialRampToValueAtTime(800, t + 0.3);
-        f.type = 'lowpass';
-        f.frequency.setValueAtTime(700, t);
-        f.frequency.linearRampToValueAtTime(2200, t + 0.3);
-        f.Q.value = 8;
-        g.gain.setValueAtTime(0, t);
-        g.gain.linearRampToValueAtTime(0.25, t + 0.03);
-        g.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
-        o.connect(f); f.connect(g); g.connect(sfxGain);
-        o.start(t); o.stop(t + 0.38);
-        killOnEnd(o, f, g);
-      } else if (type === 'ghost') {
-        // Tritone C4+F#4 soft sine waves, slow attack 0.2s, long decay 0.8s,
-        // reverb-ish via two delayed copies at 20ms and 40ms. Vol 0.2.
-        const notes = [261.63, 369.99];
-        notes.forEach(freq => {
-          // Dry voice
-          const o = ctx.createOscillator();
-          const g = ctx.createGain();
-          o.type = 'sine'; o.frequency.value = freq;
-          g.gain.setValueAtTime(0, t);
-          g.gain.linearRampToValueAtTime(0.2, t + 0.2);
-          g.gain.exponentialRampToValueAtTime(0.001, t + 1.0);
-          o.connect(g); g.connect(sfxGain);
-          o.start(t); o.stop(t + 1.05);
-          killOnEnd(o, g);
+        ng.gain.setValueAtTime(0, sweepStart);
+        ng.gain.linearRampToValueAtTime(0.28, sweepStart + 0.03);
+        ng.gain.exponentialRampToValueAtTime(0.001, sweepStart + 0.3);
+        n.connect(f); f.connect(ng); ng.connect(sfxGain);
+        n.start(sweepStart); n.stop(sweepStart + 0.34);
+        killOnEnd(n, f, ng);
 
-          // Two delayed copies for reverb-like tail
-          [0.02, 0.04].forEach(delay => {
-            const o2 = ctx.createOscillator();
-            const g2 = ctx.createGain();
-            o2.type = 'sine'; o2.frequency.value = freq;
-            const start = t + delay;
-            g2.gain.setValueAtTime(0, start);
-            g2.gain.linearRampToValueAtTime(0.08, start + 0.2);
-            g2.gain.exponentialRampToValueAtTime(0.001, start + 1.0);
-            o2.connect(g2); g2.connect(sfxGain);
-            o2.start(start); o2.stop(start + 1.05);
-            killOnEnd(o2, g2);
-          });
-        });
+      } else if (type === 'hyperspeed') {
+        // Rapid ascending arpeggio A3-C4-E4-A4-C5-E5-A5, each 0.04s,
+        // square. ENGAGING WARP DRIVE. (Sustained engine tone is owned
+        // separately by startHyperspeedWhoosh.)
+        const arp = [220.00, 261.63, 329.63, 440.00, 523.25, 659.25, 880.00];
+        arp.forEach((freq, i) => chipNote(freq, t + i * 0.04, 0.05, 0.3, 'square'));
+
+      } else if (type === 'ghost') {
+        // Eerie descending tritone C5→F#4 on sines with slow attack and a
+        // long dreamy decay, plus three echoes 80ms apart, each 40% of the
+        // previous voice's volume. Phasing into another dimension.
+        const notes = [523.25, 369.99]; // C5, F#4
+        let vol = 0.25;
+        for (let i = 0; i < 4; i++) {
+          const start = t + i * 0.08;
+          notes.forEach(freq => ghostVoice(freq, start, 0.15, 1.0, vol));
+          vol *= 0.4;
+        }
       }
     });
   }
@@ -1205,148 +1219,145 @@ const SFX = (function() {
   function planetDestroyed(kind) {
     safeSfx(t => {
       if (kind === 'shield') {
-        // Bandpass noise burst 0.15s + 60hz sine thump, vol 0.25.
-        const n = ctx.createBufferSource();
-        n.buffer = noiseBuffer(0.18, x => Math.pow(1 - x, 1.4));
-        const f = ctx.createBiquadFilter();
-        f.type = 'bandpass'; f.frequency.value = 900; f.Q.value = 1.2;
-        const ng = ctx.createGain();
-        ng.gain.setValueAtTime(0.18, t);
-        ng.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
-        n.connect(f); f.connect(ng); ng.connect(sfxGain);
-        n.start(t); n.stop(t + 0.17);
-        killOnEnd(n, f, ng);
+        // Crunchy retro explosion: bandpass noise 300-600hz 0.15s + a
+        // square wave 80→40hz drop. Satisfying CRUNCH.
+        noiseBurst(t, 0.15, 450, 1.5, 0.3, x => Math.pow(1 - x, 1.2));
+        chipSweep('square', 80, 40, t, 0.1, 0.3);
 
-        const o = ctx.createOscillator();
-        const og = ctx.createGain();
-        o.type = 'sine';
-        o.frequency.value = 60;
-        og.gain.setValueAtTime(0.25, t);
-        og.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
-        o.connect(og); og.connect(sfxGain);
-        o.start(t); o.stop(t + 0.22);
-        killOnEnd(o, og);
       } else if (kind === 'ghost') {
-        // Soft sine whomp 180→80hz over 0.2s, vol 0.15.
-        const o = ctx.createOscillator();
-        const g = ctx.createGain();
-        o.type = 'sine';
-        o.frequency.setValueAtTime(180, t);
-        o.frequency.exponentialRampToValueAtTime(80, t + 0.2);
-        g.gain.setValueAtTime(0, t);
-        g.gain.linearRampToValueAtTime(0.15, t + 0.01);
-        g.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
-        o.connect(g); g.connect(sfxGain);
-        o.start(t); o.stop(t + 0.24);
-        killOnEnd(o, g);
+        // Soft whomp: sine 200→60hz 0.2s + short high shimmer 2000→800hz.
+        chipSweep('sine', 200, 60, t, 0.2, 0.18);
+        chipSweep('sine', 2000, 800, t, 0.08, 0.12);
+
       } else if (kind === 'nova') {
-        // Deeper 50hz sine 0.25s + noise burst, vol 0.3.
-        const o = ctx.createOscillator();
-        const og = ctx.createGain();
-        o.type = 'sine';
-        o.frequency.value = 50;
-        og.gain.setValueAtTime(0.3, t);
-        og.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
-        o.connect(og); og.connect(sfxGain);
-        o.start(t); o.stop(t + 0.27);
-        killOnEnd(o, og);
+        // Bigger explosion: bandpass noise 150-400hz 0.2s + sub square
+        // 50→25hz 0.15s. Feels MASSIVE.
+        noiseBurst(t, 0.2, 275, 1.0, 0.38, x => Math.pow(1 - x, 1.0));
+        chipSweep('square', 50, 25, t, 0.15, 0.38);
 
-        const n = ctx.createBufferSource();
-        n.buffer = noiseBuffer(0.28, x => Math.pow(1 - x, 0.9));
-        const f = ctx.createBiquadFilter();
-        f.type = 'lowpass';
-        f.frequency.setValueAtTime(1800, t);
-        f.frequency.exponentialRampToValueAtTime(340, t + 0.25);
-        const ng = ctx.createGain();
-        ng.gain.setValueAtTime(0.18, t);
-        ng.gain.exponentialRampToValueAtTime(0.001, t + 0.28);
-        n.connect(f); f.connect(ng); ng.connect(sfxGain);
-        n.start(t); n.stop(t + 0.3);
-        killOnEnd(n, f, ng);
       } else if (kind === 'barrier') {
-        // Hyperspeed barrier kill: sharp click + 100hz thump, fast 0.1s, vol 0.2.
+        // Hyperspeed barrier kill: sharp square 300→60hz zap-crunch + a
+        // short high-frequency noise burst. Machine-gun feel when chained.
+        chipSweep('square', 300, 60, t, 0.1, 0.25);
         const n = ctx.createBufferSource();
-        n.buffer = noiseBuffer(0.02, x => 1 - x);
+        n.buffer = noiseBuffer(0.08, x => 1 - x);
         const f = ctx.createBiquadFilter();
-        f.type = 'highpass'; f.frequency.value = 4000;
+        f.type = 'highpass'; f.frequency.value = 1500;
         const ng = ctx.createGain();
-        ng.gain.setValueAtTime(0.2, t);
-        ng.gain.exponentialRampToValueAtTime(0.001, t + 0.03);
+        ng.gain.setValueAtTime(0.22, t);
+        ng.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
         n.connect(f); f.connect(ng); ng.connect(sfxGain);
-        n.start(t); n.stop(t + 0.04);
+        n.start(t); n.stop(t + 0.1);
         killOnEnd(n, f, ng);
-
-        const o = ctx.createOscillator();
-        const og = ctx.createGain();
-        o.type = 'sine';
-        o.frequency.setValueAtTime(100, t);
-        o.frequency.exponentialRampToValueAtTime(55, t + 0.1);
-        og.gain.setValueAtTime(0.18, t);
-        og.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
-        o.connect(og); og.connect(sfxGain);
-        o.start(t); o.stop(t + 0.12);
-        killOnEnd(o, og);
       }
     });
   }
 
   function shieldBreak() {
     safeSfx(t => {
-      // Sharp crack: white noise burst 0.08s bandpass 800-2000hz.
+      // Sharp retro CRACK: square 800→100hz 0.1s + highpass noise burst.
+      chipSweep('square', 800, 100, t, 0.1, 0.4);
       const n = ctx.createBufferSource();
-      n.buffer = noiseBuffer(0.1, x => Math.pow(1 - x, 1.6));
+      n.buffer = noiseBuffer(0.06, x => 1 - x);
       const f = ctx.createBiquadFilter();
-      f.type = 'bandpass'; f.frequency.value = 1400; f.Q.value = 0.9;
+      f.type = 'highpass'; f.frequency.value = 2000;
       const ng = ctx.createGain();
-      ng.gain.setValueAtTime(0.35, t);
-      ng.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
+      ng.gain.setValueAtTime(0.3, t);
+      ng.gain.exponentialRampToValueAtTime(0.001, t + 0.06);
       n.connect(f); f.connect(ng); ng.connect(sfxGain);
-      n.start(t); n.stop(t + 0.1);
+      n.start(t); n.stop(t + 0.08);
       killOnEnd(n, f, ng);
-
-      // Low thump 80hz sine 0.1s.
-      const o = ctx.createOscillator();
-      const og = ctx.createGain();
-      o.type = 'sine';
-      o.frequency.value = 80;
-      og.gain.setValueAtTime(0.3, t);
-      og.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
-      o.connect(og); og.connect(sfxGain);
-      o.start(t); o.stop(t + 0.12);
-      killOnEnd(o, og);
     });
   }
 
-  // Combo activate — two-tone ascending warm sine chime, vol 0.25.
-  // Pitch pairs per combo type per spec.
-  const COMBO_PITCHES = {
-    nova_nova:         [523.25, 783.99],  // Supernova       C5 G5
-    nova_hyperspeed:   [587.33, 880.00],  // Warp Time       D5 A5
-    nova_ghost:        [659.25, 987.77],  // Phantom Blast   E5 B5
-    nova_shield:       [698.46, 1046.50], // Pulsar          F5 C6
-    hyperspeed_ghost:  [783.99, 1174.66], // Spectral Rush   G5 D6
-    hyperspeed_shield: [880.00, 1318.51], // Juggernaut      A5 E6
-    ghost_shield:      [932.33, 1396.91], // Wraith          Bb5 F6
-    ghost_ghost:       [987.77, 1479.98], // Eternal Phantom B5 F#6
-    shield_shield:     [1046.50, 1567.98], // Fortress Shield C6 G6
-  };
+  // Combo activate — every combo distinct, all at vol ~0.4.
+  // Wired by activateCombo() in the game loop, keys must match COMBO_DEFS.
   function comboActivate(key) {
-    const pair = COMBO_PITCHES[key];
-    if (!pair) return;
     safeSfx(t => {
-      pair.forEach((freq, i) => {
-        const o = ctx.createOscillator();
-        const g = ctx.createGain();
-        o.type = 'sine';
-        o.frequency.value = freq;
-        const start = t + i * 0.06;
-        g.gain.setValueAtTime(0, start);
-        g.gain.linearRampToValueAtTime(0.25, start + 0.012);
-        g.gain.exponentialRampToValueAtTime(0.001, start + 0.45);
-        o.connect(g); g.connect(sfxGain);
-        o.start(start); o.stop(start + 0.48);
-        killOnEnd(o, g);
-      });
+      switch (key) {
+        case 'nova_nova': {
+          // SUPERNOVA: ascending C5-E5-G5-C6 fanfare + noise explosion.
+          const fanfare = [523.25, 659.25, 783.99, 1046.50];
+          fanfare.forEach((freq, i) => chipNote(freq, t + i * 0.06, 0.07, 0.4, 'square'));
+          const expStart = t + fanfare.length * 0.06;
+          noiseBurst(expStart, 0.3, 500, 1.0, 0.4, x => Math.pow(1 - x, 1.0));
+          chipSweep('square', 80, 30, expStart, 0.3, 0.35);
+          break;
+        }
+        case 'nova_hyperspeed': {
+          // WARP TIME: rapid arpeggio up then down, A4-E5-A5-E5-A4.
+          const arp = [440.00, 659.25, 880.00, 659.25, 440.00];
+          arp.forEach((freq, i) => chipNote(freq, t + i * 0.05, 0.06, 0.4, 'square'));
+          break;
+        }
+        case 'nova_ghost': {
+          // PHANTOM BLAST: deep bass drop 60→30hz + eerie shimmer 3000→800hz.
+          chipSweep('square', 60, 30, t, 0.3, 0.4);
+          const o = ctx.createOscillator();
+          const g = ctx.createGain();
+          o.type = 'sine';
+          o.frequency.setValueAtTime(3000, t);
+          o.frequency.exponentialRampToValueAtTime(800, t + 0.3);
+          g.gain.setValueAtTime(0, t);
+          g.gain.linearRampToValueAtTime(0.18, t + 0.02);
+          g.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
+          o.connect(g); g.connect(sfxGain);
+          o.start(t); o.stop(t + 0.32);
+          killOnEnd(o, g);
+          break;
+        }
+        case 'nova_shield': {
+          // PULSAR: rhythmic triple pulse C5-C5-C6 with 0.05s gaps.
+          chipNote(523.25, t,        0.08, 0.4, 'square');
+          chipNote(523.25, t + 0.13, 0.08, 0.4, 'square');
+          chipNote(1046.50, t + 0.26, 0.08, 0.4, 'square');
+          break;
+        }
+        case 'hyperspeed_ghost': {
+          // SPECTRAL RUSH: ghost tritone + speed arpeggio layered.
+          const ghostNotes = [523.25, 369.99];
+          ghostNotes.forEach(freq => ghostVoice(freq, t, 0.1, 0.7, 0.28));
+          const arp = [220.00, 261.63, 329.63, 440.00, 523.25, 659.25, 880.00];
+          arp.forEach((freq, i) => chipNote(freq, t + i * 0.04, 0.05, 0.32, 'square'));
+          break;
+        }
+        case 'hyperspeed_shield': {
+          // JUGGERNAUT: heavy 80→40hz BOOM + shield jingle layered.
+          chipSweep('square', 80, 40, t, 0.4, 0.4);
+          const jingle = [523.25, 659.25, 783.99, 1046.50];
+          jingle.forEach((freq, i) => chipNote(freq, t + i * 0.07, 0.07, 0.35, 'square'));
+          break;
+        }
+        case 'ghost_shield': {
+          // WRAITH: ghost descending tritone + shield shimmer noise.
+          ghostVoice(523.25, t, 0.12, 0.8, 0.32);
+          ghostVoice(369.99, t, 0.12, 0.8, 0.32);
+          shimmer(t, 0.2, 0.25, 6000);
+          break;
+        }
+        case 'ghost_ghost': {
+          // ETERNAL PHANTOM: ghost sound 2x slower, an octave deeper, with
+          // five echoing layers each 50% quieter than the previous.
+          const notes = [261.63, 185.00]; // C4, F#3 — one octave down
+          let vol = 0.4;
+          for (let i = 0; i < 5; i++) {
+            const start = t + i * 0.16;
+            notes.forEach(freq => ghostVoice(freq, start, 0.3, 2.0, vol));
+            vol *= 0.5;
+          }
+          break;
+        }
+        case 'shield_shield': {
+          // FORTRESS SHIELD: shield jingle played twice in rapid succession.
+          const jingle = [523.25, 659.25, 783.99, 1046.50];
+          for (let pass = 0; pass < 2; pass++) {
+            const passStart = t + pass * 0.32;
+            jingle.forEach((freq, i) => chipNote(freq, passStart + i * 0.07, 0.07, 0.4, 'square'));
+          }
+          shimmer(t + 0.64, 0.12, 0.25, 6000);
+          break;
+        }
+      }
     });
   }
 
@@ -1412,34 +1423,26 @@ const SFX = (function() {
 
   function death() {
     safeSfx(t => {
-      // Sawtooth 440→40hz sweep 0.6s through closing lowpass.
+      // Iconic chromatic descent: C5-B4-Bb4-A4-Ab4-G4-F#4-F4-E4-Eb4-D4-C4,
+      // each note 0.08s on a square wave. Followed by a low 80hz sine
+      // rumble that fades out over 0.5s.
+      const notes = [
+        523.25, 493.88, 466.16, 440.00, 415.30, 392.00,
+        369.99, 349.23, 329.63, 311.13, 293.66, 261.63,
+      ];
+      notes.forEach((freq, i) => chipNote(freq, t + i * 0.08, 0.085, 0.45, 'square'));
+
+      const rumbleStart = t + notes.length * 0.08;
       const o = ctx.createOscillator();
       const g = ctx.createGain();
-      const f = ctx.createBiquadFilter();
-      o.type = 'sawtooth';
-      o.frequency.setValueAtTime(440, t);
-      o.frequency.exponentialRampToValueAtTime(40, t + 0.6);
-      f.type = 'lowpass';
-      f.frequency.setValueAtTime(2400, t);
-      f.frequency.exponentialRampToValueAtTime(200, t + 0.6);
-      g.gain.setValueAtTime(0, t);
-      g.gain.linearRampToValueAtTime(0.4, t + 0.03);
-      g.gain.exponentialRampToValueAtTime(0.001, t + 0.65);
-      o.connect(f); f.connect(g); g.connect(sfxGain);
-      o.start(t); o.stop(t + 0.68);
-      killOnEnd(o, f, g);
-
-      // Sub sine 100→20hz simultaneously.
-      const o2 = ctx.createOscillator();
-      const g2 = ctx.createGain();
-      o2.type = 'sine';
-      o2.frequency.setValueAtTime(100, t);
-      o2.frequency.exponentialRampToValueAtTime(20, t + 0.6);
-      g2.gain.setValueAtTime(0.4, t);
-      g2.gain.exponentialRampToValueAtTime(0.001, t + 0.65);
-      o2.connect(g2); g2.connect(sfxGain);
-      o2.start(t); o2.stop(t + 0.68);
-      killOnEnd(o2, g2);
+      o.type = 'sine';
+      o.frequency.value = 80;
+      g.gain.setValueAtTime(0, rumbleStart);
+      g.gain.linearRampToValueAtTime(0.4, rumbleStart + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.001, rumbleStart + 0.5);
+      o.connect(g); g.connect(sfxGain);
+      o.start(rumbleStart); o.stop(rumbleStart + 0.55);
+      killOnEnd(o, g);
     });
   }
 
