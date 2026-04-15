@@ -856,6 +856,10 @@ let screenShake = 0;
 let pickupParticles = [];
 let planetRipples = [];
 let pendingNovaTimeouts = [];
+let destroyFlashes = [];   // per-planet destruction visuals (flash + ring + debris)
+let deathShards = [];      // orb shatter pieces spawned on player death
+let deathFlashFrames = 0;  // 1-frame white player flash on death
+let pendingDeathBurstTimer = null; // setTimeout for the delayed particle burst
 // Hard caps on visual-effect arrays. Exceeding these on Android at high
 // scores (lots of combos firing) can crash the tab — cap aggressively and
 // drop oldest elements on overflow.
@@ -863,6 +867,7 @@ const NOVA_RINGS_CAP    = 20;
 const PICKUP_PART_CAP   = 200;
 const PLANET_RIPPLE_CAP = 50;
 const DEATH_PART_CAP    = 60;
+const DESTROY_FLASH_CAP = 30;
 function pushCapped(arr, item, cap) {
   if (arr.length >= cap) arr.shift();
   arr.push(item);
@@ -951,14 +956,19 @@ const SFX = (function() {
   const ATTRACT_THROTTLE = 0.13;
   const REPEL_THROTTLE   = 0.13;
 
-  // --- Music state (audio file playback) ---
-  let musicPlaying = false;          // true when a track is actively scheduled
-  let musicBuffer = null;            // decoded AudioBuffer for assets/music.mp3
-  let musicLoading = null;           // in-flight load promise (dedupes concurrent loads)
+  // --- Music state (per-state file playback) ---
+  // Three tracks: menu / gameplay / results. Each is fetched + decoded
+  // lazily on first play and cached. The seamless 2-second loop crossfade
+  // and track-switch crossfades share the same source-pair machinery.
+  const MUSIC_TRACKS = ['menu', 'gameplay', 'results'];
+  const musicBuffers = { menu: null, gameplay: null, results: null };
+  const musicLoading = { menu: null, gameplay: null, results: null };
+  let currentTrackName = null;       // null = no track playing
   let currentMusicSource = null;     // active AudioBufferSourceNode
   let currentMusicSourceGain = null; // per-source gain (used for crossfades)
-  let crossfadeTimer = null;         // setTimeout handle for the next crossfade
+  let crossfadeTimer = null;         // setTimeout handle for the next loop crossfade
   const MUSIC_CROSSFADE = 2.0;       // seconds of overlap at the loop point
+  const PAUSE_DUCK_LEVEL = 0.2;      // pause "ducks" music to 20% of normal
 
   function init() {
     if (initialized) return;
@@ -997,7 +1007,13 @@ const SFX = (function() {
       if (crossfadeTimer) { clearTimeout(crossfadeTimer); crossfadeTimer = null; }
       currentMusicSource = null;
       currentMusicSourceGain = null;
-      musicPlaying = false;
+      currentTrackName = null;
+      // Decoded buffers are tied to the dead AudioContext — invalidate them
+      // so the next playTrack() refetches against the new context.
+      for (const k of MUSIC_TRACKS) {
+        musicBuffers[k] = null;
+        musicLoading[k] = null;
+      }
     }
     if (!initialized) init();
     if (!ctx) return false;
@@ -1045,14 +1061,10 @@ const SFX = (function() {
   function setMusicEnabled(on) {
     musicEnabled = !!on;
     try { localStorage.setItem('drift_music_enabled', on ? '1' : '0'); } catch {}
-    if (musicGain && ctx) {
-      try {
-        const t = ctx.currentTime;
-        musicGain.gain.cancelScheduledValues(t);
-        musicGain.gain.setValueAtTime(musicGain.gain.value, t);
-        musicGain.gain.linearRampToValueAtTime(on ? MUSIC_GAIN_VALUE : 0, t + 0.08);
-      } catch {}
-    }
+    // Bug fix: never restart playback here. Just adjust musicGain to whatever
+    // the current target should be — which respects the pause duck so toggling
+    // music off→on while paused returns to the ducked level, not full volume.
+    setMusicGainTarget(currentMusicGainTarget(), 0.08);
   }
   function setSfxEnabled(on) {
     sfxEnabled = !!on;
@@ -1508,172 +1520,199 @@ const SFX = (function() {
     });
   }
 
-  // ---- Background music: file playback with seamless crossfade loop ----
+  // ---- Background music: per-state file playback with crossfades ----
   //
-  // assets/music.mp3 is fetched once, decoded into an AudioBuffer, then played
-  // through chained AudioBufferSourceNodes. Two seconds before the active
-  // source ends we kick off a fresh source from offset 0 and equal-power
-  // crossfade between the two so the loop point is inaudible.
-  //
-  // Each source has its own gain node so we can fade them independently.
-  // They both feed into musicGain → masterGain → destination, matching the
-  // existing audio routing.
+  // playTrack(name, fade) is the single entry point — it crossfades from the
+  // currently playing track (if any) into the named one over `fade` seconds.
+  // Each track also self-loops via a 2-second crossfade scheduled by
+  // armCrossfade() so loop points are inaudible. Pause "ducks" the music to
+  // PAUSE_DUCK_LEVEL of normal volume rather than stopping playback so the
+  // game returns instantly with no fade-in lag.
 
-  function loadMusicBuffer() {
-    if (musicBuffer) return Promise.resolve(musicBuffer);
-    if (musicLoading) return musicLoading;
+  function loadMusicBuffer(name) {
+    if (musicBuffers[name]) return Promise.resolve(musicBuffers[name]);
+    if (musicLoading[name]) return musicLoading[name];
     if (!ctx) return Promise.reject(new Error('no audio context'));
-    // Path is relative to index.html — resolves to <base>/assets/music.mp3.
-    const url = './assets/music.mp3';
+    // Paths are relative to index.html — resolves to <base>/assets/<name>.mp3.
+    const url = './assets/' + name + '.mp3';
     console.log('[music] fetching', url);
-    musicLoading = fetch(url)
+    musicLoading[name] = fetch(url)
       .then(r => {
-        if (!r.ok) throw new Error('music.mp3 fetch failed: ' + r.status);
+        if (!r.ok) throw new Error(name + '.mp3 fetch failed: ' + r.status);
         return r.arrayBuffer();
       })
       .then(ab => new Promise((resolve, reject) => {
-        // Use callback form for Safari compatibility.
+        // Callback form for Safari compatibility.
         ctx.decodeAudioData(ab, resolve, reject);
       }))
       .then(buf => {
-        musicBuffer = buf;
+        musicBuffers[name] = buf;
         console.log('[music] loaded', url, 'duration=' + buf.duration.toFixed(2) + 's');
         return buf;
       })
       .catch(err => {
-        musicLoading = null;
+        musicLoading[name] = null;
         console.error('[music] load failed', url, err);
         throw err;
       });
-    return musicLoading;
+    return musicLoading[name];
   }
 
-  // Start a fresh source at full volume and arm the crossfade timer.
-  function startMusicSource() {
-    if (!ctx || !musicBuffer || !musicGain) return;
+  // What musicGain should be at right now — accounts for the music toggle
+  // and the pause duck. `state` lives in the outer game scope; this closure
+  // resolves it lazily, so toggling mid-pause uses the ducked target.
+  function currentMusicGainTarget() {
+    if (!musicEnabled) return 0;
+    if (typeof state !== 'undefined' && state === 'paused') {
+      return MUSIC_GAIN_VALUE * PAUSE_DUCK_LEVEL;
+    }
+    return MUSIC_GAIN_VALUE;
+  }
+
+  function setMusicGainTarget(target, ramp) {
+    if (!musicGain || !ctx) return;
+    try {
+      const t = ctx.currentTime;
+      musicGain.gain.cancelScheduledValues(t);
+      musicGain.gain.setValueAtTime(musicGain.gain.value, t);
+      musicGain.gain.linearRampToValueAtTime(target, t + (ramp || 0.3));
+    } catch {}
+  }
+
+  // Build, connect, and start a buffer source with an optional fade-in ramp
+  // on its per-source gain. Returns the (src, gain, startTime) triple, or
+  // null if the context refused to start.
+  function startBufferSource(buffer, fadeIn) {
+    if (!ctx || !buffer || !musicGain) return null;
     const t = ctx.currentTime;
     const src = ctx.createBufferSource();
-    src.buffer = musicBuffer;
+    src.buffer = buffer;
     const g = ctx.createGain();
-    g.gain.setValueAtTime(1, t);
+    if (fadeIn > 0) {
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(1, t + fadeIn);
+    } else {
+      g.gain.setValueAtTime(1, t);
+    }
     src.connect(g); g.connect(musicGain);
-    try { src.start(t); } catch { return; }
-    currentMusicSource = src;
-    currentMusicSourceGain = g;
-    armCrossfade(t);
+    try { src.start(t); } catch { return null; }
+    return { src: src, gain: g, startTime: t };
   }
 
-  // Schedule a setTimeout that fires MUSIC_CROSSFADE seconds before the
-  // currently playing source ends, kicking off the next loop iteration.
-  function armCrossfade(sourceStartTime) {
-    if (crossfadeTimer) { clearTimeout(crossfadeTimer); crossfadeTimer = null; }
-    if (!musicBuffer || !ctx) return;
-    const fireAt = sourceStartTime + musicBuffer.duration - MUSIC_CROSSFADE;
-    const delayMs = Math.max(0, (fireAt - ctx.currentTime) * 1000);
-    crossfadeTimer = setTimeout(() => {
-      crossfadeTimer = null;
-      if (!musicPlaying) return;
-      doCrossfade();
-    }, delayMs);
-  }
-
-  function doCrossfade() {
-    if (!ctx || !musicBuffer || !musicGain) return;
+  // Fade the currently active source to silence over `fadeOut` seconds and
+  // schedule a stop just past the fade. Clears the source pointers; callers
+  // should set new ones afterwards if they're starting a fresh source.
+  function fadeOutCurrentSource(fadeOut) {
+    if (!ctx) return;
     const t = ctx.currentTime;
-
-    // Fade the outgoing source out; stop it once silent.
     const oldSrc = currentMusicSource;
     const oldGain = currentMusicSourceGain;
     if (oldGain) {
       try {
         oldGain.gain.cancelScheduledValues(t);
         oldGain.gain.setValueAtTime(oldGain.gain.value, t);
-        oldGain.gain.linearRampToValueAtTime(0, t + MUSIC_CROSSFADE);
+        oldGain.gain.linearRampToValueAtTime(0, t + fadeOut);
       } catch {}
     }
     if (oldSrc) {
-      try { oldSrc.stop(t + MUSIC_CROSSFADE + 0.05); } catch {}
+      try { oldSrc.stop(t + fadeOut + 0.05); } catch {}
       killOnEnd(oldSrc, oldGain);
-    }
-
-    // Start the new source from the top, fading in over the same window.
-    const src = ctx.createBufferSource();
-    src.buffer = musicBuffer;
-    const g = ctx.createGain();
-    g.gain.setValueAtTime(0, t);
-    g.gain.linearRampToValueAtTime(1, t + MUSIC_CROSSFADE);
-    src.connect(g); g.connect(musicGain);
-    try { src.start(t); } catch { return; }
-    currentMusicSource = src;
-    currentMusicSourceGain = g;
-    armCrossfade(t);
-  }
-
-  function startMusic() {
-    if (musicPlaying) return;
-    if (!ensureRunning()) return;
-    resetThrottles();
-    musicPlaying = true;
-    // Restore musicGain to its enabled target in case a previous stopMusic
-    // (or pauseMusic) left it at 0.
-    if (musicGain) {
-      try {
-        const t = ctx.currentTime;
-        musicGain.gain.cancelScheduledValues(t);
-        musicGain.gain.setValueAtTime(musicEnabled ? MUSIC_GAIN_VALUE : 0, t);
-      } catch {}
-    }
-    loadMusicBuffer()
-      .then(() => { if (musicPlaying) startMusicSource(); })
-      .catch(() => {});
-  }
-
-  function stopMusic() {
-    if (!musicPlaying) return;
-    musicPlaying = false;
-    if (crossfadeTimer) { clearTimeout(crossfadeTimer); crossfadeTimer = null; }
-    if (!ctx) return;
-    const t = ctx.currentTime;
-    // 0.3s fade out on the source's own gain, then stop it cleanly.
-    if (currentMusicSourceGain) {
-      try {
-        currentMusicSourceGain.gain.cancelScheduledValues(t);
-        currentMusicSourceGain.gain.setValueAtTime(currentMusicSourceGain.gain.value, t);
-        currentMusicSourceGain.gain.linearRampToValueAtTime(0, t + 0.3);
-      } catch {}
-    }
-    if (currentMusicSource) {
-      try { currentMusicSource.stop(t + 0.35); } catch {}
-      killOnEnd(currentMusicSource, currentMusicSourceGain);
     }
     currentMusicSource = null;
     currentMusicSourceGain = null;
   }
 
-  function pauseMusic() {
-    if (!musicGain || !ctx) return;
-    try {
-      const t = ctx.currentTime;
-      musicGain.gain.cancelScheduledValues(t);
-      musicGain.gain.setValueAtTime(musicGain.gain.value, t);
-      musicGain.gain.linearRampToValueAtTime(0, t + 0.2);
-    } catch {}
+  // Schedule the next seamless-loop crossfade for the active track. Fires
+  // MUSIC_CROSSFADE seconds before the buffer ends.
+  function armCrossfade(sourceStartTime, buffer) {
+    if (crossfadeTimer) { clearTimeout(crossfadeTimer); crossfadeTimer = null; }
+    if (!buffer || !ctx) return;
+    const fireAt = sourceStartTime + buffer.duration - MUSIC_CROSSFADE;
+    const delayMs = Math.max(0, (fireAt - ctx.currentTime) * 1000);
+    crossfadeTimer = setTimeout(() => {
+      crossfadeTimer = null;
+      if (!currentTrackName) return;
+      doLoopCrossfade();
+    }, delayMs);
   }
 
+  function doLoopCrossfade() {
+    const buf = musicBuffers[currentTrackName];
+    if (!buf || !ctx) return;
+    fadeOutCurrentSource(MUSIC_CROSSFADE);
+    const started = startBufferSource(buf, MUSIC_CROSSFADE);
+    if (!started) return;
+    currentMusicSource = started.src;
+    currentMusicSourceGain = started.gain;
+    armCrossfade(started.startTime, buf);
+  }
+
+  // Public: switch to a named track ('menu' | 'gameplay' | 'results') with
+  // a `fade` second crossfade. Pass null/'' to stop music entirely.
+  function playTrack(name, fade) {
+    const fadeDur = (fade == null) ? 0.5 : fade;
+
+    // Stop request — fade out whatever's playing and forget the track.
+    if (!name) {
+      currentTrackName = null;
+      if (crossfadeTimer) { clearTimeout(crossfadeTimer); crossfadeTimer = null; }
+      fadeOutCurrentSource(fadeDur);
+      return;
+    }
+
+    if (!ensureRunning()) return;
+    resetThrottles();
+
+    // Already on this track — just make sure musicGain matches the current
+    // target (e.g. unducking from pause). Never restart the source.
+    if (currentTrackName === name && currentMusicSource) {
+      setMusicGainTarget(currentMusicGainTarget(), 0.2);
+      return;
+    }
+
+    currentTrackName = name;
+    // Restore musicGain to the right target before starting the new source.
+    setMusicGainTarget(currentMusicGainTarget(), 0.05);
+
+    loadMusicBuffer(name)
+      .then(buf => {
+        // Bail if the user navigated away mid-load.
+        if (currentTrackName !== name) return;
+        fadeOutCurrentSource(fadeDur);
+        const started = startBufferSource(buf, fadeDur);
+        if (!started) return;
+        currentMusicSource = started.src;
+        currentMusicSourceGain = started.gain;
+        armCrossfade(started.startTime, buf);
+      })
+      .catch(() => {});
+  }
+
+  // Pause and resume "duck" musicGain rather than stopping the source so
+  // gameplay returns instantly when the player hits resume.
+  function pauseMusic() {
+    setMusicGainTarget(musicEnabled ? MUSIC_GAIN_VALUE * PAUSE_DUCK_LEVEL : 0, 0.3);
+  }
   function resumeMusic() {
-    if (!musicGain || !ctx) return;
-    try {
-      const t = ctx.currentTime;
-      musicGain.gain.cancelScheduledValues(t);
-      musicGain.gain.setValueAtTime(musicGain.gain.value, t);
-      musicGain.gain.linearRampToValueAtTime(musicEnabled ? MUSIC_GAIN_VALUE : 0, t + 0.3);
-    } catch {}
+    setMusicGainTarget(currentMusicGainTarget(), 0.3);
+  }
+
+  // ---- UI button click sounds ----
+  // Two retro variants, both wired through sfxGain so they're muted by the
+  // SFX toggle. clickPrimary is the bright confirm/start sound; clickSecondary
+  // is the smaller toggle/navigate sound.
+  function clickPrimary() {
+    safeSfx(t => { chipNote(523.25, t, 0.04, 0.2, 'square'); });   // C5
+  }
+  function clickSecondary() {
+    safeSfx(t => { chipNote(392.00, t, 0.03, 0.15, 'square'); });  // G4
   }
 
   return {
     init, attract, repel, pickup, planetDestroyed, death,
     shieldBreak, comboActivate, comboDestroySound, startHyperspeedWhoosh,
-    startMusic, stopMusic, pauseMusic, resumeMusic,
+    playTrack, pauseMusic, resumeMusic,
+    clickPrimary, clickSecondary,
     setMusicEnabled, setSfxEnabled, isMusicEnabled, isSfxEnabled,
     suspendCtx, resumeCtx,
   };
@@ -1899,6 +1938,100 @@ function emitDestroyBurst(x, y, rgb) {
     }, PICKUP_PART_CAP);
   }
   trimParticles();
+}
+
+// Per-destruction-kind tints for the flash circle. The ring uses the planet's
+// own glow color; only the flash tint changes by kind.
+const DESTROY_FLASH_COLORS = {
+  shield:  '180,240,255',  // cyan
+  nova:    '255,150,80',   // orange/red
+  ghost:   '210,140,255',  // purple translucent
+  barrier: '255,220,90',   // gold
+};
+
+// Spawn a brief flash + expanding ring + small debris cloud at a destroyed
+// planet's location. `kind` selects the flash tint and size multiplier; `body`
+// supplies position, radius, and the planet's glow color for the ring.
+function emitDestroyFlash(body, kind) {
+  const flashRgb = DESTROY_FLASH_COLORS[kind] || '255,255,255';
+  // Nova destructions get a slightly larger flash; ghost passthrough is
+  // smaller and more translucent than the others.
+  let flashScale = 2;
+  let flashAlpha = 1;
+  if (kind === 'nova') flashScale = 2.5;
+  else if (kind === 'ghost') { flashScale = 1.5; flashAlpha = 0.7; }
+
+  // 6-8 debris dots fly outward at random angles with a slight downward pull.
+  const debrisCount = 6 + Math.floor(Math.random() * 3);
+  const debris = [];
+  for (let i = 0; i < debrisCount; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const sp = 1.4 + Math.random() * 2.6;
+    debris.push({
+      x: body.x, y: body.y,
+      vx: Math.cos(a) * sp,
+      vy: Math.sin(a) * sp,
+      r: 2 + Math.random(),
+    });
+  }
+
+  pushCapped(destroyFlashes, {
+    x: body.x, y: body.y,
+    baseR: body.radius,
+    flashMaxR: body.radius * flashScale,
+    ringMaxR:  body.radius * 4,
+    flashRgb,
+    flashAlpha,
+    ringColor: body.glowColor || `rgba(${flashRgb},1)`,
+    debris,
+    age: 0,
+  }, DESTROY_FLASH_CAP);
+}
+
+// Update + draw all destroy flashes. Components have different lifetimes
+// (flash 9f / ring 18f / debris 24f); the entry is dropped at age 24.
+const FLASH_LIFE  = 9;   // 0.15s @60fps
+const RING_LIFE   = 18;  // 0.30s
+const DEBRIS_LIFE = 24;  // 0.40s
+function drawDestroyFlashes() {
+  destroyFlashes = destroyFlashes.filter(f => f.age < DEBRIS_LIFE);
+  for (const f of destroyFlashes) {
+    f.age++;
+
+    // Flash circle: white-tinted disc that expands and fades over FLASH_LIFE.
+    if (f.age <= FLASH_LIFE) {
+      const t = f.age / FLASH_LIFE;
+      const r = f.flashMaxR * t;
+      const alpha = (1 - t) * f.flashAlpha;
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = `rgba(${f.flashRgb},1)`;
+      ctx.beginPath(); ctx.arc(f.x, f.y, r, 0, 6.28); ctx.fill();
+    }
+
+    // Ring pulse: stroke that expands to ringMaxR over RING_LIFE.
+    if (f.age <= RING_LIFE) {
+      const t = f.age / RING_LIFE;
+      const r = f.ringMaxR * t;
+      const alpha = (1 - t) * 0.8;
+      ctx.globalAlpha = alpha;
+      ctx.strokeStyle = f.ringColor;
+      ctx.lineWidth = 2.2;
+      ctx.beginPath(); ctx.arc(f.x, f.y, r, 0, 6.28); ctx.stroke();
+    }
+
+    // Debris: dots with slight downward gravity, fading over DEBRIS_LIFE.
+    const dt = f.age / DEBRIS_LIFE;
+    const dAlpha = 1 - dt;
+    for (const d of f.debris) {
+      d.x += d.vx; d.y += d.vy;
+      d.vx *= 0.94;
+      d.vy = d.vy * 0.94 + 0.12; // gravity
+      ctx.globalAlpha = dAlpha;
+      ctx.fillStyle = `rgba(${f.flashRgb},1)`;
+      ctx.beginPath(); ctx.arc(d.x, d.y, d.r, 0, 6.28); ctx.fill();
+    }
+  }
+  ctx.globalAlpha = 1;
 }
 
 function addDestroyPoints() {
@@ -2198,6 +2331,10 @@ function resetGame() {
   novaRings = []; screenShake = 0;
   pickupParticles = [];
   planetRipples = [];
+  destroyFlashes = [];
+  deathShards = [];
+  deathFlashFrames = 0;
+  if (pendingDeathBurstTimer) { clearTimeout(pendingDeathBurstTimer); pendingDeathBurstTimer = null; }
   clearPendingNovaTimeouts();
   activeEffects = { shield: 0, hyperspeed: 0, ghost: 0 };
   hyperspeedCurrentMult = 1; hyperspeedTargetSpeed = 0;
@@ -2320,6 +2457,7 @@ function checkCollisions() {
       if (dist(player, b) < b.radius + PLAYER_R) {
         if (wraith) {
           emitDestroyBurst(b.x, b.y, POWERUP_COLORS.ghost.rgb);
+          emitDestroyFlash(b, 'ghost');
           addDestroyPoints();
           SFX.planetDestroyed('ghost');
           bodies.splice(i, 1);
@@ -2342,6 +2480,7 @@ function checkCollisions() {
     for (let i = 0; i < bodies.length; i++) {
       if (dist(player, bodies[i]) < bodies[i].radius + PLAYER_R) {
         emitDestroyBurst(bodies[i].x, bodies[i].y, POWERUP_COLORS.shield.rgb);
+        emitDestroyFlash(bodies[i], 'shield');
         SFX.shieldBreak();
         addDestroyPoints();
         bodies.splice(i, 1);
@@ -2440,6 +2579,7 @@ function update() {
     for (const b of bodies) {
       if (dist(player, b) < auraR + b.radius) {
         emitDestroyBurst(b.x, b.y, POWERUP_COLORS.nova.rgb);
+        emitDestroyFlash(b, 'nova');
         addDestroyPoints();
         SFX.planetDestroyed('nova');
       } else survivors.push(b);
@@ -2514,6 +2654,7 @@ function update() {
           killed = true;
           const color = r.supernova ? '255,90,80' : POWERUP_COLORS.nova.rgb;
           emitDestroyBurst(b.x, b.y, color);
+          emitDestroyFlash(b, 'nova');
           addDestroyPoints();
           if (activeCombos.nova_nova) SFX.comboDestroySound('nova_nova');
           else SFX.planetDestroyed('nova');
@@ -2535,6 +2676,7 @@ function update() {
       if (b.y < barrierY + b.radius + 20 && b.y > barrierY - 30 &&
           Math.abs(b.x - player.x) < barrierHalfW + b.radius) {
         emitDestroyBurst(b.x, b.y, POWERUP_COLORS.hyperspeed.rgb);
+        emitDestroyFlash(b, 'barrier');
         addDestroyPoints();
         SFX.planetDestroyed('barrier');
       } else {
@@ -2572,15 +2714,31 @@ function triggerDeath() {
   if (typeof syncUpdateBanner === 'function') syncUpdateBanner();
   pauseBtn.classList.remove('visible');
   SFX.death();
-  SFX.stopMusic();
+  // Crossfade gameplay → results over 0.3s.
+  SFX.playTrack('results', 0.3);
   clearPendingNovaTimeouts();
   const scores = saveScore(score, difficulty);
-  deathParticles = [];
-  const deathCount = Math.min(50, DEATH_PART_CAP);
-  for (let i = 0; i < deathCount; i++) {
-    const a = Math.random()*Math.PI*2, s = Math.random()*3.5+0.8;
-    pushCapped(deathParticles, { x: player.x, y: player.y, vx: Math.cos(a)*s, vy: Math.sin(a)*s, life: 1, size: Math.random()*2.5+0.8 }, DEATH_PART_CAP);
-  }
+
+  // Orb shatter: 6-8 irregular shards fly outward from the player position
+  // before the existing particle burst fires. Each shard has a random
+  // velocity, rotation speed, and a small cyan polygon shape.
+  spawnDeathShards(player.x, player.y);
+  // Freeze-frame: white flash for 1 frame at the player's location.
+  deathFlashFrames = 1;
+
+  // Particle burst comes after the shards have faded (~1.2s).
+  if (pendingDeathBurstTimer) { clearTimeout(pendingDeathBurstTimer); }
+  pendingDeathBurstTimer = setTimeout(() => {
+    pendingDeathBurstTimer = null;
+    // Bail out if the player already moved on (restart, menu, etc.)
+    if (state !== 'dead') return;
+    deathParticles = [];
+    const deathCount = Math.min(50, DEATH_PART_CAP);
+    for (let i = 0; i < deathCount; i++) {
+      const a = Math.random()*Math.PI*2, s = Math.random()*3.5+0.8;
+      pushCapped(deathParticles, { x: player.x, y: player.y, vx: Math.cos(a)*s, vy: Math.sin(a)*s, life: 1, size: Math.random()*2.5+0.8 }, DEATH_PART_CAP);
+    }
+  }, 1200);
   // Submit score online (fire and forget)
   const uname = getUsername();
   if (uname) submitScoreOnline(uname, score, difficulty);
@@ -3212,6 +3370,92 @@ function drawDeathParticles() {
   ctx.globalAlpha=1;
 }
 
+// Player death shatter — 6-8 irregular polygon shards spawned at the player
+// position. Each shard tumbles outward, leaves a brief cyan trail, and fades
+// over ~1.2s. The existing deathParticles burst fires after these are gone
+// (scheduled by triggerDeath).
+const SHARD_LIFE_FRAMES = 72;  // 1.2s @60fps
+function spawnDeathShards(x, y) {
+  deathShards = [];
+  const count = 6 + Math.floor(Math.random() * 3);
+  for (let i = 0; i < count; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const sp = 1.6 + Math.random() * 2.4;
+    // 3-4 vertices forming a small irregular polygon.
+    const vCount = 3 + Math.floor(Math.random() * 2);
+    const verts = [];
+    const baseR = 5 + Math.random() * 7; // 5..12px
+    for (let v = 0; v < vCount; v++) {
+      const va = (v / vCount) * Math.PI * 2 + Math.random() * 0.6;
+      const vr = baseR * (0.6 + Math.random() * 0.7);
+      verts.push({ x: Math.cos(va) * vr, y: Math.sin(va) * vr });
+    }
+    deathShards.push({
+      x, y,
+      vx: Math.cos(a) * sp,
+      vy: Math.sin(a) * sp,
+      rot: Math.random() * Math.PI * 2,
+      rotSpeed: (Math.random() - 0.5) * 0.25,
+      verts,
+      life: 1,           // 1 → 0
+      age: 0,
+      trail: [],         // recent {x,y} positions for the brief cyan tail
+    });
+  }
+}
+
+function drawDeathShards() {
+  // Render the 1-frame white player flash on top of the shards.
+  if (deathFlashFrames > 0) {
+    ctx.globalAlpha = 0.9;
+    ctx.fillStyle = '#fff';
+    ctx.beginPath(); ctx.arc(player.x, player.y, PLAYER_R * 2.4, 0, 6.28); ctx.fill();
+    ctx.globalAlpha = 1;
+    deathFlashFrames--;
+  }
+
+  if (!deathShards.length) return;
+  deathShards = deathShards.filter(s => s.age < SHARD_LIFE_FRAMES);
+  for (const s of deathShards) {
+    s.age++;
+    s.x += s.vx; s.y += s.vy;
+    s.vx *= 0.985; s.vy = s.vy * 0.985 + 0.04; // very slight drag + soft gravity
+    s.rot += s.rotSpeed;
+    s.life = 1 - (s.age / SHARD_LIFE_FRAMES);
+    // Track last few positions for the trail.
+    s.trail.push({ x: s.x, y: s.y });
+    if (s.trail.length > 6) s.trail.shift();
+
+    // Cyan trail behind the shard.
+    if (s.trail.length > 1) {
+      ctx.globalAlpha = s.life * 0.4;
+      ctx.strokeStyle = 'rgba(140,230,255,1)';
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.moveTo(s.trail[0].x, s.trail[0].y);
+      for (let i = 1; i < s.trail.length; i++) ctx.lineTo(s.trail[i].x, s.trail[i].y);
+      ctx.stroke();
+    }
+
+    // Polygon shard in cyan/white with a glow stroke.
+    ctx.save();
+    ctx.translate(s.x, s.y);
+    ctx.rotate(s.rot);
+    ctx.globalAlpha = s.life;
+    ctx.fillStyle = 'rgba(220,250,255,1)';
+    ctx.strokeStyle = 'rgba(120,220,255,1)';
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.moveTo(s.verts[0].x, s.verts[0].y);
+    for (let i = 1; i < s.verts.length; i++) ctx.lineTo(s.verts[i].x, s.verts[i].y);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+  }
+  ctx.globalAlpha = 1;
+}
+
 function render() {
   ctx.save();
   // Screen shake
@@ -3244,6 +3488,8 @@ function render() {
       drawPlayer();
     }
     drawPickupParticles();
+    drawDestroyFlashes();
+    drawDeathShards();
     drawDeathParticles();
   }
 
@@ -3276,13 +3522,16 @@ function loop() {
   loopFrameCounter++;
   if (loopFrameCounter % 600 === 0) {
     const total = pickupParticles.length + deathParticles.length
-                + novaRings.length + planetRipples.length;
+                + novaRings.length + planetRipples.length
+                + destroyFlashes.length + deathShards.length;
     if (total > 150) {
       console.warn('[loop] memory pressure: clearing', total, 'transient particles');
       pickupParticles = [];
       deathParticles = [];
       novaRings = [];
       planetRipples = [];
+      destroyFlashes = [];
+      deathShards = [];
     }
   }
   requestAnimationFrame(loop);
@@ -3324,8 +3573,12 @@ document.getElementById('startBtn').addEventListener('click', ()=>{
   // Defense in depth: ignore stray clicks unless we're actually on a menu screen
   if (state !== 'idle' && state !== 'dead') return;
   SFX.init();
+  SFX.clickPrimary();
+  // Death→play uses the shorter results→gameplay 0.3s crossfade per spec;
+  // menu→play uses the 0.5s menu→gameplay crossfade.
+  const fade = state === 'dead' ? 0.3 : 0.5;
   resetGame(); state='playing';
-  SFX.startMusic();
+  SFX.playTrack('gameplay', fade);
   document.getElementById('overlay').classList.add('hidden');
   pauseBtn.classList.add('visible');
 });
@@ -3364,6 +3617,10 @@ function goToMainMenu() {
   novaRings = [];
   pickupParticles = [];
   planetRipples = [];
+  destroyFlashes = [];
+  deathShards = [];
+  deathFlashFrames = 0;
+  if (pendingDeathBurstTimer) { clearTimeout(pendingDeathBurstTimer); pendingDeathBurstTimer = null; }
   clearPendingNovaTimeouts();
   activeEffects = { shield: 0, hyperspeed: 0, ghost: 0 };
   hyperspeedCurrentMult = 1; hyperspeedTargetSpeed = 0;
@@ -3378,7 +3635,8 @@ function goToMainMenu() {
   phantomBlastFrames = 0;
   lastGainedEffects = [];
   lastGainedTimestamp = -1;
-  SFX.stopMusic();
+  // Crossfade whatever's playing back to the menu track over 0.5s.
+  SFX.playTrack('menu', 0.5);
   pauseOverlay.classList.remove('visible');
   pauseBtn.classList.remove('visible');
   quitMsg.style.display = 'none';
@@ -3401,12 +3659,12 @@ function quitGame() {
   setTimeout(()=>{ quitMsg.style.display = 'block'; }, 80);
 }
 
-pauseBtn.addEventListener('click', pauseGame);
-document.getElementById('resumeBtn').addEventListener('click', resumeGame);
-document.getElementById('restartBtn').addEventListener('click', restartFromPause);
-document.getElementById('changeNameBtn').addEventListener('click', () => { showUsernamePrompt(); });
-document.getElementById('menuBtn').addEventListener('click', goToMainMenu);
-document.getElementById('quitBtn').addEventListener('click', quitGame);
+pauseBtn.addEventListener('click', () => { SFX.clickSecondary(); pauseGame(); });
+document.getElementById('resumeBtn').addEventListener('click', () => { SFX.clickPrimary(); resumeGame(); });
+document.getElementById('restartBtn').addEventListener('click', () => { SFX.clickPrimary(); restartFromPause(); });
+document.getElementById('changeNameBtn').addEventListener('click', () => { SFX.clickSecondary(); showUsernamePrompt(); });
+document.getElementById('menuBtn').addEventListener('click', () => { SFX.clickSecondary(); goToMainMenu(); });
+document.getElementById('quitBtn').addEventListener('click', () => { SFX.clickSecondary(); quitGame(); });
 
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
@@ -3493,6 +3751,7 @@ document.addEventListener('backbutton', e => {
 document.querySelectorAll('.diff-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     if (state !== 'idle' && state !== 'dead') return;
+    SFX.clickSecondary();
     document.querySelectorAll('.diff-btn').forEach(b => b.classList.remove('selected'));
     btn.classList.add('selected');
     difficulty = btn.dataset.diff;
@@ -3528,9 +3787,9 @@ function closeSettings() {
   settingsOverlay.classList.remove('visible');
 }
 
-settingsBtn.addEventListener('click', openSettings);
-pauseSettingsBtn.addEventListener('click', openSettings);
-settingsCloseBtn.addEventListener('click', closeSettings);
+settingsBtn.addEventListener('click', () => { SFX.clickSecondary(); openSettings(); });
+pauseSettingsBtn.addEventListener('click', () => { SFX.clickSecondary(); openSettings(); });
+settingsCloseBtn.addEventListener('click', () => { SFX.clickSecondary(); closeSettings(); });
 
 settingsOverlay.addEventListener('click', e => {
   const btn = e.target.closest('.toggle-opt');
@@ -3539,6 +3798,7 @@ settingsOverlay.addEventListener('click', e => {
   const setting = group.dataset.setting;
   const on = btn.dataset.val === 'on';
   SFX.init();
+  SFX.clickSecondary();
   if (setting === 'music') SFX.setMusicEnabled(on);
   else if (setting === 'sfx') SFX.setSfxEnabled(on);
   refreshSettingsUI();
@@ -3574,10 +3834,12 @@ function syncUpdateBanner() {
 
 updateBannerEl.addEventListener('click', e => {
   if (e.target.closest('.ub-close')) {
+    SFX.clickSecondary();
     updateDismissed = true;
     syncUpdateBanner();
     return;
   }
+  SFX.clickSecondary();
   try { window.open(PLAY_STORE_URL, '_blank', 'noopener'); } catch {}
 });
 
@@ -3621,6 +3883,7 @@ function isLocalTabActive() {
 document.getElementById('lbTabs').addEventListener('click', e => {
   const tab = e.target.closest('.lb-tab');
   if (!tab) return;
+  SFX.clickSecondary();
   document.querySelectorAll('.lb-tab').forEach(t => t.classList.remove('active'));
   tab.classList.add('active');
   const isLocal = tab.dataset.tab === 'local';
@@ -3637,6 +3900,7 @@ document.getElementById('lbTabs').addEventListener('click', e => {
 document.getElementById('lbDiffTabs').addEventListener('click', e => {
   const tab = e.target.closest('.lb-diff-tab');
   if (!tab || !window._deathLbHandlers) return;
+  SFX.clickSecondary();
   const diff = tab.dataset.diff;
   document.querySelectorAll('.lb-diff-tab').forEach(t => t.classList.remove('active'));
   tab.classList.add('active');
@@ -3681,12 +3945,30 @@ function confirmUsername() {
   usernameCallback = null;
 }
 
-usernameConfirm.addEventListener('click', confirmUsername);
+usernameConfirm.addEventListener('click', () => { SFX.clickPrimary(); confirmUsername(); });
 
 // Show username prompt on first launch, then start
 if (!getUsername()) {
   showUsernamePrompt();
 }
+
+// Bootstrap menu music on the user's first interaction. Browsers won't let
+// us start audio before a gesture, so we wait for the first pointer or key
+// event, then fire the menu track if we're still on the main menu.
+function bootstrapMenuMusic() {
+  document.removeEventListener('pointerdown', bootstrapMenuMusic);
+  document.removeEventListener('keydown', bootstrapMenuMusic);
+  document.removeEventListener('touchstart', bootstrapMenuMusic);
+  try {
+    SFX.init();
+    if (state === 'idle') SFX.playTrack('menu', 0.5);
+  } catch (err) {
+    console.error('[bootstrapMenuMusic] failed', err);
+  }
+}
+document.addEventListener('pointerdown', bootstrapMenuMusic);
+document.addEventListener('keydown', bootstrapMenuMusic);
+document.addEventListener('touchstart', bootstrapMenuMusic);
 
 initBgStars(); initBodies(); loop();
 </script>
