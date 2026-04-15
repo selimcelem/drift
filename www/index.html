@@ -1304,29 +1304,59 @@ const SFX = (function() {
     });
   }
 
-  // Sustained hyperspeed tone — separate from the pickup whoosh. Sine at
-  // 600hz, vol 0.06 MAX. Hard-stop (no fade) when hyperspeed ends.
+  // Sustained hyperspeed tone — separate from the pickup whoosh. Low
+  // rumbling engine: 80hz sine fundamental + 160hz sine 2nd harmonic at
+  // 0.4x, both through a lowpass (cutoff ~200hz, Q=2) modulated by a
+  // 0.3hz LFO sweeping between 120 and 280hz for movement. Capped at
+  // 0.08. Hard-stop (no fade) when hyperspeed ends.
   function startHyperspeedWhoosh() {
     if (!ensureRunning()) return null;
     if (!sfxEnabled) return null;
     try {
       const t = ctx.currentTime;
-      const o = ctx.createOscillator();
-      const g = ctx.createGain();
-      o.type = 'triangle';
-      o.frequency.value = 600;
-      g.gain.setValueAtTime(0, t);
-      g.gain.linearRampToValueAtTime(0.06, t + 0.12);
-      o.connect(g); g.connect(sfxGain);
-      o.start(t);
+      const f = ctx.createBiquadFilter();
+      f.type = 'lowpass';
+      f.frequency.value = 200;
+      f.Q.value = 2;
+
+      // LFO sweeps cutoff 120..280hz. A ±80 gain around a 200hz base
+      // gives that window.
+      const lfo = ctx.createOscillator();
+      const lfoGain = ctx.createGain();
+      lfo.type = 'sine';
+      lfo.frequency.value = 0.3;
+      lfoGain.gain.value  = 80;
+      lfo.connect(lfoGain); lfoGain.connect(f.frequency);
+
+      // Fundamental
+      const o1 = ctx.createOscillator();
+      const g1 = ctx.createGain();
+      o1.type = 'sine'; o1.frequency.value = 80;
+      g1.gain.value = 1;
+      o1.connect(g1); g1.connect(f);
+
+      // 2nd harmonic at 0.4x
+      const o2 = ctx.createOscillator();
+      const g2 = ctx.createGain();
+      o2.type = 'sine'; o2.frequency.value = 160;
+      g2.gain.value = 0.4;
+      o2.connect(g2); g2.connect(f);
+
+      // Master envelope for the sustained voice, capped at 0.08.
+      const out = ctx.createGain();
+      out.gain.setValueAtTime(0, t);
+      out.gain.linearRampToValueAtTime(0.08, t + 0.12);
+      f.connect(out); out.connect(sfxGain);
+
+      o1.start(t); o2.start(t); lfo.start(t);
       return {
         stop() {
           try {
             const now = ctx.currentTime;
-            g.gain.cancelScheduledValues(now);
-            g.gain.setValueAtTime(0, now);
-            o.stop(now);
-            killOnEnd(o, g);
+            out.gain.cancelScheduledValues(now);
+            out.gain.setValueAtTime(0, now);
+            o1.stop(now); o2.stop(now); lfo.stop(now);
+            killOnEnd(o1, o2, lfo, lfoGain, g1, g2, f, out);
           } catch {}
         }
       };
