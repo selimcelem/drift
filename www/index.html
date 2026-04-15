@@ -1648,12 +1648,14 @@ function activateCombo(key, x, y) {
   // spawns (the cause of the Android hyperspeed-combo crash at high scores).
   if (activeCombos[key]) {
     if (key === 'nova_hyperspeed') {
+      // Refresh hyperspeed duration but leave warpTimeNovaTimer alone so the
+      // auto-nova cadence continues uninterrupted.
       activateHyperspeed(HYPERSPEED_COMBO_DURATION);
-      warpTimeNovaTimer = 0;
     } else if (key === 'nova_shield') {
+      // Refresh shield duration but leave pulsarNovaTimer alone so the
+      // auto-nova cadence continues uninterrupted.
       activeEffects.shield = SHIELD_DURATION;
       shieldBroken = false;
-      pulsarNovaTimer = 0;
     } else if (key === 'hyperspeed_ghost') {
       activateHyperspeed(HYPERSPEED_COMBO_DURATION, 2);
       activeEffects.ghost = HYPERSPEED_COMBO_DURATION;
