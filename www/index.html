@@ -1592,6 +1592,12 @@ function addDestroyPoints() {
 // --- Combo helpers ---
 let recentNovaFrames = 0;
 let lastComboLabel = null; // which combo key is currently shown on the timer bar
+// Pickup recency tracking — used by detectCombo to decide which active
+// effect a new single pickup should combine with. Single pickups produce a
+// 1-entry array; pair pickups produce a 2-entry array with the same
+// timestamp, which triggers Rule 3 (random tie-break) on the next pickup.
+let lastGainedEffects = [];
+let lastGainedTimestamp = -1;
 
 function comboKey(a, b) {
   const order = { nova: 0, hyperspeed: 1, ghost: 2, shield: 3 };
@@ -1600,22 +1606,36 @@ function comboKey(a, b) {
   return COMBO_DEFS[k] ? k : null;
 }
 
+// Treat a nova burst as "active" for combo purposes while recentNovaFrames
+// is still counting — matches the original detectCombo behaviour.
+function effectActive(t) {
+  return t === 'nova' ? recentNovaFrames > 0 : activeEffects[t] > 0;
+}
+
 function detectCombo(newType) {
-  // Same-type chain first
-  if (newType === 'nova' && recentNovaFrames > 0) return 'nova_nova';
-  if (newType !== 'nova' && activeEffects[newType] > 0) {
+  // RULE 1 - SAME TYPE WINS: if the new pickup matches any currently
+  // active effect, combine with that matching effect.
+  if (effectActive(newType)) {
     const k = comboKey(newType, newType);
     if (k) return k;
   }
-  // Cross-type: first matching active effect
-  const others = ['nova', 'hyperspeed', 'ghost', 'shield'].filter(t => t !== newType);
-  for (const o of others) {
-    const hasOther = o === 'nova' ? recentNovaFrames > 0 : activeEffects[o] > 0;
-    if (hasOther) {
-      const k = comboKey(newType, o);
-      if (k) return k;
-    }
+
+  // Build candidate partners from the most-recent pickup event, filtered
+  // to effects still currently active and different from newType.
+  const partners = lastGainedEffects.filter(t => t !== newType && effectActive(t));
+
+  if (partners.length === 1) {
+    // RULE 2 - MOST RECENTLY GAINED: single unambiguous partner.
+    const k = comboKey(newType, partners[0]);
+    if (k) return k;
+  } else if (partners.length >= 2) {
+    // RULE 3 - RANDOM TIE BREAK: pair pickup left two equally-recent
+    // effects; pick one at random.
+    const pick = partners[Math.floor(Math.random() * partners.length)];
+    const k = comboKey(newType, pick);
+    if (k) return k;
   }
+
   return null;
 }
 
@@ -1722,6 +1742,11 @@ function activatePair(a, b) {
     rawActivate(a.type, a.x, a.y);
     rawActivate(b.type, b.x, b.y);
   }
+
+  // Both effects were gained simultaneously — identical timestamp triggers
+  // Rule 3 (random tie-break) on the next single pickup.
+  lastGainedEffects = [a.type, b.type];
+  lastGainedTimestamp = frame;
 }
 
 function rawActivate(type, x, y) {
@@ -1780,12 +1805,19 @@ function activatePowerup(type, x, y) {
   emitPickupParticles(x, y, type);
   SFX.pickup(type);
   runStats.powerupsUsed++;
+
+  // Detect combo BEFORE updating lastGainedEffects — the partner lookup
+  // must see the previous pickup, not this one.
   const key = detectCombo(type);
-  if (key) {
-    activateCombo(key, x, y);
-    return;
-  }
+
+  // The new pickup always activates its own individual effect timer, and
+  // the combo (if any) stacks on top with a fresh activation.
   rawActivate(type, x, y);
+  if (key) activateCombo(key, x, y);
+
+  // Record this pickup as the most-recently-gained event.
+  lastGainedEffects = [type];
+  lastGainedTimestamp = frame;
 }
 
 // --- Game state ---
@@ -1817,6 +1849,8 @@ function resetGame() {
   warpTimeNovaTimer = 0;
   pulsarNovaTimer = 0;
   juggernautPendingShieldRefresh = false;
+  lastGainedEffects = [];
+  lastGainedTimestamp = -1;
   lastPowerupSpawn = 0;
   document.getElementById('score').textContent = '0';
 }
@@ -2942,6 +2976,8 @@ function goToMainMenu() {
   lastComboLabel = null;
   recentNovaFrames = 0;
   phantomBlastFrames = 0;
+  lastGainedEffects = [];
+  lastGainedTimestamp = -1;
   SFX.stopMusic();
   pauseOverlay.classList.remove('visible');
   pauseBtn.classList.remove('visible');
