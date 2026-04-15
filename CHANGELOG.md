@@ -10,6 +10,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 - Smart combo pickup logic: same-type priority, recency-based pairing, random tiebreak for simultaneous pair spawns
+- Settings menu with separate Music and SFX toggles (gear icon top-left, also in pause menu)
+- Combo activate sound — unique two-tone chime per combo type
+- Shield break sound — crack and thump when shield absorbs a hit
+- Update available banner on main menu when new version detected on GitHub
 
 ### Changed
 - Pulsar auto-nova timer no longer resets when shield is picked up while Pulsar is active
@@ -21,6 +25,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Hyperspeed landing window extended to 3 seconds, stronger pull toward spawn position
 - Difficulty rebalanced for longer runs and broader audience
 - Local highscores keep top 5 per difficulty
+- Background music replaced with chiptune-style track 150 BPM arpeggiated melody bass harmony drums
+- All SFX rewritten with higher quality synthesis and proper ADSR envelopes
+- Hyperspeed sustained tone changed to low bass rumble
+- Milestone score chimes removed
+- Hyperspeed volume reduced
 
 ### Fixed
 - Memory leaks: particle cap enforced, nova timeout cleanup, nova ring pruning

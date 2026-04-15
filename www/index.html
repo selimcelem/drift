@@ -233,6 +233,47 @@
     color: rgba(100,200,255,0.9);
   }
 
+  #updateBanner {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    background: rgba(0,0,10,0.55);
+    border: 1px solid rgba(100,200,255,0.35);
+    border-radius: 3px;
+    padding: 8px 14px;
+    margin: 0 auto 24px auto;
+    cursor: pointer;
+    transition: all 0.25s;
+    backdrop-filter: blur(4px);
+  }
+  #updateBanner.visible { display: inline-flex; }
+  #updateBanner:hover {
+    background: rgba(100,200,255,0.12);
+    border-color: rgba(100,200,255,0.7);
+    box-shadow: 0 0 18px rgba(100,200,255,0.2);
+  }
+  .ub-text {
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 2px;
+    color: rgba(140,220,255,0.9);
+    text-transform: uppercase;
+  }
+  .ub-close {
+    background: transparent;
+    border: none;
+    color: rgba(140,220,255,0.55);
+    font-size: 11px;
+    line-height: 1;
+    padding: 0 2px;
+    cursor: pointer;
+    transition: color 0.2s;
+  }
+  .ub-close:hover {
+    color: rgba(180,240,255,1);
+  }
+
   #startBtn {
     background: transparent;
     border: 1px solid rgba(100,200,255,0.5);
@@ -711,6 +752,10 @@
     </div>
     <div id="highscores"></div>
     <div id="globalScores"></div>
+    <div id="updateBanner" role="button" tabindex="0">
+      <span class="ub-text">⬆ Update available — tap to update</span>
+      <button class="ub-close" aria-label="Dismiss">✕</button>
+    </div>
     <div class="controls-hint" id="controlsHint">
       <span>LEFT</span> — pull toward nearest body<br>
       <span>RIGHT</span> — push away from nearest body<br>
@@ -760,6 +805,8 @@
 </div>
 
 <script>
+const GAME_VERSION = '1.2.0';
+
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
 const W = 400, H = 700;
@@ -2462,6 +2509,7 @@ function update() {
 
 function triggerDeath() {
   state = 'dead';
+  if (typeof syncUpdateBanner === 'function') syncUpdateBanner();
   pauseBtn.classList.remove('visible');
   SFX.death();
   SFX.stopMusic();
@@ -3249,6 +3297,7 @@ function goToMainMenu() {
   document.getElementById('startBtn').textContent = 'ENTER THE VOID';
   document.getElementById('score').textContent = '0';
   document.getElementById('overlay').classList.remove('hidden');
+  if (typeof syncUpdateBanner === 'function') syncUpdateBanner();
 }
 
 function quitGame() {
@@ -3327,6 +3376,59 @@ settingsOverlay.addEventListener('click', e => {
 });
 
 refreshSettingsUI();
+
+// --- Version check / update banner ---
+// Compares the hardcoded GAME_VERSION against the latest release tag on
+// GitHub and shows a small banner on the main menu if the remote is newer.
+// Silent failure: any network/parse error leaves the banner hidden.
+const PLAY_STORE_URL = 'https://play.google.com/store/apps/details?id=com.selimcelem.drift';
+const updateBannerEl = document.getElementById('updateBanner');
+let updateAvailable = false;
+let updateDismissed = false;
+
+function compareVersions(a, b) {
+  const pa = String(a).replace(/^v/i, '').split('.').map(n => parseInt(n, 10) || 0);
+  const pb = String(b).replace(/^v/i, '').split('.').map(n => parseInt(n, 10) || 0);
+  const len = Math.max(pa.length, pb.length);
+  for (let i = 0; i < len; i++) {
+    const x = pa[i] || 0, y = pb[i] || 0;
+    if (x !== y) return x < y ? -1 : 1;
+  }
+  return 0;
+}
+
+function syncUpdateBanner() {
+  if (!updateBannerEl) return;
+  const show = updateAvailable && !updateDismissed && state === 'idle';
+  updateBannerEl.classList.toggle('visible', show);
+}
+
+updateBannerEl.addEventListener('click', e => {
+  if (e.target.closest('.ub-close')) {
+    updateDismissed = true;
+    syncUpdateBanner();
+    return;
+  }
+  try { window.open(PLAY_STORE_URL, '_blank', 'noopener'); } catch {}
+});
+
+function checkForUpdate() {
+  try {
+    fetch('https://api.github.com/repos/selimcelem/drift/releases/latest', {
+      headers: { 'Accept': 'application/vnd.github+json' },
+    })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (!data || !data.tag_name) return;
+        if (compareVersions(GAME_VERSION, data.tag_name) < 0) {
+          updateAvailable = true;
+          syncUpdateBanner();
+        }
+      })
+      .catch(() => {});
+  } catch {}
+}
+checkForUpdate();
 
 // Initialize the audio context on the very first user gesture so the
 // browser autoplay policy is satisfied even if the player taps the canvas
