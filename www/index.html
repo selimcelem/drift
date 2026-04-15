@@ -986,12 +986,37 @@ const SFX = (function() {
   // Aggressively try to bring the AudioContext into the running state.
   // Handles 'suspended' (Chrome autoplay) and 'interrupted' (iOS).
   function ensureRunning() {
+    // Android WebView occasionally closes the AudioContext out from under us
+    // when the app is backgrounded, leaving us with a permanently broken ctx.
+    // Detect that and rebuild from scratch instead of leaving audio dead.
+    if (initialized && ctx && ctx.state === 'closed') {
+      initialized = false;
+      ctx = null;
+      masterGain = musicGain = sfxGain = null;
+      // Drop the cached music source/timer so the fresh context can re-arm.
+      if (crossfadeTimer) { clearTimeout(crossfadeTimer); crossfadeTimer = null; }
+      currentMusicSource = null;
+      currentMusicSourceGain = null;
+      musicPlaying = false;
+    }
     if (!initialized) init();
     if (!ctx) return false;
     if (ctx.state !== 'running') {
       try { ctx.resume(); } catch {}
     }
     return true;
+  }
+
+  // Suspend/resume the AudioContext itself — used by the visibilitychange
+  // handler so Android doesn't kill the audio thread while the app is
+  // backgrounded. These are no-ops if the context isn't built yet.
+  function suspendCtx() {
+    if (!ctx) return;
+    try { ctx.suspend(); } catch {}
+  }
+  function resumeCtx() {
+    if (!ctx) return;
+    try { ctx.resume(); } catch {}
   }
 
   function safeSfx(fn) {
@@ -1650,6 +1675,7 @@ const SFX = (function() {
     shieldBreak, comboActivate, comboDestroySound, startHyperspeedWhoosh,
     startMusic, stopMusic, pauseMusic, resumeMusic,
     setMusicEnabled, setSfxEnabled, isMusicEnabled, isSfxEnabled,
+    suspendCtx, resumeCtx,
   };
 })();
 
@@ -3225,7 +3251,42 @@ function render() {
   ctx.restore();
 }
 
-function loop() { update(); render(); requestAnimationFrame(loop); }
+// Crash-resilient game loop for Android WebView. update() and render() are
+// each guarded so a thrown error never tears down the rAF chain. update()
+// failures fall back to the main menu (the game state is suspect after
+// a partial update); render() failures just skip the frame.
+let loopFrameCounter = 0;
+function loop() {
+  try {
+    update();
+  } catch (err) {
+    console.error('[loop] update() threw, recovering to main menu', err);
+    recordError('update', err);
+    try { goToMainMenu(); } catch (e2) { console.error('[loop] goToMainMenu also threw', e2); }
+  }
+  try {
+    render();
+  } catch (err) {
+    console.error('[loop] render() threw, skipping frame', err);
+    recordError('render', err);
+  }
+  // Memory pressure watchdog: every 600 frames (~10s @60fps) check the total
+  // particle / ring / ripple count and force-clear if it's blown past 150.
+  // Stops intense combo chains from accumulating into an OOM crash.
+  loopFrameCounter++;
+  if (loopFrameCounter % 600 === 0) {
+    const total = pickupParticles.length + deathParticles.length
+                + novaRings.length + planetRipples.length;
+    if (total > 150) {
+      console.warn('[loop] memory pressure: clearing', total, 'transient particles');
+      pickupParticles = [];
+      deathParticles = [];
+      novaRings = [];
+      planetRipples = [];
+    }
+  }
+  requestAnimationFrame(loop);
+}
 
 // --- Input ---
 function readInput(e) {
@@ -3351,6 +3412,80 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
     if (state === 'playing') pauseGame();
     else if (state === 'paused') resumeGame();
+  }
+});
+
+// --- Crash resilience (Android WebView) ---
+//
+// Android WebView (especially on Samsung devices) is much less forgiving of
+// uncaught errors and audio thread failures than desktop Chrome. The handlers
+// below catch problems before they reach the WebView host and crash the app.
+
+// Persist the last 5 errors to localStorage under 'drift_errors' so a tester
+// can pull them back out after a crash.
+function recordError(source, err) {
+  try {
+    const entry = {
+      t: Date.now(),
+      source,
+      message: (err && err.message) || String(err),
+      stack: (err && err.stack) || null,
+    };
+    let log = [];
+    try { log = JSON.parse(localStorage.getItem('drift_errors') || '[]'); } catch {}
+    if (!Array.isArray(log)) log = [];
+    log.push(entry);
+    if (log.length > 5) log = log.slice(-5);
+    localStorage.setItem('drift_errors', JSON.stringify(log));
+  } catch {}
+}
+
+window.addEventListener('error', e => {
+  console.error('[window.error]', e.message, e.error);
+  recordError('window.error', e.error || e.message);
+  // Swallow — don't let it propagate to the WebView host.
+  e.preventDefault();
+});
+
+window.addEventListener('unhandledrejection', e => {
+  console.error('[unhandledrejection]', e.reason);
+  recordError('unhandledrejection', e.reason);
+  e.preventDefault();
+});
+
+// Visibilitychange: suspend AudioContext when backgrounded so Android doesn't
+// kill the audio thread, then resume on return. Also pauses gameplay so the
+// player isn't dropped into an active game on return.
+document.addEventListener('visibilitychange', () => {
+  try {
+    if (document.hidden) {
+      if (state === 'playing') pauseGame();
+      SFX.suspendCtx();
+    } else {
+      SFX.resumeCtx();
+    }
+  } catch (err) {
+    console.error('[visibilitychange] handler threw', err);
+    recordError('visibilitychange', err);
+  }
+});
+
+// Capacitor / Cordova back button: if mid-game pause instead of letting the
+// WebView host close the app. On the main menu fall through to the default
+// (which closes the app on Android).
+document.addEventListener('backbutton', e => {
+  try {
+    if (state === 'playing') {
+      e.preventDefault();
+      pauseGame();
+    } else if (state === 'paused') {
+      e.preventDefault();
+      resumeGame();
+    }
+    // On idle/dead screens, allow the host to close the app.
+  } catch (err) {
+    console.error('[backbutton] handler threw', err);
+    recordError('backbutton', err);
   }
 });
 
