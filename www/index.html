@@ -384,7 +384,7 @@
     backdrop-filter: blur(4px);
   }
 
-  #muteBtn {
+  #settingsBtn {
     position: absolute;
     top: 16px;
     left: 16px;
@@ -394,7 +394,7 @@
     border: 1px solid rgba(100,200,255,0.25);
     border-radius: 4px;
     color: rgba(100,200,255,0.85);
-    font-size: 14px;
+    font-size: 18px;
     line-height: 1;
     cursor: pointer;
     display: flex;
@@ -405,11 +405,71 @@
     backdrop-filter: blur(4px);
     padding: 0;
   }
-  #muteBtn:hover {
+  #settingsBtn:hover {
     background: rgba(100,200,255,0.12);
     border-color: rgba(100,200,255,0.7);
     color: rgba(100,200,255,1);
     box-shadow: 0 0 18px rgba(100,200,255,0.25);
+  }
+
+  #settingsOverlay {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0,0,5,0.92);
+    backdrop-filter: blur(8px);
+    border-radius: 4px;
+    z-index: 28;
+  }
+  #settingsOverlay.visible { display: flex; }
+  .settings-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+    width: 260px;
+    margin-bottom: 36px;
+  }
+  .settings-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+  }
+  .settings-label {
+    font-family: 'Orbitron', monospace;
+    font-size: 12px;
+    letter-spacing: 4px;
+    color: rgba(100,200,255,0.85);
+  }
+  .settings-toggle {
+    display: flex;
+    gap: 4px;
+    border: 1px solid rgba(100,200,255,0.35);
+    border-radius: 3px;
+    padding: 2px;
+  }
+  .toggle-opt {
+    background: transparent;
+    border: none;
+    color: rgba(100,200,255,0.55);
+    font-family: 'Orbitron', monospace;
+    font-size: 10px;
+    letter-spacing: 2px;
+    padding: 6px 14px;
+    cursor: pointer;
+    transition: all 0.2s;
+    border-radius: 2px;
+  }
+  .toggle-opt:hover {
+    color: rgba(100,200,255,0.9);
+  }
+  .toggle-opt.active {
+    background: rgba(100,200,255,0.18);
+    color: rgba(180,240,255,1);
+    box-shadow: 0 0 10px rgba(100,200,255,0.25);
   }
   #pauseBtn.visible { display: flex; }
   #pauseBtn:hover {
@@ -658,7 +718,7 @@
     </div>
     <button id="startBtn">ENTER THE VOID</button>
   </div>
-  <button id="muteBtn" aria-label="Mute">🔊</button>
+  <button id="settingsBtn" aria-label="Settings">⚙</button>
   <button id="pauseBtn" aria-label="Pause">❚❚</button>
   <div id="pauseOverlay">
     <div class="pause-title">PAUSED</div>
@@ -666,10 +726,31 @@
       <button class="pause-btn" id="resumeBtn">RESUME</button>
       <button class="pause-btn" id="restartBtn">RESTART</button>
       <button class="pause-btn" id="changeNameBtn">CHANGE NAME</button>
+      <button class="pause-btn" id="pauseSettingsBtn">SETTINGS</button>
       <button class="pause-btn" id="menuBtn">MAIN MENU</button>
       <button class="pause-btn" id="quitBtn">QUIT GAME</button>
     </div>
     <div id="quitMsg">close the app to quit</div>
+  </div>
+  <div id="settingsOverlay">
+    <div class="pause-title">SETTINGS</div>
+    <div class="settings-rows">
+      <div class="settings-row">
+        <span class="settings-label">MUSIC</span>
+        <div class="settings-toggle" data-setting="music">
+          <button class="toggle-opt" data-val="on">ON</button>
+          <button class="toggle-opt" data-val="off">OFF</button>
+        </div>
+      </div>
+      <div class="settings-row">
+        <span class="settings-label">SFX</span>
+        <div class="settings-toggle" data-setting="sfx">
+          <button class="toggle-opt" data-val="on">ON</button>
+          <button class="toggle-opt" data-val="off">OFF</button>
+        </div>
+      </div>
+    </div>
+    <button class="pause-btn" id="settingsCloseBtn">CLOSE</button>
   </div>
   <div id="usernameOverlay">
     <div class="username-title">ENTER YOUR PILOT NAME</div>
@@ -792,21 +873,46 @@ let shieldBroken = false;
 // Self-contained module. All sounds synthesized on demand. Errors are
 // swallowed so audio failures never crash gameplay. Init lazily on the
 // first user gesture so we don't trip the autoplay policy.
+//
+// Signal graph:
+//   (per-sfx node chains) ──▶ sfxGain  ─┐
+//                                       ├─▶ masterGain ──▶ destination
+//   (music layer chains)  ──▶ musicGain ┘
+//
+// sfxGain and musicGain are toggled independently by the settings overlay.
 const SFX = (function() {
-  let ctx = null, masterGain = null;
-  let initialized = false, muted = false;
-  // Throttle trackers use ctx.currentTime (audio-clock seconds), NOT game
-  // frame numbers — frame counters reset to 0 on game restart, which would
-  // make `frame - lastFrame` negative and silently disable the throttle for
-  // thousands of frames. Audio time is monotonic across the AudioContext's
-  // entire lifetime, so this can't happen.
-  let lastAttract = -100, lastRepel = -100;
-  const ATTRACT_THROTTLE = 0.13; // ~8 frames @ 60fps
-  const REPEL_THROTTLE   = 0.13;
-  let musicPlaying = false, musicGain = null;
-  let musicNodes = [];
+  let ctx = null;
+  let masterGain = null, musicGain = null, sfxGain = null;
+  let initialized = false;
 
-  try { muted = localStorage.getItem('drift_muted') === '1'; } catch {}
+  // Persisted settings: music and SFX enabled toggles.
+  let musicEnabled = true, sfxEnabled = true;
+  try {
+    const m = localStorage.getItem('drift_music_enabled');
+    if (m !== null) musicEnabled = m !== '0' && m !== 'false';
+    const s = localStorage.getItem('drift_sfx_enabled');
+    if (s !== null) sfxEnabled = s !== '0' && s !== 'false';
+  } catch {}
+
+  const MUSIC_GAIN_VALUE = 0.35;
+  const SFX_GAIN_VALUE   = 1.0;
+
+  // Throttle trackers use ctx.currentTime (audio-clock seconds), NOT game
+  // frame numbers — frame counters reset on game restart, which would make
+  // `frame - lastFrame` negative and silently disable the throttle.
+  let lastAttract = -100, lastRepel = -100;
+  const ATTRACT_THROTTLE = 0.13;
+  const REPEL_THROTTLE   = 0.13;
+
+  // --- Music state (chiptune scheduler) ---
+  let musicPlaying = false;
+  let musicStep = 0;           // global 8th-note index within the 8-bar (64-step) loop
+  let nextStepTime = 0;        // ctx time of next step
+  let schedulerTimer = null;
+  const BPM = 150;
+  const STEP_DURATION = (60 / BPM) / 2; // 8th note length (seconds)
+  const LOOKAHEAD_MS = 25;
+  const SCHEDULE_AHEAD = 0.12;
 
   function init() {
     if (initialized) return;
@@ -814,16 +920,25 @@ const SFX = (function() {
       const Ctor = window.AudioContext || window.webkitAudioContext;
       if (!Ctor) return;
       ctx = new Ctor();
+
       masterGain = ctx.createGain();
-      masterGain.gain.value = muted ? 0 : 1;
+      masterGain.gain.value = 1;
       masterGain.connect(ctx.destination);
+
+      musicGain = ctx.createGain();
+      musicGain.gain.value = musicEnabled ? MUSIC_GAIN_VALUE : 0;
+      musicGain.connect(masterGain);
+
+      sfxGain = ctx.createGain();
+      sfxGain.gain.value = sfxEnabled ? SFX_GAIN_VALUE : 0;
+      sfxGain.connect(masterGain);
+
       initialized = true;
     } catch {}
   }
 
   // Aggressively try to bring the AudioContext into the running state.
-  // Handles 'suspended' (Chrome autoplay), 'interrupted' (iOS), and any
-  // other non-running state by calling resume() unconditionally.
+  // Handles 'suspended' (Chrome autoplay) and 'interrupted' (iOS).
   function ensureRunning() {
     if (!initialized) init();
     if (!ctx) return false;
@@ -833,50 +948,55 @@ const SFX = (function() {
     return true;
   }
 
-  function safe(fn) {
-    if (muted) return;
+  function safeSfx(fn) {
+    if (!sfxEnabled) return;
     if (!ensureRunning()) return;
     try { fn(ctx.currentTime); } catch {}
   }
 
-  // When a one-shot oscillator/buffer source ends, disconnect it and any
-  // nodes it was connected through so the audio graph doesn't accumulate
-  // dead branches. Without this, long sessions can choke as orphaned nodes
-  // pile up and the browser stops scheduling new ones.
+  // When a node ends, disconnect it and any related nodes so orphan
+  // branches don't accumulate during long sessions.
   function killOnEnd(node, ...others) {
     if (!node) return;
     node.onended = () => {
       try { node.disconnect(); } catch {}
-      for (const n of others) {
-        try { n.disconnect(); } catch {}
-      }
+      for (const n of others) { try { n.disconnect(); } catch {} }
       node.onended = null;
     };
   }
 
-  // Reset the attract/repel throttle tracker. Called from startMusic so a
-  // fresh game session always starts able to play sounds immediately. With
-  // time-based throttling this is belt-and-braces — the throttle would
-  // recover on its own — but explicit reset documents the intent.
   function resetThrottles() {
     lastAttract = -100;
     lastRepel = -100;
   }
 
-  function setMuted(m) {
-    muted = m;
-    try { localStorage.setItem('drift_muted', m ? '1' : '0'); } catch {}
-    if (masterGain) {
+  // --- Settings API ---
+  function setMusicEnabled(on) {
+    musicEnabled = !!on;
+    try { localStorage.setItem('drift_music_enabled', on ? '1' : '0'); } catch {}
+    if (musicGain && ctx) {
       try {
         const t = ctx.currentTime;
-        masterGain.gain.cancelScheduledValues(t);
-        masterGain.gain.setValueAtTime(masterGain.gain.value, t);
-        masterGain.gain.linearRampToValueAtTime(m ? 0 : 1, t + 0.05);
+        musicGain.gain.cancelScheduledValues(t);
+        musicGain.gain.setValueAtTime(musicGain.gain.value, t);
+        musicGain.gain.linearRampToValueAtTime(on ? MUSIC_GAIN_VALUE : 0, t + 0.08);
       } catch {}
     }
   }
-
-  function isMuted() { return muted; }
+  function setSfxEnabled(on) {
+    sfxEnabled = !!on;
+    try { localStorage.setItem('drift_sfx_enabled', on ? '1' : '0'); } catch {}
+    if (sfxGain && ctx) {
+      try {
+        const t = ctx.currentTime;
+        sfxGain.gain.cancelScheduledValues(t);
+        sfxGain.gain.setValueAtTime(sfxGain.gain.value, t);
+        sfxGain.gain.linearRampToValueAtTime(on ? SFX_GAIN_VALUE : 0, t + 0.05);
+      } catch {}
+    }
+  }
+  function isMusicEnabled() { return musicEnabled; }
+  function isSfxEnabled()   { return sfxEnabled; }
 
   // Tiny noise buffer factory
   function noiseBuffer(durationSec, shape) {
@@ -893,289 +1013,320 @@ const SFX = (function() {
   // ---- one-shot sound effects ----
 
   function attract(_frame) {
-    safe(t => {
+    safeSfx(t => {
       if (t - lastAttract < ATTRACT_THROTTLE) return;
       lastAttract = t;
-      const o = ctx.createOscillator();
-      const g = ctx.createGain();
-      o.type = 'sine';
-      o.frequency.value = 90 + Math.random() * 25;
+      // Two detuned sines (220 + 224hz), LPF 400, 0.1s fade in/out, vol 0.08.
+      const o1 = ctx.createOscillator();
+      const o2 = ctx.createOscillator();
+      const f  = ctx.createBiquadFilter();
+      const g  = ctx.createGain();
+      o1.type = 'sine'; o1.frequency.value = 220;
+      o2.type = 'sine'; o2.frequency.value = 224;
+      f.type = 'lowpass'; f.frequency.value = 400;
       g.gain.setValueAtTime(0, t);
-      g.gain.linearRampToValueAtTime(0.06, t + 0.012);
-      g.gain.exponentialRampToValueAtTime(0.001, t + 0.09);
-      o.connect(g); g.connect(masterGain);
-      o.start(t); o.stop(t + 0.11);
-      killOnEnd(o, g);
+      g.gain.linearRampToValueAtTime(0.08, t + 0.1);
+      g.gain.linearRampToValueAtTime(0,    t + 0.2);
+      o1.connect(f); o2.connect(f); f.connect(g); g.connect(sfxGain);
+      o1.start(t); o2.start(t);
+      o1.stop(t + 0.22); o2.stop(t + 0.22);
+      killOnEnd(o1, o2, f, g);
     });
   }
 
   function repel(_frame) {
-    safe(t => {
+    safeSfx(t => {
       if (t - lastRepel < REPEL_THROTTLE) return;
       lastRepel = t;
+      // Triangle 440→280 sweep over 0.15s, HPF 300, sharp attack / quick decay, vol 0.15.
       const o = ctx.createOscillator();
       const g = ctx.createGain();
       const f = ctx.createBiquadFilter();
       o.type = 'triangle';
-      o.frequency.setValueAtTime(380 + Math.random() * 30, t);
-      o.frequency.exponentialRampToValueAtTime(260, t + 0.06);
-      f.type = 'highpass';
-      f.frequency.value = 220;
+      o.frequency.setValueAtTime(440, t);
+      o.frequency.exponentialRampToValueAtTime(280, t + 0.15);
+      f.type = 'highpass'; f.frequency.value = 300;
       g.gain.setValueAtTime(0, t);
-      g.gain.linearRampToValueAtTime(0.06, t + 0.005);
-      g.gain.exponentialRampToValueAtTime(0.001, t + 0.07);
-      o.connect(f); f.connect(g); g.connect(masterGain);
-      o.start(t); o.stop(t + 0.09);
+      g.gain.linearRampToValueAtTime(0.15, t + 0.005);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.16);
+      o.connect(f); f.connect(g); g.connect(sfxGain);
+      o.start(t); o.stop(t + 0.18);
       killOnEnd(o, f, g);
     });
   }
 
   function pickup(type) {
-    safe(t => {
+    safeSfx(t => {
       if (type === 'shield') {
-        // Bright ascending major arpeggio: C5 E5 G5 C6
+        // Four-note ascending arpeggio C5-E5-G5-C6 on triangle waves,
+        // each 0.08s with 0.02s overlap, vol 0.3 per note.
         const notes = [523.25, 659.25, 783.99, 1046.50];
         notes.forEach((freq, i) => {
           const o = ctx.createOscillator();
           const g = ctx.createGain();
           o.type = 'triangle';
           o.frequency.value = freq;
-          const start = t + i * 0.06;
+          const start = t + i * 0.06;          // 0.08s - 0.02s overlap = 0.06s step
+          const end   = start + 0.08;
           g.gain.setValueAtTime(0, start);
-          g.gain.linearRampToValueAtTime(0.13, start + 0.008);
-          g.gain.exponentialRampToValueAtTime(0.001, start + 0.42);
-          o.connect(g); g.connect(masterGain);
-          o.start(start); o.stop(start + 0.45);
+          g.gain.linearRampToValueAtTime(0.3, start + 0.008);
+          g.gain.exponentialRampToValueAtTime(0.001, end);
+          o.connect(g); g.connect(sfxGain);
+          o.start(start); o.stop(end + 0.02);
           killOnEnd(o, g);
         });
       } else if (type === 'nova') {
-        // Deep boom + rising whoosh
+        // Deep sine sub 80hz boom (0.3s) + rising bandpass noise 200→2000hz (0.4s).
+        // Combined target vol 0.35.
         const boom = ctx.createOscillator();
         const bg = ctx.createGain();
         boom.type = 'sine';
-        boom.frequency.setValueAtTime(140, t);
-        boom.frequency.exponentialRampToValueAtTime(40, t + 0.4);
+        boom.frequency.value = 80;
         bg.gain.setValueAtTime(0, t);
-        bg.gain.linearRampToValueAtTime(0.32, t + 0.02);
-        bg.gain.exponentialRampToValueAtTime(0.001, t + 0.6);
-        boom.connect(bg); bg.connect(masterGain);
-        boom.start(t); boom.stop(t + 0.62);
+        bg.gain.linearRampToValueAtTime(0.22, t + 0.01);
+        bg.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
+        boom.connect(bg); bg.connect(sfxGain);
+        boom.start(t); boom.stop(t + 0.32);
         killOnEnd(boom, bg);
 
         const noise = ctx.createBufferSource();
-        noise.buffer = noiseBuffer(0.55, x => 1 - x);
+        noise.buffer = noiseBuffer(0.42, x => 1 - x);
         const f = ctx.createBiquadFilter();
         f.type = 'bandpass';
-        f.Q.value = 2.2;
-        f.frequency.setValueAtTime(420, t);
-        f.frequency.exponentialRampToValueAtTime(2400, t + 0.5);
+        f.Q.value = 2.0;
+        f.frequency.setValueAtTime(200, t);
+        f.frequency.exponentialRampToValueAtTime(2000, t + 0.4);
         const ng = ctx.createGain();
         ng.gain.setValueAtTime(0, t);
-        ng.gain.linearRampToValueAtTime(0.16, t + 0.05);
-        ng.gain.exponentialRampToValueAtTime(0.001, t + 0.55);
-        noise.connect(f); f.connect(ng); ng.connect(masterGain);
-        noise.start(t); noise.stop(t + 0.58);
+        ng.gain.linearRampToValueAtTime(0.13, t + 0.04);
+        ng.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
+        noise.connect(f); f.connect(ng); ng.connect(sfxGain);
+        noise.start(t); noise.stop(t + 0.44);
         killOnEnd(noise, f, ng);
       } else if (type === 'hyperspeed') {
-        // Rising aggressive whoosh + high sine sweep
+        // Rising sawtooth 200→800hz over 0.3s through resonant lowpass, vol 0.25.
+        // The sustained 600hz tone is a SEPARATE node owned by startHyperspeedWhoosh.
         const o = ctx.createOscillator();
         const g = ctx.createGain();
-        o.type = 'sawtooth';
-        o.frequency.setValueAtTime(120, t);
-        o.frequency.exponentialRampToValueAtTime(1200, t + 0.35);
-        g.gain.setValueAtTime(0, t);
-        g.gain.linearRampToValueAtTime(0.18, t + 0.04);
-        g.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
         const f = ctx.createBiquadFilter();
-        f.type = 'bandpass'; f.frequency.value = 800; f.Q.value = 1.5;
-        o.connect(f); f.connect(g); g.connect(masterGain);
-        o.start(t); o.stop(t + 0.52);
+        o.type = 'sawtooth';
+        o.frequency.setValueAtTime(200, t);
+        o.frequency.exponentialRampToValueAtTime(800, t + 0.3);
+        f.type = 'lowpass';
+        f.frequency.setValueAtTime(700, t);
+        f.frequency.linearRampToValueAtTime(2200, t + 0.3);
+        f.Q.value = 8;
+        g.gain.setValueAtTime(0, t);
+        g.gain.linearRampToValueAtTime(0.25, t + 0.03);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
+        o.connect(f); f.connect(g); g.connect(sfxGain);
+        o.start(t); o.stop(t + 0.38);
         killOnEnd(o, f, g);
-
-        const n = ctx.createBufferSource();
-        n.buffer = noiseBuffer(0.6, x => Math.min(x * 4, 1) * (1 - x));
-        const nf = ctx.createBiquadFilter();
-        nf.type = 'bandpass'; nf.frequency.value = 2000; nf.Q.value = 0.8;
-        const ng2 = ctx.createGain();
-        ng2.gain.setValueAtTime(0, t);
-        ng2.gain.linearRampToValueAtTime(0.2, t + 0.1);
-        ng2.gain.exponentialRampToValueAtTime(0.001, t + 0.6);
-        n.connect(nf); nf.connect(ng2); ng2.connect(masterGain);
-        n.start(t); n.stop(t + 0.62);
-        killOnEnd(n, nf, ng2);
       } else if (type === 'ghost') {
-        // Eerie ascending tritone (C4 - F#4 - C5)
-        const notes = [261.63, 369.99, 523.25];
-        notes.forEach((freq, i) => {
+        // Tritone C4+F#4 soft sine waves, slow attack 0.2s, long decay 0.8s,
+        // reverb-ish via two delayed copies at 20ms and 40ms. Vol 0.2.
+        const notes = [261.63, 369.99];
+        notes.forEach(freq => {
+          // Dry voice
           const o = ctx.createOscillator();
           const g = ctx.createGain();
-          const f = ctx.createBiquadFilter();
-          o.type = 'sawtooth';
-          o.frequency.value = freq;
-          f.type = 'lowpass';
-          f.frequency.value = 1100;
-          f.Q.value = 4;
-          const start = t + i * 0.13;
-          g.gain.setValueAtTime(0, start);
-          g.gain.linearRampToValueAtTime(0.07, start + 0.04);
-          g.gain.exponentialRampToValueAtTime(0.001, start + 0.55);
-          o.connect(f); f.connect(g); g.connect(masterGain);
-          o.start(start); o.stop(start + 0.58);
-          killOnEnd(o, f, g);
+          o.type = 'sine'; o.frequency.value = freq;
+          g.gain.setValueAtTime(0, t);
+          g.gain.linearRampToValueAtTime(0.2, t + 0.2);
+          g.gain.exponentialRampToValueAtTime(0.001, t + 1.0);
+          o.connect(g); g.connect(sfxGain);
+          o.start(t); o.stop(t + 1.05);
+          killOnEnd(o, g);
+
+          // Two delayed copies for reverb-like tail
+          [0.02, 0.04].forEach(delay => {
+            const o2 = ctx.createOscillator();
+            const g2 = ctx.createGain();
+            o2.type = 'sine'; o2.frequency.value = freq;
+            const start = t + delay;
+            g2.gain.setValueAtTime(0, start);
+            g2.gain.linearRampToValueAtTime(0.08, start + 0.2);
+            g2.gain.exponentialRampToValueAtTime(0.001, start + 1.0);
+            o2.connect(g2); g2.connect(sfxGain);
+            o2.start(start); o2.stop(start + 1.05);
+            killOnEnd(o2, g2);
+          });
         });
       }
     });
   }
 
   function planetDestroyed(kind) {
-    safe(t => {
+    safeSfx(t => {
       if (kind === 'shield') {
-        // Sharp crunch + low rumble
-        const noise = ctx.createBufferSource();
-        noise.buffer = noiseBuffer(0.28, x => Math.pow(1 - x, 1.5));
+        // Bandpass noise burst 0.15s + 60hz sine thump, vol 0.25.
+        const n = ctx.createBufferSource();
+        n.buffer = noiseBuffer(0.18, x => Math.pow(1 - x, 1.4));
         const f = ctx.createBiquadFilter();
-        f.type = 'bandpass';
-        f.frequency.value = 850;
-        f.Q.value = 1.4;
+        f.type = 'bandpass'; f.frequency.value = 900; f.Q.value = 1.2;
         const ng = ctx.createGain();
-        ng.gain.setValueAtTime(0.22, t);
-        ng.gain.exponentialRampToValueAtTime(0.001, t + 0.28);
-        noise.connect(f); f.connect(ng); ng.connect(masterGain);
-        noise.start(t); noise.stop(t + 0.3);
-        killOnEnd(noise, f, ng);
+        ng.gain.setValueAtTime(0.18, t);
+        ng.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
+        n.connect(f); f.connect(ng); ng.connect(sfxGain);
+        n.start(t); n.stop(t + 0.17);
+        killOnEnd(n, f, ng);
 
         const o = ctx.createOscillator();
         const og = ctx.createGain();
         o.type = 'sine';
-        o.frequency.setValueAtTime(75, t);
-        o.frequency.exponentialRampToValueAtTime(38, t + 0.25);
-        og.gain.setValueAtTime(0.22, t);
-        og.gain.exponentialRampToValueAtTime(0.001, t + 0.32);
-        o.connect(og); og.connect(masterGain);
-        o.start(t); o.stop(t + 0.35);
+        o.frequency.value = 60;
+        og.gain.setValueAtTime(0.25, t);
+        og.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
+        o.connect(og); og.connect(sfxGain);
+        o.start(t); o.stop(t + 0.22);
         killOnEnd(o, og);
       } else if (kind === 'ghost') {
-        // Soft whomp + ethereal high shimmer (muted)
+        // Soft sine whomp 180→80hz over 0.2s, vol 0.15.
         const o = ctx.createOscillator();
         const g = ctx.createGain();
         o.type = 'sine';
         o.frequency.setValueAtTime(180, t);
-        o.frequency.exponentialRampToValueAtTime(60, t + 0.25);
-        g.gain.setValueAtTime(0.09, t);
-        g.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
-        o.connect(g); g.connect(masterGain);
-        o.start(t); o.stop(t + 0.32);
+        o.frequency.exponentialRampToValueAtTime(80, t + 0.2);
+        g.gain.setValueAtTime(0, t);
+        g.gain.linearRampToValueAtTime(0.15, t + 0.01);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
+        o.connect(g); g.connect(sfxGain);
+        o.start(t); o.stop(t + 0.24);
         killOnEnd(o, g);
-
-        const n = ctx.createBufferSource();
-        n.buffer = noiseBuffer(0.4);
-        const f = ctx.createBiquadFilter();
-        f.type = 'highpass';
-        f.frequency.value = 3500;
-        const ng = ctx.createGain();
-        ng.gain.setValueAtTime(0, t);
-        ng.gain.linearRampToValueAtTime(0.05, t + 0.05);
-        ng.gain.exponentialRampToValueAtTime(0.001, t + 0.42);
-        n.connect(f); f.connect(ng); ng.connect(masterGain);
-        n.start(t); n.stop(t + 0.45);
-        killOnEnd(n, f, ng);
       } else if (kind === 'nova') {
-        // Deep reverberant explosion, bigger than shield kill
+        // Deeper 50hz sine 0.25s + noise burst, vol 0.3.
         const o = ctx.createOscillator();
-        const g = ctx.createGain();
+        const og = ctx.createGain();
         o.type = 'sine';
-        o.frequency.setValueAtTime(150, t);
-        o.frequency.exponentialRampToValueAtTime(32, t + 0.5);
-        g.gain.setValueAtTime(0.32, t);
-        g.gain.exponentialRampToValueAtTime(0.001, t + 0.55);
-        o.connect(g); g.connect(masterGain);
-        o.start(t); o.stop(t + 0.58);
-        killOnEnd(o, g);
+        o.frequency.value = 50;
+        og.gain.setValueAtTime(0.3, t);
+        og.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
+        o.connect(og); og.connect(sfxGain);
+        o.start(t); o.stop(t + 0.27);
+        killOnEnd(o, og);
 
         const n = ctx.createBufferSource();
-        n.buffer = noiseBuffer(0.5, x => Math.pow(1 - x, 0.65));
+        n.buffer = noiseBuffer(0.28, x => Math.pow(1 - x, 0.9));
         const f = ctx.createBiquadFilter();
         f.type = 'lowpass';
-        f.frequency.setValueAtTime(2200, t);
-        f.frequency.exponentialRampToValueAtTime(380, t + 0.45);
+        f.frequency.setValueAtTime(1800, t);
+        f.frequency.exponentialRampToValueAtTime(340, t + 0.25);
         const ng = ctx.createGain();
-        ng.gain.setValueAtTime(0.24, t);
-        ng.gain.exponentialRampToValueAtTime(0.001, t + 0.55);
-        n.connect(f); f.connect(ng); ng.connect(masterGain);
-        n.start(t); n.stop(t + 0.55);
+        ng.gain.setValueAtTime(0.18, t);
+        ng.gain.exponentialRampToValueAtTime(0.001, t + 0.28);
+        n.connect(f); f.connect(ng); ng.connect(sfxGain);
+        n.start(t); n.stop(t + 0.3);
         killOnEnd(n, f, ng);
+      } else if (kind === 'barrier') {
+        // Hyperspeed barrier kill: sharp click + 100hz thump, fast 0.1s, vol 0.2.
+        const n = ctx.createBufferSource();
+        n.buffer = noiseBuffer(0.02, x => 1 - x);
+        const f = ctx.createBiquadFilter();
+        f.type = 'highpass'; f.frequency.value = 4000;
+        const ng = ctx.createGain();
+        ng.gain.setValueAtTime(0.2, t);
+        ng.gain.exponentialRampToValueAtTime(0.001, t + 0.03);
+        n.connect(f); f.connect(ng); ng.connect(sfxGain);
+        n.start(t); n.stop(t + 0.04);
+        killOnEnd(n, f, ng);
+
+        const o = ctx.createOscillator();
+        const og = ctx.createGain();
+        o.type = 'sine';
+        o.frequency.setValueAtTime(100, t);
+        o.frequency.exponentialRampToValueAtTime(55, t + 0.1);
+        og.gain.setValueAtTime(0.18, t);
+        og.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+        o.connect(og); og.connect(sfxGain);
+        o.start(t); o.stop(t + 0.12);
+        killOnEnd(o, og);
       }
     });
   }
 
   function shieldBreak() {
-    safe(t => {
-      // Sharp glass-crack + low thud
+    safeSfx(t => {
+      // Sharp crack: white noise burst 0.08s bandpass 800-2000hz.
       const n = ctx.createBufferSource();
-      n.buffer = noiseBuffer(0.2, x => Math.pow(1 - x, 2));
+      n.buffer = noiseBuffer(0.1, x => Math.pow(1 - x, 1.6));
       const f = ctx.createBiquadFilter();
-      f.type = 'highpass'; f.frequency.value = 1800;
+      f.type = 'bandpass'; f.frequency.value = 1400; f.Q.value = 0.9;
       const ng = ctx.createGain();
       ng.gain.setValueAtTime(0.35, t);
-      ng.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
-      n.connect(f); f.connect(ng); ng.connect(masterGain);
-      n.start(t); n.stop(t + 0.22);
+      ng.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
+      n.connect(f); f.connect(ng); ng.connect(sfxGain);
+      n.start(t); n.stop(t + 0.1);
       killOnEnd(n, f, ng);
 
+      // Low thump 80hz sine 0.1s.
       const o = ctx.createOscillator();
-      const g = ctx.createGain();
+      const og = ctx.createGain();
       o.type = 'sine';
-      o.frequency.setValueAtTime(200, t);
-      o.frequency.exponentialRampToValueAtTime(50, t + 0.18);
-      g.gain.setValueAtTime(0.3, t);
-      g.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
-      o.connect(g); g.connect(masterGain);
-      o.start(t); o.stop(t + 0.27);
-      killOnEnd(o, g);
-
-      // High pitched crack/shatter
-      const o2 = ctx.createOscillator();
-      const g2 = ctx.createGain();
-      o2.type = 'square';
-      o2.frequency.setValueAtTime(3200, t);
-      o2.frequency.exponentialRampToValueAtTime(800, t + 0.08);
-      g2.gain.setValueAtTime(0.12, t);
-      g2.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
-      o2.connect(g2); g2.connect(masterGain);
-      o2.start(t); o2.stop(t + 0.12);
-      killOnEnd(o2, g2);
+      o.frequency.value = 80;
+      og.gain.setValueAtTime(0.3, t);
+      og.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+      o.connect(og); og.connect(sfxGain);
+      o.start(t); o.stop(t + 0.12);
+      killOnEnd(o, og);
     });
   }
 
-  // Sustained hyperspeed whoosh — returns { stop() } handle
+  // Combo activate — two-tone ascending warm sine chime, vol 0.25.
+  // Pitch pairs per combo type per spec.
+  const COMBO_PITCHES = {
+    nova_nova:         [523.25, 783.99],  // Supernova       C5 G5
+    nova_hyperspeed:   [587.33, 880.00],  // Warp Time       D5 A5
+    nova_ghost:        [659.25, 987.77],  // Phantom Blast   E5 B5
+    nova_shield:       [698.46, 1046.50], // Pulsar          F5 C6
+    hyperspeed_ghost:  [783.99, 1174.66], // Spectral Rush   G5 D6
+    hyperspeed_shield: [880.00, 1318.51], // Juggernaut      A5 E6
+    ghost_shield:      [932.33, 1396.91], // Wraith          Bb5 F6
+    ghost_ghost:       [987.77, 1479.98], // Eternal Phantom B5 F#6
+    shield_shield:     [1046.50, 1567.98], // Fortress Shield C6 G6
+  };
+  function comboActivate(key) {
+    const pair = COMBO_PITCHES[key];
+    if (!pair) return;
+    safeSfx(t => {
+      pair.forEach((freq, i) => {
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.type = 'sine';
+        o.frequency.value = freq;
+        const start = t + i * 0.06;
+        g.gain.setValueAtTime(0, start);
+        g.gain.linearRampToValueAtTime(0.25, start + 0.012);
+        g.gain.exponentialRampToValueAtTime(0.001, start + 0.45);
+        o.connect(g); g.connect(sfxGain);
+        o.start(start); o.stop(start + 0.48);
+        killOnEnd(o, g);
+      });
+    });
+  }
+
+  // Sustained hyperspeed tone — separate from the pickup whoosh. Sine at
+  // 600hz, vol 0.06 MAX. Hard-stop (no fade) when hyperspeed ends.
   function startHyperspeedWhoosh() {
     if (!ensureRunning()) return null;
-    if (muted) return null;
+    if (!sfxEnabled) return null;
     try {
       const t = ctx.currentTime;
-      const n = ctx.createBufferSource();
-      // Long noise buffer for sustained effect
-      n.buffer = noiseBuffer(10, () => 1);
-      n.loop = true;
-      const f = ctx.createBiquadFilter();
-      f.type = 'bandpass';
-      f.frequency.setValueAtTime(600, t);
-      f.frequency.linearRampToValueAtTime(1800, t + 0.5);
-      f.Q.value = 1.2;
+      const o = ctx.createOscillator();
       const g = ctx.createGain();
+      o.type = 'triangle';
+      o.frequency.value = 600;
       g.gain.setValueAtTime(0, t);
-      g.gain.linearRampToValueAtTime(0.14, t + 0.15);
-      n.connect(f); f.connect(g); g.connect(masterGain);
-      n.start(t);
+      g.gain.linearRampToValueAtTime(0.06, t + 0.12);
+      o.connect(g); g.connect(sfxGain);
+      o.start(t);
       return {
-        stop(fadeSec) {
+        stop() {
           try {
             const now = ctx.currentTime;
             g.gain.cancelScheduledValues(now);
-            g.gain.setValueAtTime(g.gain.value, now);
-            g.gain.linearRampToValueAtTime(0, now + (fadeSec || 0.5));
-            n.stop(now + (fadeSec || 0.5) + 0.1);
-            killOnEnd(n, f, g);
+            g.gain.setValueAtTime(0, now);
+            o.stop(now);
+            killOnEnd(o, g);
           } catch {}
         }
       };
@@ -1184,170 +1335,244 @@ const SFX = (function() {
   }
 
   function death() {
-    safe(t => {
-      // Sawtooth screaming descent
+    safeSfx(t => {
+      // Sawtooth 440→40hz sweep 0.6s through closing lowpass.
       const o = ctx.createOscillator();
       const g = ctx.createGain();
       const f = ctx.createBiquadFilter();
       o.type = 'sawtooth';
       o.frequency.setValueAtTime(440, t);
-      o.frequency.exponentialRampToValueAtTime(38, t + 1.2);
+      o.frequency.exponentialRampToValueAtTime(40, t + 0.6);
       f.type = 'lowpass';
-      f.frequency.setValueAtTime(2200, t);
-      f.frequency.exponentialRampToValueAtTime(300, t + 1.2);
+      f.frequency.setValueAtTime(2400, t);
+      f.frequency.exponentialRampToValueAtTime(200, t + 0.6);
       g.gain.setValueAtTime(0, t);
-      g.gain.linearRampToValueAtTime(0.22, t + 0.05);
-      g.gain.exponentialRampToValueAtTime(0.001, t + 1.4);
-      o.connect(f); f.connect(g); g.connect(masterGain);
-      o.start(t); o.stop(t + 1.42);
+      g.gain.linearRampToValueAtTime(0.4, t + 0.03);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.65);
+      o.connect(f); f.connect(g); g.connect(sfxGain);
+      o.start(t); o.stop(t + 0.68);
       killOnEnd(o, f, g);
 
-      // Sub boom
+      // Sub sine 100→20hz simultaneously.
       const o2 = ctx.createOscillator();
       const g2 = ctx.createGain();
       o2.type = 'sine';
-      o2.frequency.setValueAtTime(120, t);
-      o2.frequency.exponentialRampToValueAtTime(25, t + 1.0);
-      g2.gain.setValueAtTime(0.34, t);
-      g2.gain.exponentialRampToValueAtTime(0.001, t + 1.2);
-      o2.connect(g2); g2.connect(masterGain);
-      o2.start(t); o2.stop(t + 1.25);
+      o2.frequency.setValueAtTime(100, t);
+      o2.frequency.exponentialRampToValueAtTime(20, t + 0.6);
+      g2.gain.setValueAtTime(0.4, t);
+      g2.gain.exponentialRampToValueAtTime(0.001, t + 0.65);
+      o2.connect(g2); g2.connect(sfxGain);
+      o2.start(t); o2.stop(t + 0.68);
       killOnEnd(o2, g2);
     });
   }
 
-  function milestone() {
-    safe(t => {
-      const notes = [880, 1108.73, 1318.51];
-      notes.forEach((freq, i) => {
-        const o = ctx.createOscillator();
-        const g = ctx.createGain();
-        o.type = 'sine';
-        o.frequency.value = freq;
-        const start = t + i * 0.045;
-        g.gain.setValueAtTime(0, start);
-        g.gain.linearRampToValueAtTime(0.07, start + 0.005);
-        g.gain.exponentialRampToValueAtTime(0.001, start + 0.28);
-        o.connect(g); g.connect(masterGain);
-        o.start(start); o.stop(start + 0.3);
-        killOnEnd(o, g);
-      });
-    });
+  // ---- Background music: chiptune scheduler ----
+  //
+  // 150 BPM, 8-bar loop (64 steps at 8th-note resolution). Four layers:
+  //   - Melody:    square wave, 8-note A-minor arpeggio, 5hz vibrato LFO
+  //   - Bass:      square wave, root notes A2 A2 E2 E2 F2 F2 E2 E2 (2 bars)
+  //   - Harmony:   triangle wave, E5 E5 D5 C5 half-notes (2 bars, plays on
+  //                "every other bar" i.e. first half of a 4-bar block)
+  //   - Drums:     noise hi-hat, sine kick, bandpass-noise snare
+  //
+  // Timing uses audioCtx.currentTime exclusively. JS setTimeout only drives
+  // the scheduler wakeup — note onsets are all precisely scheduled against
+  // the audio clock so there's no drift.
+
+  const MELODY    = [440.00, 523.25, 659.25, 783.99, 880.00, 783.99, 659.25, 523.25];
+  const BASS_2BAR = [110.00, 110.00, 82.41, 82.41, 87.31, 87.31, 82.41, 82.41]; // A2 A2 E2 E2 F2 F2 E2 E2
+  const HARMONY   = [659.25, 659.25, 587.33, 523.25]; // E5 E5 D5 C5
+
+  function scheduleMelodyNote(freq, time) {
+    const noteLen = STEP_DURATION * 0.85;
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    // Vibrato LFO: 5hz rate, 3hz depth on frequency.
+    const lfo = ctx.createOscillator();
+    const lfoGain = ctx.createGain();
+    lfo.frequency.value = 5;
+    lfoGain.gain.value  = 3;
+    lfo.connect(lfoGain); lfoGain.connect(o.frequency);
+    o.type = 'square';
+    o.frequency.value = freq;
+    g.gain.setValueAtTime(0, time);
+    g.gain.linearRampToValueAtTime(0.13, time + 0.005);
+    g.gain.exponentialRampToValueAtTime(0.001, time + noteLen);
+    o.connect(g); g.connect(musicGain);
+    o.start(time); o.stop(time + noteLen + 0.02);
+    lfo.start(time); lfo.stop(time + noteLen + 0.02);
+    killOnEnd(o, g, lfo, lfoGain);
   }
 
-  // ---- Background music: layered evolving drone ----
+  function scheduleBassNote(freq, time) {
+    const noteLen = STEP_DURATION * 2 * 0.9; // quarter note
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = 'square';
+    o.frequency.value = freq;
+    g.gain.setValueAtTime(0, time);
+    g.gain.linearRampToValueAtTime(0.18, time + 0.004);
+    g.gain.exponentialRampToValueAtTime(0.001, time + noteLen);
+    o.connect(g); g.connect(musicGain);
+    o.start(time); o.stop(time + noteLen + 0.02);
+    killOnEnd(o, g);
+  }
+
+  function scheduleHarmonyNote(freq, time) {
+    const noteLen = STEP_DURATION * 4 * 0.92; // half note
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = 'triangle';
+    o.frequency.value = freq;
+    g.gain.setValueAtTime(0, time);
+    g.gain.linearRampToValueAtTime(0.1, time + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.001, time + noteLen);
+    o.connect(g); g.connect(musicGain);
+    o.start(time); o.stop(time + noteLen + 0.02);
+    killOnEnd(o, g);
+  }
+
+  function scheduleHiHat(time) {
+    const n = ctx.createBufferSource();
+    n.buffer = noiseBuffer(0.03, x => 1 - x);
+    const f = ctx.createBiquadFilter();
+    f.type = 'highpass'; f.frequency.value = 6000;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.04, time);
+    g.gain.exponentialRampToValueAtTime(0.001, time + 0.03);
+    n.connect(f); f.connect(g); g.connect(musicGain);
+    n.start(time); n.stop(time + 0.04);
+    killOnEnd(n, f, g);
+  }
+
+  function scheduleKick(time) {
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(80, time);
+    o.frequency.exponentialRampToValueAtTime(40, time + 0.05);
+    g.gain.setValueAtTime(0.1, time);
+    g.gain.exponentialRampToValueAtTime(0.001, time + 0.06);
+    o.connect(g); g.connect(musicGain);
+    o.start(time); o.stop(time + 0.08);
+    killOnEnd(o, g);
+  }
+
+  function scheduleSnare(time) {
+    const n = ctx.createBufferSource();
+    n.buffer = noiseBuffer(0.1, x => Math.pow(1 - x, 1.1));
+    const f = ctx.createBiquadFilter();
+    f.type = 'bandpass'; f.frequency.value = 450; f.Q.value = 1.1;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.07, time);
+    g.gain.exponentialRampToValueAtTime(0.001, time + 0.08);
+    n.connect(f); f.connect(g); g.connect(musicGain);
+    n.start(time); n.stop(time + 0.1);
+    killOnEnd(n, f, g);
+  }
+
+  function scheduleStep(step, time) {
+    const barStep = step % 8; // 0..7 inside each bar (one bar = 8 8th notes)
+    const bar     = Math.floor(step / 8); // 0..7 inside the 8-bar loop
+
+    // Melody plays an 8-note pattern each bar.
+    scheduleMelodyNote(MELODY[barStep], time);
+
+    // Bass: quarter notes (every 2 steps), 2-bar pattern = 16 steps.
+    if (barStep % 2 === 0) {
+      const bassIdx = Math.floor((step % 16) / 2);
+      scheduleBassNote(BASS_2BAR[bassIdx], time);
+    }
+
+    // Harmony: half notes (every 4 steps), 2-bar pattern. Plays during the
+    // first half of each 4-bar block (bars 0-1 and 4-5), rests the other half.
+    if (step % 4 === 0) {
+      const inActiveHalf = (bar % 4) < 2;
+      if (inActiveHalf) {
+        const winStep = step % 16; // 0, 4, 8, 12
+        const harmIdx = winStep / 4;
+        scheduleHarmonyNote(HARMONY[harmIdx], time);
+      }
+    }
+
+    // Drums.
+    scheduleHiHat(time);
+    if (barStep % 2 === 0) scheduleKick(time);
+    if (barStep === 2 || barStep === 6) scheduleSnare(time);
+  }
+
+  function scheduler() {
+    if (!musicPlaying || !ctx) return;
+    try {
+      while (nextStepTime < ctx.currentTime + SCHEDULE_AHEAD) {
+        scheduleStep(musicStep, nextStepTime);
+        musicStep = (musicStep + 1) % 64;
+        nextStepTime += STEP_DURATION;
+      }
+    } catch {}
+    schedulerTimer = setTimeout(scheduler, LOOKAHEAD_MS);
+  }
 
   function startMusic() {
     if (musicPlaying) return;
     if (!ensureRunning()) return;
-
-    // Defensive: tear down any leftover music graph from a previous session
-    // before creating a new one. Even though `musicPlaying` is false here,
-    // this protects against any state-tracking edge case where nodes might
-    // still be connected — preventing duplicate drone layers from stacking
-    // on repeated restarts.
-    for (const n of musicNodes) {
-      try { n.stop(); } catch {}
-      try { n.disconnect(); } catch {}
-    }
-    musicNodes = [];
-    if (musicGain) {
-      try { musicGain.disconnect(); } catch {}
-      musicGain = null;
-    }
-
-    // Reset attract/repel throttles so the first input frame of a new
-    // session always plays immediately (belt-and-braces alongside the
-    // time-based throttle).
     resetThrottles();
-
     try {
-      const t = ctx.currentTime;
-      musicGain = ctx.createGain();
-      musicGain.gain.setValueAtTime(0, t);
-      musicGain.gain.linearRampToValueAtTime(0.20, t + 1.6);
-      musicGain.connect(masterGain);
-
-      // Base drones at A1, E2, A2, E3 — fifth-stacked, slightly detuned per voice
-      const baseFreqs = [55, 82.5, 110, 165];
-      baseFreqs.forEach((freq, i) => {
-        const o = ctx.createOscillator();
-        const g = ctx.createGain();
-        const f = ctx.createBiquadFilter();
-        o.type = i === 1 ? 'triangle' : 'sine';
-        o.frequency.value = freq * (1 + (Math.random() - 0.5) * 0.006);
-        f.type = 'lowpass';
-        f.frequency.value = 380 + i * 200;
-        f.Q.value = 1.1;
-        g.gain.value = 0.42 / (i + 1);
-        o.connect(f); f.connect(g); g.connect(musicGain);
-        o.start(t);
-        // When stopMusic schedules this drone to stop, disconnect its chain
-        killOnEnd(o, f, g);
-        musicNodes.push(o);
-
-        // Slow LFO drifting filter cutoff for movement
-        const lfo = ctx.createOscillator();
-        const lfoGain = ctx.createGain();
-        lfo.frequency.value = 0.04 + i * 0.013;
-        lfoGain.gain.value = 140 + i * 30;
-        lfo.connect(lfoGain); lfoGain.connect(f.frequency);
-        lfo.start(t);
-        killOnEnd(lfo, lfoGain);
-        musicNodes.push(lfo);
-      });
+      // Restore musicGain to its enabled target in case a previous stopMusic
+      // left it at 0 (e.g. during fade-out after death).
+      if (musicGain) {
+        const t = ctx.currentTime;
+        musicGain.gain.cancelScheduledValues(t);
+        musicGain.gain.setValueAtTime(musicEnabled ? MUSIC_GAIN_VALUE : 0, t);
+      }
+      musicStep = 0;
+      nextStepTime = ctx.currentTime + 0.08;
       musicPlaying = true;
+      scheduler();
     } catch {}
   }
 
-  function stopMusic(fadeSec) {
-    if (!musicPlaying || !ctx) return;
-    const fade = typeof fadeSec === 'number' ? fadeSec : 0.9;
-    try {
-      const t = ctx.currentTime;
-      if (musicGain) {
+  function stopMusic() {
+    if (!musicPlaying) return;
+    musicPlaying = false;
+    if (schedulerTimer) { clearTimeout(schedulerTimer); schedulerTimer = null; }
+    // Short fade so already-scheduled notes don't click off.
+    if (musicGain && ctx) {
+      try {
+        const t = ctx.currentTime;
         musicGain.gain.cancelScheduledValues(t);
         musicGain.gain.setValueAtTime(musicGain.gain.value, t);
-        musicGain.gain.linearRampToValueAtTime(0, t + fade);
-      }
-      const stopAt = t + fade + 0.05;
-      for (const n of musicNodes) { try { n.stop(stopAt); } catch {} }
-    } catch {}
-    const nodesRef = musicNodes;
-    const gainRef = musicGain;
-    musicPlaying = false;
-    musicNodes = [];
-    musicGain = null;
-    setTimeout(() => {
-      try { if (gainRef) gainRef.disconnect(); } catch {}
-    }, (fade + 0.2) * 1000);
+        musicGain.gain.linearRampToValueAtTime(0, t + 0.18);
+      } catch {}
+    }
   }
 
   function pauseMusic() {
-    if (!musicPlaying || !ctx || !musicGain) return;
+    if (!musicGain || !ctx) return;
     try {
       const t = ctx.currentTime;
       musicGain.gain.cancelScheduledValues(t);
       musicGain.gain.setValueAtTime(musicGain.gain.value, t);
-      musicGain.gain.linearRampToValueAtTime(0, t + 0.25);
+      musicGain.gain.linearRampToValueAtTime(0, t + 0.2);
     } catch {}
   }
 
   function resumeMusic() {
-    if (!musicPlaying || !ctx || !musicGain) return;
+    if (!musicGain || !ctx) return;
     try {
       const t = ctx.currentTime;
       musicGain.gain.cancelScheduledValues(t);
       musicGain.gain.setValueAtTime(musicGain.gain.value, t);
-      musicGain.gain.linearRampToValueAtTime(0.20, t + 0.45);
+      musicGain.gain.linearRampToValueAtTime(musicEnabled ? MUSIC_GAIN_VALUE : 0, t + 0.3);
     } catch {}
   }
 
   return {
-    init, attract, repel, pickup, planetDestroyed, death, milestone,
-    shieldBreak, startHyperspeedWhoosh,
+    init, attract, repel, pickup, planetDestroyed, death,
+    shieldBreak, comboActivate, startHyperspeedWhoosh,
     startMusic, stopMusic, pauseMusic, resumeMusic,
-    setMuted, isMuted,
+    setMusicEnabled, setSfxEnabled, isMusicEnabled, isSfxEnabled,
   };
 })();
 
@@ -1669,6 +1894,7 @@ function activateCombo(key, x, y) {
   }
   lastComboLabel = key;
   screenShake = Math.max(screenShake, 8);
+  SFX.comboActivate(key);
 
   if (key === 'nova_nova') {
     // SUPERNOVA: 6 red/crimson waves at 400ms intervals, each larger
@@ -2097,7 +2323,6 @@ function update() {
       destroyStreak = 0;
       document.getElementById('streakDisplay').classList.remove('visible');
       document.getElementById('score').textContent = score;
-      if (score > 0 && score % 25 === 0) SFX.milestone();
     }
   }
   bodies = bodies.filter(b => b.y < H + 80);
@@ -2174,7 +2399,7 @@ function update() {
           Math.abs(b.x - player.x) < barrierHalfW + b.radius) {
         emitDestroyBurst(b.x, b.y, POWERUP_COLORS.hyperspeed.rgb);
         addDestroyPoints();
-        SFX.planetDestroyed('nova');
+        SFX.planetDestroyed('barrier');
       } else {
         bSurvivors.push(b);
       }
@@ -3026,15 +3251,52 @@ document.querySelectorAll('.diff-btn').forEach(btn => {
   });
 });
 
-// Mute button
-const muteBtn = document.getElementById('muteBtn');
-function updateMuteIcon() { muteBtn.textContent = SFX.isMuted() ? '🔇' : '🔊'; }
-updateMuteIcon();
-muteBtn.addEventListener('click', () => {
+// Settings overlay (replaces the old mute button)
+const settingsBtn     = document.getElementById('settingsBtn');
+const settingsOverlay = document.getElementById('settingsOverlay');
+const pauseSettingsBtn = document.getElementById('pauseSettingsBtn');
+const settingsCloseBtn = document.getElementById('settingsCloseBtn');
+
+// Reflect current SFX/music state onto the toggle buttons.
+function refreshSettingsUI() {
+  const musicOn = SFX.isMusicEnabled();
+  const sfxOn   = SFX.isSfxEnabled();
+  settingsOverlay.querySelectorAll('.settings-toggle').forEach(group => {
+    const setting = group.dataset.setting;
+    const on = setting === 'music' ? musicOn : sfxOn;
+    group.querySelectorAll('.toggle-opt').forEach(btn => {
+      const want = btn.dataset.val === 'on';
+      btn.classList.toggle('active', want === on);
+    });
+  });
+}
+
+function openSettings() {
   SFX.init();
-  SFX.setMuted(!SFX.isMuted());
-  updateMuteIcon();
+  refreshSettingsUI();
+  settingsOverlay.classList.add('visible');
+}
+function closeSettings() {
+  settingsOverlay.classList.remove('visible');
+}
+
+settingsBtn.addEventListener('click', openSettings);
+pauseSettingsBtn.addEventListener('click', openSettings);
+settingsCloseBtn.addEventListener('click', closeSettings);
+
+settingsOverlay.addEventListener('click', e => {
+  const btn = e.target.closest('.toggle-opt');
+  if (!btn) return;
+  const group = btn.closest('.settings-toggle');
+  const setting = group.dataset.setting;
+  const on = btn.dataset.val === 'on';
+  SFX.init();
+  if (setting === 'music') SFX.setMusicEnabled(on);
+  else if (setting === 'sfx') SFX.setSfxEnabled(on);
+  refreshSettingsUI();
 });
+
+refreshSettingsUI();
 
 // Initialize the audio context on the very first user gesture so the
 // browser autoplay policy is satisfied even if the player taps the canvas
