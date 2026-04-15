@@ -683,6 +683,14 @@ const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
 const W = 400, H = 700;
 
+// Offscreen nebula canvas — nebula is repainted every NEBULA_UPDATE_INTERVAL
+// frames instead of every frame, and drawn via drawImage in drawBg.
+const nebulaCanvas = document.createElement('canvas');
+nebulaCanvas.width = W; nebulaCanvas.height = H;
+const nebulaCtx = nebulaCanvas.getContext('2d');
+const NEBULA_UPDATE_INTERVAL = 120;
+let nebulaRenderedFrame = -1; // force first render
+
 const PLAYER_R = 6;
 const GRACE_FRAMES = 90;
 const BODY_SPACING = 290;
@@ -720,7 +728,17 @@ let screenShake = 0;
 let pickupParticles = [];
 let planetRipples = [];
 let pendingNovaTimeouts = [];
-const PARTICLE_CAP = 200;
+// Hard caps on visual-effect arrays. Exceeding these on Android at high
+// scores (lots of combos firing) can crash the tab — cap aggressively and
+// drop oldest elements on overflow.
+const NOVA_RINGS_CAP    = 20;
+const PICKUP_PART_CAP   = 200;
+const PLANET_RIPPLE_CAP = 50;
+const DEATH_PART_CAP    = 60;
+function pushCapped(arr, item, cap) {
+  if (arr.length >= cap) arr.shift();
+  arr.push(item);
+}
 let activeEffects = { shield: 0, hyperspeed: 0, ghost: 0 };
 let lastPowerupSpawn = 0;
 const SHIELD_DURATION = 900;        // 15s @ 60fps
@@ -1428,7 +1446,28 @@ function spawnBody(yBase) {
     radius = 11 + Math.random() * 7;
     color = '#080808'; glowColor = 'rgba(170,70,255,0.9)';
   }
-  return { x, y: yBase, radius, type, color, glowColor, passed: false, pulse: Math.random()*6.28 };
+
+  // Pre-build gradients at local origin (0,0). drawBodies translates by
+  // (b.x, b.y). Cached gradients avoid per-frame createRadialGradient calls,
+  // which are expensive on mobile GPUs.
+  const maxGlowR = radius * 2.95;
+  const cachedGlow = ctx.createRadialGradient(0, 0, radius * 0.4, 0, 0, maxGlowR);
+  cachedGlow.addColorStop(0, glowColor);
+  cachedGlow.addColorStop(1, 'rgba(0,0,0,0)');
+
+  let cachedFill = null;
+  if (type !== 'blackhole') {
+    cachedFill = ctx.createRadialGradient(-radius*0.28, -radius*0.28, 0, 0, 0, radius);
+    cachedFill.addColorStop(0, '#fff');
+    cachedFill.addColorStop(0.3, color);
+    cachedFill.addColorStop(1, 'rgba(0,0,0,0.5)');
+  }
+
+  return {
+    x, y: yBase, radius, type, color, glowColor,
+    passed: false, pulse: Math.random()*6.28,
+    cachedFill, cachedGlow, cachedMaxGlowR: maxGlowR,
+  };
 }
 
 function initBodies() {
@@ -1493,8 +1532,12 @@ function spawnPowerup() {
 }
 
 function trimParticles() {
-  const excess = pickupParticles.length + deathParticles.length - PARTICLE_CAP;
-  if (excess > 0) pickupParticles.splice(0, Math.min(excess, pickupParticles.length));
+  if (pickupParticles.length > PICKUP_PART_CAP) {
+    pickupParticles.splice(0, pickupParticles.length - PICKUP_PART_CAP);
+  }
+  if (deathParticles.length > DEATH_PART_CAP) {
+    deathParticles.splice(0, deathParticles.length - DEATH_PART_CAP);
+  }
 }
 
 function emitPickupParticles(x, y, type) {
@@ -1502,14 +1545,14 @@ function emitPickupParticles(x, y, type) {
   for (let i = 0; i < 24; i++) {
     const a = Math.random() * Math.PI * 2;
     const sp = Math.random() * 4.5 + 1.2;
-    pickupParticles.push({
+    pushCapped(pickupParticles, {
       x, y,
       vx: Math.cos(a) * sp,
       vy: Math.sin(a) * sp,
       life: 1,
       size: Math.random() * 2.4 + 0.9,
       rgb,
-    });
+    }, PICKUP_PART_CAP);
   }
   trimParticles();
 }
@@ -1518,14 +1561,14 @@ function emitDestroyBurst(x, y, rgb) {
   for (let i = 0; i < 30; i++) {
     const a = Math.random() * Math.PI * 2;
     const sp = Math.random() * 3.5 + 0.8;
-    pickupParticles.push({
+    pushCapped(pickupParticles, {
       x, y,
       vx: Math.cos(a) * sp,
       vy: Math.sin(a) * sp,
       life: 1,
       size: Math.random() * 2.2 + 0.8,
       rgb,
-    });
+    }, PICKUP_PART_CAP);
   }
   trimParticles();
 }
@@ -1579,6 +1622,29 @@ function detectCombo(newType) {
 function activateCombo(key, x, y) {
   const def = COMBO_DEFS[key];
   if (!def) return;
+  // Guard: if the same combo is already active, refresh its timers without
+  // re-running the activation body. Re-activating Warp Time or Pulsar while
+  // already running would schedule a second stream of setTimeout-driven nova
+  // spawns (the cause of the Android hyperspeed-combo crash at high scores).
+  if (activeCombos[key]) {
+    if (key === 'nova_hyperspeed') {
+      activateHyperspeed(HYPERSPEED_COMBO_DURATION);
+      warpTimeNovaTimer = 0;
+    } else if (key === 'nova_shield') {
+      activeEffects.shield = SHIELD_DURATION;
+      shieldBroken = false;
+      pulsarNovaTimer = 0;
+    } else if (key === 'hyperspeed_ghost') {
+      activateHyperspeed(HYPERSPEED_COMBO_DURATION, 2);
+      activeEffects.ghost = HYPERSPEED_COMBO_DURATION;
+    } else if (key === 'hyperspeed_shield') {
+      if (activeEffects.hyperspeed <= 0) activateHyperspeed();
+      if (activeEffects.shield <= 0) { activeEffects.shield = SHIELD_DURATION; shieldBroken = false; }
+    }
+    lastComboLabel = key;
+    screenShake = Math.max(screenShake, 6);
+    return;
+  }
   lastComboLabel = key;
   screenShake = Math.max(screenShake, 8);
 
@@ -1587,11 +1653,11 @@ function activateCombo(key, x, y) {
     for (let i = 0; i < 6; i++) {
       pendingNovaTimeouts.push(setTimeout(() => {
         if (state !== 'playing') return;
-        novaRings.push({
+        pushCapped(novaRings, {
           x: player.x, y: player.y, radius: 0, life: 1, prevR: 0,
           radiusMult: 1 + i * 0.15,
           supernova: true,
-        });
+        }, NOVA_RINGS_CAP);
         screenShake = Math.max(screenShake, 10 + i);
         SFX.pickup('nova');
       }, i * 400));
@@ -1674,18 +1740,18 @@ function rawActivate(type, x, y) {
 }
 
 function fireTripleNova(px, py) {
-  novaRings.push({ x: px, y: py, radius: 0, life: 1, prevR: 0 });
+  pushCapped(novaRings, { x: px, y: py, radius: 0, life: 1, prevR: 0 }, NOVA_RINGS_CAP);
   screenShake = Math.max(screenShake, 10);
   pendingNovaTimeouts.push(setTimeout(() => {
     if (state === 'playing') {
-      novaRings.push({ x: player.x, y: player.y, radius: 0, life: 0.8, prevR: 0 });
+      pushCapped(novaRings, { x: player.x, y: player.y, radius: 0, life: 0.8, prevR: 0 }, NOVA_RINGS_CAP);
       screenShake = Math.max(screenShake, 7);
       SFX.pickup('nova');
     }
   }, 400));
   pendingNovaTimeouts.push(setTimeout(() => {
     if (state === 'playing') {
-      novaRings.push({ x: player.x, y: player.y, radius: 0, life: 0.6, prevR: 0 });
+      pushCapped(novaRings, { x: player.x, y: player.y, radius: 0, life: 0.6, prevR: 0 }, NOVA_RINGS_CAP);
       screenShake = Math.max(screenShake, 5);
       SFX.pickup('nova');
     }
@@ -1830,6 +1896,8 @@ function applyForce() {
   player.vy += ay;
 
   player.vx *= dragCoef; player.vy *= dragCoef;
+  if (isNaN(player.vx)) player.vx = 0;
+  if (isNaN(player.vy)) player.vy = 0;
   const spd = Math.hypot(player.vx, player.vy);
   // EXTREME loosens the cap so players can actually outrun dense clusters
   const speedCap = difficulty === 'EXTREME' ? 5.5 : 4.5;
@@ -1860,7 +1928,7 @@ function checkCollisions() {
           continue;
         }
         if (!b._rippleCd || b._rippleCd <= 0) {
-          planetRipples.push({ x: b.x, y: b.y, baseR: b.radius, expand: 0, life: 1 });
+          pushCapped(planetRipples, { x: b.x, y: b.y, baseR: b.radius, expand: 0, life: 1 }, PLANET_RIPPLE_CAP);
           b._rippleCd = 18;
           if (!b._ghostScored) { b._ghostScored = true; addDestroyPoints(); }
           SFX.planetDestroyed('ghost');
@@ -2096,7 +2164,7 @@ function update() {
   if (rightDown) SFX.repel(frame);
 
   trail.push({ x: player.x, y: player.y });
-  if (trail.length > 38) trail.shift();
+  if (trail.length > 25) trail.shift();
 
   if (checkCollisions()) triggerDeath();
 }
@@ -2109,9 +2177,10 @@ function triggerDeath() {
   clearPendingNovaTimeouts();
   const scores = saveScore(score, difficulty);
   deathParticles = [];
-  for (let i = 0; i < 50; i++) {
+  const deathCount = Math.min(50, DEATH_PART_CAP);
+  for (let i = 0; i < deathCount; i++) {
     const a = Math.random()*Math.PI*2, s = Math.random()*3.5+0.8;
-    deathParticles.push({ x: player.x, y: player.y, vx: Math.cos(a)*s, vy: Math.sin(a)*s, life: 1, size: Math.random()*2.5+0.8 });
+    pushCapped(deathParticles, { x: player.x, y: player.y, vx: Math.cos(a)*s, vy: Math.sin(a)*s, life: 1, size: Math.random()*2.5+0.8 }, DEATH_PART_CAP);
   }
   // Submit score online (fire and forget)
   const uname = getUsername();
@@ -2208,19 +2277,40 @@ function triggerDeath() {
 }
 
 // --- Draw ---
+function renderNebulaOffscreen() {
+  nebulaCtx.clearRect(0, 0, W, H);
+  nebulaCtx.globalAlpha = 0.055;
+  const t = frame * 0.0018;
+  const layers = [
+    ['rgba(70,30,160', 0,   2.1],
+    ['rgba(15,70,170', 2.1, 1.7],
+    ['rgba(140,30,70', 4.2, 2.3],
+  ];
+  for (const [c, o, f] of layers) {
+    const nx2 = W*0.2 + Math.sin(t+o) * W*0.32;
+    const ny2 = H*0.3 + Math.cos(t*f+o) * H*0.28;
+    const ng = nebulaCtx.createRadialGradient(nx2, ny2, 0, nx2, ny2, W*0.48);
+    ng.addColorStop(0, c + ',0.55)');
+    ng.addColorStop(1, 'rgba(0,0,0,0)');
+    nebulaCtx.fillStyle = ng;
+    nebulaCtx.fillRect(0, 0, W, H);
+  }
+  nebulaCtx.globalAlpha = 1;
+}
+
 function drawBg() {
-  ctx.fillStyle = '#00000a'; ctx.fillRect(0,0,W,H);
-  // Nebula
-  ctx.save(); ctx.globalAlpha = 0.055;
-  const t = frame*0.0018;
-  [['rgba(70,30,160',0,2.1],['rgba(15,70,170',2.1,1.7],['rgba(140,30,70',4.2,2.3]].forEach(([c,o,f])=>{
-    const nx2=W*0.2+Math.sin(t+o)*W*0.32, ny2=H*0.3+Math.cos(t*f+o)*H*0.28;
-    const ng=ctx.createRadialGradient(nx2,ny2,0,nx2,ny2,W*0.48);
-    ng.addColorStop(0,c+',0.55)'); ng.addColorStop(1,'rgba(0,0,0,0)');
-    ctx.fillStyle=ng; ctx.fillRect(0,0,W,H);
-  });
-  ctx.restore();
-  // Stars
+  // Solid background (simplified from createLinearGradient)
+  ctx.fillStyle = '#00000a';
+  ctx.fillRect(0, 0, W, H);
+  // Nebula: repaint to offscreen only every NEBULA_UPDATE_INTERVAL frames.
+  // Negative delta = frame was reset (game restart), so repaint too.
+  const nebDelta = frame - nebulaRenderedFrame;
+  if (nebulaRenderedFrame < 0 || nebDelta < 0 || nebDelta >= NEBULA_UPDATE_INTERVAL) {
+    renderNebulaOffscreen();
+    nebulaRenderedFrame = frame;
+  }
+  ctx.drawImage(nebulaCanvas, 0, 0);
+  // Stars animate on main canvas every frame
   for (const s of bgStars) {
     ctx.globalAlpha = (0.35+0.5*Math.sin(frame*0.05+s.phase));
     ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(s.x,s.y,s.r,0,6.28); ctx.fill();
@@ -2234,28 +2324,38 @@ function drawBodies() {
     const pulse = Math.sin(b.pulse)*0.3+0.7;
     const glowR = b.radius * (2.6+Math.sin(b.pulse)*0.35);
 
-    // Glow
-    const grd = ctx.createRadialGradient(b.x,b.y,b.radius*0.4,b.x,b.y,glowR);
-    grd.addColorStop(0,b.glowColor); grd.addColorStop(1,'rgba(0,0,0,0)');
-    ctx.globalAlpha = 0.32*pulse; ctx.fillStyle=grd;
-    ctx.beginPath(); ctx.arc(b.x,b.y,glowR,0,6.28); ctx.fill();
+    // Glow: use cached gradient built at local origin (0,0) with max glow
+    // radius. Arc radius still varies with pulse to preserve the breathing
+    // look — the gradient just caps at the outer stop.
+    ctx.save();
+    ctx.translate(b.x, b.y);
+    ctx.globalAlpha = 0.32 * pulse;
+    ctx.fillStyle = b.cachedGlow;
+    ctx.beginPath(); ctx.arc(0, 0, glowR, 0, 6.28); ctx.fill();
+    ctx.restore();
 
     // Body
     ctx.globalAlpha=1;
     if (b.type==='blackhole') {
-      ctx.save(); ctx.globalAlpha=0.45;
-      const dg=ctx.createRadialGradient(b.x,b.y,b.radius,b.x,b.y,b.radius*2.4);
-      dg.addColorStop(0,'rgba(170,70,255,0.8)'); dg.addColorStop(1,'rgba(0,0,0,0)');
-      ctx.fillStyle=dg; ctx.scale(1,0.3);
-      ctx.beginPath(); ctx.arc(b.x,b.y/0.3,b.radius*2.4,0,6.28); ctx.fill();
+      // Flat-color accretion disk (simplified from radial gradient) — ellipse
+      // scaled vertically for the disk silhouette.
+      ctx.save();
+      ctx.globalAlpha = 0.35;
+      ctx.fillStyle = 'rgba(170,70,255,1)';
+      ctx.scale(1, 0.3);
+      ctx.beginPath(); ctx.arc(b.x, b.y/0.3, b.radius*2.2, 0, 6.28); ctx.fill();
       ctx.restore();
       ctx.fillStyle='#000'; ctx.beginPath(); ctx.arc(b.x,b.y,b.radius,0,6.28); ctx.fill();
       ctx.strokeStyle='rgba(160,70,255,0.65)'; ctx.lineWidth=1.5;
       ctx.beginPath(); ctx.arc(b.x,b.y,b.radius+1.5,0,6.28); ctx.stroke();
     } else {
-      const bg=ctx.createRadialGradient(b.x-b.radius*0.28,b.y-b.radius*0.28,0,b.x,b.y,b.radius);
-      bg.addColorStop(0,'#fff'); bg.addColorStop(0.3,b.color); bg.addColorStop(1,'rgba(0,0,0,0.5)');
-      ctx.fillStyle=bg; ctx.beginPath(); ctx.arc(b.x,b.y,b.radius,0,6.28); ctx.fill();
+      // Cached radial fill: gradient is pre-built in spawnBody at local origin,
+      // so we translate to (b.x, b.y) and draw from (0,0).
+      ctx.save();
+      ctx.translate(b.x, b.y);
+      ctx.fillStyle = b.cachedFill;
+      ctx.beginPath(); ctx.arc(0, 0, b.radius, 0, 6.28); ctx.fill();
+      ctx.restore();
     }
 
     // Target indicator: bright ring + line to player when active
