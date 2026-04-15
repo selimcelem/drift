@@ -941,7 +941,7 @@ const SFX = (function() {
     if (s !== null) sfxEnabled = s !== '0' && s !== 'false';
   } catch {}
 
-  const MUSIC_GAIN_VALUE = 0.35;
+  const MUSIC_GAIN_VALUE = 0.4;
   const SFX_GAIN_VALUE   = 1.0;
 
   // Throttle trackers use ctx.currentTime (audio-clock seconds), NOT game
@@ -953,11 +953,11 @@ const SFX = (function() {
 
   // --- Music state (chiptune scheduler) ---
   let musicPlaying = false;
-  let musicStep = 0;           // global 8th-note index within the 8-bar (64-step) loop
+  let musicStep = 0;           // global 32nd-note index within the 16-bar (512-step) loop
   let nextStepTime = 0;        // ctx time of next step
   let schedulerTimer = null;
-  const BPM = 150;
-  const STEP_DURATION = (60 / BPM) / 2; // 8th note length (seconds)
+  const BPM = 180;
+  const STEP_DURATION = (60 / BPM) / 8; // 32nd note length (seconds)
   const LOOKAHEAD_MS = 25;
   const SCHEDULE_AHEAD = 0.12;
 
@@ -1446,90 +1446,196 @@ const SFX = (function() {
 
   // ---- Background music: chiptune scheduler ----
   //
-  // 150 BPM, 8-bar loop (64 steps at 8th-note resolution). Four layers:
-  //   - Melody:    square wave, 8-note A-minor arpeggio, 5hz vibrato LFO
-  //   - Bass:      square wave, root notes A2 A2 E2 E2 F2 F2 E2 E2 (2 bars)
-  //   - Harmony:   triangle wave, E5 E5 D5 C5 half-notes (2 bars, plays on
-  //                "every other bar" i.e. first half of a 4-bar block)
-  //   - Drums:     noise hi-hat, sine kick, bandpass-noise snare
+  // 180 BPM, 16-bar loop. High-energy SNES-era space shooter chiptune.
+  // 32nd-note resolution: 32 steps/bar × 16 bars = 512 steps/loop. Layers:
+  //   - Lead melody: 25%-duty pulse wave, 8th-note runs, 6hz/4hz vibrato
+  //   - Counter:     triangle, half notes a minor third above lead, every other bar
+  //   - Bass:        square wave through waveshaper distortion, 8th-note pulse
+  //   - Arpeggio:    square wave, 32nd-note staccato chord arps
+  //   - Drums:       sine kick, bandpass-noise snare, hi-hat closed/open, tom fill
   //
-  // Timing uses audioCtx.currentTime exclusively. JS setTimeout only drives
-  // the scheduler wakeup — note onsets are all precisely scheduled against
-  // the audio clock so there's no drift.
+  // Section structure within the 16-bar loop:
+  //   bars  1-4  full band
+  //   bars  5-8  bass + drums drop, melody + arp only (riser at end of bar 8)
+  //   bars  9-12 everything back, harder
+  //   bars 13-16 climax, all instruments, lead lowpass opens up
+  //
+  // Timing uses audioCtx.currentTime exclusively. setTimeout only drives the
+  // scheduler wakeup — note onsets are all precisely scheduled against the
+  // audio clock so there's no drift, and the loop is seamless.
 
-  const MELODY    = [440.00, 523.25, 659.25, 783.99, 880.00, 783.99, 659.25, 523.25];
-  const BASS_2BAR = [110.00, 110.00, 82.41, 82.41, 87.31, 87.31, 82.41, 82.41]; // A2 A2 E2 E2 F2 F2 E2 E2
-  const HARMONY   = [659.25, 659.25, 587.33, 523.25]; // E5 E5 D5 C5
+  const BARS_PER_LOOP = 16;
+  const STEPS_PER_BAR = 32;            // 32nd-note resolution
+  const TOTAL_STEPS   = BARS_PER_LOOP * STEPS_PER_BAR;
 
-  function scheduleMelodyNote(freq, time) {
-    const noteLen = STEP_DURATION * 0.85;
+  // Note name → frequency (Hz). Equal temperament, A4 = 440.
+  const NOTE_OFFSETS = {
+    C:0, 'C#':1, Db:1, D:2, 'D#':3, Eb:3, E:4, F:5,
+    'F#':6, Gb:6, G:7, 'G#':8, Ab:8, A:9, 'A#':10, Bb:10, B:11,
+  };
+  function noteFreq(name) {
+    const m = /^([A-G][#b]?)(-?\d+)$/.exec(name);
+    if (!m) return 440;
+    const semis = NOTE_OFFSETS[m[1]] + (parseInt(m[2], 10) - 4) * 12 - 9;
+    return 440 * Math.pow(2, semis / 12);
+  }
+
+  // Lead melody, 8 eighth-notes per bar × 16 bars = 128 notes.
+  const MELODY_NAMES = [
+    'A4','A4','C5','A4','G4','A4','C5','E5',     // bar 1
+    'A4','A4','C5','A4','G4','F4','E4','D4',     // bar 2
+    'E4','E4','G4','E4','D4','E4','G4','B4',     // bar 3
+    'E4','E4','G4','E4','D4','C4','B3','A3',     // bar 4
+    'F4','A4','C5','F5','E5','D5','C5','B4',     // bar 5
+    'A4','C5','E5','A5','G5','F5','E5','D5',     // bar 6
+    'C5','C5','E5','G5','C6','B5','A5','G5',     // bar 7
+    'F5','E5','D5','C5','B4','A4','G4','F4',     // bar 8
+    'C5','C5','Eb5','C5','Bb4','C5','Eb5','G5',  // bar 9  (bar 1 + minor third)
+    'C5','C5','Eb5','C5','Bb4','Ab4','G4','F4',  // bar 10 (bar 2 + minor third)
+    'G4','G4','Bb4','G4','F4','G4','Bb4','D5',   // bar 11 (bar 3 + minor third)
+    'G4','G4','Bb4','G4','F4','Eb4','D4','C4',   // bar 12 (bar 4 + minor third)
+    'C6','B5','A5','G5','F5','E5','D5','C5',     // bar 13 descending
+    'B4','A4','G4','F4','E4','D4','C4','B3',     // bar 14 descending
+    'A3','C4','E4','A4','C5','E5','A5','C6',     // bar 15 sweeping back up
+    'B5','A5','G5','F5','E5','D5','C5','A4',     // bar 16 lands on A4 (loops)
+  ];
+  const MELODY = MELODY_NAMES.map(noteFreq);
+  const MINOR_THIRD = Math.pow(2, 3/12);
+
+  // Bass root notes — 4-bar cycle, repeats four times per loop.
+  const BASS_BARS = ['A2','E2','F2','C2'].map(noteFreq);
+
+  // Arpeggio chords — 4-bar cycle (Am, Em, F, C). Each chord is a 4-note
+  // up-arp in the 5th-6th octave, repeated every 32nd note across the bar.
+  const ARP_CHORDS = [
+    ['A5','C6','E6','A6'],  // Am
+    ['E5','G5','B5','E6'],  // Em
+    ['F5','A5','C6','F6'],  // F
+    ['C5','E5','G5','C6'],  // C
+  ].map(c => c.map(noteFreq));
+
+  // Cached pulse wave (duty 0.25) and bass distortion curve. Built lazily on
+  // the first startMusic() once the AudioContext exists.
+  let pulseWave25 = null;
+  let bassDistortionCurve = null;
+  function ensureMusicNodes() {
+    if (!ctx) return;
+    if (!pulseWave25) {
+      const N = 32;
+      const real = new Float32Array(N + 1);
+      const imag = new Float32Array(N + 1);
+      const duty = 0.25;
+      for (let n = 1; n <= N; n++) {
+        imag[n] = (2 / (n * Math.PI)) * Math.sin(n * Math.PI * duty);
+      }
+      try { pulseWave25 = ctx.createPeriodicWave(real, imag); } catch {}
+    }
+    if (!bassDistortionCurve) {
+      const samples = 1024;
+      const curve = new Float32Array(samples);
+      const k = 12;
+      for (let i = 0; i < samples; i++) {
+        const x = (i * 2) / samples - 1;
+        curve[i] = Math.tanh(k * x);
+      }
+      bassDistortionCurve = curve;
+    }
+  }
+
+  function scheduleMelodyNote(freq, time, bar) {
+    const noteLen = STEP_DURATION * 4 * 0.92; // 8th note ≈ 4 32nd steps
     const o = ctx.createOscillator();
     const g = ctx.createGain();
-    // Vibrato LFO: 5hz rate, 3hz depth on frequency.
+    const f = ctx.createBiquadFilter();
+
+    if (pulseWave25) o.setPeriodicWave(pulseWave25); else o.type = 'square';
+    o.frequency.value = freq;
+
+    // 6hz vibrato, 4hz depth (per spec).
     const lfo = ctx.createOscillator();
     const lfoGain = ctx.createGain();
-    lfo.frequency.value = 5;
-    lfoGain.gain.value  = 3;
+    lfo.type = 'sine';
+    lfo.frequency.value = 6;
+    lfoGain.gain.value = 4;
     lfo.connect(lfoGain); lfoGain.connect(o.frequency);
-    o.type = 'square';
-    o.frequency.value = freq;
-    g.gain.setValueAtTime(0, time);
-    g.gain.linearRampToValueAtTime(0.13, time + 0.005);
+
+    // Lead lowpass — slowly opens across the climax (bars 13-16).
+    f.type = 'lowpass';
+    let cutoff = 4500;
+    if (bar >= 12) cutoff = 3500 + (bar - 12) * 1500;
+    f.frequency.value = cutoff;
+    f.Q.value = 0.6;
+
+    // Sharp attack, fast decay to a low sustain — punchy, not smooth.
+    g.gain.setValueAtTime(0.0001, time);
+    g.gain.linearRampToValueAtTime(0.18, time + 0.005);
+    g.gain.exponentialRampToValueAtTime(0.05, time + 0.04);
     g.gain.exponentialRampToValueAtTime(0.001, time + noteLen);
-    o.connect(g); g.connect(musicGain);
+
+    o.connect(f); f.connect(g); g.connect(musicGain);
     o.start(time); o.stop(time + noteLen + 0.02);
     lfo.start(time); lfo.stop(time + noteLen + 0.02);
-    killOnEnd(o, g, lfo, lfoGain);
+    killOnEnd(o, g, f, lfo, lfoGain);
   }
 
-  function scheduleBassNote(freq, time) {
-    const noteLen = STEP_DURATION * 2 * 0.9; // quarter note
-    const o = ctx.createOscillator();
-    const g = ctx.createGain();
-    o.type = 'square';
-    o.frequency.value = freq;
-    g.gain.setValueAtTime(0, time);
-    g.gain.linearRampToValueAtTime(0.18, time + 0.004);
-    g.gain.exponentialRampToValueAtTime(0.001, time + noteLen);
-    o.connect(g); g.connect(musicGain);
-    o.start(time); o.stop(time + noteLen + 0.02);
-    killOnEnd(o, g);
-  }
-
-  function scheduleHarmonyNote(freq, time) {
-    const noteLen = STEP_DURATION * 4 * 0.92; // half note
+  function scheduleCounterNote(freq, time) {
+    const noteLen = STEP_DURATION * 16 * 0.92; // half note
     const o = ctx.createOscillator();
     const g = ctx.createGain();
     o.type = 'triangle';
     o.frequency.value = freq;
-    g.gain.setValueAtTime(0, time);
-    g.gain.linearRampToValueAtTime(0.1, time + 0.02);
+    g.gain.setValueAtTime(0.0001, time);
+    g.gain.linearRampToValueAtTime(0.07, time + 0.025);
     g.gain.exponentialRampToValueAtTime(0.001, time + noteLen);
     o.connect(g); g.connect(musicGain);
     o.start(time); o.stop(time + noteLen + 0.02);
     killOnEnd(o, g);
   }
 
-  function scheduleHiHat(time) {
-    const n = ctx.createBufferSource();
-    n.buffer = noiseBuffer(0.03, x => 1 - x);
-    const f = ctx.createBiquadFilter();
-    f.type = 'highpass'; f.frequency.value = 6000;
+  function scheduleBassNote(freq, time) {
+    const noteLen = STEP_DURATION * 4 * 0.95; // 8th note
+    const o = ctx.createOscillator();
     const g = ctx.createGain();
-    g.gain.setValueAtTime(0.04, time);
-    g.gain.exponentialRampToValueAtTime(0.001, time + 0.03);
-    n.connect(f); f.connect(g); g.connect(musicGain);
-    n.start(time); n.stop(time + 0.04);
-    killOnEnd(n, f, g);
+    const ws = ctx.createWaveShaper();
+    const post = ctx.createBiquadFilter();
+    o.type = 'square';
+    o.frequency.value = freq;
+    if (bassDistortionCurve) {
+      ws.curve = bassDistortionCurve;
+      ws.oversample = '2x';
+    }
+    post.type = 'lowpass';
+    post.frequency.value = 700;
+    g.gain.setValueAtTime(0.0001, time);
+    g.gain.linearRampToValueAtTime(0.22, time + 0.004);
+    g.gain.exponentialRampToValueAtTime(0.07, time + 0.05);
+    g.gain.exponentialRampToValueAtTime(0.001, time + noteLen);
+    o.connect(ws); ws.connect(post); post.connect(g); g.connect(musicGain);
+    o.start(time); o.stop(time + noteLen + 0.02);
+    killOnEnd(o, ws, post, g);
+  }
+
+  function scheduleArpNote(freq, time) {
+    const noteLen = STEP_DURATION * 0.55; // staccato 32nd
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = 'square';
+    o.frequency.value = freq;
+    g.gain.setValueAtTime(0.0001, time);
+    g.gain.linearRampToValueAtTime(0.12, time + 0.002);
+    g.gain.exponentialRampToValueAtTime(0.001, time + noteLen);
+    o.connect(g); g.connect(musicGain);
+    o.start(time); o.stop(time + noteLen + 0.02);
+    killOnEnd(o, g);
   }
 
   function scheduleKick(time) {
     const o = ctx.createOscillator();
     const g = ctx.createGain();
     o.type = 'sine';
-    o.frequency.setValueAtTime(80, time);
+    o.frequency.setValueAtTime(120, time);
     o.frequency.exponentialRampToValueAtTime(40, time + 0.05);
-    g.gain.setValueAtTime(0.1, time);
+    g.gain.setValueAtTime(0.15, time);
     g.gain.exponentialRampToValueAtTime(0.001, time + 0.06);
     o.connect(g); g.connect(musicGain);
     o.start(time); o.stop(time + 0.08);
@@ -1538,45 +1644,128 @@ const SFX = (function() {
 
   function scheduleSnare(time) {
     const n = ctx.createBufferSource();
-    n.buffer = noiseBuffer(0.1, x => Math.pow(1 - x, 1.1));
+    n.buffer = noiseBuffer(0.1, x => Math.pow(1 - x, 1.2));
     const f = ctx.createBiquadFilter();
-    f.type = 'bandpass'; f.frequency.value = 450; f.Q.value = 1.1;
+    f.type = 'bandpass'; f.frequency.value = 600; f.Q.value = 0.9;
     const g = ctx.createGain();
-    g.gain.setValueAtTime(0.07, time);
-    g.gain.exponentialRampToValueAtTime(0.001, time + 0.08);
+    g.gain.setValueAtTime(0.12, time);
+    g.gain.exponentialRampToValueAtTime(0.001, time + 0.1);
     n.connect(f); f.connect(g); g.connect(musicGain);
-    n.start(time); n.stop(time + 0.1);
+    n.start(time); n.stop(time + 0.12);
+    killOnEnd(n, f, g);
+  }
+
+  function scheduleHatClosed(time) {
+    const n = ctx.createBufferSource();
+    n.buffer = noiseBuffer(0.03, x => 1 - x);
+    const f = ctx.createBiquadFilter();
+    f.type = 'highpass'; f.frequency.value = 8000;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.06, time);
+    g.gain.exponentialRampToValueAtTime(0.001, time + 0.03);
+    n.connect(f); f.connect(g); g.connect(musicGain);
+    n.start(time); n.stop(time + 0.04);
+    killOnEnd(n, f, g);
+  }
+
+  function scheduleHatOpen(time) {
+    const n = ctx.createBufferSource();
+    n.buffer = noiseBuffer(0.12, x => 1 - x);
+    const f = ctx.createBiquadFilter();
+    f.type = 'highpass'; f.frequency.value = 6000;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.05, time);
+    g.gain.exponentialRampToValueAtTime(0.001, time + 0.12);
+    n.connect(f); f.connect(g); g.connect(musicGain);
+    n.start(time); n.stop(time + 0.14);
+    killOnEnd(n, f, g);
+  }
+
+  function scheduleTom(time) {
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(200, time);
+    o.frequency.exponentialRampToValueAtTime(80, time + 0.07);
+    g.gain.setValueAtTime(0.1, time);
+    g.gain.exponentialRampToValueAtTime(0.001, time + 0.08);
+    o.connect(g); g.connect(musicGain);
+    o.start(time); o.stop(time + 0.1);
+    killOnEnd(o, g);
+  }
+
+  function scheduleRiser(time) {
+    // Noise sweep riser — highpass climbs from 400hz to 6000hz.
+    const dur = 0.55;
+    const n = ctx.createBufferSource();
+    n.buffer = noiseBuffer(dur, x => Math.pow(x, 0.6));
+    const f = ctx.createBiquadFilter();
+    f.type = 'highpass';
+    f.frequency.setValueAtTime(400, time);
+    f.frequency.exponentialRampToValueAtTime(6000, time + dur);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, time);
+    g.gain.exponentialRampToValueAtTime(0.09, time + dur * 0.9);
+    g.gain.exponentialRampToValueAtTime(0.001, time + dur);
+    n.connect(f); f.connect(g); g.connect(musicGain);
+    n.start(time); n.stop(time + dur + 0.02);
     killOnEnd(n, f, g);
   }
 
   function scheduleStep(step, time) {
-    const barStep = step % 8; // 0..7 inside each bar (one bar = 8 8th notes)
-    const bar     = Math.floor(step / 8); // 0..7 inside the 8-bar loop
+    const bar       = Math.floor(step / STEPS_PER_BAR);  // 0..15
+    const stepInBar = step % STEPS_PER_BAR;              // 0..31
+    const isEighth  = stepInBar % 4 === 0;               // 8th note grid
+    const eighthIdx = stepInBar / 4;                     // 0..7 when isEighth
 
-    // Melody plays an 8-note pattern each bar.
-    scheduleMelodyNote(MELODY[barStep], time);
+    // Section gates (0-indexed bars).
+    const sectionB = bar >= 4  && bar < 8;   // bars 5-8: drop bass + drums
+    // (sectionA / C / D are implicit via !sectionB and the climax check below)
 
-    // Bass: quarter notes (every 2 steps), 2-bar pattern = 16 steps.
-    if (barStep % 2 === 0) {
-      const bassIdx = Math.floor((step % 16) / 2);
-      scheduleBassNote(BASS_2BAR[bassIdx], time);
+    // ---- LEAD MELODY (8th notes, every bar) ----
+    if (isEighth) {
+      scheduleMelodyNote(MELODY[bar * 8 + eighthIdx], time, bar);
     }
 
-    // Harmony: half notes (every 4 steps), 2-bar pattern. Plays during the
-    // first half of each 4-bar block (bars 0-1 and 4-5), rests the other half.
-    if (step % 4 === 0) {
-      const inActiveHalf = (bar % 4) < 2;
-      if (inActiveHalf) {
-        const winStep = step % 16; // 0, 4, 8, 12
-        const harmIdx = winStep / 4;
-        scheduleHarmonyNote(HARMONY[harmIdx], time);
-      }
+    // ---- ARPEGGIO (32nd notes, every step, all sections) ----
+    {
+      const chord = ARP_CHORDS[bar % 4];
+      scheduleArpNote(chord[stepInBar % chord.length], time);
     }
 
-    // Drums.
-    scheduleHiHat(time);
-    if (barStep % 2 === 0) scheduleKick(time);
-    if (barStep === 2 || barStep === 6) scheduleSnare(time);
+    // ---- BASS (8th notes, drops out in section B) ----
+    if (isEighth && !sectionB) {
+      scheduleBassNote(BASS_BARS[bar % 4], time);
+    }
+
+    // ---- COUNTER MELODY ---- every other bar, two half notes (beats 1 & 3)
+    if (bar % 2 === 0 && (stepInBar === 0 || stepInBar === 16)) {
+      const leadIdx = bar * 8 + (stepInBar === 0 ? 0 : 4);
+      scheduleCounterNote(MELODY[leadIdx] * MINOR_THIRD, time);
+    }
+
+    // ---- DRUMS ---- (drop in section B for the lighter feel)
+    if (!sectionB) {
+      // Kick on every quarter note (steps 0, 8, 16, 24).
+      if (stepInBar % 8 === 0) scheduleKick(time);
+      // Snare on beats 2 and 4 (steps 8, 24).
+      if (stepInBar === 8 || stepInBar === 24) scheduleSnare(time);
+      // Closed hi-hat on every 8th (steps 0, 4, 8, 12, 16, 20, 24, 28).
+      if (stepInBar % 4 === 0) scheduleHatClosed(time);
+      // Open hi-hat on the "and of beat 4" (step 28), every other bar.
+      if (stepInBar === 28 && bar % 2 === 0) scheduleHatOpen(time);
+    }
+
+    // ---- TOM FILL ---- bar 4 beat 4, 16th notes leading into bar 5.
+    if (bar === 3 && stepInBar >= 24 && stepInBar % 2 === 0) {
+      scheduleTom(time);
+    }
+
+    // ---- RISER ---- bar 8 beat 4, leading from section B back into the
+    // full-band drop on bar 9.
+    if (bar === 7 && stepInBar === 24) {
+      scheduleRiser(time);
+    }
   }
 
   function scheduler() {
@@ -1584,7 +1773,7 @@ const SFX = (function() {
     try {
       while (nextStepTime < ctx.currentTime + SCHEDULE_AHEAD) {
         scheduleStep(musicStep, nextStepTime);
-        musicStep = (musicStep + 1) % 64;
+        musicStep = (musicStep + 1) % TOTAL_STEPS;
         nextStepTime += STEP_DURATION;
       }
     } catch {}
@@ -1594,6 +1783,7 @@ const SFX = (function() {
   function startMusic() {
     if (musicPlaying) return;
     if (!ensureRunning()) return;
+    ensureMusicNodes();
     resetThrottles();
     try {
       // Restore musicGain to its enabled target in case a previous stopMusic
