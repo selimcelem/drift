@@ -6,6 +6,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-04-15
+
+### Added
+- Smart combo pickup logic: same-type priority, recency-based pairing, random tiebreak for simultaneous pair spawns
+
+### Changed
+- Pulsar auto-nova timer no longer resets when shield is picked up while Pulsar is active
+- Warp Time auto-nova timer no longer resets when hyperspeed is picked up while Warp Time is active
+- Game speed now scales on time survived instead of score
+- Streak scoring cap lowered to 12 (max 144 pts per destroy)
+- Nova spawn rerolls to non-nova type when nova effect already active
+- Supernova wave radius reduced to prevent full screen clear
+- Hyperspeed landing window extended to 3 seconds, stronger pull toward spawn position
+- Difficulty rebalanced for longer runs and broader audience
+- Local highscores keep top 5 per difficulty
+
+### Fixed
+- Memory leaks: particle cap enforced, nova timeout cleanup, nova ring pruning
+- Performance: offscreen nebula canvas, cached planet gradients, simplified background
+- Crash during hyperspeed combos at high scores: re-entry guard prevents combo stacking, NaN guards on physics
+- Wraith destroy-on-contact works correctly after Ghost+Ghost chain
+- Vertical drift off-screen during long combos
+
 ## [1.1.0] - 2026-04-14
 
 ### Added
