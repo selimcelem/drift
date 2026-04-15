@@ -1458,7 +1458,10 @@ const SFX = (function() {
     if (musicBuffer) return Promise.resolve(musicBuffer);
     if (musicLoading) return musicLoading;
     if (!ctx) return Promise.reject(new Error('no audio context'));
-    musicLoading = fetch('assets/music.mp3')
+    // Path is relative to index.html — resolves to <base>/assets/music.mp3.
+    const url = './assets/music.mp3';
+    console.log('[music] fetching', url);
+    musicLoading = fetch(url)
       .then(r => {
         if (!r.ok) throw new Error('music.mp3 fetch failed: ' + r.status);
         return r.arrayBuffer();
@@ -1467,8 +1470,16 @@ const SFX = (function() {
         // Use callback form for Safari compatibility.
         ctx.decodeAudioData(ab, resolve, reject);
       }))
-      .then(buf => { musicBuffer = buf; return buf; })
-      .catch(err => { musicLoading = null; throw err; });
+      .then(buf => {
+        musicBuffer = buf;
+        console.log('[music] loaded', url, 'duration=' + buf.duration.toFixed(2) + 's');
+        return buf;
+      })
+      .catch(err => {
+        musicLoading = null;
+        console.error('[music] load failed', url, err);
+        throw err;
+      });
     return musicLoading;
   }
 
