@@ -9,5 +9,12 @@
     "webContentsDebuggingEnabled": false,
     "appendUserAgent": "Drift",
     "overrideUserAgent": null
+  },
+  "plugins": {
+    "StatusBar": {
+      "style": "DARK",
+      "backgroundColor": "#00000a",
+      "overlaysWebView": true
+    }
   }
 }

@@ -799,6 +799,21 @@ const W = 400, H = 700;
   window.addEventListener('orientationchange', applyScale);
 })();
 
+// Tell the StatusBar plugin to overlay the WebView and then hide the bars.
+// This is the official Capacitor edge-to-edge path — more reliable across
+// Samsung/Pixel OEMs than doing the inset dance in MainActivity.
+(function setupStatusBar() {
+  const Cap = window.Capacitor;
+  const StatusBar = Cap && Cap.Plugins && Cap.Plugins.StatusBar;
+  if (!StatusBar) return;
+  try {
+    StatusBar.setOverlaysWebView({ overlay: true });
+    StatusBar.hide();
+  } catch (err) {
+    console.warn('[statusbar] setup failed', err);
+  }
+})();
+
 // Offscreen nebula canvas — nebula is repainted every NEBULA_UPDATE_INTERVAL
 // frames instead of every frame, and drawn via drawImage in drawBg.
 const nebulaCanvas = document.createElement('canvas');
