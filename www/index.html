@@ -1341,23 +1341,6 @@ const SFX = (function() {
     }
   }
 
-  function shieldBreak() {
-    safeSfx(t => {
-      // Sharp retro CRACK: square 800→100hz 0.1s + highpass noise burst.
-      chipSweep('square', 800, 100, t, 0.1, 0.4);
-      const n = ctx.createBufferSource();
-      n.buffer = noiseBuffer(0.06, x => 1 - x);
-      const f = ctx.createBiquadFilter();
-      f.type = 'highpass'; f.frequency.value = 2000;
-      const ng = ctx.createGain();
-      ng.gain.setValueAtTime(0.3, t);
-      ng.gain.exponentialRampToValueAtTime(0.001, t + 0.06);
-      n.connect(f); f.connect(ng); ng.connect(sfxGain);
-      n.start(t); n.stop(t + 0.08);
-      killOnEnd(n, f, ng);
-    });
-  }
-
   // Combo activate — every combo distinct, all at vol ~0.4.
   // Wired by activateCombo() in the game loop, keys must match COMBO_DEFS.
   function comboActivate(key) {
@@ -1804,7 +1787,7 @@ const SFX = (function() {
 
   return {
     init, attract, repel, pickup, planetDestroyed, death,
-    shieldBreak, comboActivate, comboDestroySound, startHyperspeedWhoosh,
+    comboActivate, comboDestroySound, startHyperspeedWhoosh,
     playTrack, pauseMusic, resumeMusic,
     clickPrimary, clickSecondary,
     setMusicEnabled, setSfxEnabled, isMusicEnabled, isSfxEnabled,
@@ -2751,7 +2734,9 @@ function checkCollisions() {
           emitDestroyBurst(b.x, b.y, POWERUP_COLORS.ghost.rgb);
           emitDestroyEffects(b, 'ghost');
           addDestroyPoints();
-          SFX.planetDestroyed('ghost');
+          // Wraith eats the planet — use the file-backed shield destroy clip
+          // so it feels like a destroy, not the soft ghost passthrough.
+          SFX.planetDestroyed('shield');
           bodies.splice(i, 1);
           continue;
         }
@@ -2773,7 +2758,7 @@ function checkCollisions() {
       if (dist(player, bodies[i]) < bodies[i].radius + PLAYER_R) {
         emitDestroyBurst(bodies[i].x, bodies[i].y, POWERUP_COLORS.shield.rgb);
         emitDestroyEffects(bodies[i], 'shield');
-        SFX.shieldBreak();
+        SFX.planetDestroyed('shield');
         addDestroyPoints();
         bodies.splice(i, 1);
         shieldHits--;
