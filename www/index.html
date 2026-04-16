@@ -9,12 +9,17 @@
 
   * { margin: 0; padding: 0; box-sizing: border-box; }
 
+  html, body { height: 100%; }
   body {
     background: #000;
     display: flex;
     align-items: center;
     justify-content: center;
     height: 100vh;
+    /* 100dvh tracks the actual drawable viewport on edge-to-edge Android and
+       keeps the body flush with the WebView on phones that report a shorter
+       vh while system bars animate. */
+    height: 100dvh;
     overflow: hidden;
     font-family: 'Orbitron', monospace;
   }
@@ -782,7 +787,11 @@ const W = 400, H = 700;
   const wrapper = document.getElementById('gameWrapper');
   if (!wrapper) return;
   function applyScale() {
-    const scale = Math.min(window.innerWidth / 400, window.innerHeight / 700, 1);
+    // Uniform "contain" scale so the 400x700 playfield fits the viewport in
+    // both axes. No upper clamp — on phones with a viewport larger than
+    // 400x700 (Pixel 8, modern Samsungs after edge-to-edge) the wrapper
+    // scales up to fill the screen instead of sitting in a 400x700 box.
+    const scale = Math.min(window.innerWidth / 400, window.innerHeight / 700);
     wrapper.style.transform = `scale(${scale})`;
   }
   applyScale();
