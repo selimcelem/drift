@@ -93,8 +93,10 @@ Want heavier gravity? Bump `FORCE`. Want a more forgiving ramp? Raise `SPEED_SCO
 │              │     │                   │     │                  │     │              │
 └──────────────┘     └───────────────────┘     └──────────────────┘     └──────────────┘
                             CORS *                POST /score           drift-leaderboard
-                                                  GET /leaderboard      TTL: 90 days
+                                                  GET /leaderboard      TTL: 30d top 10 / 7d rest
 ```
+
+The leaderboard is capped at the top 10 scores per difficulty via DynamoDB TTL tiers: every submission promotes the current top 10 to a 30-day TTL and lets everything else fall out on a 7-day TTL. No explicit deletes — the table self-prunes as entries age past their tier.
 
 ## Online leaderboard
 
