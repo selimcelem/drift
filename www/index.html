@@ -2298,6 +2298,7 @@ function computeHyperspeedPeakMult(stacks, peakScale) {
 // of growing the array. The whoosh restarts so the engine pitch can shift up.
 function activateHyperspeed(durationOverride, peakScale) {
   const newTimer = durationOverride || HYPERSPEED_DURATION;
+  hyperSpeedBonus += 5;
   if (hyperSpeedStacks < HYPERSPEED_MAX_STACKS) {
     hyperSpeedStacks++;
     hyperSpeedTimers.push(newTimer);
@@ -2368,6 +2369,8 @@ function resetGame() {
   hyperspeedCurrentMult = 1; hyperspeedTargetSpeed = 0;
   hyperspeedPeakMult = 1; hyperspeedActiveDuration = HYPERSPEED_DURATION;
   hyperSpeedStacks = 0;
+  hyperSpeedBonus = 0;
+  sceneScrollY = 0;
   hyperSpeedTimers = [];
   peakHyperSpeedStacks = 0;
   if (hyperspeedWhooshNodes) { try { hyperspeedWhooshNodes.stop(0.1); } catch {} hyperspeedWhooshNodes = null; }
@@ -2922,22 +2925,47 @@ function renderNebulaOffscreen() {
 }
 
 // --- Dynamic background scenes ---
-// Scene layer driven by planetsPassed. Pre-rendered to an offscreen canvas
-// and refreshed every SCENE_UPDATE_INTERVAL frames. When the planetsPassed
-// threshold for a scene changes, the previous scene is snapshotted and cross-
-// faded into the new one via transitionAlpha so the change is never abrupt.
-const sceneCanvas = document.createElement('canvas');
-sceneCanvas.width = W; sceneCanvas.height = H;
-const sceneCtx = sceneCanvas.getContext('2d');
-const prevSceneCanvas = document.createElement('canvas');
-prevSceneCanvas.width = W; prevSceneCanvas.height = H;
-const prevSceneCtx = prevSceneCanvas.getContext('2d');
-const SCENE_UPDATE_INTERVAL = 180;
-const SCENE_MAX_ALPHA = 0.25;
-let sceneIdx = 0;
-let prevSceneIdx = 0;
-let transitionAlpha = 1;       // 1 = fully on current scene, <1 = still fading
-let sceneRenderedFrame = -1;
+// Direct-draw scenery selected by planetsPassed + hyperSpeedBonus. Scenes
+// switch instantly (no crossfade) and scroll downward at 25% of the current
+// scroll speed for a parallax feel. Each scene's elements are tiled on a
+// virtual strip of height SCENE_WRAP; two copies of every element are drawn
+// per frame so wrap-around is seamless.
+const SCENE_WRAP = H;
+let sceneScrollY = 0;
+let hyperSpeedBonus = 0;
+
+// Per-scene tile templates. `baseY` is the element's position on the virtual
+// strip; it is scrolled by sceneScrollY and wrapped modulo SCENE_WRAP.
+const NEBULA_TILES = [
+  { cx: 120, baseY:  80, blobs: [
+    { dx: -40, dy: -10, r: 72 },
+    { dx:  20, dy: -30, r: 55 },
+    { dx:  60, dy:  10, r: 48 },
+    { dx:   0, dy:  30, r: 42 },
+    { dx:  40, dy:  55, r: 32 },
+  ]},
+  { cx: 280, baseY: 430, blobs: [
+    { dx: -50, dy:  -5, r: 60 },
+    { dx:  20, dy: -30, r: 50 },
+    { dx:  55, dy:  20, r: 68 },
+    { dx:  10, dy:  45, r: 38 },
+  ]},
+];
+
+const DYING_STAR_TILES = [
+  { cx: W * 0.78, baseY: 140, r: 92, spikes: 7, spikeSeed: 0x51, spikeBase: 26 },
+  { cx: W * 0.72, baseY: 510, r: 80, spikes: 8, spikeSeed: 0x7F, spikeBase: 22 },
+];
+
+const GALAXY_TILES = [
+  { cx: W * 0.22, baseY: 180, size: 40, rot:  0.6 },
+  { cx: W * 0.18, baseY: 540, size: 38, rot: -0.4 },
+];
+
+const RIFT_TILES = [
+  { baseY: 120, startX:  40, endX: 360, drop: 260, segments: 9, seed: 0x1A },
+  { baseY: 470, startX:  60, endX: 340, drop: 240, segments: 9, seed: 0x4D },
+];
 
 function sceneFor(pp) {
   if (pp < 50)  return 0;
@@ -2947,118 +2975,152 @@ function sceneFor(pp) {
   return 4;
 }
 
-function paintScene(c, idx, f) {
-  console.log('painting scene', idx, 'at frame', f, 'planetsPassed', planetsPassed);
-  c.clearRect(0, 0, W, H);
-  if (idx === 0) return;
-  const t = f * 0.0005;
-  if (idx === 1) {
-    // Deep purple/blue wisps drifting slowly — elongated to avoid reading as planets.
-    const wisps = [
-      { x: W*0.25 + Math.sin(t)*18,        y: H*0.3 + Math.cos(t*0.8)*14, rx: 220, ry: 80, rot:  0.3, color: 'rgba(70,40,140,0.55)' },
-      { x: W*0.72 + Math.cos(t*0.9)*14,    y: H*0.62 + Math.sin(t*0.7)*12, rx: 260, ry: 70, rot: -0.45, color: 'rgba(30,60,160,0.5)' },
-    ];
-    for (const w of wisps) {
-      c.save();
-      c.translate(w.x, w.y);
-      c.rotate(w.rot);
-      c.scale(1, w.ry / w.rx);
-      const g = c.createRadialGradient(0, 0, 0, 0, 0, w.rx);
-      g.addColorStop(0, w.color);
-      g.addColorStop(1, 'rgba(0,0,0,0)');
-      c.fillStyle = g;
-      c.fillRect(-w.rx, -w.rx, w.rx*2, w.rx*2);
-      c.restore();
-    }
-  } else if (idx === 2) {
-    // Dying star — huge dim reddish/orange glow. Radius is larger than the
-    // canvas so the edge curvature never reads as a planet silhouette.
-    const cx = W*0.35 + Math.sin(t*0.5) * 10;
-    const cy = H*0.42 + Math.cos(t*0.4) * 8;
-    const g = c.createRadialGradient(cx, cy, 0, cx, cy, W * 1.3);
-    g.addColorStop(0,    'rgba(180,60,30,0.55)');
-    g.addColorStop(0.45, 'rgba(140,35,20,0.28)');
-    g.addColorStop(1,    'rgba(0,0,0,0)');
-    c.fillStyle = g;
-    c.fillRect(0, 0, W, H);
-  } else if (idx === 3) {
-    // Milky Way — faint diagonal band.
-    c.save();
-    c.translate(W/2, H/2);
-    c.rotate(-0.7);
-    const bandW = W * 2, bandH = 150;
-    const g = c.createLinearGradient(0, -bandH/2, 0, bandH/2);
-    g.addColorStop(0,   'rgba(0,0,0,0)');
-    g.addColorStop(0.5, 'rgba(80,70,140,0.55)');
-    g.addColorStop(1,   'rgba(0,0,0,0)');
-    c.fillStyle = g;
-    c.fillRect(-bandW/2, -bandH/2, bandW, bandH);
-    // Sparse dust grains along the band — single-pixel dots only, no glow.
-    c.fillStyle = 'rgba(160,120,80,0.18)';
-    const tick = Math.floor(f / SCENE_UPDATE_INTERVAL);
-    for (let i = 0; i < 140; i++) {
-      const x = ((i * 53 + tick * 7) % bandW) - bandW/2;
-      const y = ((i * 29) % bandH) - bandH/2;
-      c.fillRect(x, y, 1, 1);
-    }
-    c.restore();
-  } else if (idx === 4) {
-    // Distant galaxy spiral — dots along a log-ish spiral, tiny and dim.
-    const cx = W * 0.74;
-    const cy = H * 0.24;
-    c.save();
-    c.translate(cx, cy);
-    c.rotate(t * 0.05);
-    for (let i = 0; i < 180; i++) {
-      const r = i * 0.45;
-      const a = i * 0.35;
-      const px = Math.cos(a) * r;
-      const py = Math.sin(a) * r * 0.55;
-      const alpha = 0.5 - i * 0.0022;
-      if (alpha <= 0) break;
-      c.fillStyle = `rgba(160,110,70,${alpha})`;
-      c.fillRect(px, py, 1, 1);
-    }
-    c.restore();
+// Deterministic PRNG so "random" element placements (spikes, rift jitter)
+// don't shimmer each frame.
+function seededRand(seed) {
+  let s = (seed | 0) || 1;
+  return () => {
+    s = (s * 1664525 + 1013904223) | 0;
+    return ((s >>> 0) % 100000) / 100000;
+  };
+}
+
+function tileY(baseY) {
+  return ((baseY + sceneScrollY) % SCENE_WRAP + SCENE_WRAP) % SCENE_WRAP;
+}
+
+function drawNebulaTile(tile, y) {
+  for (const b of tile.blobs) {
+    const bx = tile.cx + b.dx;
+    const by = y + b.dy;
+    const g = ctx.createRadialGradient(bx, by, 0, bx, by, b.r);
+    g.addColorStop(0, 'rgba(80,20,120,0.08)');
+    g.addColorStop(1, 'rgba(80,20,120,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(bx, by, b.r, 0, 6.28);
+    ctx.fill();
   }
 }
 
-function renderSceneIfNeeded() {
-  const desired = sceneFor(planetsPassed);
-  if (desired !== sceneIdx) {
-    prevSceneCtx.clearRect(0, 0, W, H);
-    prevSceneCtx.drawImage(sceneCanvas, 0, 0);
-    prevSceneIdx = sceneIdx;
-    sceneIdx = desired;
-    transitionAlpha = 0;
-    paintScene(sceneCtx, sceneIdx, frame);
-    sceneRenderedFrame = frame;
-  } else {
-    // Repaint on first call (sceneRenderedFrame < 0), on frame reset
-    // (sceneDelta < 0 — game restart), and every SCENE_UPDATE_INTERVAL frames.
-    const sceneDelta = frame - sceneRenderedFrame;
-    if (sceneRenderedFrame < 0 || sceneDelta < 0 || sceneDelta >= SCENE_UPDATE_INTERVAL) {
-      paintScene(sceneCtx, sceneIdx, frame);
-      sceneRenderedFrame = frame;
-    }
+function drawDyingStarTile(tile, y) {
+  // Soft red/orange core — radial gradient only, no solid circle.
+  const g = ctx.createRadialGradient(tile.cx, y, 0, tile.cx, y, tile.r);
+  g.addColorStop(0,    'rgba(180,50,0,0.1)');
+  g.addColorStop(0.5,  'rgba(180,50,0,0.05)');
+  g.addColorStop(1,    'rgba(180,50,0,0)');
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(tile.cx, y, tile.r, 0, 6.28);
+  ctx.fill();
+  // Irregular spike/flare lines radiating outward.
+  const rnd = seededRand(tile.spikeSeed);
+  ctx.strokeStyle = 'rgba(200,80,0,0.06)';
+  ctx.lineWidth = 1;
+  for (let i = 0; i < tile.spikes; i++) {
+    const ang = rnd() * 6.28;
+    const len = tile.spikeBase + rnd() * 20;
+    const ir = tile.r * 0.45;
+    const x1 = tile.cx + Math.cos(ang) * ir;
+    const y1 = y + Math.sin(ang) * ir;
+    const x2 = tile.cx + Math.cos(ang) * (ir + len);
+    const y2 = y + Math.sin(ang) * (ir + len);
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
   }
-  if (transitionAlpha < 1) transitionAlpha = Math.min(1, transitionAlpha + 0.001);
+}
+
+function drawGalaxyTile(tile, y) {
+  const half = tile.size / 2;
+  // Center glow
+  const g = ctx.createRadialGradient(tile.cx, y, 0, tile.cx, y, half * 0.6);
+  g.addColorStop(0, 'rgba(200,180,150,0.08)');
+  g.addColorStop(1, 'rgba(200,180,150,0)');
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(tile.cx, y, half * 0.6, 0, 6.28);
+  ctx.fill();
+  // Two faint spiral arcs via quadraticCurveTo, rotated opposite each other.
+  ctx.strokeStyle = 'rgba(180,160,120,0.05)';
+  ctx.lineWidth = 1;
+  for (let i = 0; i < 2; i++) {
+    const dir = i === 0 ? 1 : -1;
+    ctx.save();
+    ctx.translate(tile.cx, y);
+    ctx.rotate(tile.rot + i * Math.PI);
+    ctx.beginPath();
+    ctx.moveTo(-half, 0);
+    ctx.quadraticCurveTo(0, dir * half * 0.7, half, 0);
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+function drawRiftTile(tile, y) {
+  // Subtle glow under the rift
+  const midX = (tile.startX + tile.endX) / 2;
+  const midY = y + tile.drop / 2;
+  const glow = ctx.createRadialGradient(midX, midY, 0, midX, midY, tile.drop * 0.6);
+  glow.addColorStop(0, 'rgba(100,0,180,0.06)');
+  glow.addColorStop(1, 'rgba(100,0,180,0)');
+  ctx.fillStyle = glow;
+  ctx.beginPath();
+  ctx.arc(midX, midY, tile.drop * 0.6, 0, 6.28);
+  ctx.fill();
+  // Crack: series of short lines with slight angle jitter, forming a jagged
+  // diagonal from (startX, y) to (endX, y + drop).
+  const rnd = seededRand(tile.seed);
+  ctx.strokeStyle = 'rgba(100,0,180,0.07)';
+  ctx.lineWidth = 1.2;
+  let px = tile.startX, py = y;
+  const dx = (tile.endX - tile.startX) / tile.segments;
+  const dy = tile.drop / tile.segments;
+  for (let i = 0; i < tile.segments; i++) {
+    const jitterX = (rnd() - 0.5) * 14;
+    const jitterY = (rnd() - 0.5) * 10;
+    const nx = px + dx + jitterX;
+    const ny = py + dy + jitterY;
+    ctx.beginPath();
+    ctx.moveTo(px, py);
+    ctx.lineTo(nx, ny);
+    ctx.stroke();
+    px = nx; py = ny;
+  }
+}
+
+function drawTiles(tiles, drawFn) {
+  for (const tile of tiles) {
+    const y = tileY(tile.baseY);
+    drawFn(tile, y);
+    drawFn(tile, y - SCENE_WRAP);
+  }
+}
+
+function drawBackgroundScene(pp) {
+  if (pp < 50) return;
+  if (pp < 150)      drawTiles(NEBULA_TILES, drawNebulaTile);
+  else if (pp < 300) drawTiles(DYING_STAR_TILES, drawDyingStarTile);
+  else if (pp < 500) drawTiles(GALAXY_TILES, drawGalaxyTile);
+  else               drawTiles(RIFT_TILES, drawRiftTile);
+}
+
+function updateSceneScroll() {
+  // Match the star field: only scroll during gameplay.
+  if (state === 'playing') {
+    sceneScrollY = (sceneScrollY + scrollSpeed() * 0.25) % SCENE_WRAP;
+  }
 }
 
 function drawBg() {
   // Solid background (simplified from createLinearGradient)
   ctx.fillStyle = '#00000a';
   ctx.fillRect(0, 0, W, H);
-  // Dynamic scene layer — always behind the star field. Capped at
-  // SCENE_MAX_ALPHA to keep it subtle; cross-fades between scene indexes.
-  renderSceneIfNeeded();
-  if (transitionAlpha < 1 && prevSceneIdx !== sceneIdx) {
-    ctx.globalAlpha = SCENE_MAX_ALPHA * (1 - transitionAlpha);
-    ctx.drawImage(prevSceneCanvas, 0, 0);
-  }
-  ctx.globalAlpha = SCENE_MAX_ALPHA * transitionAlpha;
-  ctx.drawImage(sceneCanvas, 0, 0);
-  ctx.globalAlpha = 1;
+  // Dynamic scene — direct draw to main ctx, before stars. Scenes switch
+  // instantly and parallax-scroll at 25% of scroll speed.
+  updateSceneScroll();
+  drawBackgroundScene(planetsPassed + hyperSpeedBonus);
   // Nebula: repaint to offscreen only every NEBULA_UPDATE_INTERVAL frames.
   // Negative delta = frame was reset (game restart), so repaint too.
   const nebDelta = frame - nebulaRenderedFrame;
@@ -3904,6 +3966,8 @@ function goToMainMenu() {
   hyperspeedCurrentMult = 1; hyperspeedTargetSpeed = 0;
   hyperspeedPeakMult = 1; hyperspeedActiveDuration = HYPERSPEED_DURATION;
   hyperSpeedStacks = 0;
+  hyperSpeedBonus = 0;
+  sceneScrollY = 0;
   hyperSpeedTimers = [];
   peakHyperSpeedStacks = 0;
   if (hyperspeedWhooshNodes) { try { hyperspeedWhooshNodes.stop(0.1); } catch {} hyperspeedWhooshNodes = null; }
