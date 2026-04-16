@@ -3,7 +3,7 @@ const {
   DynamoDBDocumentClient,
   PutCommand,
   QueryCommand,
-  DeleteCommand,
+  UpdateCommand,
 } = require("@aws-sdk/lib-dynamodb");
 
 const client = new DynamoDBClient({});
@@ -16,6 +16,8 @@ const CORS_HEADERS = {
 };
 
 const VALID_DIFFICULTIES = ["NORMAL", "HARD", "EXTREME"];
+const SHORT_TTL_SECONDS = 7 * 24 * 60 * 60;
+const LONG_TTL_SECONDS = 30 * 24 * 60 * 60;
 
 exports.handler = async (event) => {
   if (event.requestContext?.http?.method === "OPTIONS") {
@@ -78,7 +80,9 @@ exports.handler = async (event) => {
     };
   }
 
-  const ttl = Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60;
+  const now = Math.floor(Date.now() / 1000);
+  const shortTtl = now + SHORT_TTL_SECONDS;
+  const longTtl = now + LONG_TTL_SECONDS;
 
   await ddb.send(
     new PutCommand({
@@ -87,36 +91,37 @@ exports.handler = async (event) => {
         difficulty,
         score,
         username,
-        ttl,
+        ttl: shortTtl,
         timestamp: new Date().toISOString(),
       },
     })
   );
 
-  // Trim the table down to the top 10 for this difficulty: query ascending
-  // and delete everything beyond the top 10 (the lowest scores).
+  // Query all scores for this difficulty, descending, and promote the top 10
+  // to the long TTL. Scores outside the top 10 keep their short TTL and
+  // expire naturally — nothing is ever deleted here.
   const all = await ddb.send(
     new QueryCommand({
       TableName: "drift-leaderboard",
       KeyConditionExpression: "difficulty = :d",
       ExpressionAttributeValues: { ":d": difficulty },
-      ScanIndexForward: true,
+      ScanIndexForward: false,
     })
   );
-  const items = all.Items || [];
-  if (items.length > 10) {
-    const toDelete = items.slice(0, items.length - 10);
-    await Promise.all(
-      toDelete.map((item) =>
-        ddb.send(
-          new DeleteCommand({
-            TableName: "drift-leaderboard",
-            Key: { difficulty: item.difficulty, score: item.score },
-          })
-        )
+  const topTen = (all.Items || []).slice(0, 10);
+  await Promise.all(
+    topTen.map((item) =>
+      ddb.send(
+        new UpdateCommand({
+          TableName: "drift-leaderboard",
+          Key: { difficulty: item.difficulty, score: item.score },
+          UpdateExpression: "SET #ttl = :ttl",
+          ExpressionAttributeNames: { "#ttl": "ttl" },
+          ExpressionAttributeValues: { ":ttl": longTtl },
+        })
       )
-    );
-  }
+    )
+  );
 
   return {
     statusCode: 200,
