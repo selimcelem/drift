@@ -2933,7 +2933,7 @@ const prevSceneCanvas = document.createElement('canvas');
 prevSceneCanvas.width = W; prevSceneCanvas.height = H;
 const prevSceneCtx = prevSceneCanvas.getContext('2d');
 const SCENE_UPDATE_INTERVAL = 180;
-const SCENE_MAX_ALPHA = 0.12;
+const SCENE_MAX_ALPHA = 0.25;
 let sceneIdx = 0;
 let prevSceneIdx = 0;
 let transitionAlpha = 1;       // 1 = fully on current scene, <1 = still fading
@@ -2948,6 +2948,7 @@ function sceneFor(pp) {
 }
 
 function paintScene(c, idx, f) {
+  console.log('painting scene', idx, 'at frame', f, 'planetsPassed', planetsPassed);
   c.clearRect(0, 0, W, H);
   if (idx === 0) return;
   const t = f * 0.0005;
@@ -3024,7 +3025,6 @@ function paintScene(c, idx, f) {
 
 function renderSceneIfNeeded() {
   const desired = sceneFor(planetsPassed);
-  const sceneDelta = frame - sceneRenderedFrame;
   if (desired !== sceneIdx) {
     prevSceneCtx.clearRect(0, 0, W, H);
     prevSceneCtx.drawImage(sceneCanvas, 0, 0);
@@ -3033,9 +3033,14 @@ function renderSceneIfNeeded() {
     transitionAlpha = 0;
     paintScene(sceneCtx, sceneIdx, frame);
     sceneRenderedFrame = frame;
-  } else if (sceneRenderedFrame < 0 || sceneDelta < 0 || sceneDelta >= SCENE_UPDATE_INTERVAL) {
-    paintScene(sceneCtx, sceneIdx, frame);
-    sceneRenderedFrame = frame;
+  } else {
+    // Repaint on first call (sceneRenderedFrame < 0), on frame reset
+    // (sceneDelta < 0 — game restart), and every SCENE_UPDATE_INTERVAL frames.
+    const sceneDelta = frame - sceneRenderedFrame;
+    if (sceneRenderedFrame < 0 || sceneDelta < 0 || sceneDelta >= SCENE_UPDATE_INTERVAL) {
+      paintScene(sceneCtx, sceneIdx, frame);
+      sceneRenderedFrame = frame;
+    }
   }
   if (transitionAlpha < 1) transitionAlpha = Math.min(1, transitionAlpha + 0.001);
 }
