@@ -2940,26 +2940,26 @@ bgImages.galaxy.src    = 'assets/bg-galaxy.jpg';
 bgImages.supernova.src = 'assets/bg-supernova.jpg';
 
 let bgObjects = [];
-let nextBgSpawn = 0;            // planetsPassed threshold for next spawn
+let lastBgSpawnFrame = -99999;  // frame index of most recent spawn
+let nextBgSpawnDelay = 45 * 60; // frames until the next scheduled spawn
 let lastBgImageKey = null;      // prevents same image twice in a row
 let nextBgSide = 'left';        // alternates 'left' / 'right'
 
 function nextBgSpawnStep() {
-  return 400 + Math.floor(Math.random() * 201);  // 400-600 inclusive
+  // 60-90 seconds between subsequent spawns at 60fps.
+  return 3600 + Math.floor(Math.random() * 1801);
 }
 
 function resetBgObjects() {
   bgObjects = [];
-  nextBgSpawn = nextBgSpawnStep();
+  lastBgSpawnFrame = -99999;    // ensures first spawn triggers at 45s in
+  nextBgSpawnDelay = 45 * 60;   // 2700 frames = 45s at 60fps
   lastBgImageKey = null;
   nextBgSide = Math.random() < 0.5 ? 'left' : 'right';
 }
 resetBgObjects();
 
-function maybeSpawnBgObject() {
-  if (planetsPassed < nextBgSpawn) return;
-  // Defer spawning while 2 are already on-screen — retry next frame.
-  if (bgObjects.length >= 2) return;
+function spawnBgObject() {
   const pool = BG_IMAGE_KEYS.filter(k => k !== lastBgImageKey);
   const key = pool[Math.floor(Math.random() * pool.length)];
   const x = nextBgSide === 'left'
@@ -2970,7 +2970,20 @@ function maybeSpawnBgObject() {
   bgObjects.push({ key, x, y: -300, size, opacity });
   lastBgImageKey = key;
   nextBgSide = nextBgSide === 'left' ? 'right' : 'left';
-  nextBgSpawn = planetsPassed + nextBgSpawnStep();
+  lastBgSpawnFrame = frame;
+  nextBgSpawnDelay = nextBgSpawnStep();
+}
+
+function maybeSpawnBgObject() {
+  if (bgObjects.length >= 2) return;
+  const sinceLast = frame - lastBgSpawnFrame;
+  // Normal schedule: wait nextBgSpawnDelay frames since last spawn.
+  const scheduledReady = sinceLast >= nextBgSpawnDelay;
+  // Hyperspeed shortcut: counts as distance travelled — while stacks >= 3,
+  // allow an extra spawn if it's been at least 30s since the last one.
+  const hyperspeedReady = hyperSpeedStacks >= 3 && sinceLast >= 30 * 60;
+  if (!scheduledReady && !hyperspeedReady) return;
+  spawnBgObject();
 }
 
 function updateBgObjects() {
