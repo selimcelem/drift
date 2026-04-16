@@ -2934,10 +2934,10 @@ const bgImages = {
   galaxy:    new Image(),
   supernova: new Image(),
 };
-bgImages.nebula.src    = 'assets/bg-nebula.jpg';
-bgImages.dyingStar.src = 'assets/bg-dying-star.jpg';
-bgImages.galaxy.src    = 'assets/bg-galaxy.jpg';
-bgImages.supernova.src = 'assets/bg-supernova.jpg';
+bgImages.nebula.src    = './assets/bg-nebula.jpg?v=' + Date.now();
+bgImages.dyingStar.src = './assets/bg-dying-star.jpg?v=' + Date.now();
+bgImages.galaxy.src    = './assets/bg-galaxy.jpg?v=' + Date.now();
+bgImages.supernova.src = './assets/bg-supernova.jpg?v=' + Date.now();
 
 let bgObjects = [];
 let lastBgSpawnFrame = -99999;  // frame index of most recent spawn
