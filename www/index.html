@@ -783,16 +783,18 @@ canvas.width = W;
 canvas.height = H;
 
 
-// Tell the StatusBar plugin to overlay the WebView and then hide the bars.
-// This is the official Capacitor edge-to-edge path — more reliable across
-// Samsung/Pixel OEMs than doing the inset dance in MainActivity.
+// Let the game render under the status bar while keeping the system icons
+// visible. The bar itself is transparent (#00000000) so there's no white
+// strip; DARK style makes the icons light-on-transparent to stay readable
+// against the deep-space canvas.
 (function setupStatusBar() {
   const Cap = window.Capacitor;
   const StatusBar = Cap && Cap.Plugins && Cap.Plugins.StatusBar;
   if (!StatusBar) return;
   try {
     StatusBar.setOverlaysWebView({ overlay: true });
-    StatusBar.hide();
+    StatusBar.setStyle({ style: 'DARK' });
+    StatusBar.setBackgroundColor({ color: '#00000000' });
   } catch (err) {
     console.warn('[statusbar] setup failed', err);
   }
