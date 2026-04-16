@@ -1,5 +1,11 @@
 {
   "appId": "com.selimcelem.drift",
   "appName": "Drift",
-  "webDir": "www"
+  "webDir": "www",
+  "android": {
+    "backgroundColor": "#00000a",
+    "allowMixedContent": true,
+    "captureInput": true,
+    "webContentsDebuggingEnabled": false
+  }
 }

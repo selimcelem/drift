@@ -835,7 +835,7 @@ let screenShake = 0;
 let pickupParticles = [];
 let planetRipples = [];
 let pendingNovaTimeouts = [];
-let destroyFlashes = [];   // per-planet destruction visuals (flash + ring + debris)
+let destroyEffects = [];   // per-planet destruction visuals (flash + ring + debris)
 let deathShards = [];      // orb shatter pieces spawned on player death
 let deathFlashFrames = 0;  // 1-frame white player flash on death
 let pendingDeathBurstTimer = null; // setTimeout for the delayed particle burst
@@ -846,7 +846,7 @@ const NOVA_RINGS_CAP    = 20;
 const PICKUP_PART_CAP   = 200;
 const PLANET_RIPPLE_CAP = 50;
 const DEATH_PART_CAP    = 60;
-const DESTROY_FLASH_CAP = 30;
+const DESTROY_EFFECTS_CAP = 40;
 function pushCapped(arr, item, cap) {
   if (arr.length >= cap) arr.shift();
   arr.push(item);
@@ -1117,6 +1117,58 @@ const SFX = (function() {
     killOnEnd(o, g);
   }
 
+  // Reusable tanh waveshaper for chiptune-explosion crunch. `amount` in the
+  // 200-400 range effectively hard-clips the signal, turning a clean square
+  // into a growly, distorted crunch.
+  function makeDistortion(amount) {
+    const ws = ctx.createWaveShaper();
+    const n = 256;
+    const curve = new Float32Array(n);
+    const k = amount || 0;
+    for (let i = 0; i < n; i++) {
+      const x = (i * 2 / n) - 1;
+      curve[i] = Math.tanh(k * x);
+    }
+    ws.curve = curve;
+    ws.oversample = '2x';
+    return ws;
+  }
+
+  // chipSweep routed through a waveshaper — the distorted version used for
+  // the crunchy square-wave layers in planetDestroyed.
+  function crunchSweep(type, fStart, fEnd, start, dur, vol, amount) {
+    const o = ctx.createOscillator();
+    const ws = makeDistortion(amount);
+    const g = ctx.createGain();
+    o.type = type;
+    o.frequency.setValueAtTime(fStart, start);
+    o.frequency.exponentialRampToValueAtTime(Math.max(0.0001, fEnd), start + dur);
+    g.gain.setValueAtTime(0.0001, start);
+    g.gain.linearRampToValueAtTime(vol, start + 0.005);
+    g.gain.exponentialRampToValueAtTime(0.001, start + dur);
+    o.connect(ws); ws.connect(g); g.connect(sfxGain);
+    o.start(start); o.stop(start + dur + 0.02);
+    killOnEnd(o, ws, g);
+  }
+
+  // Frequency-swept filtered noise — used for the "eerie high end" sweep
+  // in the ghost destroy and similar effects.
+  function sweepNoise(start, dur, filterType, fStart, fEnd, q, vol) {
+    const n = ctx.createBufferSource();
+    n.buffer = noiseBuffer(dur + 0.02, x => 1 - x);
+    const f = ctx.createBiquadFilter();
+    f.type = filterType;
+    if (typeof q === 'number') f.Q.value = q;
+    f.frequency.setValueAtTime(fStart, start);
+    f.frequency.exponentialRampToValueAtTime(Math.max(0.0001, fEnd), start + dur);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(vol, start);
+    g.gain.exponentialRampToValueAtTime(0.001, start + dur);
+    n.connect(f); f.connect(g); g.connect(sfxGain);
+    n.start(start); n.stop(start + dur + 0.04);
+    killOnEnd(n, f, g);
+  }
+
   // Bandpass noise burst — explosions and crunches.
   function noiseBurst(start, dur, centerHz, q, vol, fadeShape) {
     const n = ctx.createBufferSource();
@@ -1162,13 +1214,20 @@ const SFX = (function() {
     killOnEnd(o, g);
   }
 
-  // Supernova combo kill — same three layers as planetDestroyed('nova') but
-  // with a deeper square sweep (120→15hz) and every layer 1.4x louder.
+  // Supernova/combo kill — same 4 layers as planetDestroyed('nova') but
+  // every volume boosted 1.5x, plus a chest-thumping sub-sine layer.
   function novaBoom(t, vScale) {
-    const s = (vScale || 1) * 1.4;
-    chipSweep('square', 120, 15, t, 0.3, 0.45 * s);
-    noiseBurst(t, 0.25, 350, 1.0, 0.45 * s, x => Math.pow(1 - x, 1.0));
-    chipSweep('sine', 60, 60, t, 0.2, 0.45 * s);
+    const s = (vScale || 1) * 1.5;
+    // Layer 1: crunchy square 320→15hz 0.35s
+    crunchSweep('square', 320, 15, t, 0.35, 0.55 * s, 350);
+    // Layer 2: bandpass noise 80-400hz 0.3s — massive debris
+    noiseBurst(t, 0.3, 240, 0.9, 0.55 * s, x => Math.pow(1 - x, 1.0));
+    // Layer 3: crunchy square 180→10hz 0.25s delayed 0.05s
+    crunchSweep('square', 180, 10, t + 0.05, 0.25, 0.55 * s, 350);
+    // Layer 4: highpass noise 2000hz 0.1s — crack/sizzle on top
+    sweepNoise(t, 0.1, 'highpass', 2000, 2000, 0, 0.55 * s);
+    // Extra layer: sub sine 40→8hz 0.4s chest thump
+    chipSweep('sine', 40, 8, t, 0.4, 0.55 * s);
   }
 
   function attract(_frame) {
@@ -1258,34 +1317,32 @@ const SFX = (function() {
   function planetDestroyed(kind) {
     safeSfx(t => {
       if (kind === 'shield') {
-        // 8-bit crunch: square sweep 220→40hz + bandpass noise 200-800hz.
-        chipSweep('square', 220, 40, t, 0.2, 0.35);
-        noiseBurst(t, 0.15, 500, 1.0, 0.35, x => Math.pow(1 - x, 1.1));
-
-      } else if (kind === 'nova') {
-        // 3-layer retro boom: square sweep + mid noise + sub sine.
-        chipSweep('square', 180, 20, t, 0.3, 0.45);
-        noiseBurst(t, 0.25, 350, 1.0, 0.45, x => Math.pow(1 - x, 1.0));
-        chipSweep('sine', 60, 60, t, 0.2, 0.45);
+        // CRUNCHY STANDARD EXPLOSION — 3 simultaneous layers, vol 0.45.
+        // Layer 1: crunchy square 280→30hz 0.18s (main crunch, waveshaped)
+        crunchSweep('square', 280, 30, t, 0.18, 0.45, 300);
+        // Layer 2: bandpass noise 150-600hz 0.15s (debris)
+        noiseBurst(t, 0.15, 375, 1.0, 0.45, x => Math.pow(1 - x, 1.1));
+        // Layer 3: square 120→20hz 0.12s, delayed 0.02s (rumble)
+        chipSweep('square', 120, 20, t + 0.02, 0.12, 0.45);
 
       } else if (kind === 'ghost') {
-        // Quieter eerie whomp: sine drop + short highpass noise tail.
-        chipSweep('sine', 300, 80, t, 0.15, 0.2);
-        const n = ctx.createBufferSource();
-        n.buffer = noiseBuffer(0.1, x => 1 - x);
-        const hp = ctx.createBiquadFilter();
-        hp.type = 'highpass'; hp.frequency.value = 3000;
-        const ng = ctx.createGain();
-        ng.gain.setValueAtTime(0.2, t);
-        ng.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
-        n.connect(hp); hp.connect(ng); ng.connect(sfxGain);
-        n.start(t); n.stop(t + 0.12);
-        killOnEnd(n, hp, ng);
+        // GHOSTLY EXPLOSION — 3 layers, vol 0.3.
+        chipSweep('square', 200, 25, t, 0.15, 0.3);
+        sweepNoise(t, 0.12, 'highpass', 4000, 800, 0, 0.3);
+        chipSweep('sine', 400, 50, t, 0.1, 0.3);
+
+      } else if (kind === 'nova') {
+        // MASSIVE CINEMATIC EXPLOSION — 4 layers, vol 0.55. Waveshaper
+        // distortion on the two square layers for maximum crunch.
+        crunchSweep('square', 320, 15, t, 0.35, 0.55, 350);
+        noiseBurst(t, 0.3, 240, 0.9, 0.55, x => Math.pow(1 - x, 1.0));
+        crunchSweep('square', 180, 10, t + 0.05, 0.25, 0.55, 350);
+        sweepNoise(t, 0.1, 'highpass', 2000, 2000, 0, 0.55);
 
       } else if (kind === 'barrier') {
-        // Machine-gun feel when chained: sharp square zap + short noise burst.
-        chipSweep('square', 400, 60, t, 0.1, 0.3);
-        noiseBurst(t, 0.08, 800, 0.6, 0.3, x => 1 - x);
+        // HYPERSPEED ZAP CRUNCH — 2 layers, vol 0.4.
+        crunchSweep('square', 500, 40, t, 0.12, 0.4, 280);
+        noiseBurst(t, 0.1, 500, 1.2, 0.4, x => 1 - x);
       }
     });
   }
@@ -1925,95 +1982,243 @@ function emitDestroyBurst(x, y, rgb) {
   trimParticles();
 }
 
-// Per-destruction-kind tints for the flash circle. The ring uses the planet's
-// own glow color; only the flash tint changes by kind.
-const DESTROY_FLASH_COLORS = {
-  shield:  '180,240,255',  // cyan
-  nova:    '255,150,80',   // orange/red
-  ghost:   '210,140,255',  // purple translucent
-  barrier: '255,220,90',   // gold
-};
-
-// Spawn a brief flash + expanding ring + small debris cloud at a destroyed
-// planet's location. `kind` selects the flash tint and size multiplier; `body`
-// supplies position, radius, and the planet's glow color for the ring.
-function emitDestroyFlash(body, kind) {
-  const flashRgb = DESTROY_FLASH_COLORS[kind] || '255,255,255';
-  // Nova destructions get a slightly larger flash; ghost passthrough is
-  // smaller and more translucent than the others.
-  let flashScale = 2;
-  let flashAlpha = 1;
-  if (kind === 'nova') flashScale = 2.5;
-  else if (kind === 'ghost') { flashScale = 1.5; flashAlpha = 0.7; }
-
-  // 6-8 debris dots fly outward at random angles with a slight downward pull.
-  const debrisCount = 6 + Math.floor(Math.random() * 3);
-  const debris = [];
-  for (let i = 0; i < debrisCount; i++) {
-    const a = Math.random() * Math.PI * 2;
-    const sp = 1.4 + Math.random() * 2.6;
-    debris.push({
-      x: body.x, y: body.y,
-      vx: Math.cos(a) * sp,
-      vy: Math.sin(a) * sp,
-      r: 2 + Math.random(),
-    });
-  }
-
-  pushCapped(destroyFlashes, {
-    x: body.x, y: body.y,
-    baseR: body.radius,
-    flashMaxR: body.radius * flashScale,
-    ringMaxR:  body.radius * 4,
-    flashRgb,
-    flashAlpha,
-    ringColor: body.glowColor || `rgba(${flashRgb},1)`,
-    debris,
-    age: 0,
-  }, DESTROY_FLASH_CAP);
+// Spawn a distinct visual effect per destroy kind. Each entry lives in the
+// unified destroyEffects array and is capped so simultaneous combo kills
+// can't blow up the allocation. Directional barrier effects assume world-
+// down travel (planets scroll down past the player).
+function countEffectKind(k) {
+  let n = 0;
+  for (const e of destroyEffects) if (e.kind === k) n++;
+  return n;
 }
 
-// Update + draw all destroy flashes. Components have different lifetimes
-// (flash 9f / ring 18f / debris 24f); the entry is dropped at age 24.
-const FLASH_LIFE  = 9;   // 0.15s @60fps
-const RING_LIFE   = 18;  // 0.30s
-const DEBRIS_LIFE = 24;  // 0.40s
-function drawDestroyFlashes() {
-  destroyFlashes = destroyFlashes.filter(f => f.age < DEBRIS_LIFE);
-  for (const f of destroyFlashes) {
-    f.age++;
+function pushEffect(e) {
+  if (destroyEffects.length >= DESTROY_EFFECTS_CAP) destroyEffects.shift();
+  destroyEffects.push(e);
+}
 
-    // Flash circle: white-tinted disc that expands and fades over FLASH_LIFE.
-    if (f.age <= FLASH_LIFE) {
-      const t = f.age / FLASH_LIFE;
-      const r = f.flashMaxR * t;
-      const alpha = (1 - t) * f.flashAlpha;
-      ctx.globalAlpha = alpha;
-      ctx.fillStyle = `rgba(${f.flashRgb},1)`;
-      ctx.beginPath(); ctx.arc(f.x, f.y, r, 0, 6.28); ctx.fill();
+function emitDestroyEffects(body, kind) {
+  if (kind === 'nova' || kind === 'supernova') {
+    const isSuper = kind === 'supernova';
+    const ringScale = isSuper ? 4 : 3;
+    const flashR   = body.radius * (isSuper ? 2.2 : 1.5);
+    const fragsWant = isSuper ? 12 + Math.floor(Math.random() * 3)
+                               :  8 + Math.floor(Math.random() * 3);
+    // Center flash
+    pushEffect({ kind: 'novaFlash', x: body.x, y: body.y, age: 0, maxLife: isSuper ? 8 : 6,
+                 r: flashR, color: '255,240,200' });
+    // Shockwave ring in planet's color
+    pushEffect({ kind: 'novaShock', x: body.x, y: body.y, age: 0, maxLife: isSuper ? 22 : 18,
+                 maxR: body.radius * ringScale, color: body.glowColor || 'rgba(255,160,90,1)' });
+    // Fragments — capped at 15 total across all simultaneous nova kills.
+    const have = countEffectKind('novaFrag');
+    const fragsAdd = Math.max(0, Math.min(fragsWant, 15 - have));
+    for (let i = 0; i < fragsAdd; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const sp = 1.8 + Math.random() * 2.6;
+      pushEffect({
+        kind: 'novaFrag', x: body.x, y: body.y,
+        vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+        age: 0, maxLife: 30,
+        angle: Math.random() * Math.PI * 2,
+        spin: (Math.random() - 0.5) * 0.35,
+        size: 4 + Math.random() * 4,
+        sides: 3 + Math.floor(Math.random() * 2),
+        color: body.glowColor || 'rgba(255,180,120,1)',
+      });
     }
 
-    // Ring pulse: stroke that expands to ringMaxR over RING_LIFE.
-    if (f.age <= RING_LIFE) {
-      const t = f.age / RING_LIFE;
-      const r = f.ringMaxR * t;
-      const alpha = (1 - t) * 0.8;
-      ctx.globalAlpha = alpha;
-      ctx.strokeStyle = f.ringColor;
-      ctx.lineWidth = 2.2;
-      ctx.beginPath(); ctx.arc(f.x, f.y, r, 0, 6.28); ctx.stroke();
+  } else if (kind === 'shield') {
+    // Scan lines: 4-6 cyan laser lines sweep horizontally in 0.2s.
+    const dir = Math.random() < 0.5 ? 1 : -1;
+    const lines = 4 + Math.floor(Math.random() * 3);
+    for (let i = 0; i < lines; i++) {
+      const laneY = (i / Math.max(1, lines - 1) - 0.5) * body.radius * 1.8;
+      pushEffect({ kind: 'shieldScan', x: body.x, y: body.y + laneY,
+                   dir, baseR: body.radius, age: 0, maxLife: 12 });
+    }
+    // Sparks: perpendicular to scan = vertical. Cap 20 per kill.
+    const sparkCount = Math.min(20, 12 + Math.floor(Math.random() * 4));
+    for (let i = 0; i < sparkCount; i++) {
+      const vy = (Math.random() < 0.5 ? -1 : 1) * (1.0 + Math.random() * 2.2);
+      const vx = (Math.random() - 0.5) * 0.8;
+      pushEffect({
+        kind: 'shieldSpark',
+        x: body.x + (Math.random() - 0.5) * body.radius * 1.6,
+        y: body.y + (Math.random() - 0.5) * body.radius * 1.6,
+        vx, vy, age: 0, maxLife: 18,
+        color: Math.random() < 0.5 ? '180,240,255' : '255,255,255',
+      });
+    }
+    // Afterburn glow — 0.15s.
+    pushEffect({ kind: 'shieldAfter', x: body.x, y: body.y, age: 0, maxLife: 9,
+                 r: body.radius * 1.4 });
+
+  } else if (kind === 'barrier') {
+    const travel = Math.PI / 2; // world-down
+    // Impact streak in direction of travel — 0.08s.
+    pushEffect({ kind: 'barrierStreak', x: body.x, y: body.y, age: 0, maxLife: 5,
+                 len: body.radius * 2, angle: travel });
+    // Compression wave squashed in travel direction — 0.2s.
+    pushEffect({ kind: 'barrierComp', x: body.x, y: body.y, age: 0, maxLife: 12,
+                 maxR: body.radius * 3, angle: travel });
+    // Fragments flying BACKWARD (upward) — cap 8 per kill.
+    const fragCount = Math.min(8, 5 + Math.floor(Math.random() * 2));
+    for (let i = 0; i < fragCount; i++) {
+      const spread = (Math.random() - 0.5) * (Math.PI * 0.6);
+      const a = -Math.PI / 2 + spread; // upward
+      const sp = 2.0 + Math.random() * 2.0;
+      pushEffect({
+        kind: 'barrierFrag', x: body.x, y: body.y,
+        vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+        age: 0, maxLife: 22,
+        angle: Math.random() * Math.PI * 2,
+        spin: (Math.random() - 0.5) * 0.4,
+        size: 3 + Math.random() * 3,
+        sides: 3,
+        color: '255,220,120',
+      });
     }
 
-    // Debris: dots with slight downward gravity, fading over DEBRIS_LIFE.
-    const dt = f.age / DEBRIS_LIFE;
-    const dAlpha = 1 - dt;
-    for (const d of f.debris) {
-      d.x += d.vx; d.y += d.vy;
-      d.vx *= 0.94;
-      d.vy = d.vy * 0.94 + 0.12; // gravity
-      ctx.globalAlpha = dAlpha;
-      ctx.fillStyle = `rgba(${f.flashRgb},1)`;
-      ctx.beginPath(); ctx.arc(d.x, d.y, d.r, 0, 6.28); ctx.fill();
+  } else if (kind === 'ghost') {
+    // Soft purple ripple.
+    pushEffect({ kind: 'ghostRipple', x: body.x, y: body.y, age: 0, maxLife: 24,
+                 maxR: body.radius * 2.8 });
+    // 4-5 wisps drift upward — cap 8.
+    const wispCount = Math.min(8, 4 + Math.floor(Math.random() * 2));
+    for (let i = 0; i < wispCount; i++) {
+      pushEffect({
+        kind: 'ghostWisp',
+        x: body.x + (Math.random() - 0.5) * body.radius * 0.8,
+        y: body.y + (Math.random() - 0.5) * body.radius * 0.4,
+        vx: (Math.random() - 0.5) * 0.4,
+        vy: -0.6 - Math.random() * 0.8,
+        age: 0, maxLife: 24,
+        size: 2.5 + Math.random() * 2,
+      });
+    }
+  }
+}
+
+function drawDestroyEffects() {
+  destroyEffects = destroyEffects.filter(e => e.age < e.maxLife);
+  for (const e of destroyEffects) {
+    e.age++;
+    const t = e.age / e.maxLife;
+
+    if (e.kind === 'novaFlash') {
+      ctx.globalAlpha = 1 - t;
+      ctx.fillStyle = `rgba(${e.color},1)`;
+      ctx.beginPath(); ctx.arc(e.x, e.y, e.r * (0.4 + t * 0.6), 0, 6.28); ctx.fill();
+
+    } else if (e.kind === 'novaShock') {
+      const r = e.maxR * t;
+      ctx.globalAlpha = (1 - t) * 0.9;
+      ctx.strokeStyle = e.color;
+      ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.arc(e.x, e.y, r, 0, 6.28); ctx.stroke();
+
+    } else if (e.kind === 'novaFrag') {
+      e.x += e.vx; e.y += e.vy;
+      e.vx *= 0.96;
+      e.vy = e.vy * 0.96 + 0.1; // slight gravity
+      e.angle += e.spin;
+      ctx.globalAlpha = 1 - t;
+      ctx.fillStyle = e.color;
+      ctx.save();
+      ctx.translate(e.x, e.y); ctx.rotate(e.angle);
+      ctx.beginPath();
+      for (let i = 0; i < e.sides; i++) {
+        const a = (i / e.sides) * 6.28;
+        const px = Math.cos(a) * e.size;
+        const py = Math.sin(a) * e.size;
+        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      }
+      ctx.closePath(); ctx.fill();
+      ctx.restore();
+
+    } else if (e.kind === 'shieldScan') {
+      const half = e.baseR * 1.2;
+      const lineX = e.x + e.dir * (-half + t * 2 * half);
+      ctx.globalAlpha = (1 - t) * 0.85;
+      ctx.strokeStyle = 'rgba(180,240,255,1)';
+      ctx.lineWidth = 1.8;
+      ctx.beginPath();
+      ctx.moveTo(lineX - e.dir * 8, e.y);
+      ctx.lineTo(lineX, e.y);
+      ctx.stroke();
+
+    } else if (e.kind === 'shieldSpark') {
+      e.x += e.vx; e.y += e.vy;
+      e.vx *= 0.95; e.vy *= 0.95;
+      ctx.globalAlpha = 1 - t;
+      ctx.fillStyle = `rgba(${e.color},1)`;
+      ctx.beginPath(); ctx.arc(e.x, e.y, 1.4, 0, 6.28); ctx.fill();
+
+    } else if (e.kind === 'shieldAfter') {
+      const alpha = (1 - t) * 0.55;
+      const g = ctx.createRadialGradient(e.x, e.y, 0, e.x, e.y, e.r);
+      g.addColorStop(0, `rgba(180,240,255,${alpha})`);
+      g.addColorStop(1, 'rgba(180,240,255,0)');
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(e.x, e.y, e.r, 0, 6.28); ctx.fill();
+
+    } else if (e.kind === 'barrierStreak') {
+      ctx.globalAlpha = 1 - t;
+      ctx.strokeStyle = 'rgba(255,240,180,1)';
+      ctx.lineWidth = 4;
+      const dx = Math.cos(e.angle) * e.len;
+      const dy = Math.sin(e.angle) * e.len;
+      ctx.beginPath();
+      ctx.moveTo(e.x - dx * 0.2, e.y - dy * 0.2);
+      ctx.lineTo(e.x + dx, e.y + dy);
+      ctx.stroke();
+
+    } else if (e.kind === 'barrierComp') {
+      const r = e.maxR * t;
+      ctx.globalAlpha = (1 - t) * 0.75;
+      ctx.strokeStyle = 'rgba(255,220,100,1)';
+      ctx.lineWidth = 2;
+      ctx.save();
+      ctx.translate(e.x, e.y);
+      ctx.rotate(e.angle);
+      ctx.scale(0.55, 1);
+      ctx.beginPath(); ctx.arc(0, 0, r, 0, 6.28); ctx.stroke();
+      ctx.restore();
+
+    } else if (e.kind === 'barrierFrag') {
+      e.x += e.vx; e.y += e.vy;
+      e.vx *= 0.95;
+      e.vy = e.vy * 0.95 + 0.1;
+      e.angle += e.spin;
+      ctx.globalAlpha = 1 - t;
+      ctx.fillStyle = `rgba(${e.color},1)`;
+      ctx.save();
+      ctx.translate(e.x, e.y); ctx.rotate(e.angle);
+      ctx.beginPath();
+      for (let i = 0; i < e.sides; i++) {
+        const a = (i / e.sides) * 6.28;
+        const px = Math.cos(a) * e.size;
+        const py = Math.sin(a) * e.size;
+        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      }
+      ctx.closePath(); ctx.fill();
+      ctx.restore();
+
+    } else if (e.kind === 'ghostRipple') {
+      const r = e.maxR * t;
+      ctx.globalAlpha = (1 - t) * 0.35;
+      ctx.strokeStyle = 'rgba(210,140,255,1)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(e.x, e.y, r, 0, 6.28); ctx.stroke();
+
+    } else if (e.kind === 'ghostWisp') {
+      e.x += e.vx; e.y += e.vy;
+      e.vx *= 0.97; e.vy *= 0.98;
+      ctx.globalAlpha = (1 - t) * 0.55;
+      ctx.fillStyle = 'rgba(210,180,255,1)';
+      ctx.beginPath(); ctx.arc(e.x, e.y, e.size, 0, 6.28); ctx.fill();
     }
   }
   ctx.globalAlpha = 1;
@@ -2359,7 +2564,7 @@ function resetGame() {
   novaRings = []; screenShake = 0;
   pickupParticles = [];
   planetRipples = [];
-  destroyFlashes = [];
+  destroyEffects = [];
   deathShards = [];
   deathFlashFrames = 0;
   if (pendingDeathBurstTimer) { clearTimeout(pendingDeathBurstTimer); pendingDeathBurstTimer = null; }
@@ -2492,7 +2697,7 @@ function checkCollisions() {
       if (dist(player, b) < b.radius + PLAYER_R) {
         if (wraith) {
           emitDestroyBurst(b.x, b.y, POWERUP_COLORS.ghost.rgb);
-          emitDestroyFlash(b, 'ghost');
+          emitDestroyEffects(b, 'ghost');
           addDestroyPoints();
           SFX.planetDestroyed('ghost');
           bodies.splice(i, 1);
@@ -2515,7 +2720,7 @@ function checkCollisions() {
     for (let i = 0; i < bodies.length; i++) {
       if (dist(player, bodies[i]) < bodies[i].radius + PLAYER_R) {
         emitDestroyBurst(bodies[i].x, bodies[i].y, POWERUP_COLORS.shield.rgb);
-        emitDestroyFlash(bodies[i], 'shield');
+        emitDestroyEffects(bodies[i], 'shield');
         SFX.shieldBreak();
         addDestroyPoints();
         bodies.splice(i, 1);
@@ -2646,7 +2851,7 @@ function update() {
     for (const b of bodies) {
       if (dist(player, b) < auraR + b.radius) {
         emitDestroyBurst(b.x, b.y, POWERUP_COLORS.nova.rgb);
-        emitDestroyFlash(b, 'nova');
+        emitDestroyEffects(b, 'nova');
         addDestroyPoints();
         SFX.planetDestroyed('nova');
       } else survivors.push(b);
@@ -2721,7 +2926,7 @@ function update() {
           killed = true;
           const color = r.supernova ? '255,90,80' : POWERUP_COLORS.nova.rgb;
           emitDestroyBurst(b.x, b.y, color);
-          emitDestroyFlash(b, 'nova');
+          emitDestroyEffects(b, r.supernova ? 'supernova' : 'nova');
           addDestroyPoints();
           if (activeCombos.nova_nova) SFX.comboDestroySound('nova_nova');
           else SFX.planetDestroyed('nova');
@@ -2743,7 +2948,7 @@ function update() {
       if (b.y < barrierY + b.radius + 20 && b.y > barrierY - 30 &&
           Math.abs(b.x - player.x) < barrierHalfW + b.radius) {
         emitDestroyBurst(b.x, b.y, POWERUP_COLORS.hyperspeed.rgb);
-        emitDestroyFlash(b, 'barrier');
+        emitDestroyEffects(b, 'barrier');
         addDestroyPoints();
         SFX.planetDestroyed('barrier');
       } else {
@@ -3754,7 +3959,7 @@ function render() {
       drawPlayer();
     }
     drawPickupParticles();
-    drawDestroyFlashes();
+    drawDestroyEffects();
     drawDeathShards();
     drawDeathParticles();
     if (state==='playing') drawHyperStackText();
@@ -3790,14 +3995,14 @@ function loop() {
   if (loopFrameCounter % 600 === 0) {
     const total = pickupParticles.length + deathParticles.length
                 + novaRings.length + planetRipples.length
-                + destroyFlashes.length + deathShards.length;
+                + destroyEffects.length + deathShards.length;
     if (total > 150) {
       console.warn('[loop] memory pressure: clearing', total, 'transient particles');
       pickupParticles = [];
       deathParticles = [];
       novaRings = [];
       planetRipples = [];
-      destroyFlashes = [];
+      destroyEffects = [];
       deathShards = [];
     }
   }
@@ -3884,7 +4089,7 @@ function goToMainMenu() {
   novaRings = [];
   pickupParticles = [];
   planetRipples = [];
-  destroyFlashes = [];
+  destroyEffects = [];
   deathShards = [];
   deathFlashFrames = 0;
   if (pendingDeathBurstTimer) { clearTimeout(pendingDeathBurstTimer); pendingDeathBurstTimer = null; }
