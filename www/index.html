@@ -22,8 +22,11 @@
   }
 
   #gameWrapper {
-    width: 400px;
-    height: 700px;
+    width: 100vw;
+    height: 100vh;
+    position: fixed;
+    top: 0;
+    left: 0;
   }
 
   @media (max-width: 380px) {
@@ -687,7 +690,7 @@
 </head>
 <body>
 <div id="gameWrapper">
-  <canvas id="c" width="400" height="700"></canvas>
+  <canvas id="c"></canvas>
   <div id="ui">
     <div id="score">0</div>
     <div id="powerupTimer">
@@ -771,26 +774,14 @@
 <script>
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
-const W = 400, H = 700;
+// W/H are the real viewport pixels — the canvas fills the screen, no letterbox.
+// Captured once at page load: the Android activity is locked to portrait and
+// Capacitor doesn't fire mid-session size changes we need to react to.
+const W = window.innerWidth;
+const H = window.innerHeight;
+canvas.width = W;
+canvas.height = H;
 
-// Fit the fixed 400x700 wrapper onto any viewport. We scale uniformly and
-// then absolutely-position the wrapper, centering it manually so the scaled
-// bounding box lands flush in the viewport instead of being offset by flex
-// layout (which was leaving black bars on one side).
-function setupWrapperScale() {
-  const wrapper = document.getElementById('gameWrapper');
-  const scaleX = window.innerWidth / 400;
-  const scaleY = window.innerHeight / 700;
-  const scale = Math.min(scaleX, scaleY);
-  wrapper.style.transform = 'scale(' + scale + ')';
-  wrapper.style.transformOrigin = 'top left';
-  wrapper.style.position = 'absolute';
-  wrapper.style.left = Math.max(0, (window.innerWidth - 400 * scale) / 2) + 'px';
-  wrapper.style.top = Math.max(0, (window.innerHeight - 700 * scale) / 2) + 'px';
-}
-setupWrapperScale();
-window.addEventListener('resize', setupWrapperScale);
-window.addEventListener('orientationchange', setupWrapperScale);
 
 // Tell the StatusBar plugin to overlay the WebView and then hide the bars.
 // This is the official Capacitor edge-to-edge path — more reliable across
