@@ -2938,17 +2938,17 @@ let hyperSpeedBonus = 0;
 // strip; it is scrolled by sceneScrollY and wrapped modulo SCENE_WRAP.
 const NEBULA_TILES = [
   { cx: 120, baseY:  80, blobs: [
-    { dx: -40, dy: -10, r: 72 },
-    { dx:  20, dy: -30, r: 55 },
-    { dx:  60, dy:  10, r: 48 },
-    { dx:   0, dy:  30, r: 42 },
-    { dx:  40, dy:  55, r: 32 },
+    { dx: -40, dy: -10, r: 95 },
+    { dx:  20, dy: -30, r: 75 },
+    { dx:  60, dy:  10, r: 65 },
+    { dx:   0, dy:  30, r: 60 },
+    { dx:  40, dy:  55, r: 55 },
   ]},
   { cx: 280, baseY: 430, blobs: [
-    { dx: -50, dy:  -5, r: 60 },
-    { dx:  20, dy: -30, r: 50 },
-    { dx:  55, dy:  20, r: 68 },
-    { dx:  10, dy:  45, r: 38 },
+    { dx: -50, dy:  -5, r: 80 },
+    { dx:  20, dy: -30, r: 70 },
+    { dx:  55, dy:  20, r: 90 },
+    { dx:  10, dy:  45, r: 55 },
   ]},
 ];
 
@@ -2993,29 +2993,38 @@ function drawNebulaTile(tile, y) {
   for (const b of tile.blobs) {
     const bx = tile.cx + b.dx;
     const by = y + b.dy;
-    const g = ctx.createRadialGradient(bx, by, 0, bx, by, b.r);
-    g.addColorStop(0, 'rgba(80,20,120,0.08)');
-    g.addColorStop(1, 'rgba(80,20,120,0)');
-    ctx.fillStyle = g;
+    // Violet base
+    const gv = ctx.createRadialGradient(bx, by, 0, bx, by, b.r);
+    gv.addColorStop(0, 'rgba(140,60,200,0.35)');
+    gv.addColorStop(1, 'rgba(140,60,200,0)');
+    ctx.fillStyle = gv;
     ctx.beginPath();
     ctx.arc(bx, by, b.r, 0, 6.28);
+    ctx.fill();
+    // Blue tint overlay, slightly offset for a mixed-hue cloud
+    const gb = ctx.createRadialGradient(bx + b.r * 0.25, by + b.r * 0.15, 0, bx + b.r * 0.25, by + b.r * 0.15, b.r);
+    gb.addColorStop(0, 'rgba(60,100,200,0.25)');
+    gb.addColorStop(1, 'rgba(60,100,200,0)');
+    ctx.fillStyle = gb;
+    ctx.beginPath();
+    ctx.arc(bx + b.r * 0.25, by + b.r * 0.15, b.r, 0, 6.28);
     ctx.fill();
   }
 }
 
 function drawDyingStarTile(tile, y) {
-  // Soft red/orange core — radial gradient only, no solid circle.
+  // Glowing distant sun — bright orange/red radial core.
   const g = ctx.createRadialGradient(tile.cx, y, 0, tile.cx, y, tile.r);
-  g.addColorStop(0,    'rgba(180,50,0,0.1)');
-  g.addColorStop(0.5,  'rgba(180,50,0,0.05)');
-  g.addColorStop(1,    'rgba(180,50,0,0)');
+  g.addColorStop(0,    'rgba(255,100,20,0.4)');
+  g.addColorStop(0.5,  'rgba(255,100,20,0.2)');
+  g.addColorStop(1,    'rgba(255,100,20,0)');
   ctx.fillStyle = g;
   ctx.beginPath();
   ctx.arc(tile.cx, y, tile.r, 0, 6.28);
   ctx.fill();
   // Irregular spike/flare lines radiating outward.
   const rnd = seededRand(tile.spikeSeed);
-  ctx.strokeStyle = 'rgba(200,80,0,0.06)';
+  ctx.strokeStyle = 'rgba(255,140,40,0.3)';
   ctx.lineWidth = 1;
   for (let i = 0; i < tile.spikes; i++) {
     const ang = rnd() * 6.28;
@@ -3036,14 +3045,14 @@ function drawGalaxyTile(tile, y) {
   const half = tile.size / 2;
   // Center glow
   const g = ctx.createRadialGradient(tile.cx, y, 0, tile.cx, y, half * 0.6);
-  g.addColorStop(0, 'rgba(200,180,150,0.08)');
-  g.addColorStop(1, 'rgba(200,180,150,0)');
+  g.addColorStop(0, 'rgba(220,200,255,0.35)');
+  g.addColorStop(1, 'rgba(220,200,255,0)');
   ctx.fillStyle = g;
   ctx.beginPath();
   ctx.arc(tile.cx, y, half * 0.6, 0, 6.28);
   ctx.fill();
   // Two faint spiral arcs via quadraticCurveTo, rotated opposite each other.
-  ctx.strokeStyle = 'rgba(180,160,120,0.05)';
+  ctx.strokeStyle = 'rgba(200,180,255,0.25)';
   ctx.lineWidth = 1;
   for (let i = 0; i < 2; i++) {
     const dir = i === 0 ? 1 : -1;
@@ -3063,8 +3072,8 @@ function drawRiftTile(tile, y) {
   const midX = (tile.startX + tile.endX) / 2;
   const midY = y + tile.drop / 2;
   const glow = ctx.createRadialGradient(midX, midY, 0, midX, midY, tile.drop * 0.6);
-  glow.addColorStop(0, 'rgba(100,0,180,0.06)');
-  glow.addColorStop(1, 'rgba(100,0,180,0)');
+  glow.addColorStop(0, 'rgba(180,50,255,0.4)');
+  glow.addColorStop(1, 'rgba(180,50,255,0)');
   ctx.fillStyle = glow;
   ctx.beginPath();
   ctx.arc(midX, midY, tile.drop * 0.6, 0, 6.28);
@@ -3072,7 +3081,7 @@ function drawRiftTile(tile, y) {
   // Crack: series of short lines with slight angle jitter, forming a jagged
   // diagonal from (startX, y) to (endX, y + drop).
   const rnd = seededRand(tile.seed);
-  ctx.strokeStyle = 'rgba(100,0,180,0.07)';
+  ctx.strokeStyle = 'rgba(200,100,255,0.35)';
   ctx.lineWidth = 1.2;
   let px = tile.startX, py = y;
   const dx = (tile.endX - tile.startX) / tile.segments;
