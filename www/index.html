@@ -793,8 +793,10 @@ canvas.height = H;
   if (!StatusBar) return;
   try {
     StatusBar.setOverlaysWebView({ overlay: true });
-    StatusBar.setStyle({ style: 'DARK' });
-    StatusBar.setBackgroundColor({ color: '#00000000' });
+    // 'LIGHT' here means light (white) icons on dark background — the Capacitor
+    // naming is the inverse of Android's windowLightStatusBar attribute.
+    StatusBar.setStyle({ style: 'LIGHT' });
+    StatusBar.setBackgroundColor({ color: '#00000a' });
   } catch (err) {
     console.warn('[statusbar] setup failed', err);
   }
