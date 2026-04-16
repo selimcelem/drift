@@ -25,5 +25,11 @@
              so our status/nav bar colors, fullscreen, and cutout mode actually
              apply at runtime instead of the Theme.SplashScreen defaults. -->
         <item name="postSplashScreenTheme">@style/AppTheme.NoActionBar</item>
+        <!-- Mirror the dark bar overrides so the splash frame itself renders
+             with #00000a bars + light icons, no white flash on launch. -->
+        <item name="android:statusBarColor">#00000a</item>
+        <item name="android:navigationBarColor">#00000a</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
     </style>
 </resources>
