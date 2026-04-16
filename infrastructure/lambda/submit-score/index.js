@@ -97,9 +97,9 @@ exports.handler = async (event) => {
     })
   );
 
-  // Query all scores for this difficulty, descending, and promote the top 10
-  // to the long TTL. Scores outside the top 10 keep their short TTL and
-  // expire naturally — nothing is ever deleted here.
+  // Query all scores for this difficulty, descending, and reassign TTLs:
+  // top 10 get the long TTL, everything else gets the short TTL. Nothing is
+  // ever deleted — scores outside the top 10 expire naturally.
   const all = await ddb.send(
     new QueryCommand({
       TableName: "drift-leaderboard",
@@ -108,16 +108,18 @@ exports.handler = async (event) => {
       ScanIndexForward: false,
     })
   );
-  const topTen = (all.Items || []).slice(0, 10);
+  const items = all.Items || [];
   await Promise.all(
-    topTen.map((item) =>
+    items.map((item, index) =>
       ddb.send(
         new UpdateCommand({
           TableName: "drift-leaderboard",
           Key: { difficulty: item.difficulty, score: item.score },
           UpdateExpression: "SET #ttl = :ttl",
           ExpressionAttributeNames: { "#ttl": "ttl" },
-          ExpressionAttributeValues: { ":ttl": longTtl },
+          ExpressionAttributeValues: {
+            ":ttl": index < 10 ? longTtl : shortTtl,
+          },
         })
       )
     )
