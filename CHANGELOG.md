@@ -6,6 +6,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-04-16
+
+### Added
+- Dynamic background with real NASA space images (nebula, dying star, galaxy, supernova) parallax scrolling at 15% planet speed
+- Screen blend mode on background images for natural space glow effect
+- Time-based background spawning: first at 45 seconds, then every 60-90 seconds, hyperspeed also triggers spawn
+- Stacking hyperspeed system up to 4x speed with step-down expiry, color tints gold/orange/red/white, blinking stack counter
+- Play In-App Updates API replacing GitHub banner for Play Store testers
+- Distinct visual effects per destroy type: nova fragments+shockwave, shield laser scan lines, hyperspeed impact streak, ghost wisps
+- Real audio files for shield, nova and hyperspeed barrier destruction sounds
+- Small phone menu scaling fix for screens narrower than 400px (Samsung A series)
+- Edge-to-edge display fix for modern Android phones (Pixel 8, Samsung S24)
+
+### Changed
+- Background images use screen blend mode so dark pixels are transparent, only colored light shows
+- Nova destroy volume reduced to prevent overpowering other sounds
+- All shield kills (including wraith) now use shield destroy audio file
+- Ghost passthrough sound restored to soft ethereal whomp
+- Background object size tuned per image type
+- Galaxy image uses stronger vignette fade for better blending
+
+### Fixed
+- Circular outline visible on background images — removed clip mask, vignette now fully opaque at edges
+- Ghost passthrough sound was overwritten by crunchy explosion sounds
+- Synthesized shield destroy sound was playing alongside new MP3 file
+- Touch event passive flag warning on Android
+- webContentsDebuggingEnabled set back to false for release builds
+
 ## [1.3.0] - 2026-04-16
 
 ### Added

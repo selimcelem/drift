@@ -28,10 +28,13 @@ Top 5 scores are kept locally in `localStorage` and shown on the death screen.
 
 - **Combo system** — 9 powerup combinations (Supernova, Warp Time, Phantom Blast, Pulsar, Spectral Rush, Juggernaut, Wraith, Eternal Phantom, Fortress Shield), each with its own mechanics and visual identity
 - **Pair spawning** — 1 in 5 powerup spawns is a tethered pair connected by a cosmic energy beam; grabbing either one triggers the matching combo instantly
+- **Stacking hyperspeed** — pick up hyperspeed up to four times for a 4x speed run, with step-down expiry, gold/orange/red/white stack tints, and a blinking stack counter
 - **Quadratic streak scoring** — destroy a planet via Nova, Hyperspeed barrier, or Phantom Blast and your next destroy is worth more (streak² points, capped at 12 to prevent runaway scores)
 - **Run summary on death** — full breakdown of planets passed, planets destroyed, longest streak, powerups used, and points from each source
+- **Dynamic space background** — real NASA space imagery (nebulae, dying stars, galaxies, supernovae) parallax-scrolls behind the playfield, blended into the cosmos with a screen composite so only the coloured light shows
 - **3 difficulties** — Normal, Hard, Extreme — with progressively faster scroll, more bodies, and more frequent powerup drops
 - **Local + global leaderboards** — top 5 per difficulty stored locally; global top 10 served from a serverless AWS backend
+- **Play In-App Updates** — the Android build uses Google Play's flexible in-app update flow to keep testers current without forcing them out of a run
 
 ## Tech stack
 

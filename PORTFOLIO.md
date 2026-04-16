@@ -1,8 +1,16 @@
 # Drift — Portfolio
 
+**Current version:** v1.4.0
+
 ## What it is
 
 A gravity-surfing endless runner built as a single HTML5 Canvas game, shipped as an Android app via Capacitor, with an AWS serverless leaderboard backend and fully automated infrastructure deployment.
+
+## Highlights
+
+- **Three music tracks with crossfade looping** — menu, gameplay, and death-screen tracks decoded once into `AudioBuffer`s and seamlessly crossfaded at loop points so the transitions are inaudible
+- **Real space imagery as parallax scenery** — NASA nebula, dying-star, galaxy, and supernova photos scroll behind the playfield using a `screen` composite blend so only the coloured light shows through
+- **Play In-App Updates API integration** — the Android build uses Google Play's flexible in-app update flow so testers never have to leave the game to pick up a new build
 
 ## Tech stack
 
