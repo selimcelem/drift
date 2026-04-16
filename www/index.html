@@ -2965,7 +2965,11 @@ function spawnBgObject() {
   const x = nextBgSide === 'left'
     ? 40 + Math.random() * 100            // 40..140
     : (W - 140) + Math.random() * 100;    // W-140..W-40
-  const size = 220 + Math.random() * 100;  // 220..320
+  // Nebula and dying-star read better bigger; supernova/galaxy stay tighter
+  // so their bright cores don't dominate the screen.
+  const size = (key === 'nebula' || key === 'dyingStar')
+    ? 280 + Math.random() * 120   // 280..400
+    : 220 + Math.random() * 100;  // 220..320
   const opacity = 0.2 + Math.random() * 0.1;   // 0.2..0.3
   bgObjects.push({ key, x, y: -300, size, opacity, seed: Math.random() * 1e9 | 0 });
   lastBgImageKey = key;
@@ -3027,14 +3031,15 @@ function drawBgObjects() {
     ctx.clip();
     ctx.drawImage(img, o.x - r, o.y - r, o.size, o.size);
     ctx.restore();
-    // Aggressive vignette: transparent from center to 20% of radius, fading
-    // to near-opaque space color at the edge. Drawn in source-over so it
-    // properly darkens the glow.
+    // Aggressive vignette. Galaxy fades even harder so only the tight bright
+    // core shows — its edges would otherwise read as a disc.
     ctx.globalCompositeOperation = 'source-over';
     const g = ctx.createRadialGradient(o.x, o.y, 0, o.x, o.y, r);
-    g.addColorStop(0,    'rgba(0,0,10,0)');
-    g.addColorStop(0.2,  'rgba(0,0,10,0)');
-    g.addColorStop(1,    'rgba(0,0,10,0.95)');
+    const clearStop = o.key === 'galaxy' ? 0.1  : 0.2;
+    const edgeAlpha = o.key === 'galaxy' ? 0.98 : 0.95;
+    g.addColorStop(0,          'rgba(0,0,10,0)');
+    g.addColorStop(clearStop,  'rgba(0,0,10,0)');
+    g.addColorStop(1,          'rgba(0,0,10,' + edgeAlpha + ')');
     ctx.fillStyle = g;
     ctx.beginPath();
     ctx.arc(o.x, o.y, r, 0, Math.PI * 2);
