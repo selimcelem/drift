@@ -9,27 +9,21 @@
 
   * { margin: 0; padding: 0; box-sizing: border-box; }
 
-  html, body { height: 100%; }
-  body {
-    background: #000;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    height: 100vh;
-    /* 100dvh tracks the actual drawable viewport on edge-to-edge Android and
-       keeps the body flush with the WebView on phones that report a shorter
-       vh while system bars animate. */
-    height: 100dvh;
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
     overflow: hidden;
+    background: #00000a;
+  }
+  body {
     font-family: 'Orbitron', monospace;
   }
 
   #gameWrapper {
-    position: relative;
     width: 400px;
     height: 700px;
-    max-width: 100vw;
-    transform-origin: top center;
   }
 
   @media (max-width: 380px) {
@@ -779,25 +773,24 @@ const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
 const W = 400, H = 700;
 
-// Fit the fixed 400x700 wrapper onto any viewport. On sub-400px phones
-// (Samsung A series etc) the wrapper would otherwise clip horizontally;
-// on short devices it would run off the bottom. We scale uniformly so the
-// whole playfield is always visible.
-(function setupWrapperScale() {
+// Fit the fixed 400x700 wrapper onto any viewport. We scale uniformly and
+// then absolutely-position the wrapper, centering it manually so the scaled
+// bounding box lands flush in the viewport instead of being offset by flex
+// layout (which was leaving black bars on one side).
+function setupWrapperScale() {
   const wrapper = document.getElementById('gameWrapper');
-  if (!wrapper) return;
-  function applyScale() {
-    // Uniform "contain" scale so the 400x700 playfield fits the viewport in
-    // both axes. No upper clamp — on phones with a viewport larger than
-    // 400x700 (Pixel 8, modern Samsungs after edge-to-edge) the wrapper
-    // scales up to fill the screen instead of sitting in a 400x700 box.
-    const scale = Math.min(window.innerWidth / 400, window.innerHeight / 700);
-    wrapper.style.transform = `scale(${scale})`;
-  }
-  applyScale();
-  window.addEventListener('resize', applyScale);
-  window.addEventListener('orientationchange', applyScale);
-})();
+  const scaleX = window.innerWidth / 400;
+  const scaleY = window.innerHeight / 700;
+  const scale = Math.min(scaleX, scaleY);
+  wrapper.style.transform = 'scale(' + scale + ')';
+  wrapper.style.transformOrigin = 'top left';
+  wrapper.style.position = 'absolute';
+  wrapper.style.left = Math.max(0, (window.innerWidth - 400 * scale) / 2) + 'px';
+  wrapper.style.top = Math.max(0, (window.innerHeight - 700 * scale) / 2) + 'px';
+}
+setupWrapperScale();
+window.addEventListener('resize', setupWrapperScale);
+window.addEventListener('orientationchange', setupWrapperScale);
 
 // Tell the StatusBar plugin to overlay the WebView and then hide the bars.
 // This is the official Capacitor edge-to-edge path — more reliable across
