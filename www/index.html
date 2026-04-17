@@ -1164,16 +1164,18 @@ function pushCapped(arr, item, cap) {
 }
 let activeEffects = { shield: 0, hyperspeed: 0, ghost: 0 };
 let lastPowerupSpawn = 0;
-const SHIELD_DURATION_DEFAULT = 900;        // 15s @ 60fps
-const SHIELD_DURATION_ASTEROID = 1800;      // 30s for asteroid orb
+const SHIELD_DURATION_DEFAULT = 600;        // 10s @ 60fps
+const SHIELD_DURATION_ASTEROID = 900;       // 15s for asteroid orb
 const HYPERSPEED_DURATION = 360;    // 6s base
 const HYPERSPEED_COMBO_DURATION = 480; // 8s for warp time / spectral rush
 const GHOST_DURATION_DEFAULT = 480;        // 8s
 const GHOST_DURATION_COSMIC = 720;         // 12s for cosmic orb
-const GHOST_ETERNAL_DURATION = 960; // 16s for eternal phantom
+const GHOST_ETERNAL_DURATION_DEFAULT = 720;  // 12s Eternal Phantom
+const GHOST_ETERNAL_DURATION_COSMIC  = 960;  // 16s Eternal Phantom on cosmic orb
 const SHIELD_BLINK_FRAMES = 180;    // last 3s blink
 function SHIELD_DURATION() { return activeOrb === 'asteroid' ? SHIELD_DURATION_ASTEROID : SHIELD_DURATION_DEFAULT; }
 function GHOST_DURATION() { return activeOrb === 'cosmic' ? GHOST_DURATION_COSMIC : GHOST_DURATION_DEFAULT; }
+function GHOST_ETERNAL_DURATION() { return activeOrb === 'cosmic' ? GHOST_ETERNAL_DURATION_COSMIC : GHOST_ETERNAL_DURATION_DEFAULT; }
 
 // Hyperspeed state
 let hyperspeedTargetSpeed = 0;    // the normal speed to decelerate back to
@@ -1832,6 +1834,75 @@ const SFX = (function() {
     return null;
   }
 
+  // Deep sustained rumble for the 10-minute apocalypse sequence. Two sine
+  // layers at 35hz (fundamental) + 70hz (2nd harmonic @ 0.3x). Caller controls
+  // the master amplitude via setVolume so we can smoothly build the dread.
+  function startApocalypseRumble() {
+    if (!ensureRunning()) return null;
+    if (!sfxEnabled) return null;
+    try {
+      const t = ctx.currentTime;
+      const o1 = ctx.createOscillator();
+      o1.type = 'sine'; o1.frequency.value = 35;
+      const g1 = ctx.createGain(); g1.gain.value = 1;
+      o1.connect(g1);
+
+      const o2 = ctx.createOscillator();
+      o2.type = 'sine'; o2.frequency.value = 70;
+      const g2 = ctx.createGain(); g2.gain.value = 0.3;
+      o2.connect(g2);
+
+      const master = ctx.createGain();
+      master.gain.setValueAtTime(0, t);
+      master.gain.linearRampToValueAtTime(0.1, t + 0.2);
+      g1.connect(master); g2.connect(master);
+      master.connect(sfxGain);
+
+      o1.start(t); o2.start(t);
+      return {
+        setVolume(v) {
+          try {
+            const now = ctx.currentTime;
+            master.gain.cancelScheduledValues(now);
+            master.gain.setValueAtTime(master.gain.value, now);
+            master.gain.linearRampToValueAtTime(Math.max(0, v), now + 0.2);
+          } catch {}
+        },
+        stop() {
+          try {
+            const now = ctx.currentTime;
+            master.gain.cancelScheduledValues(now);
+            master.gain.setValueAtTime(master.gain.value, now);
+            master.gain.linearRampToValueAtTime(0, now + 0.3);
+            o1.stop(now + 0.35); o2.stop(now + 0.35);
+            killOnEnd(o1, o2, g1, g2, master);
+          } catch {}
+        },
+      };
+    } catch {}
+    return null;
+  }
+
+  // Final impact: bass sweep 60→10hz over 0.8s + a full-volume white noise
+  // burst. Wired through sfxGain so the SFX toggle silences it.
+  function playApocalypseImpact() {
+    safeSfx(t => {
+      // Bass sweep.
+      chipSweep('sine', 60, 10, t, 0.8, 0.9);
+      // Noise burst.
+      const n = ctx.createBufferSource();
+      n.buffer = noiseBuffer(0.5, x => Math.pow(1 - x, 0.6));
+      const f = ctx.createBiquadFilter();
+      f.type = 'bandpass'; f.frequency.value = 600; f.Q.value = 0.5;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.9, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
+      n.connect(f); f.connect(g); g.connect(sfxGain);
+      n.start(t); n.stop(t + 0.52);
+      killOnEnd(n, f, g);
+    });
+  }
+
   function death() {
     safeSfx(t => {
       // Iconic chromatic descent: C5-B4-Bb4-A4-Ab4-G4-F#4-F4-E4-Eb4-D4-C4,
@@ -2106,6 +2177,7 @@ const SFX = (function() {
   return {
     init, attract, repel, pickup, planetDestroyed, death,
     comboActivate, comboDestroySound, startHyperspeedWhoosh,
+    startApocalypseRumble, playApocalypseImpact,
     playTrack, pauseMusic, resumeMusic,
     clickPrimary, clickSecondary,
     setMusicEnabled, setSfxEnabled, isMusicEnabled, isSfxEnabled,
@@ -2236,13 +2308,11 @@ function spawnBody(yBase) {
   };
 }
 
-// After 5 minutes, the playfield density ramps: +2 bodies per minute survived,
-// uncapped. Base value from difficulty settings for the first 5 minutes.
+// After 4 minutes, +1 body per minute of survival, uncapped. Formula:
+// effectiveMaxBodies = base + max(0, floor((es - 240) / 60)).
 function effectiveMaxBodies() {
   const base = diff().maxBodies;
-  const es = elapsedRunSeconds();
-  if (es < 300) return base;
-  return base + 2 * Math.floor((es - 300) / 60);
+  return base + Math.max(0, Math.floor((elapsedRunSeconds() - 240) / 60));
 }
 
 function initBodies() {
@@ -2719,7 +2789,10 @@ function activateCombo(key, x, y) {
       shieldBroken = false;
     } else if (key === 'hyperspeed_ghost') {
       activateHyperspeed(HYPERSPEED_COMBO_DURATION, 2);
-      activeEffects.ghost = HYPERSPEED_COMBO_DURATION;
+      // Don't downgrade ghost if Eternal Phantom's longer timer is running.
+      if (activeEffects.ghost < HYPERSPEED_COMBO_DURATION) {
+        activeEffects.ghost = HYPERSPEED_COMBO_DURATION;
+      }
       syncComboDurations('hyperspeed', 'ghost');
     } else if (key === 'hyperspeed_shield') {
       if (activeEffects.hyperspeed <= 0) activateHyperspeed();
@@ -2735,7 +2808,7 @@ function activateCombo(key, x, y) {
       // Eternal Phantom refresh: always reset to the full 16s ghost duration
       // when a fresh ghost pickup arrives, never downgrade to the shorter
       // single-ghost timer.
-      activeEffects.ghost = GHOST_ETERNAL_DURATION;
+      activeEffects.ghost = GHOST_ETERNAL_DURATION();
     } else if (key === 'shield_shield') {
       // Fortress refresh: keep 2 hits, refresh duration; don't let a stale
       // timer race lose the fortress state.
@@ -2749,11 +2822,13 @@ function activateCombo(key, x, y) {
       activeEffects.ghost = GHOST_DURATION();
       phantomBlastFrames = GHOST_DURATION();
     }
-    lastComboLabel = key;
+    // Eternal Phantom takes precedence over Spectral Rush for the label — its
+    // ghost timer is longer and defines the dominant effect.
+    lastComboLabel = (key === 'hyperspeed_ghost' && activeCombos.ghost_ghost) ? 'ghost_ghost' : key;
     screenShake = Math.max(screenShake, 6);
     return;
   }
-  lastComboLabel = key;
+  lastComboLabel = (key === 'hyperspeed_ghost' && activeCombos.ghost_ghost) ? 'ghost_ghost' : key;
   screenShake = Math.max(screenShake, 8);
   SFX.comboActivate(key);
 
@@ -2789,9 +2864,13 @@ function activateCombo(key, x, y) {
     pulsarNovaTimer = 0;
     activeCombos[key] = { def, deps: ['shield'] };
   } else if (key === 'hyperspeed_ghost') {
-    // SPECTRAL RUSH: 8s, 2x spike, barrier fires during ghost
+    // SPECTRAL RUSH: 8s, 2x spike, barrier fires during ghost.
+    // If Eternal Phantom is running, its longer ghost timer wins — don't
+    // collapse it to Spectral Rush's 8s.
     activateHyperspeed(HYPERSPEED_COMBO_DURATION, 2);
-    activeEffects.ghost = HYPERSPEED_COMBO_DURATION;
+    if (activeEffects.ghost < HYPERSPEED_COMBO_DURATION) {
+      activeEffects.ghost = HYPERSPEED_COMBO_DURATION;
+    }
     syncComboDurations('hyperspeed', 'ghost');
     activeCombos[key] = { def, deps: ['hyperspeed', 'ghost'] };
   } else if (key === 'hyperspeed_shield') {
@@ -2809,7 +2888,7 @@ function activateCombo(key, x, y) {
     activeCombos[key] = { def, deps: ['ghost'] };
   } else if (key === 'ghost_ghost') {
     // ETERNAL PHANTOM: 16s ghost
-    activeEffects.ghost = GHOST_ETERNAL_DURATION;
+    activeEffects.ghost = GHOST_ETERNAL_DURATION();
     activeCombos[key] = { def, deps: ['ghost'] };
   } else if (key === 'shield_shield') {
     // FORTRESS SHIELD: 15s, 2 hits
@@ -2956,14 +3035,8 @@ function activatePowerup(type, x, y) {
 // --- Run timer ---
 // Wall-clock elapsed time (Date.now() - runStartTime). Frame-rate independent
 // so the displayed MM:SS matches real seconds even during hitches.
-// Color thresholds scale with difficulty — harder difficulties stay white
-// longer because it takes more time to reach dangerous top speeds.
+// Progression escalates at fixed real-time thresholds (not scaled by diff).
 let runStartTime = 0;
-const RUN_TIMER_THRESHOLDS = {
-  NORMAL:  { orange: 120, red: 240 }, // 2min / 4min
-  HARD:    { orange: 180, red: 360 }, // 3min / 6min
-  EXTREME: { orange: 240, red: 480 }, // 4min / 8min
-};
 function elapsedRunSeconds() {
   return runStartTime ? (Date.now() - runStartTime) / 1000 : 0;
 }
@@ -2972,33 +3045,50 @@ function formatRunTime(seconds) {
   const ss = Math.floor(seconds % 60);
   return (mm < 10 ? '0' : '') + mm + ':' + (ss < 10 ? '0' : '') + ss;
 }
-function runTimerColor(seconds) {
-  const th = RUN_TIMER_THRESHOLDS[difficulty] || RUN_TIMER_THRESHOLDS.NORMAL;
-  if (seconds < th.orange) {
-    const t = seconds / th.orange;
-    const r = 255, g = Math.round(255 - (255 - 180) * t), b = Math.round(255 - (255 - 80) * t);
-    return `rgba(${r},${g},${b},0.92)`;
-  } else if (seconds < th.red) {
-    const t = (seconds - th.orange) / (th.red - th.orange);
-    const r = 255, g = Math.round(180 - 180 * t), b = Math.round(80 - 80 * t);
-    return `rgba(${r},${g},${b},0.95)`;
+// Stage descriptor for the timer: tier (color), per-frame visual effects.
+// tier 0 = white, 1 = orange, 2 = red.
+function runTimerStage(s) {
+  if (s < 120) return { tier: 0, blink: 0, shake: 0, glitch: 0, pulse: 0 };
+  if (s < 180) return { tier: 1, blink: 0, shake: 0, glitch: 0, pulse: 0 };
+  if (s < 240) return { tier: 2, blink: 10, shake: 3, glitch: 0, pulse: 0.3 };
+  if (s < 300) return { tier: 2, blink: 7,  shake: 5, glitch: 0, pulse: 0.45 };
+  if (s < 360) return { tier: 2, blink: 5,  shake: 7, glitch: 1, pulse: 0.6 };
+  if (s < 420) return { tier: 2, blink: 3,  shake: 10, glitch: 2, pulse: 0.8 };
+  return         { tier: 2, blink: 2, shake: 15, glitch: 3, pulse: 1.0 };
+}
+const RUN_TIMER_COLORS = [
+  'rgba(255,255,255,0.92)',
+  'rgba(255,180,80,0.95)',
+  'rgba(255,60,60,0.95)',
+];
+// Randomly garble a fraction of non-space chars for the high-glitch tiers.
+const GLITCH_CHARS = '!@#$%*░▒▓█▄▀■□◆◇░';
+function glitchText(text, level) {
+  if (!level) return text;
+  const rate = level === 1 ? 0.12 : level === 2 ? 0.28 : 0.55;
+  let out = '';
+  for (const c of text) {
+    if (c !== ' ' && Math.random() < rate) {
+      out += GLITCH_CHARS[Math.floor(Math.random() * GLITCH_CHARS.length)];
+    } else out += c;
   }
-  return 'rgba(255,60,60,0.95)';
+  return out;
 }
 function updateRunTimerDisplay() {
   const el = document.getElementById('runTimer');
   if (!el) return;
   const s = elapsedRunSeconds();
-  const danger = s >= 300;
-  el.textContent = formatRunTime(s) + (danger ? ' !' : '');
-  const color = runTimerColor(s);
+  const stage = runTimerStage(s);
+  const showBang = stage.tier >= 2;
+  el.textContent = glitchText(formatRunTime(s) + (showBang ? ' !' : ''), stage.glitch);
+  const color = RUN_TIMER_COLORS[stage.tier];
   el.style.color = color;
   el.style.textShadow = '0 0 12px ' + color;
-  if (danger) {
-    // Blink 0.7 ↔ 1.0 every 10 frames; shake ±3px on x each frame.
-    const blinkHigh = Math.floor(frame / 10) % 2 === 0;
-    el.style.opacity = blinkHigh ? '1' : '0.7';
-    const shake = (Math.random() - 0.5) * 6; // ±3px
+  if (stage.blink > 0) {
+    const blinkHigh = Math.floor(frame / stage.blink) % 2 === 0;
+    const low = Math.max(0, 1 - stage.pulse);
+    el.style.opacity = blinkHigh ? '1' : String(low);
+    const shake = (Math.random() - 0.5) * stage.shake * 2;
     el.style.transform = `translateX(calc(-50% + ${shake.toFixed(2)}px))`;
   } else {
     el.style.opacity = '1';
@@ -3023,6 +3113,7 @@ function resetGame() {
   planetRipples = [];
   destroyEffects = [];
   deathShards = [];
+  resetApocalypse();
   deathFlashFrames = 0;
   if (pendingDeathBurstTimer) { clearTimeout(pendingDeathBurstTimer); pendingDeathBurstTimer = null; }
   clearPendingNovaTimeouts();
@@ -3205,14 +3296,18 @@ function checkCollisions() {
 
 // --- Update ---
 function update() {
+  if (state === 'apocalypse') { frame++; updateApocalypse(); return; }
   if (state !== 'playing') return;
   frame++;
   const spd = scrollSpeed();
   const d = diff();
 
-  // Run timer: wall-clock driven. Normally refresh ~8x/sec; past 5 min the
-  // danger-zone shake/blink needs per-frame updates.
-  if (elapsedRunSeconds() >= 300 || (frame & 7) === 0) updateRunTimerDisplay();
+  // 10-minute mark: kick off the apocalypse sequence.
+  if (elapsedRunSeconds() >= 600) { startApocalypse(); return; }
+
+  // Run timer: wall-clock driven. Normally refresh ~8x/sec; past 3 min the
+  // danger-zone shake/blink/glitch needs per-frame updates.
+  if (elapsedRunSeconds() >= 180 || (frame & 7) === 0) updateRunTimerDisplay();
 
   // Decrement active effect timers
   if (activeEffects.shield > 0) activeEffects.shield--;
@@ -3441,12 +3536,270 @@ function update() {
   if (leftDown)  SFX.attract(frame);
   if (rightDown) SFX.repel(frame);
 
-  trail.push({ x: player.x, y: player.y });
-  if (trail.length > 25) trail.shift();
   emitOrbTrail();
   updateOrbTrailParticles();
 
   if (checkCollisions()) triggerDeath();
+}
+
+// --- Apocalypse sequence (10-minute sun-fall death) ---
+// Four phases driven by wall-clock since apocalypseStart:
+//   0-3s   Phase 1 — clearing: destroy all bodies, lerp player to center
+//   3-8s   Phase 2 — rumble: low-end audio builds, screen shake 5→20, red tint fades in
+//   8-28s  Phase 3 — sun descends from above to player position over 20s
+//   28s+   Phase 4 — impact: small flash, white flash, hold, fade, triggerDeath()
+let apocalypseStart = 0;
+let apocalypseDeathFlag = false;
+let apocalypseSun = null;             // { radius, y, progress }
+let apocalypseImpactStart = 0;
+let apocalypseImpactTriggered = false;
+let apocalypseRumbleNodes = null;
+let apocalypsePlayerStart = null;     // position at phase 1 entry for smooth lerp
+
+function apocalypseElapsed() {
+  return apocalypseStart ? (Date.now() - apocalypseStart) / 1000 : 0;
+}
+
+function startApocalypse() {
+  if (state === 'apocalypse' || state === 'dead') return;
+  Sentry.addBreadcrumb({ category: 'apocalypse', message: 'sequence start', level: 'info' });
+  state = 'apocalypse';
+  apocalypseStart = Date.now();
+  apocalypseImpactTriggered = false;
+  apocalypseImpactStart = 0;
+  apocalypseSun = null;
+  apocalypsePlayerStart = { x: player.x, y: player.y };
+  // Destroy all bodies with their destruction visual.
+  for (const b of bodies) {
+    emitDestroyBurst(b.x, b.y, b.glowColor || 'rgba(255,200,120,1)');
+    emitDestroyEffects(b, 'nova');
+  }
+  bodies = [];
+  powerups = [];
+  // Fade gameplay music to silence over ~3s.
+  SFX.playTrack(null, 3);
+  leftDown = false;
+  rightDown = false;
+  pauseBtn.classList.remove('visible');
+}
+
+function updateApocalypse() {
+  if (state !== 'apocalypse') return;
+  const t = apocalypseElapsed();
+
+  // Physics frozen — but we still smoothly lerp the player to center.
+  if (t <= 3) {
+    const k = Math.min(1, t / 3);
+    const ease = k * k * (3 - 2 * k); // smoothstep
+    player.x = apocalypsePlayerStart.x + (W / 2 - apocalypsePlayerStart.x) * ease;
+    player.y = apocalypsePlayerStart.y + (H / 2 - apocalypsePlayerStart.y) * ease;
+    player.vx = 0; player.vy = 0;
+  } else {
+    player.x = W / 2; player.y = H / 2; player.vx = 0; player.vy = 0;
+  }
+  // Keep the playfield cleared in case anything sneaks in.
+  if (bodies.length) bodies = [];
+  if (powerups.length) powerups = [];
+
+  // Phase 2: rumble engages at t=3.
+  if (t >= 3 && !apocalypseRumbleNodes) {
+    apocalypseRumbleNodes = SFX.startApocalypseRumble();
+  }
+
+  // Screen shake schedule: 5→20 between 3-8s, then 20+ with sun progress.
+  let shake = 0;
+  if (t >= 3 && t < 8) {
+    shake = 5 + (20 - 5) * ((t - 3) / 5);
+  } else if (t >= 8) {
+    const sp = Math.min(1, (t - 8) / 20);
+    shake = 20 + 6 * sp;
+  }
+  if (shake > 0) screenShake = Math.max(screenShake, shake);
+
+  // Rumble volume builds from 0.1 to ~0.6 through the whole sequence.
+  if (apocalypseRumbleNodes) {
+    let vol = 0.1;
+    if (t < 8) vol = 0.1 + 0.5 * ((t - 3) / 5);
+    else vol = Math.min(0.9, 0.6 + 0.3 * Math.min(1, (t - 8) / 20));
+    apocalypseRumbleNodes.setVolume(vol);
+  }
+
+  // Phase 3: sun descends.
+  if (t >= 8) {
+    if (!apocalypseSun) {
+      const sunR = W * 0.8;
+      apocalypseSun = { radius: sunR, y: -sunR, progress: 0 };
+    }
+    const sunR = apocalypseSun.radius;
+    const startY = -sunR;
+    const targetY = H / 2; // player is pinned to center by now
+    const sp = Math.min(1, (t - 8) / 20);
+    apocalypseSun.y = startY + (targetY - startY) * sp;
+    apocalypseSun.progress = sp;
+  }
+
+  // Phase 4: impact when the sun reaches the player.
+  if (apocalypseSun && apocalypseSun.progress >= 1 && !apocalypseImpactTriggered) {
+    apocalypseImpactTriggered = true;
+    apocalypseImpactStart = Date.now();
+    SFX.playApocalypseImpact();
+  }
+
+  if (apocalypseImpactTriggered) {
+    const impactT = (Date.now() - apocalypseImpactStart) / 1000;
+    if (impactT >= 1.2) {
+      apocalypseDeathFlag = true;
+      if (apocalypseRumbleNodes) {
+        apocalypseRumbleNodes.stop();
+        apocalypseRumbleNodes = null;
+      }
+      // Jump to normal death flow. triggerDeath picks up apocalypseDeathFlag.
+      triggerDeath();
+    }
+  }
+}
+
+// The sun object itself: layered radial gradient core + corona rays + flares.
+function drawApocalypseSun() {
+  if (!apocalypseSun) return;
+  const sun = apocalypseSun;
+  const x = W / 2, y = sun.y, r = sun.radius;
+  const t = apocalypseElapsed();
+
+  ctx.save();
+
+  // Outer glow: large semi-transparent red gradient.
+  const glowR = r * 1.5;
+  const glow = ctx.createRadialGradient(x, y, r * 0.8, x, y, glowR);
+  glow.addColorStop(0, 'rgba(255,80,20,0.45)');
+  glow.addColorStop(0.6, 'rgba(180,40,10,0.2)');
+  glow.addColorStop(1, 'rgba(80,0,0,0)');
+  ctx.fillStyle = glow;
+  ctx.beginPath(); ctx.arc(x, y, glowR, 0, 6.28); ctx.fill();
+
+  // Corona rays: 10 animated, flickering in length.
+  const rayCount = 10;
+  for (let i = 0; i < rayCount; i++) {
+    const a = (i / rayCount) * 6.28 + t * 0.08;
+    const freq = 1.2 + i * 0.17;
+    const flick = Math.abs(Math.sin(t * freq + i));
+    const rayLen = r * (0.22 + 0.2 * flick);
+    ctx.globalAlpha = 0.35 + 0.25 * flick;
+    ctx.strokeStyle = 'rgba(255,180,80,0.9)';
+    ctx.lineWidth = 10;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(x + Math.cos(a) * r, y + Math.sin(a) * r);
+    ctx.lineTo(x + Math.cos(a) * (r + rayLen), y + Math.sin(a) * (r + rayLen));
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+
+  // Core radial gradient.
+  const core = ctx.createRadialGradient(x, y, r * 0.1, x, y, r);
+  core.addColorStop(0, '#fff7e6');
+  core.addColorStop(0.5, '#ff4500');
+  core.addColorStop(1, '#8b0000');
+  ctx.fillStyle = core;
+  ctx.beginPath(); ctx.arc(x, y, r, 0, 6.28); ctx.fill();
+
+  // Surface noise: subtle animated blob pattern on the sun's disc.
+  ctx.save();
+  ctx.beginPath(); ctx.arc(x, y, r, 0, 6.28); ctx.clip();
+  for (let i = 0; i < 6; i++) {
+    const nx = x + Math.cos(t * 0.5 + i * 1.3) * r * 0.35;
+    const ny = y + Math.sin(t * 0.4 + i * 2.1) * r * 0.35;
+    const nr = r * 0.25 * (0.5 + 0.5 * Math.sin(t * 1.1 + i));
+    ctx.globalAlpha = 0.18;
+    ctx.fillStyle = i % 2 === 0 ? '#ffb060' : '#ff4020';
+    ctx.beginPath(); ctx.arc(nx, ny, nr, 0, 6.28); ctx.fill();
+  }
+  ctx.restore();
+
+  // Solar flares: bezier arcs shooting off the surface.
+  const flareCount = 5;
+  for (let i = 0; i < flareCount; i++) {
+    const a = (i / flareCount) * 6.28 + t * 0.2 + i;
+    const span = 0.35 + 0.15 * Math.sin(t * 1.7 + i);
+    const a2 = a + span;
+    const sx = x + Math.cos(a) * r * 0.95, sy = y + Math.sin(a) * r * 0.95;
+    const ex = x + Math.cos(a2) * r * 0.95, ey = y + Math.sin(a2) * r * 0.95;
+    const mMag = r * (1.1 + 0.12 * Math.sin(t + i));
+    const mx = x + Math.cos((a + a2) / 2) * mMag;
+    const my = y + Math.sin((a + a2) / 2) * mMag;
+    ctx.globalAlpha = 0.7;
+    ctx.strokeStyle = 'rgba(255,140,40,0.95)';
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(sx, sy);
+    ctx.quadraticCurveTo(mx, my, ex, ey);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+function drawApocalypseOverlay() {
+  if (state !== 'apocalypse') return;
+  const t = apocalypseElapsed();
+
+  // Red screen tint builds through phase 2, peaks as sun descends.
+  let tintAlpha = 0;
+  if (t >= 3 && t < 8) tintAlpha = 0.15 * ((t - 3) / 5);
+  else if (t >= 8) tintAlpha = 0.15 + 0.25 * Math.min(1, (t - 8) / 20);
+  if (tintAlpha > 0) {
+    ctx.fillStyle = `rgba(130,0,0,${tintAlpha})`;
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  // Sun.
+  drawApocalypseSun();
+
+  // Impact flashes and fade.
+  if (apocalypseImpactTriggered) {
+    const impactT = (Date.now() - apocalypseImpactStart) / 1000;
+    // Small white ring at player position (0 → 0.1s: expand 30 → 100).
+    if (impactT <= 0.2) {
+      const k = Math.min(1, impactT / 0.1);
+      const rr = 30 + 70 * k;
+      ctx.globalAlpha = Math.max(0, 1 - k);
+      ctx.fillStyle = 'rgba(255,255,255,0.95)';
+      ctx.beginPath(); ctx.arc(player.x, player.y, rr, 0, 6.28); ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+    // Big white flash 0.2 → 0.5s: alpha 0→1 over 0.3s.
+    if (impactT > 0.2 && impactT <= 0.5) {
+      const k = (impactT - 0.2) / 0.3;
+      ctx.fillStyle = `rgba(255,255,255,${k})`;
+      ctx.fillRect(0, 0, W, H);
+    }
+    // Hold white 0.5 → 0.7.
+    if (impactT > 0.5 && impactT <= 0.7) {
+      ctx.fillStyle = 'rgba(255,255,255,1)';
+      ctx.fillRect(0, 0, W, H);
+    }
+    // Fade white → black 0.7 → 1.2.
+    if (impactT > 0.7 && impactT <= 1.2) {
+      const k = (impactT - 0.7) / 0.5;
+      ctx.fillStyle = `rgba(255,255,255,${1 - k})`;
+      ctx.fillRect(0, 0, W, H);
+      ctx.fillStyle = `rgba(0,0,0,${k})`;
+      ctx.fillRect(0, 0, W, H);
+    }
+  }
+}
+
+function resetApocalypse() {
+  apocalypseStart = 0;
+  apocalypseDeathFlag = false;
+  apocalypseSun = null;
+  apocalypseImpactStart = 0;
+  apocalypseImpactTriggered = false;
+  apocalypsePlayerStart = null;
+  if (apocalypseRumbleNodes) {
+    try { apocalypseRumbleNodes.stop(); } catch {}
+    apocalypseRumbleNodes = null;
+  }
 }
 
 function triggerDeath() {
@@ -3461,7 +3814,7 @@ function triggerDeath() {
 
   // Time bonus: every 30s survived = score * 0.1 bonus, capped at 15 intervals.
   const elapsedAtDeath = elapsedRunSeconds();
-  const survivedIntervals = Math.min(15, Math.floor(elapsedAtDeath / 30));
+  const survivedIntervals = Math.min(20, Math.floor(elapsedAtDeath / 30));
   const timeBonus = Math.floor(score * 0.1 * survivedIntervals);
   const baseScore = score;
   score += timeBonus;
@@ -3556,7 +3909,11 @@ function triggerDeath() {
     const timeBonusRow = timeBonus > 0
       ? `<div class="rs-row" style="color:rgba(100,220,255,0.9);"><span class="rs-label" style="color:rgba(100,220,255,0.75);">TIME BONUS</span><span class="rs-val"></span><span class="rs-pts" style="color:rgba(100,220,255,0.9);">+${timeBonus} pts</span></div>`
       : '';
+    const apocalypseBanner = apocalypseDeathFlag
+      ? `<div style="font-family:'Orbitron',monospace;font-weight:900;letter-spacing:3px;font-size:15px;color:rgba(255,110,60,0.98);text-shadow:0 0 18px rgba(255,80,40,0.6);text-align:center;margin-bottom:8px;">CONSUMED BY THE SUN &#9728;</div>`
+      : '';
     rs.innerHTML = `
+      ${apocalypseBanner}
       <div class="rs-title">${deathScore}</div>
       <div class="rs-row"><span class="rs-label">PLANETS PASSED</span><span class="rs-val">${deathPlanetsPassed}</span><span class="rs-pts">${deathStats.pointsFromPassing} pts</span></div>
       <div class="rs-row"><span class="rs-label">PLANETS DESTROYED</span><span class="rs-val">${deathStats.totalDestroyed}</span><span class="rs-pts">${deathStats.pointsFromDestroying} pts</span></div>
@@ -3837,97 +4194,154 @@ function drawBodies() {
   }
 }
 
-// Orb-specific trail particles. Emitted each playing frame behind the player
-// in the style of the active orb. Separate from the player-position `trail`
-// array so we can draw upward-drifting wisps, falling rocks, etc.
+// Orb-specific trail particles. Every orb (including cyan) emits behind the
+// player. Intensity (spawn rate, size, opacity) scales with both the player's
+// motion speed and the current scroll speed so faster play feels more visceral.
 let orbTrailParticles = [];
-const ORB_TRAIL_CAP = 140;
+const ORB_TRAIL_CAP = 200;
 
 function emitOrbTrail() {
   if (state !== 'playing') return;
   const orb = activeOrb;
-  const px = player.x, py = player.y;
-  if (orb === 'cosmic') {
-    // Purple wisps drifting upward.
-    if (Math.random() < 0.8) {
+  const pvx = player.vx, pvy = player.vy;
+  const moveMag = Math.hypot(pvx, pvy);
+  const scroll = scrollSpeed();
+  // Trail intensity formula per spec.
+  const intensity = scroll * 0.3 + moveMag * 0.5;
+
+  // Direction behind the player. If stationary, default to "below" (up the
+  // scroll — planets fall down, so behind = above in screen space would be
+  // wrong. Scroll falls toward y+, player sits low on screen, so behind in
+  // the world is toward y+ (down). Use a safe fallback pointing upward in
+  // movement space (-vx, -vy); when still, use straight down in screen space
+  // to match the scroll.
+  let bx, by;
+  if (moveMag > 0.01) {
+    bx = -pvx / moveMag;
+    by = -pvy / moveMag;
+  } else {
+    bx = 0;
+    by = 1;
+  }
+  const px = player.x + bx * (PLAYER_R + 2);
+  const py = player.y + by * (PLAYER_R + 2);
+
+  // Spawn count scales with intensity (at least one occasional particle even
+  // when mostly still; many when moving fast).
+  const spawnChance = Math.min(1, 0.35 + intensity * 0.12);
+  const count = Math.random() < spawnChance ? 1 + Math.floor(intensity * 0.35) : 0;
+  if (count <= 0) return;
+  const sizeMul = 0.8 + Math.min(1.2, intensity * 0.12);
+  const alphaMul = 0.7 + Math.min(0.3, intensity * 0.04);
+
+  for (let i = 0; i < count; i++) {
+    // Small jitter around the behind-player spawn point.
+    const jx = px + (Math.random() - 0.5) * 8;
+    const jy = py + (Math.random() - 0.5) * 8;
+
+    if (orb === 'cyan') {
+      pushCapped(orbTrailParticles, {
+        kind: 'cyan',
+        x: jx, y: jy,
+        vx: bx * (0.3 + Math.random() * 0.6) + (Math.random() - 0.5) * 0.3,
+        vy: by * (0.3 + Math.random() * 0.6) + (Math.random() - 0.5) * 0.3,
+        life: 1, size: (2 + Math.random() * 2.4) * sizeMul,
+        alphaMul, fade: 0.05,
+      }, ORB_TRAIL_CAP);
+    } else if (orb === 'cosmic') {
+      // Purple wisps, slightly elongated, drift sideways as they fade.
       pushCapped(orbTrailParticles, {
         kind: 'wisp',
-        x: px + (Math.random() - 0.5) * 10, y: py + 4 + Math.random() * 4,
-        vx: (Math.random() - 0.5) * 0.4,
-        vy: -1.4 - Math.random() * 1.2,
-        life: 1, size: 2.5 + Math.random() * 2.5,
+        x: jx, y: jy,
+        vx: bx * (0.4 + Math.random() * 0.6) + (Math.random() - 0.5) * 0.8,
+        vy: by * (0.4 + Math.random() * 0.6) + (Math.random() - 0.5) * 0.4,
+        drift: (Math.random() - 0.5) * 0.12, // sideways drift per frame
+        life: 1, size: (2.5 + Math.random() * 2.5) * sizeMul,
+        alphaMul, fade: 0.025,
       }, ORB_TRAIL_CAP);
-    }
-  } else if (orb === 'solar') {
-    // Orange/red fire particles: dense, flickering, drift slightly upward.
-    if (Math.random() < 0.9) {
+    } else if (orb === 'solar') {
+      // Orange/red fire particles; flicker in size, fade fast.
       pushCapped(orbTrailParticles, {
         kind: 'fire',
-        x: px + (Math.random() - 0.5) * 12, y: py + 4 + Math.random() * 3,
-        vx: (Math.random() - 0.5) * 0.8,
-        vy: -0.4 - Math.random() * 1.5,
-        life: 1, size: 3 + Math.random() * 3.5,
-        hue: Math.random() < 0.35 ? '255,210,80' : (Math.random() < 0.5 ? '255,120,40' : '255,80,30'),
+        x: jx, y: jy,
+        vx: bx * (0.5 + Math.random() * 0.9) + (Math.random() - 0.5) * 0.6,
+        vy: by * (0.5 + Math.random() * 0.9) + (Math.random() - 0.5) * 0.6,
+        life: 1, size: (3 + Math.random() * 3.5) * sizeMul,
+        hue: Math.random() < 0.35 ? '255,210,80'
+           : (Math.random() < 0.55 ? '255,120,40' : '255,80,30'),
+        flicker: Math.random() * 6.28,
+        alphaMul, fade: 0.055,
       }, ORB_TRAIL_CAP);
-    }
-  } else if (orb === 'nebula') {
-    // Blue speed lines: short vertical streaks scrolling behind the player.
-    if (Math.random() < 0.5) {
+    } else if (orb === 'nebula') {
+      // Blue speed lines — thin elongated streaks along movement direction.
+      const len = (10 + Math.random() * 14) * sizeMul;
       pushCapped(orbTrailParticles, {
         kind: 'line',
-        x: px + (Math.random() - 0.5) * 26, y: py + 6,
-        vx: 0, vy: 4 + Math.random() * 3.5,
-        life: 1, len: 14 + Math.random() * 14,
+        x: jx, y: jy,
+        vx: bx * (0.9 + Math.random() * 0.8),
+        vy: by * (0.9 + Math.random() * 0.8),
+        dx: bx, dy: by, // streak direction = movement direction
+        len,
+        life: 1, alphaMul, fade: 0.045,
       }, ORB_TRAIL_CAP);
-    }
-  } else if (orb === 'asteroid') {
-    // Grey rock fragments falling behind the player.
-    if (Math.random() < 0.55) {
+    } else if (orb === 'asteroid') {
+      // Grey rock fragments, angular, tumble as they fall.
       pushCapped(orbTrailParticles, {
         kind: 'rock',
-        x: px + (Math.random() - 0.5) * 10, y: py + 5,
-        vx: (Math.random() - 0.5) * 1.5,
-        vy: 0.8 + Math.random() * 1.8,
-        life: 1, size: 2 + Math.random() * 2.5,
-        angle: Math.random() * 6.28, spin: (Math.random() - 0.5) * 0.25,
+        x: jx, y: jy,
+        vx: bx * (0.3 + Math.random() * 0.7) + (Math.random() - 0.5) * 1.4,
+        vy: by * (0.3 + Math.random() * 0.7) + (Math.random() - 0.5) * 1.4,
+        life: 1, size: (2 + Math.random() * 2.5) * sizeMul,
+        angle: Math.random() * 6.28, spin: (Math.random() - 0.5) * 0.3,
+        alphaMul, fade: 0.03,
       }, ORB_TRAIL_CAP);
     }
   }
-  // cyan: no extra particles — the cyan position-trail below carries the look.
 }
 
 function updateOrbTrailParticles() {
   for (let i = orbTrailParticles.length - 1; i >= 0; i--) {
     const p = orbTrailParticles[i];
     p.x += p.vx; p.y += p.vy;
+    if (p.drift) p.x += p.drift;
     if (p.angle !== undefined) p.angle += p.spin;
-    if (p.kind === 'fire') p.vy -= 0.04; // fire lifts faster over time
-    p.life -= 0.025;
+    if (p.kind === 'fire') {
+      p.vy -= 0.03; // fire curls upward as it fades
+      if (p.flicker !== undefined) p.flicker += 0.3;
+    }
+    p.life -= p.fade || 0.03;
     if (p.life <= 0) orbTrailParticles.splice(i, 1);
   }
 }
 
 function drawOrbTrailParticles() {
   if (!orbTrailParticles.length) return;
+  const orbRgb = activeOrbColor();
   ctx.save();
   for (const p of orbTrailParticles) {
-    const a = Math.max(0, p.life);
-    ctx.globalAlpha = a * 0.8;
-    if (p.kind === 'wisp') {
-      ctx.fillStyle = `rgba(${activeOrbColor()},1)`;
-      ctx.beginPath(); ctx.arc(p.x, p.y, p.size * (0.6 + 0.4 * a), 0, 6.28); ctx.fill();
+    const a = Math.max(0, p.life) * (p.alphaMul || 0.8);
+    ctx.globalAlpha = a;
+    if (p.kind === 'cyan' || p.kind === 'wisp') {
+      ctx.fillStyle = `rgba(${orbRgb},1)`;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size * (0.5 + 0.5 * p.life), 0, 6.28);
+      ctx.fill();
     } else if (p.kind === 'fire') {
       ctx.fillStyle = `rgba(${p.hue},1)`;
-      ctx.beginPath(); ctx.arc(p.x, p.y, p.size * (0.5 + 0.6 * a), 0, 6.28); ctx.fill();
+      const flick = 0.85 + Math.sin(p.flicker || 0) * 0.25;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size * (0.45 + 0.6 * p.life) * flick, 0, 6.28);
+      ctx.fill();
     } else if (p.kind === 'line') {
-      ctx.strokeStyle = `rgba(${activeOrbColor()},1)`;
+      ctx.strokeStyle = `rgba(${orbRgb},1)`;
       ctx.lineWidth = 2;
+      ctx.lineCap = 'round';
       ctx.beginPath();
       ctx.moveTo(p.x, p.y);
-      ctx.lineTo(p.x, p.y - p.len);
+      ctx.lineTo(p.x - p.dx * p.len, p.y - p.dy * p.len);
       ctx.stroke();
     } else if (p.kind === 'rock') {
-      ctx.fillStyle = `rgba(${activeOrbColor()},1)`;
+      ctx.fillStyle = `rgba(${orbRgb},1)`;
       ctx.save();
       ctx.translate(p.x, p.y);
       ctx.rotate(p.angle);
@@ -3946,24 +4360,10 @@ function drawOrbTrailParticles() {
   ctx.globalAlpha = 1;
 }
 
+// drawTrail now renders the orb particle stream only. The legacy cyan position
+// trail was replaced per spec — every orb shares the same particle system.
 function drawTrail() {
-  const ghosting = activeEffects.ghost > 0;
-  const orbColor = activeOrbColor();
-  // Orb-specific particles first (drawn below the cyan position trail).
   drawOrbTrailParticles();
-  // Position trail: always drawn. Matches orb color (except during ghost,
-  // which keeps the signature purple wisp so the state reads at a glance).
-  for (let i=0; i<trail.length; i++) {
-    const t=i/trail.length;
-    ctx.globalAlpha = t * (ghosting ? 0.55 : 0.6);
-    if (ghosting) {
-      ctx.fillStyle = `hsl(${278 + t*12}, 75%, ${62 + t*12}%)`;
-    } else {
-      ctx.fillStyle = `rgba(${orbColor},1)`;
-    }
-    ctx.beginPath(); ctx.arc(trail[i].x,trail[i].y,t*4.5,0,6.28); ctx.fill();
-  }
-  ctx.globalAlpha=1;
 }
 
 function drawPlayer() {
@@ -4001,19 +4401,21 @@ function drawPlayer() {
     ctx.globalAlpha = 0.4 * shieldVis;
     ctx.lineWidth = 0.8;
     ctx.beginPath(); ctx.arc(0,0,PLAYER_R*4.0,0,6.28); ctx.stroke();
-    // Extra inner concentric ring while multiple hits remain (fortress combo
-    // or asteroid orb's multi-hit shield).
-    if (shieldHits >= 2) {
-      ctx.globalAlpha = 0.9 * shieldVis;
-      ctx.strokeStyle = 'rgba(120,255,255,0.95)';
-      ctx.lineWidth = 1.6;
-      ctx.beginPath(); ctx.arc(0,0,PLAYER_R*2.6,0,6.28); ctx.stroke();
-    }
-    if (shieldHits >= 3) {
-      ctx.globalAlpha = 0.7 * shieldVis;
-      ctx.strokeStyle = 'rgba(180,240,255,0.85)';
-      ctx.lineWidth = 1.2;
-      ctx.beginPath(); ctx.arc(0,0,PLAYER_R*3.0,0,6.28); ctx.stroke();
+    // Stack rings: one ring per shield hit point remaining. Asteroid orb uses
+    // a stone/grey tone, default/fortress use cyan. Each ring sits at a
+    // slightly larger radius.
+    const hits = Math.min(shieldHits, 4);
+    const asteroidRing = activeOrb === 'asteroid';
+    const ringRgb = asteroidRing ? '200,195,185' : '120,255,255';
+    const ringFadeRgb = asteroidRing ? '220,215,205' : '180,240,255';
+    for (let i = 2; i <= hits; i++) {
+      const r = PLAYER_R * (2.2 + (i - 2) * 0.5);
+      ctx.globalAlpha = (0.95 - (i - 2) * 0.18) * shieldVis;
+      ctx.strokeStyle = i === 2
+        ? `rgba(${ringRgb},0.95)`
+        : `rgba(${ringFadeRgb},0.85)`;
+      ctx.lineWidth = i === 2 ? 1.6 : 1.2;
+      ctx.beginPath(); ctx.arc(0, 0, r, 0, 6.28); ctx.stroke();
     }
   }
   // PHANTOM BLAST: red/orange damage aura around player
@@ -4317,7 +4719,7 @@ function updatePowerupTimer() {
     fillColor = 'rgba(120,230,255,0.95)';
   } else if (activeEffects.ghost > 0) {
     label = 'GHOST'; remaining = activeEffects.ghost;
-    max = activeCombos.ghost_ghost ? GHOST_ETERNAL_DURATION : GHOST_DURATION();
+    max = activeCombos.ghost_ghost ? GHOST_ETERNAL_DURATION() : GHOST_DURATION();
     fillColor = 'rgba(200,120,255,0.95)';
   } else if (activeEffects.hyperspeed > 0) {
     label = 'HYPERSPEED'; remaining = activeEffects.hyperspeed;
@@ -4574,12 +4976,12 @@ function render() {
     ctx.globalAlpha = 1;
   }
 
-  if (state==='playing'||state==='dead'||state==='paused') {
+  if (state==='playing'||state==='dead'||state==='paused'||state==='apocalypse') {
     drawPowerups();
     drawNovaRings();
     drawPlanetRipples();
     drawTrail();
-    if (state==='playing'||state==='paused') {
+    if (state==='playing'||state==='paused'||state==='apocalypse') {
       drawHyperspeedBarrier();
       drawPlayer();
     }
@@ -4588,6 +4990,18 @@ function render() {
     drawDeathShards();
     drawDeathParticles();
     if (state==='playing') drawHyperStackText();
+  }
+
+  // Apocalypse visuals sit on top of the world (red tint, descending sun,
+  // impact flashes). Drawn last so they layer over everything else.
+  if (state === 'apocalypse') drawApocalypseOverlay();
+  // After impact, triggerDeath flips state to 'dead'. Keep the post-impact
+  // black curtain up until the death screen overlay covers the canvas — this
+  // avoids the world suddenly re-appearing between fade-to-black and the DOM
+  // overlay fading in.
+  else if (state === 'dead' && apocalypseDeathFlag) {
+    ctx.fillStyle = 'rgba(0,0,0,1)';
+    ctx.fillRect(0, 0, W, H);
   }
 
   updatePowerupTimer();
@@ -4724,6 +5138,7 @@ function goToMainMenu() {
   planetRipples = [];
   destroyEffects = [];
   deathShards = [];
+  resetApocalypse();
   deathFlashFrames = 0;
   if (pendingDeathBurstTimer) { clearTimeout(pendingDeathBurstTimer); pendingDeathBurstTimer = null; }
   clearPendingNovaTimeouts();
