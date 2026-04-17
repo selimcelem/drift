@@ -1153,6 +1153,10 @@ const CRACK_FRAGMENTS_CAP = 30;
 // after their delay so they follow where the player recently was.
 let playerPosHistory = [];
 const PLAYER_POS_HISTORY_LEN = 90; // 1.5s @ 60fps — covers 0.5s mirror delay
+// Set true each frame if the player is within any void orb's range. Drives
+// the purple targeting-line tint and the low-frequency hum.
+let playerInVoidRange = false;
+let voidHumNodes = null;
 let pendingNovaTimeouts = [];
 let destroyEffects = [];   // per-planet destruction visuals (flash + ring + debris)
 let deathShards = [];      // orb shatter pieces spawned on player death
@@ -1288,9 +1292,10 @@ const SFX = (function() {
     shieldDestroy:     './assets/SFX/SHIELD DESTROY.mp3',
     novaDestroy:       './assets/SFX/NOVA DESTROY.mp3',
     hyperspeedBarrier: './assets/SFX/HYPERSPEED BARRIER.mp3',
+    scream:            './assets/SFX/SCREAM.mp3',
   };
-  const sfxBuffers = { shieldDestroy: null, novaDestroy: null, hyperspeedBarrier: null };
-  const sfxLoading = { shieldDestroy: null, novaDestroy: null, hyperspeedBarrier: null };
+  const sfxBuffers = { shieldDestroy: null, novaDestroy: null, hyperspeedBarrier: null, scream: null };
+  const sfxLoading = { shieldDestroy: null, novaDestroy: null, hyperspeedBarrier: null, scream: null };
   let currentTrackName = null;       // null = no track playing
   let currentMusicSource = null;     // active AudioBufferSourceNode
   let currentMusicSourceGain = null; // per-source gain (used for crossfades)
@@ -1911,8 +1916,46 @@ const SFX = (function() {
     });
   }
 
-  // Screaming planet cue: high-pitched sine sweep 800→200hz over 0.3s.
+  // Low-frequency hum for the void orb. Sustained 60hz sine at low volume;
+  // caller calls stop() when leaving the proximity range.
+  function startVoidHum() {
+    if (!ensureRunning()) return null;
+    if (!sfxEnabled) return null;
+    try {
+      const t = ctx.currentTime;
+      const o = ctx.createOscillator();
+      o.type = 'sine'; o.frequency.value = 60;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(0.05, t + 0.25);
+      o.connect(g); g.connect(sfxGain);
+      o.start(t);
+      return {
+        stop() {
+          try {
+            const now = ctx.currentTime;
+            g.gain.cancelScheduledValues(now);
+            g.gain.setValueAtTime(g.gain.value, now);
+            g.gain.linearRampToValueAtTime(0, now + 0.25);
+            o.stop(now + 0.3);
+            killOnEnd(o, g);
+          } catch {}
+        },
+      };
+    } catch {}
+    return null;
+  }
+
+  // Screaming planet cue: prefer the SCREAM.mp3 clip if loaded, else fall
+  // back to the synthesized 800→200hz sweep so the game still works offline
+  // or before the asset finishes decoding.
   function screamShriek() {
+    if (sfxBuffers.scream) {
+      playSfxBuffer('scream', 0.4);
+      return;
+    }
+    // Kick off a background load so subsequent cues can use the file.
+    if (!sfxLoading.scream) loadSfxBuffer('scream').catch(() => {});
     safeSfx(t => {
       chipSweep('sine', 800, 200, t, 0.3, 0.2);
     });
@@ -2192,7 +2235,7 @@ const SFX = (function() {
   return {
     init, attract, repel, pickup, planetDestroyed, death,
     comboActivate, comboDestroySound, startHyperspeedWhoosh,
-    startApocalypseRumble, playApocalypseImpact, screamShriek,
+    startApocalypseRumble, playApocalypseImpact, screamShriek, startVoidHum,
     playTrack, pauseMusic, resumeMusic,
     clickPrimary, clickSecondary,
     setMusicEnabled, setSfxEnabled, isMusicEnabled, isSfxEnabled,
@@ -2372,7 +2415,8 @@ function spawnBody(yBase) {
   // Type-specific animation state.
   if (type === 'toothed') {
     body.toothAngle = Math.random() * 6.28;
-    body.spikeLen = radius * 0.35;
+    body.spikeLen = radius * 0.6;
+    body.innerSpikeLen = radius * 0.32;
   } else if (type === 'eye') {
     body.pupilDx = 0; body.pupilDy = 0;
     body.eyePulse = Math.random() * 6.28;
@@ -2382,27 +2426,41 @@ function spawnBody(yBase) {
     body.eruptFlash = 0;
     body.crackSeed = Math.floor(Math.random() * 1e6);
   } else if (type === 'tentacle') {
-    body.tentacleCount = 5;
+    body.tentacleCount = 6;
     body.tentaclePhases = [];
-    for (let i = 0; i < 5; i++) body.tentaclePhases.push(Math.random() * 3.5);
+    for (let i = 0; i < 6; i++) body.tentaclePhases.push(Math.random() * 3.5);
+    body.tentacleSeed = Math.floor(Math.random() * 1e6);
   } else if (type === 'screaming') {
     body.screamPhase = Math.random() * 6; // offset within 6s cycle
     body.screamActive = false;
     body.screamSurgeFrames = 0;
-    body.lastMouth = 0;
+    body.screamSeed = Math.floor(Math.random() * 1e6);
+    body.shockwaves = [];
   } else if (type === 'void') {
     body.voidPulse = Math.random() * 6.28;
   } else if (type === 'heart') {
     body.heartScale = 1;
     body.heartPhase = Math.random() * 6.28;
     body.bloodDrip = 0;
+    body.heartSeed = Math.floor(Math.random() * 1e6);
+    body.bloodDrops = []; // {offX, age, maxAge, size}
   } else if (type === 'mirror') {
     body.mirrorVx = 0;
     body.mirrorDelayFrames = 30; // 0.5s @ 60fps
+    body.mirrorSeed = Math.floor(Math.random() * 1e6);
   } else if (type === 'skull') {
     body.skullRotation = 0;
     body.skullEyeFlash = 0;
     body.nextSkullFlash = 60 + Math.floor(Math.random() * 240);
+    body.skullSeed = Math.floor(Math.random() * 1e6);
+    // Pick planet palette once per skull — greens/browns/blues for the upper half.
+    const palettes = [
+      { top: '#3a6b38', mid: '#5a8a3c', low: '#6d5a30' }, // earthy green
+      { top: '#3050a0', mid: '#5080c0', low: '#8a7040' }, // ocean + desert
+      { top: '#6d4a20', mid: '#a87438', low: '#8c6a3a' }, // rust
+      { top: '#2d5078', mid: '#4278a0', low: '#6d8aa0' }, // blue-grey
+    ];
+    body.skullPalette = palettes[Math.floor(Math.random() * palettes.length)];
   }
 
   return body;
@@ -3215,6 +3273,8 @@ function resetGame() {
   deathShards = [];
   crackFragments = [];
   playerPosHistory = [];
+  playerInVoidRange = false;
+  if (voidHumNodes) { try { voidHumNodes.stop(); } catch {} voidHumNodes = null; }
   resetApocalypse();
   deathFlashFrames = 0;
   if (pendingDeathBurstTimer) { clearTimeout(pendingDeathBurstTimer); pendingDeathBurstTimer = null; }
@@ -3271,6 +3331,7 @@ function findClosest() {
 // just before applyForce so drag and position updates see the combined
 // velocity change.
 function applyEnvironmentForces() {
+  let nearVoid = false;
   for (const b of bodies) {
     if (b.type === 'screaming' && b.screamSurgeFrames > 0) {
       const d = dist(player, b);
@@ -3282,11 +3343,20 @@ function applyEnvironmentForces() {
       }
     } else if (b.type === 'void') {
       const d = dist(player, b);
-      if (d < b.radius * 3) {
-        player.vx += Math.sin(frame * 0.07 + b.pulse) * 0.04;
-        player.vy += Math.cos(frame * 0.05) * 0.04;
+      if (d < b.radius * 2) {
+        player.vx += Math.sin(frame * 0.07 + b.pulse) * 0.12;
+        player.vy += Math.cos(frame * 0.05) * 0.12;
+        nearVoid = true;
       }
     }
+  }
+  playerInVoidRange = nearVoid;
+  // Toggle the void hum based on proximity.
+  if (nearVoid && !voidHumNodes) {
+    voidHumNodes = SFX.startVoidHum();
+  } else if (!nearVoid && voidHumNodes) {
+    try { voidHumNodes.stop(); } catch {}
+    voidHumNodes = null;
   }
 }
 
@@ -3507,10 +3577,14 @@ function updateBodyTypes(spd) {
       if (b.eruptFlash > 0) b.eruptFlash--;
       if (b.nextEruptFrame <= 0) {
         const count = 2 + Math.floor(Math.random() * 2);
+        // Pick a cone direction for this eruption; fragments stay within
+        // ±45° of it rather than scattering 360° — more dodgeable.
+        const coneCenter = Math.random() * Math.PI * 2;
+        const coneHalf = Math.PI / 4;
         for (let i = 0; i < count; i++) {
           if (crackFragments.length >= CRACK_FRAGMENTS_CAP) crackFragments.shift();
-          const ang = Math.random() * Math.PI * 2;
-          const speed = 2 + Math.random() * 2;
+          const ang = coneCenter + (Math.random() - 0.5) * 2 * coneHalf;
+          const speed = 0.8 + Math.random() * 0.7; // 0.8–1.5
           crackFragments.push({
             x: b.x, y: b.y,
             vx: Math.cos(ang) * speed,
@@ -3540,24 +3614,40 @@ function updateBodyTypes(spd) {
       if (b.screamActive && !wasScreaming) {
         SFX.screamShriek();
         b.screamSurgeFrames = 48; // 0.8s @ 60fps
+        // Fire a visible shockwave ripple emanating from the body.
+        b.shockwaves.push({ age: 0, maxLife: 28 });
       }
       if (b.screamSurgeFrames > 0) b.screamSurgeFrames--;
+      if (b.shockwaves.length) {
+        for (const sw of b.shockwaves) sw.age++;
+        b.shockwaves = b.shockwaves.filter(sw => sw.age < sw.maxLife);
+      }
     } else if (b.type === 'void') {
       b.voidPulse += 0.03;
     } else if (b.type === 'heart') {
       const hz = 1.2 + scrollSpeed() * 0.05;
       b.heartPhase += hz * (1 / 60) * 2 * Math.PI;
       b.heartScale = 1 + 0.125 * (1 + Math.sin(b.heartPhase));
-      if (Math.random() < 0.06) b.bloodDrip = 30;
-      if (b.bloodDrip > 0) b.bloodDrip--;
+      // Irregular blood drips off the bottom.
+      if (Math.random() < 0.025 && b.bloodDrops.length < 6) {
+        b.bloodDrops.push({
+          offX: (Math.random() - 0.5) * b.radius * 0.6,
+          age: 0, maxAge: 60 + Math.floor(Math.random() * 30),
+          size: 1.8 + Math.random() * 1.6,
+        });
+      }
+      for (const d of b.bloodDrops) d.age++;
+      b.bloodDrops = b.bloodDrops.filter(d => d.age < d.maxAge);
     } else if (b.type === 'mirror') {
+      // Move toward the player's position from 0.5s ago at 25% strength
+      // (0.005 ≈ 0.02 * 0.25) — still visibly tracks without racing.
       const idx = Math.min(playerPosHistory.length - 1, b.mirrorDelayFrames);
       const targetX = playerPosHistory[idx];
       if (targetX !== undefined) {
-        b.x += (targetX - b.x) * 0.02;
+        b.x += (targetX - b.x) * 0.005;
       }
     } else if (b.type === 'skull') {
-      b.skullRotation += 0.003;
+      // No rotation — face stays upright as the planet drifts down.
       if (b.skullEyeFlash > 0) b.skullEyeFlash--;
       b.nextSkullFlash--;
       if (b.nextSkullFlash <= 0) {
@@ -4534,8 +4624,11 @@ function drawBodies() {
       ctx.beginPath(); ctx.arc(b.x,b.y,b.radius+5+Math.sin(frame*0.18)*2,0,6.28); ctx.stroke();
 
       if (leftDown || rightDown) {
+        // Void proximity warps attract/repel — signal that by overriding the
+        // dashed-line color with a dark purple tint.
+        const dashColor = playerInVoidRange ? 'rgba(140,60,200,' : lineColor;
         ctx.globalAlpha = 0.3;
-        ctx.strokeStyle = lineColor+'0.8)';
+        ctx.strokeStyle = dashColor+'0.8)';
         ctx.lineWidth = 1;
         ctx.setLineDash([5,5]);
         ctx.beginPath(); ctx.moveTo(player.x,player.y); ctx.lineTo(b.x,b.y); ctx.stroke();
@@ -4566,7 +4659,35 @@ function drawBlackhole(b) {
 
 function drawToothed(b) {
   ctx.save();
-  // Rotating spikes.
+  // Slow pulsing red glow between spikes.
+  const glowPulse = 0.45 + 0.35 * Math.abs(Math.sin(Date.now() * 0.002));
+  const glowR = b.radius * 1.75;
+  const gg = ctx.createRadialGradient(b.x, b.y, b.radius * 0.9, b.x, b.y, glowR);
+  gg.addColorStop(0, `rgba(180,20,20,${0.5 * glowPulse})`);
+  gg.addColorStop(1, 'rgba(90,0,0,0)');
+  ctx.fillStyle = gg;
+  ctx.beginPath(); ctx.arc(b.x, b.y, glowR, 0, 6.28); ctx.fill();
+
+  // Inner ring of smaller spikes (4) between the main 8.
+  for (let i = 0; i < 4; i++) {
+    const a = b.toothAngle * 0.85 + i * (Math.PI / 2) + Math.PI / 8;
+    const ext = b.innerSpikeLen * (0.5 + 0.5 * Math.abs(Math.sin(a * 1.3)));
+    const baseX = b.x + Math.cos(a) * b.radius * 0.96;
+    const baseY = b.y + Math.sin(a) * b.radius * 0.96;
+    const tipX  = b.x + Math.cos(a) * (b.radius + ext);
+    const tipY  = b.y + Math.sin(a) * (b.radius + ext);
+    const tangX = -Math.sin(a), tangY = Math.cos(a);
+    const baseW = 5;
+    ctx.fillStyle = '#7a0000';
+    ctx.beginPath();
+    ctx.moveTo(baseX + tangX * baseW, baseY + tangY * baseW);
+    ctx.lineTo(tipX, tipY);
+    ctx.lineTo(baseX - tangX * baseW, baseY - tangY * baseW);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  // 8 main rotating spikes: sharp triangles, wide base → 0px tip.
   for (let i = 0; i < 8; i++) {
     const a = b.toothAngle + i * (Math.PI / 4);
     const ext = b.spikeLen * Math.abs(Math.sin(a));
@@ -4575,21 +4696,54 @@ function drawToothed(b) {
     const tipX = b.x + Math.cos(a) * (b.radius + ext);
     const tipY = b.y + Math.sin(a) * (b.radius + ext);
     const tangX = -Math.sin(a), tangY = Math.cos(a);
-    ctx.fillStyle = '#cc0000';
+    const baseW = 6; // half-width at base → total 12px
+    // Dark shadow pass (slightly offset inward — base darkening).
+    const shadeX0 = baseX + tangX * baseW;
+    const shadeY0 = baseY + tangY * baseW;
+    const shadeX1 = baseX - tangX * baseW;
+    const shadeY1 = baseY - tangY * baseW;
+    const spikeGrad = ctx.createLinearGradient(baseX, baseY, tipX, tipY);
+    spikeGrad.addColorStop(0, '#3a0000');
+    spikeGrad.addColorStop(0.35, '#8b0000');
+    spikeGrad.addColorStop(1, '#cc0000');
+    ctx.fillStyle = spikeGrad;
     ctx.beginPath();
-    ctx.moveTo(baseX + tangX * 4, baseY + tangY * 4);
+    ctx.moveTo(shadeX0, shadeY0);
     ctx.lineTo(tipX, tipY);
-    ctx.lineTo(baseX - tangX * 4, baseY - tangY * 4);
+    ctx.lineTo(shadeX1, shadeY1);
     ctx.closePath();
     ctx.fill();
   }
-  // Base circle — crimson gradient.
+
+  // Base circle — deeper crimson gradient.
   const grad = ctx.createRadialGradient(b.x - b.radius*0.28, b.y - b.radius*0.28, 0, b.x, b.y, b.radius);
-  grad.addColorStop(0, '#ff3030');
-  grad.addColorStop(0.4, '#cc0000');
-  grad.addColorStop(1, '#5a0000');
+  grad.addColorStop(0, '#d02020');
+  grad.addColorStop(0.45, '#8b0000');
+  grad.addColorStop(1, '#2a0000');
   ctx.fillStyle = grad;
   ctx.beginPath(); ctx.arc(b.x, b.y, b.radius, 0, 6.28); ctx.fill();
+
+  // Dark veins/cracks between spike bases — faint jagged lines.
+  ctx.save();
+  ctx.beginPath(); ctx.arc(b.x, b.y, b.radius, 0, 6.28); ctx.clip();
+  ctx.strokeStyle = 'rgba(20,0,0,0.75)';
+  ctx.lineWidth = 1.2;
+  for (let i = 0; i < 8; i++) {
+    const a = b.toothAngle + i * (Math.PI / 4) + Math.PI / 8;
+    ctx.beginPath();
+    const x0 = b.x + Math.cos(a) * b.radius * 0.95;
+    const y0 = b.y + Math.sin(a) * b.radius * 0.95;
+    ctx.moveTo(x0, y0);
+    // Jag toward center with a kink.
+    const midA = a + Math.PI - 0.4;
+    const mx = b.x + Math.cos(midA) * b.radius * 0.4;
+    const my = b.y + Math.sin(midA) * b.radius * 0.4;
+    const ex = b.x + Math.cos(a + Math.PI) * b.radius * 0.1;
+    const ey = b.y + Math.sin(a + Math.PI) * b.radius * 0.1;
+    ctx.lineTo(mx, my); ctx.lineTo(ex, ey);
+    ctx.stroke();
+  }
+  ctx.restore();
   ctx.restore();
 }
 
@@ -4603,30 +4757,45 @@ function drawEye(b) {
   grad.addColorStop(1, '#c4b78a');
   ctx.fillStyle = grad;
   ctx.beginPath(); ctx.arc(b.x, b.y, pulseR, 0, 6.28); ctx.fill();
-  // Bloodshot veins.
+  // Bloodshot veins: 10-12 primary, thicker + brighter, each with secondary
+  // branches for a more prominent, unsettling look.
   const rng = mulberry32(b.veinSeed);
-  ctx.strokeStyle = 'rgba(180,30,30,0.55)';
-  ctx.lineWidth = 1;
-  const veinCount = 5;
+  const veinCount = 11;
   for (let i = 0; i < veinCount; i++) {
     const a = rng() * Math.PI * 2;
-    const len = pulseR * 0.75;
-    const curveAmt = (rng() - 0.5) * 0.6;
-    ctx.beginPath();
-    ctx.moveTo(b.x + Math.cos(a) * pulseR * 0.95, b.y + Math.sin(a) * pulseR * 0.95);
+    const curveAmt = (rng() - 0.5) * 0.7;
+    const startX = b.x + Math.cos(a) * pulseR * 0.96;
+    const startY = b.y + Math.sin(a) * pulseR * 0.96;
     const midA = a + curveAmt;
-    ctx.quadraticCurveTo(
-      b.x + Math.cos(midA) * (pulseR * 0.55),
-      b.y + Math.sin(midA) * (pulseR * 0.55),
-      b.x + Math.cos(a + curveAmt * 2) * (pulseR * 0.2),
-      b.y + Math.sin(a + curveAmt * 2) * (pulseR * 0.2)
-    );
+    const midX = b.x + Math.cos(midA) * (pulseR * 0.55);
+    const midY = b.y + Math.sin(midA) * (pulseR * 0.55);
+    const endA = a + curveAmt * 2;
+    const endX = b.x + Math.cos(endA) * (pulseR * 0.25);
+    const endY = b.y + Math.sin(endA) * (pulseR * 0.25);
+    // Primary vein.
+    ctx.strokeStyle = 'rgba(200,30,30,0.85)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(startX, startY);
+    ctx.quadraticCurveTo(midX, midY, endX, endY);
     ctx.stroke();
+    // Secondary branches — two thinner veins off the midpoint.
+    ctx.strokeStyle = 'rgba(200,30,30,0.55)';
+    ctx.lineWidth = 1;
+    for (let j = 0; j < 2; j++) {
+      const branchA = midA + (rng() - 0.5) * 1.4;
+      const branchLen = pulseR * (0.15 + rng() * 0.2);
+      const bx = midX + Math.cos(branchA) * branchLen;
+      const by = midY + Math.sin(branchA) * branchLen;
+      ctx.beginPath();
+      ctx.moveTo(midX, midY); ctx.lineTo(bx, by);
+      ctx.stroke();
+    }
   }
-  // Iris: hue cycles through blue→green→red over 10s.
+  // Iris: hue cycles through blue→green→red over 10s. Slightly larger now.
   const hueT = (Date.now() % 10000) / 10000;
   const hue = Math.floor(hueT * 360);
-  const irisR = pulseR * 0.55;
+  const irisR = pulseR * 0.62;
   const irisX = b.x + b.pupilDx;
   const irisY = b.y + b.pupilDy;
   const irisGrad = ctx.createRadialGradient(irisX, irisY, 0, irisX, irisY, irisR);
@@ -4694,43 +4863,97 @@ function drawCracked(b) {
 
 function drawTentacle(b) {
   ctx.save();
-  // Tentacles first (behind body).
   const count = b.tentacleCount;
+  const STEPS = 10; // segments per tentacle
+
+  // Tentacles (draw first, behind body).
   for (let i = 0; i < count; i++) {
-    const ext = tentacleExtension(b.tentaclePhases[i]);
+    const phase = b.tentaclePhases[i];
+    const ext = tentacleExtension(phase);
     if (ext < 0.05) continue;
+    // Retraction bonus: amplitude swells as tentacle retracts so it curls.
+    const retract = phase > 2.5 ? (phase - 2.5) / 1 : 0;
+    const ampBoost = 1 + retract * 1.5;
     const angle = (i / count) * Math.PI * 2;
-    const tipX = b.x + Math.cos(angle) * (b.radius + b.radius * 1.2 * ext);
-    const tipY = b.y + Math.sin(angle) * (b.radius + b.radius * 1.2 * ext);
-    // Curve the tentacle sideways with a bezier midpoint.
-    const tangX = -Math.sin(angle), tangY = Math.cos(angle);
+    const maxLen = b.radius + b.radius * 1.2 * ext;
     const baseX = b.x + Math.cos(angle) * b.radius;
     const baseY = b.y + Math.sin(angle) * b.radius;
-    const waveOff = Math.sin(b.tentaclePhases[i] * 3) * b.radius * 0.2 * ext;
-    const midX = (baseX + tipX) / 2 + tangX * waveOff;
-    const midY = (baseY + tipY) / 2 + tangY * waveOff;
-    // Draw tapering: stroke segments from base to tip.
-    const steps = 6;
-    for (let s = 0; s < steps; s++) {
-      const u0 = s / steps, u1 = (s + 1) / steps;
-      const p0 = quadPt(baseX, baseY, midX, midY, tipX, tipY, u0);
-      const p1 = quadPt(baseX, baseY, midX, midY, tipX, tipY, u1);
-      const w = 8 * (1 - u0) + 2 * u0;
+    const outX  = Math.cos(angle), outY  = Math.sin(angle);
+    const tangX = -outY, tangY = outX;
+
+    // Build per-segment wiggle and render as tapering strokes.
+    let prevX = baseX, prevY = baseY;
+    for (let s = 1; s <= STEPS; s++) {
+      const u = s / STEPS;
+      // Organic wiggle: sum of sines at different frequencies.
+      const wig = (
+        Math.sin(frame * 0.05 + s * 0.3 + i * 1.2) * 8 +
+        Math.sin(frame * 0.09 + s * 0.7 + i * 0.4) * 4
+      ) * u * ampBoost;
+      const cx = baseX + outX * (maxLen - b.radius) * u + tangX * wig;
+      const cy = baseY + outY * (maxLen - b.radius) * u + tangY * wig;
+      const w = 8 * (1 - u) + 4 * u; // taper: 8px → 4px (bulbous tip)
+      // Gradient from dark base to lighter tip per spec.
+      const rCol = Math.round(26 + u * 81);
+      const gCol = Math.round(0  + u * 33);
+      const bCol = Math.round(48 + u * 120);
+      ctx.strokeStyle = `rgba(${rCol},${gCol},${bCol},0.92)`;
       ctx.lineWidth = w;
       ctx.lineCap = 'round';
-      ctx.strokeStyle = `rgba(${74 + u0*30}, ${0 + u0*20}, ${128 + u0*30}, ${0.85 * (1 - u0 * 0.3)})`;
       ctx.beginPath();
-      ctx.moveTo(p0.x, p0.y); ctx.lineTo(p1.x, p1.y);
+      ctx.moveTo(prevX, prevY); ctx.lineTo(cx, cy);
       ctx.stroke();
+      // Sucker dots along the length (every ~15px equivalent: every other step).
+      if (s > 1 && s % 2 === 0) {
+        ctx.fillStyle = 'rgba(180,140,220,0.75)';
+        ctx.beginPath(); ctx.arc(cx, cy, 1.8, 0, 6.28); ctx.fill();
+      }
+      // Bulbous tip.
+      if (s === STEPS) {
+        ctx.fillStyle = `rgba(${rCol + 20},${gCol + 20},${bCol + 20},0.95)`;
+        ctx.beginPath(); ctx.arc(cx, cy, 4.5, 0, 6.28); ctx.fill();
+      }
+      prevX = cx; prevY = cy;
     }
   }
-  // Body.
+
+  // Slightly irregular body silhouette — darker navy/black. Use 8-vertex path
+  // with jittered radii for an organic blob.
+  const rng = mulberry32(b.tentacleSeed);
+  ctx.save();
+  ctx.beginPath();
+  const verts = 10;
+  for (let i = 0; i < verts; i++) {
+    const a = (i / verts) * Math.PI * 2;
+    const rr = b.radius * (0.92 + rng() * 0.15);
+    const px = b.x + Math.cos(a) * rr;
+    const py = b.y + Math.sin(a) * rr;
+    if (i === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  }
+  ctx.closePath();
+  ctx.clip();
   const grad = ctx.createRadialGradient(b.x - b.radius*0.3, b.y - b.radius*0.3, 0, b.x, b.y, b.radius);
-  grad.addColorStop(0, '#8040b0');
-  grad.addColorStop(0.5, '#4a0080');
-  grad.addColorStop(1, '#1a0030');
+  grad.addColorStop(0, '#1a0030');
+  grad.addColorStop(0.6, '#0d0018');
+  grad.addColorStop(1, '#000');
   ctx.fillStyle = grad;
-  ctx.beginPath(); ctx.arc(b.x, b.y, b.radius, 0, 6.28); ctx.fill();
+  ctx.fillRect(b.x - b.radius * 1.2, b.y - b.radius * 1.2, b.radius * 2.4, b.radius * 2.4);
+
+  // Bioluminescent dots scattered on body surface (cyan/blue glow).
+  const dotRng = mulberry32(b.tentacleSeed ^ 0xa5a5);
+  const biolumPulse = 0.5 + 0.5 * Math.sin(frame * 0.04);
+  for (let i = 0; i < 9; i++) {
+    const a = dotRng() * Math.PI * 2;
+    const r = b.radius * (0.2 + dotRng() * 0.75);
+    const px = b.x + Math.cos(a) * r;
+    const py = b.y + Math.sin(a) * r;
+    const dotR = 1.2 + dotRng() * 1.4;
+    ctx.globalAlpha = 0.5 + 0.4 * biolumPulse;
+    ctx.fillStyle = 'rgba(120,220,255,1)';
+    ctx.beginPath(); ctx.arc(px, py, dotR, 0, 6.28); ctx.fill();
+  }
+  ctx.restore();
   ctx.restore();
 }
 
@@ -4752,30 +4975,148 @@ function drawScreaming(b) {
   else if (p < 5.5) mouthT = 1;
   else if (p < 6)   mouthT = 1 - (p - 5.5) / 0.5;
 
-  // Base (red tint when screaming).
-  const tintR = 26 + mouthT * 70;
-  ctx.fillStyle = `rgb(${tintR},26,26)`;
-  ctx.beginPath(); ctx.arc(b.x, b.y, b.radius, 0, 6.28); ctx.fill();
-
-  // Eyes (two white ovals, dilating pupils when screaming).
-  const eyeOffX = b.radius * 0.35;
-  const eyeOffY = -b.radius * 0.25;
-  const eyeW = b.radius * 0.22, eyeH = b.radius * 0.17;
-  for (const side of [-1, 1]) {
-    ctx.fillStyle = '#fff';
-    ctx.beginPath(); ctx.ellipse(b.x + side * eyeOffX, b.y + eyeOffY, eyeW, eyeH, 0, 0, 6.28); ctx.fill();
-    const pupilR = eyeH * (0.4 + mouthT * 0.5);
-    ctx.fillStyle = '#000';
-    ctx.beginPath(); ctx.arc(b.x + side * eyeOffX, b.y + eyeOffY, pupilR, 0, 6.28); ctx.fill();
+  // Shockwaves emanating outward when screaming.
+  if (b.shockwaves.length) {
+    for (const sw of b.shockwaves) {
+      const k = sw.age / sw.maxLife;
+      const r = b.radius * (1 + k * 2.5);
+      ctx.globalAlpha = (1 - k) * 0.55;
+      ctx.strokeStyle = 'rgba(220,60,60,1)';
+      ctx.lineWidth = 2 * (1 - k) + 0.5;
+      ctx.beginPath(); ctx.arc(b.x, b.y, r, 0, 6.28); ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
   }
 
-  // Mouth: ellipse that grows with mouthT.
-  const mouthRX = b.radius * (0.15 + 0.35 * mouthT);
-  const mouthRY = b.radius * (0.03 + 0.45 * mouthT);
+  // Base: dark grey with brown/rust undertones — use a slight radial gradient.
+  const baseGrad = ctx.createRadialGradient(b.x - b.radius*0.3, b.y - b.radius*0.3, 0, b.x, b.y, b.radius);
+  const hotTint = mouthT * 40;
+  baseGrad.addColorStop(0, `rgb(${66 + hotTint},54,46)`);
+  baseGrad.addColorStop(0.6, `rgb(${42 + hotTint},36,30)`);
+  baseGrad.addColorStop(1, '#1a1410');
+  ctx.fillStyle = baseGrad;
+  ctx.beginPath(); ctx.arc(b.x, b.y, b.radius, 0, 6.28); ctx.fill();
+
+  // Cratered surface: scattered darker circles clipped to the disc.
+  ctx.save();
+  ctx.beginPath(); ctx.arc(b.x, b.y, b.radius, 0, 6.28); ctx.clip();
+  const rng = mulberry32(b.screamSeed);
+  for (let i = 0; i < 9; i++) {
+    const cr = b.radius * (0.08 + rng() * 0.2);
+    const ang = rng() * Math.PI * 2;
+    const dist = rng() * b.radius * 0.8;
+    const cx = b.x + Math.cos(ang) * dist;
+    const cy = b.y + Math.sin(ang) * dist;
+    ctx.fillStyle = `rgba(20,12,8,${0.3 + rng() * 0.4})`;
+    ctx.beginPath(); ctx.arc(cx, cy, cr, 0, 6.28); ctx.fill();
+  }
+  // Hairline cracks appear on the surface during scream.
+  if (mouthT > 0.2) {
+    const crackRng = mulberry32(b.screamSeed ^ 0x1234);
+    ctx.strokeStyle = `rgba(140,20,20,${mouthT * 0.75})`;
+    ctx.lineWidth = 1.2;
+    for (let i = 0; i < 5; i++) {
+      const a = crackRng() * Math.PI * 2;
+      let x = b.x, y = b.y;
+      ctx.beginPath(); ctx.moveTo(x, y);
+      const steps = 3 + Math.floor(crackRng() * 3);
+      let curA = a;
+      for (let s = 0; s < steps; s++) {
+        const seg = b.radius * (0.25 + crackRng() * 0.3);
+        curA += (crackRng() - 0.5) * 1.2;
+        x += Math.cos(curA) * seg;
+        y += Math.sin(curA) * seg;
+        ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+
+  // Brow ridge: two dark curves above the eyes angling inward (menacing).
+  const browY = b.y - b.radius * 0.45;
+  ctx.strokeStyle = '#0a0604';
+  ctx.lineWidth = b.radius * 0.12;
+  ctx.lineCap = 'round';
+  for (const side of [-1, 1]) {
+    ctx.beginPath();
+    ctx.moveTo(b.x + side * b.radius * 0.1,  browY + b.radius * 0.12);
+    ctx.lineTo(b.x + side * b.radius * 0.55, browY - b.radius * 0.05);
+    ctx.stroke();
+  }
+
+  // Hollow eye sockets — irregular oval cavities (skull-like).
+  const eyeOffX = b.radius * 0.32;
+  const eyeOffY = -b.radius * 0.18;
+  for (const side of [-1, 1]) {
+    const ex = b.x + side * eyeOffX;
+    const ey = b.y + eyeOffY;
+    // Deep black cavity with irregular shape.
+    ctx.save();
+    ctx.translate(ex, ey);
+    ctx.rotate(side * 0.22);
+    ctx.fillStyle = '#000';
+    ctx.beginPath();
+    ctx.ellipse(0, 0, b.radius * 0.24, b.radius * 0.2, 0, 0, 6.28);
+    ctx.fill();
+    // Slight red glow deep inside the socket during scream.
+    if (mouthT > 0.2) {
+      const inner = ctx.createRadialGradient(0, 0, 0, 0, 0, b.radius * 0.22);
+      inner.addColorStop(0, `rgba(180,30,30,${mouthT * 0.65})`);
+      inner.addColorStop(1, 'rgba(80,0,0,0)');
+      ctx.fillStyle = inner;
+      ctx.beginPath();
+      ctx.ellipse(0, 0, b.radius * 0.22, b.radius * 0.18, 0, 0, 6.28);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  // Mouth: grows with mouthT. Black cavity with jagged teeth when open.
+  const mouthCY = b.y + b.radius * 0.32;
+  const mouthRX = b.radius * (0.18 + 0.45 * mouthT);
+  const mouthRY = b.radius * (0.05 + 0.4 * mouthT);
+  // Cavity.
   ctx.fillStyle = '#000';
   ctx.beginPath();
-  ctx.ellipse(b.x, b.y + b.radius * 0.3, mouthRX, mouthRY, 0, 0, 6.28);
+  ctx.ellipse(b.x, mouthCY, mouthRX, mouthRY, 0, 0, 6.28);
   ctx.fill();
+  // Red glow deep in the throat during scream.
+  if (mouthT > 0.3) {
+    const throat = ctx.createRadialGradient(b.x, mouthCY, 0, b.x, mouthCY, mouthRX * 0.8);
+    throat.addColorStop(0, `rgba(160,20,20,${mouthT * 0.55})`);
+    throat.addColorStop(1, 'rgba(60,0,0,0)');
+    ctx.fillStyle = throat;
+    ctx.beginPath();
+    ctx.ellipse(b.x, mouthCY, mouthRX * 0.8, mouthRY * 0.6, 0, 0, 6.28);
+    ctx.fill();
+  }
+  // Jagged teeth — triangles top and bottom, irregular sizes.
+  if (mouthT > 0.25) {
+    const toothAlpha = Math.min(1, (mouthT - 0.25) / 0.35);
+    ctx.fillStyle = `rgba(220,215,200,${toothAlpha})`;
+    const toothRng = mulberry32(b.screamSeed ^ 0xface);
+    const toothCount = 8;
+    for (let i = 0; i < toothCount; i++) {
+      const tu = (i + 0.5) / toothCount;
+      const tx = b.x - mouthRX + tu * mouthRX * 2;
+      const baseW = mouthRX / toothCount * (0.9 + toothRng() * 0.4);
+      // Top row (points down).
+      const topLen = mouthRY * (0.55 + toothRng() * 0.5);
+      ctx.beginPath();
+      ctx.moveTo(tx - baseW * 0.5, mouthCY - mouthRY);
+      ctx.lineTo(tx + baseW * 0.5, mouthCY - mouthRY);
+      ctx.lineTo(tx, mouthCY - mouthRY + topLen);
+      ctx.closePath(); ctx.fill();
+      // Bottom row (points up).
+      const botLen = mouthRY * (0.5 + toothRng() * 0.5);
+      ctx.beginPath();
+      ctx.moveTo(tx - baseW * 0.5, mouthCY + mouthRY);
+      ctx.lineTo(tx + baseW * 0.5, mouthCY + mouthRY);
+      ctx.lineTo(tx, mouthCY + mouthRY - botLen);
+      ctx.closePath(); ctx.fill();
+    }
+  }
   ctx.restore();
 }
 
@@ -4801,101 +5142,304 @@ function drawVoid(b) {
 function drawHeart(b) {
   ctx.save();
   const s = b.heartScale || 1;
-  const w = b.radius * 1.2 * s;
+  // Asymmetric squeeze: top contracts while bottom expands (systolic feel).
+  const squeeze = (s - 1) / 0.25; // 0-1 range
+  const topScale = 1 - squeeze * 0.12;
+  const botScale = 1 + squeeze * 0.18;
+  const w = b.radius;
+
   // Glow behind.
-  const glow = ctx.createRadialGradient(b.x, b.y, w * 0.3, b.x, b.y, w * 2);
-  glow.addColorStop(0, 'rgba(255,40,40,0.35)');
-  glow.addColorStop(1, 'rgba(255,0,0,0)');
+  const glow = ctx.createRadialGradient(b.x, b.y, w * 0.3, b.x, b.y, w * 2.2);
+  glow.addColorStop(0, `rgba(200,0,0,${0.25 + squeeze * 0.25})`);
+  glow.addColorStop(1, 'rgba(120,0,0,0)');
   ctx.fillStyle = glow;
-  ctx.beginPath(); ctx.arc(b.x, b.y, w * 2, 0, 6.28); ctx.fill();
-  // Heart shape.
-  ctx.fillStyle = '#cc0000';
-  ctx.beginPath();
-  ctx.moveTo(b.x, b.y + w * 0.6);
-  ctx.bezierCurveTo(b.x + w * 1.2, b.y - w * 0.15, b.x + w * 0.5, b.y - w * 0.9, b.x, b.y - w * 0.25);
-  ctx.bezierCurveTo(b.x - w * 0.5, b.y - w * 0.9, b.x - w * 1.2, b.y - w * 0.15, b.x, b.y + w * 0.6);
-  ctx.closePath();
-  ctx.fill();
-  // Highlight.
-  ctx.fillStyle = 'rgba(255,80,80,0.8)';
-  ctx.beginPath();
-  ctx.arc(b.x - w * 0.35, b.y - w * 0.35, w * 0.18, 0, 6.28);
-  ctx.fill();
-  // Blood drip.
-  if (b.bloodDrip > 0) {
-    const dripAlpha = b.bloodDrip / 30;
-    ctx.fillStyle = `rgba(160,0,0,${dripAlpha})`;
+  ctx.beginPath(); ctx.arc(b.x, b.y, w * 2.2, 0, 6.28); ctx.fill();
+
+  // Aorta/artery tubes extending from top. 3 curved tubes.
+  const arteryColor = '#6b0000';
+  ctx.strokeStyle = arteryColor;
+  ctx.lineCap = 'round';
+  const arteries = [
+    { offX: -w * 0.35, tipX: -w * 0.55, tipY: -w * 1.25, width: 6 },
+    { offX:  0,        tipX:  w * 0.05, tipY: -w * 1.45, width: 8 },
+    { offX:  w * 0.4,  tipX:  w * 0.6,  tipY: -w * 1.2,  width: 5 },
+  ];
+  for (const a of arteries) {
+    ctx.lineWidth = a.width;
     ctx.beginPath();
-    ctx.arc(b.x, b.y + w * 0.7 + (30 - b.bloodDrip), 2.5, 0, 6.28);
+    ctx.moveTo(b.x + a.offX, b.y - w * 0.7 * topScale);
+    ctx.quadraticCurveTo(
+      b.x + a.offX * 0.5, b.y - w * (1.0 + squeeze * 0.05),
+      b.x + a.tipX, b.y + a.tipY * topScale
+    );
+    ctx.stroke();
+  }
+
+  // Irregular anatomical blob — draw via a closed path with jittered points.
+  const rng = mulberry32(b.heartSeed);
+  const points = 16;
+  ctx.save();
+  ctx.beginPath();
+  for (let i = 0; i < points; i++) {
+    const u = i / points;
+    const a = u * Math.PI * 2 - Math.PI / 2; // start at top
+    // Asymmetric radius: contract top (sin(a) < 0), expand bottom.
+    const verticalLean = -Math.sin(a); // +1 at top, -1 at bottom
+    const asymScale = verticalLean > 0 ? topScale : botScale;
+    // Slight lumpy irregularity, stable per body via seeded rng.
+    const rng2 = mulberry32(b.heartSeed + i * 31);
+    const lump = 0.88 + rng2() * 0.25;
+    const rr = w * 1.05 * lump * asymScale;
+    const px = b.x + Math.cos(a) * rr;
+    const py = b.y + Math.sin(a) * rr;
+    if (i === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  }
+  ctx.closePath();
+  ctx.clip();
+  // Fill: dark crimson gradient.
+  const fill = ctx.createRadialGradient(b.x - w * 0.35, b.y - w * 0.3, 0, b.x, b.y, w * 1.2);
+  fill.addColorStop(0, '#cc0000');
+  fill.addColorStop(0.5, '#8b0000');
+  fill.addColorStop(1, '#3d0000');
+  ctx.fillStyle = fill;
+  ctx.fillRect(b.x - w * 1.5, b.y - w * 1.5, w * 3, w * 3);
+
+  // Branching surface veins.
+  ctx.strokeStyle = 'rgba(60,0,0,0.85)';
+  ctx.lineWidth = 1.3;
+  const veinRng = mulberry32(b.heartSeed ^ 0xbeef);
+  for (let i = 0; i < 7; i++) {
+    const startA = veinRng() * Math.PI * 2;
+    let x = b.x + Math.cos(startA) * w * 0.95;
+    let y = b.y + Math.sin(startA) * w * 0.95;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    const segs = 3 + Math.floor(veinRng() * 3);
+    let ang = startA + Math.PI + (veinRng() - 0.5) * 1.2;
+    for (let s2 = 0; s2 < segs; s2++) {
+      ang += (veinRng() - 0.5) * 1.4;
+      const step = w * (0.25 + veinRng() * 0.35);
+      x += Math.cos(ang) * step;
+      y += Math.sin(ang) * step;
+      ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+    // Small branch off.
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    const brAng = ang + (veinRng() - 0.5) * 1.8;
+    ctx.lineTo(x + Math.cos(brAng) * w * 0.25, y + Math.sin(brAng) * w * 0.25);
+    ctx.stroke();
+  }
+
+  // Wet/glossy sheen on upper portion.
+  ctx.globalAlpha = 0.45;
+  const sheen = ctx.createRadialGradient(b.x - w * 0.3, b.y - w * 0.5, 0, b.x - w * 0.3, b.y - w * 0.5, w * 0.55);
+  sheen.addColorStop(0, 'rgba(255,150,150,0.8)');
+  sheen.addColorStop(0.6, 'rgba(255,120,120,0.25)');
+  sheen.addColorStop(1, 'rgba(255,120,120,0)');
+  ctx.fillStyle = sheen;
+  ctx.fillRect(b.x - w * 1.5, b.y - w * 1.5, w * 3, w * 3);
+  ctx.globalAlpha = 1;
+  ctx.restore();
+
+  // Blood drops falling.
+  for (const d of b.bloodDrops) {
+    const t = d.age / d.maxAge;
+    const dropY = b.y + w * 1.1 + t * w * 2.2;
+    ctx.globalAlpha = 1 - t * 0.7;
+    ctx.fillStyle = '#5a0000';
+    ctx.beginPath();
+    ctx.ellipse(b.x + d.offX, dropY, d.size, d.size * 1.6, 0, 0, 6.28);
     ctx.fill();
   }
+  ctx.globalAlpha = 1;
   ctx.restore();
 }
 
 function drawMirror(b) {
   ctx.save();
-  // Dark core, bright outline — inverted look vs player.
-  const orbRgb = activeOrbColor();
-  // Complement: approximate inverse of the current orb color.
-  const parts = orbRgb.split(',').map(v => 255 - parseInt(v, 10));
-  const invRgb = parts.join(',');
-
-  ctx.fillStyle = '#101010';
+  // Chrome sphere: radial gradient from white highlight through silver to
+  // dark edge, giving a metallic ball look.
+  const chrome = ctx.createRadialGradient(
+    b.x - b.radius * 0.35, b.y - b.radius * 0.35, 0,
+    b.x, b.y, b.radius
+  );
+  chrome.addColorStop(0,    '#ffffff');
+  chrome.addColorStop(0.25, '#d8d8d8');
+  chrome.addColorStop(0.65, '#c0c0c0');
+  chrome.addColorStop(0.9,  '#404040');
+  chrome.addColorStop(1,    '#0a0a0a');
+  ctx.fillStyle = chrome;
   ctx.beginPath(); ctx.arc(b.x, b.y, b.radius, 0, 6.28); ctx.fill();
-  ctx.strokeStyle = `rgba(${invRgb},0.95)`;
-  ctx.lineWidth = 2;
-  ctx.beginPath(); ctx.arc(b.x, b.y, b.radius - 1, 0, 6.28); ctx.stroke();
-  // Ghostly inner ring.
-  ctx.strokeStyle = `rgba(${invRgb},0.35)`;
-  ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.arc(b.x, b.y, b.radius * 0.55, 0, 6.28); ctx.stroke();
+
+  // Reflected stars on the surface (clipped to disc).
+  ctx.save();
+  ctx.beginPath(); ctx.arc(b.x, b.y, b.radius * 0.95, 0, 6.28); ctx.clip();
+  const rng = mulberry32(b.mirrorSeed);
+  for (let i = 0; i < 7; i++) {
+    const rx = b.x + (rng() - 0.5) * b.radius * 1.4;
+    const ry = b.y + (rng() - 0.5) * b.radius * 1.4;
+    const rr = 0.6 + rng() * 1.1;
+    ctx.globalAlpha = 0.6 + rng() * 0.35;
+    ctx.fillStyle = '#fff';
+    ctx.beginPath(); ctx.arc(rx, ry, rr, 0, 6.28); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+
+  // Bright crescent highlight on upper-left.
+  ctx.save();
+  ctx.beginPath(); ctx.arc(b.x, b.y, b.radius * 0.95, 0, 6.28); ctx.clip();
+  const highlight = ctx.createRadialGradient(
+    b.x - b.radius * 0.45, b.y - b.radius * 0.45, 0,
+    b.x - b.radius * 0.2, b.y - b.radius * 0.2, b.radius * 0.6
+  );
+  highlight.addColorStop(0, 'rgba(255,255,255,0.95)');
+  highlight.addColorStop(0.5, 'rgba(255,255,255,0.25)');
+  highlight.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = highlight;
+  ctx.beginPath(); ctx.arc(b.x - b.radius * 0.3, b.y - b.radius * 0.3, b.radius * 0.55, 0, 6.28); ctx.fill();
+  ctx.restore();
+
+  // Dark rim for depth.
+  ctx.strokeStyle = 'rgba(0,0,0,0.75)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(b.x, b.y, b.radius - 0.5, 0, 6.28); ctx.stroke();
   ctx.restore();
 }
 
 function drawSkull(b) {
-  ctx.save();
-  ctx.translate(b.x, b.y);
-  ctx.rotate(b.skullRotation);
-  // Dark body.
-  ctx.fillStyle = '#0d0d0d';
-  ctx.beginPath(); ctx.arc(0, 0, b.radius, 0, 6.28); ctx.fill();
-  ctx.strokeStyle = 'rgba(200,200,200,0.35)';
-  ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.arc(0, 0, b.radius, 0, 6.28); ctx.stroke();
+  const r = b.radius;
+  const pal = b.skullPalette || { top: '#3a6b38', mid: '#5a8a3c', low: '#6d5a30' };
 
-  // Eye sockets.
-  const eyeX = b.radius * 0.33;
-  const eyeY = -b.radius * 0.15;
-  const eyeR = b.radius * 0.2;
-  const flash = b.skullEyeFlash > 0;
-  for (const side of [-1, 1]) {
-    ctx.fillStyle = flash ? 'rgba(200,30,30,0.95)' : '#000';
-    ctx.beginPath(); ctx.arc(side * eyeX, eyeY, eyeR, 0, 6.28); ctx.fill();
-    if (flash) {
-      ctx.fillStyle = 'rgba(255,80,80,0.55)';
-      ctx.beginPath(); ctx.arc(side * eyeX, eyeY, eyeR * 0.6, 0, 6.28); ctx.fill();
-    }
+  ctx.save();
+  // Clip to disc so nothing leaks outside.
+  ctx.beginPath(); ctx.arc(b.x, b.y, r, 0, 6.28); ctx.clip();
+
+  // Vertical gradient: planet colors at top transition to bone/dark at bottom.
+  const vert = ctx.createLinearGradient(b.x, b.y - r, b.x, b.y + r);
+  vert.addColorStop(0,    pal.top);
+  vert.addColorStop(0.4,  pal.mid);
+  vert.addColorStop(0.55, pal.low);
+  vert.addColorStop(0.75, '#8a7d68');
+  vert.addColorStop(1,    '#2a2218');
+  ctx.fillStyle = vert;
+  ctx.fillRect(b.x - r, b.y - r, r * 2, r * 2);
+
+  // Subtle sphere shading — darken lower-right, brighten upper-left.
+  const sphereShade = ctx.createRadialGradient(
+    b.x - r * 0.3, b.y - r * 0.3, 0,
+    b.x, b.y, r
+  );
+  sphereShade.addColorStop(0, 'rgba(255,255,255,0.22)');
+  sphereShade.addColorStop(0.6, 'rgba(255,255,255,0)');
+  sphereShade.addColorStop(1, 'rgba(0,0,0,0.4)');
+  ctx.fillStyle = sphereShade;
+  ctx.fillRect(b.x - r, b.y - r, r * 2, r * 2);
+
+  // Cloud-like lighter patches on the upper portion (multiple overlapping
+  // semi-transparent circles).
+  const rng = mulberry32(b.skullSeed);
+  ctx.fillStyle = 'rgba(240,240,230,0.35)';
+  for (let i = 0; i < 7; i++) {
+    const a = (rng() - 0.5) * Math.PI; // confine to upper half mostly
+    const yFrac = -0.55 + rng() * 0.6;
+    const cx = b.x + (rng() - 0.5) * r * 1.6;
+    const cy = b.y + yFrac * r;
+    const cr = r * (0.1 + rng() * 0.22);
+    ctx.beginPath(); ctx.arc(cx, cy, cr, 0, 6.28); ctx.fill();
   }
 
-  // Nasal cavity: inverted triangle.
+  // --- Skull face on the lower half ---
+  const flash = b.skullEyeFlash > 0;
+
+  // Eye sockets: irregular black cavities.
+  const eyeOffX = r * 0.32;
+  const eyeOffY = r * 0.05; // slightly below center
+  for (const side of [-1, 1]) {
+    const ex = b.x + side * eyeOffX;
+    const ey = b.y + eyeOffY;
+    ctx.save();
+    ctx.translate(ex, ey);
+    ctx.rotate(side * 0.22);
+    // Deep black cavity.
+    ctx.fillStyle = '#000';
+    ctx.beginPath();
+    ctx.ellipse(0, 0, r * 0.19, r * 0.22, 0, 0, 6.28);
+    ctx.fill();
+    // Red glow when flashing.
+    if (flash) {
+      const glow = ctx.createRadialGradient(0, 0, 0, 0, 0, r * 0.22);
+      glow.addColorStop(0, 'rgba(220,30,30,0.95)');
+      glow.addColorStop(0.6, 'rgba(160,10,10,0.45)');
+      glow.addColorStop(1, 'rgba(80,0,0,0)');
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.ellipse(0, 0, r * 0.22, r * 0.24, 0, 0, 6.28);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  // Cheekbones: subtle highlight curves below the eye sockets.
+  ctx.strokeStyle = 'rgba(230,220,200,0.5)';
+  ctx.lineWidth = 2;
+  ctx.lineCap = 'round';
+  for (const side of [-1, 1]) {
+    ctx.beginPath();
+    ctx.moveTo(b.x + side * r * 0.5, b.y + r * 0.18);
+    ctx.quadraticCurveTo(
+      b.x + side * r * 0.45, b.y + r * 0.35,
+      b.x + side * r * 0.2,  b.y + r * 0.5
+    );
+    ctx.stroke();
+  }
+
+  // Nasal cavity: upside-down heart/triangle void in the center.
   ctx.fillStyle = '#000';
   ctx.beginPath();
-  ctx.moveTo(0, b.radius * 0.05);
-  ctx.lineTo(-b.radius * 0.08, b.radius * 0.25);
-  ctx.lineTo(b.radius * 0.08, b.radius * 0.25);
+  ctx.moveTo(b.x, b.y + r * 0.55);
+  ctx.quadraticCurveTo(b.x - r * 0.12, b.y + r * 0.45, b.x - r * 0.1, b.y + r * 0.3);
+  ctx.quadraticCurveTo(b.x - r * 0.06, b.y + r * 0.22, b.x, b.y + r * 0.32);
+  ctx.quadraticCurveTo(b.x + r * 0.06, b.y + r * 0.22, b.x + r * 0.1,  b.y + r * 0.3);
+  ctx.quadraticCurveTo(b.x + r * 0.12, b.y + r * 0.45, b.x, b.y + r * 0.55);
   ctx.closePath();
   ctx.fill();
 
-  // Teeth row.
-  const toothCount = 6;
-  const toothY = b.radius * 0.45;
-  const toothW = b.radius * 0.11;
-  ctx.fillStyle = 'rgba(220,215,200,0.95)';
+  // Teeth row: irregular triangular teeth.
+  const toothRng = mulberry32(b.skullSeed ^ 0x7e5);
+  const toothCount = 7;
+  const toothBaseY = b.y + r * 0.72;
+  const toothLen = r * 0.18;
+  const toothStartX = b.x - r * 0.45;
+  const toothSpan = r * 0.9;
+  ctx.fillStyle = 'rgba(220,215,200,0.92)';
   for (let i = 0; i < toothCount; i++) {
-    const tx = -b.radius * 0.42 + i * toothW * 1.4;
-    ctx.fillRect(tx - toothW / 2, toothY - toothW * 0.6, toothW, toothW * 1.1);
+    const tu = (i + 0.5) / toothCount;
+    const tx = toothStartX + tu * toothSpan;
+    const baseW = r * 0.085 * (0.85 + toothRng() * 0.3);
+    const tlen = toothLen * (0.75 + toothRng() * 0.4);
+    ctx.beginPath();
+    ctx.moveTo(tx - baseW, toothBaseY);
+    ctx.lineTo(tx + baseW, toothBaseY);
+    ctx.lineTo(tx, toothBaseY + tlen);
+    ctx.closePath();
+    ctx.fill();
   }
+  // Jaw line shadow beneath teeth.
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  ctx.beginPath();
+  ctx.ellipse(b.x, toothBaseY, r * 0.5, r * 0.06, 0, 0, 6.28);
+  ctx.fill();
+
   ctx.restore();
+
+  // Outer rim (drawn after the clipped interior so it sits on the edge).
+  ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.arc(b.x, b.y, r, 0, 6.28); ctx.stroke();
 }
 
 // Tiny deterministic PRNG used for stable per-body random details (veins,
@@ -5879,6 +6423,8 @@ function goToMainMenu() {
   deathShards = [];
   crackFragments = [];
   playerPosHistory = [];
+  playerInVoidRange = false;
+  if (voidHumNodes) { try { voidHumNodes.stop(); } catch {} voidHumNodes = null; }
   resetApocalypse();
   deathFlashFrames = 0;
   if (pendingDeathBurstTimer) { clearTimeout(pendingDeathBurstTimer); pendingDeathBurstTimer = null; }
