@@ -2172,7 +2172,10 @@ function fetchLeaderboard(d, callback) {
 
 function normalScrollSpeed() {
   const d = diff();
-  const t = Math.min(frame / (d.speedCapScore * 60), 1);
+  // Ramp is wall-clock based — frame count drifts under hitches, but players
+  // should feel a consistent "it's been 5 minutes, top speed" regardless of
+  // framerate. elapsedRunSeconds() returns 0 before resetGame is called.
+  const t = Math.min(elapsedRunSeconds() / d.speedCapScore, 1);
   return d.startSpeed + (d.maxSpeed - d.startSpeed) * t;
 }
 
