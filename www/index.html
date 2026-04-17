@@ -115,6 +115,41 @@
     margin-top: 2px;
     display: none;
   }
+
+  /* Burst bar — sits below the powerup timer. Same bar style; label is a
+     smaller uppercase "BURST". */
+  #burstBar {
+    position: absolute;
+    top: 146px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    pointer-events: none;
+  }
+  .burst-label {
+    font-family: 'Space Mono', monospace;
+    font-size: 8px;
+    letter-spacing: 3px;
+    color: rgba(255,255,255,0.5);
+    text-transform: uppercase;
+  }
+  .burst-bar-outer {
+    width: 120px;
+    height: 4px;
+    background: rgba(255,255,255,0.08);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .burst-bar-fill {
+    height: 100%;
+    width: 100%;
+    border-radius: 2px;
+    background: rgba(255,255,255,0.3);
+    transition: background 0.2s;
+  }
   .pt-combo.visible { display: block; }
 
   #hintLeft, #hintRight {
@@ -879,6 +914,10 @@
       <div class="pt-bar"><div class="pt-fill" id="ptFill"></div></div>
       <div class="pt-combo" id="ptCombo"></div>
     </div>
+    <div id="burstBar">
+      <div class="burst-label">BURST</div>
+      <div class="burst-bar-outer"><div class="burst-bar-fill" id="burstFill"></div></div>
+    </div>
     <div id="streakDisplay"></div>
     <div id="hintLeft">◀ ATTRACT</div>
     <div id="hintRight">REPEL ▶</div>
@@ -1057,9 +1096,9 @@ const FORCE = 0.18;
 
 // --- Difficulty ---
 const DIFFICULTIES = {
-  NORMAL:  { startSpeed: 1.2, maxSpeed: 3.5, speedCapScore: 300, maxBodies: 4, powerupFrequency: 1.0, crystalMult: 0.75 },
-  HARD:    { startSpeed: 1.6, maxSpeed: 5.0, speedCapScore: 300, maxBodies: 6, powerupFrequency: 1.3, crystalMult: 1.0 },
-  EXTREME: { startSpeed: 2.0, maxSpeed: 6.5, speedCapScore: 300, maxBodies: 8, powerupFrequency: 1.8, crystalMult: 1.25 },
+  NORMAL:  { startSpeed: 1.2, maxSpeed: 2.8, speedCapScore: 300, maxBodies: 4, powerupFrequency: 1.0, crystalMult: 0.75 },
+  HARD:    { startSpeed: 1.6, maxSpeed: 3.6, speedCapScore: 300, maxBodies: 6, powerupFrequency: 1.3, crystalMult: 1.0 },
+  EXTREME: { startSpeed: 2.0, maxSpeed: 5.0, speedCapScore: 300, maxBodies: 8, powerupFrequency: 1.8, crystalMult: 1.25 },
 };
 let difficulty = 'NORMAL';
 Sentry.setTag('difficulty', difficulty);
@@ -1157,6 +1196,11 @@ const PLAYER_POS_HISTORY_LEN = 90; // 1.5s @ 60fps — covers 0.5s mirror delay
 // the purple targeting-line tint and the low-frequency hum.
 let playerInVoidRange = false;
 let voidHumNodes = null;
+// Burst ability: simultaneous left+right press. 15s cooldown. Reset by
+// resetGame(). burstTriggered is a one-shot flag consumed by update().
+const BURST_COOLDOWN_FRAMES = 900;
+let burstCooldown = 0;
+let burstTriggered = false;
 let pendingNovaTimeouts = [];
 let destroyEffects = [];   // per-planet destruction visuals (flash + ring + debris)
 let deathShards = [];      // orb shatter pieces spawned on player death
@@ -1293,9 +1337,14 @@ const SFX = (function() {
     novaDestroy:       './assets/SFX/NOVA DESTROY.mp3',
     hyperspeedBarrier: './assets/SFX/HYPERSPEED BARRIER.mp3',
     scream:            './assets/SFX/SCREAM.mp3',
+    toothed:           './assets/SFX/TOOTHED.mp3',
+    eruption:          './assets/SFX/ERUPTION.mp3',
+    tentacle:          './assets/SFX/TENTACLE.mp3',
+    heartbeat:         './assets/SFX/HEARTBEAT.mp3',
+    mirror:            './assets/SFX/MIRROR.mp3',
   };
-  const sfxBuffers = { shieldDestroy: null, novaDestroy: null, hyperspeedBarrier: null, scream: null };
-  const sfxLoading = { shieldDestroy: null, novaDestroy: null, hyperspeedBarrier: null, scream: null };
+  const sfxBuffers = { shieldDestroy: null, novaDestroy: null, hyperspeedBarrier: null, scream: null, toothed: null, eruption: null, tentacle: null, heartbeat: null, mirror: null };
+  const sfxLoading = { shieldDestroy: null, novaDestroy: null, hyperspeedBarrier: null, scream: null, toothed: null, eruption: null, tentacle: null, heartbeat: null, mirror: null };
   let currentTrackName = null;       // null = no track playing
   let currentMusicSource = null;     // active AudioBufferSourceNode
   let currentMusicSourceGain = null; // per-source gain (used for crossfades)
@@ -2236,6 +2285,7 @@ const SFX = (function() {
     init, attract, repel, pickup, planetDestroyed, death,
     comboActivate, comboDestroySound, startHyperspeedWhoosh,
     startApocalypseRumble, playApocalypseImpact, screamShriek, startVoidHum,
+    playSfxBuffer,
     playTrack, pauseMusic, resumeMusic,
     clickPrimary, clickSecondary,
     setMusicEnabled, setSfxEnabled, isMusicEnabled, isSfxEnabled,
@@ -2325,6 +2375,12 @@ function initBgStars() {
 }
 
 // --- Bodies ---
+// New planet types introduced from phase 2 onward. Shared between the spawn
+// pools, the 80% scroll multiplier, and future gameplay tuning.
+const NEW_BODY_TYPES = new Set([
+  'toothed','eye','cracked','tentacle','screaming','void','heart','mirror','skull',
+]);
+
 // Phase-based spawn pools. Each phase weights planets toward its signature
 // aesthetic; early ticks keep the classic set, late ticks push full horror.
 const PHASE_POOLS = {
@@ -3275,6 +3331,8 @@ function resetGame() {
   playerPosHistory = [];
   playerInVoidRange = false;
   if (voidHumNodes) { try { voidHumNodes.stop(); } catch {} voidHumNodes = null; }
+  burstCooldown = 0;
+  burstTriggered = false;
   resetApocalypse();
   deathFlashFrames = 0;
   if (pendingDeathBurstTimer) { clearTimeout(pendingDeathBurstTimer); pendingDeathBurstTimer = null; }
@@ -3318,11 +3376,7 @@ function findClosest() {
     const d = dist(player, p);
     if (d < bd) { bd = d; best = p; }
   }
-  // Crack fragments: small drifting bodies that the player can attract/repel.
-  for (const f of crackFragments) {
-    const d = dist(player, f);
-    if (d < bd) { bd = d; best = f; }
-  }
+  // Crack fragments are obstacles, not gravity sources — excluded from targeting.
   closestBody = best;
 }
 
@@ -3342,10 +3396,13 @@ function applyEnvironmentForces() {
         player.vy += ny * 0.15;
       }
     } else if (b.type === 'void') {
-      const d = dist(player, b);
-      if (d < b.radius * 2) {
-        player.vx += Math.sin(frame * 0.07 + b.pulse) * 0.12;
-        player.vy += Math.cos(frame * 0.05) * 0.12;
+      const dx = player.x - b.x, dy = player.y - b.y;
+      const d = Math.hypot(dx, dy);
+      if (d < b.radius * 2 && d > 0.5) {
+        // Gentle repel away from the void, strongest at the center.
+        const repelStrength = 0.08 * (1 - d / (b.radius * 2));
+        player.vx += (dx / d) * repelStrength;
+        player.vy += (dy / d) * repelStrength;
         nearVoid = true;
       }
     }
@@ -3418,6 +3475,17 @@ function applyForce() {
     const stackBoost = Math.max(1, peakHyperSpeedStacks);
     const pullStrength = Math.max(0.0004, (1 - activeEffects.hyperspeed / 180) * 0.002 * stackBoost);
     ay += (H * 0.72 - player.y) * pullStrength;
+  }
+
+  // Soft boundary forces — keep the player off the deadly edges. Skipped
+  // while hyperspeed is active (landing has its own centering logic).
+  if (!(activeEffects.hyperspeed > 0)) {
+    if (player.y > H * 0.85) {
+      ay -= 0.035 * ((player.y - H * 0.85) / (H * 0.15));
+    }
+    if (player.y < H * 0.15) {
+      ay += 0.025 * ((H * 0.15 - player.y) / (H * 0.15));
+    }
   }
   player.vy += ay;
 
@@ -3557,12 +3625,47 @@ function checkCollisions() {
   return false;
 }
 
+// Burst ability — per-orb effect. Called once when cooldown hits 0 and the
+// player is holding both sides simultaneously.
+function executeBurst() {
+  Sentry.addBreadcrumb({ category: 'burst', message: 'burst: ' + activeOrb, level: 'info' });
+  if (activeOrb === 'cyan') {
+    const types = ['shield','nova','hyperspeed','ghost'];
+    const type = types[Math.floor(Math.random() * types.length)];
+    activatePowerup(type, player.x, player.y);
+  } else if (activeOrb === 'cosmic') {
+    // Eternal Phantom — ghost+ghost combo.
+    activateCombo('ghost_ghost', player.x, player.y);
+  } else if (activeOrb === 'solar') {
+    // Supernova — nova+nova combo.
+    activateCombo('nova_nova', player.x, player.y);
+  } else if (activeOrb === 'nebula') {
+    // Two hyperspeed stacks instantly.
+    activateHyperspeed();
+    activateHyperspeed();
+    SFX.pickup('hyperspeed', { stacks: hyperSpeedStacks });
+  } else if (activeOrb === 'asteroid') {
+    // Fortress Shield — shield+shield combo.
+    activateCombo('shield_shield', player.x, player.y);
+  }
+  screenShake = Math.max(screenShake, 6);
+}
+
 // Per-body animation + behavior state tick. Called each frame after the
 // world-scroll pass; mutates body fields used by drawing and collision.
 function updateBodyTypes(spd) {
   for (const b of bodies) {
     if (b.type === 'toothed') {
       b.toothAngle += 0.02;
+      // Subtle grinding loop every 3s per on-screen toothed planet.
+      const onScreen = b.y > -b.radius && b.y < H + b.radius;
+      if (onScreen) {
+        if (b.lastToothSound === undefined) b.lastToothSound = frame - 90;
+        if (frame - b.lastToothSound > 180) {
+          SFX.playSfxBuffer('toothed', 0.15);
+          b.lastToothSound = frame;
+        }
+      }
     } else if (b.type === 'eye') {
       // Slow horizontal drift toward player + pupil tracking.
       b.x += (player.x - b.x) * 0.0008;
@@ -3598,11 +3701,28 @@ function updateBodyTypes(spd) {
         }
         b.nextEruptFrame = 180 + Math.floor(Math.random() * 60);
         b.eruptFlash = 10;
+        SFX.playSfxBuffer('eruption', 0.3);
       }
     } else if (b.type === 'tentacle') {
+      // Track whether any tentacle just wrapped from retract→extend (phase 0
+      // start). Play a single throttled SFX per body when that happens.
+      let extendTrigger = false;
       for (let i = 0; i < b.tentaclePhases.length; i++) {
-        b.tentaclePhases[i] += 1 / 60; // 3.5s full cycle
-        if (b.tentaclePhases[i] >= 3.5) b.tentaclePhases[i] -= 3.5;
+        const before = b.tentaclePhases[i];
+        b.tentaclePhases[i] += 1 / 60;
+        if (b.tentaclePhases[i] >= 3.5) {
+          b.tentaclePhases[i] -= 3.5;
+          extendTrigger = true;
+        }
+      }
+      if (extendTrigger) {
+        if (b.lastTentacleSound === undefined || frame - b.lastTentacleSound > 60) {
+          const onScreen = b.y > -b.radius && b.y < H + b.radius;
+          if (onScreen) {
+            SFX.playSfxBuffer('tentacle', 0.2);
+            b.lastTentacleSound = frame;
+          }
+        }
       }
     } else if (b.type === 'screaming') {
       b.screamPhase += 1 / 60;
@@ -3638,13 +3758,32 @@ function updateBodyTypes(spd) {
       }
       for (const d of b.bloodDrops) d.age++;
       b.bloodDrops = b.bloodDrops.filter(d => d.age < d.maxAge);
+      // Heartbeat SFX once per pulse: arm when scale drops below 1.1, fire
+      // once when it crosses 1.2 on the way up.
+      if (b.heartScale < 1.1) b.lastHeartSound = 0;
+      if (b.heartScale > 1.2 && !b.lastHeartSound) {
+        const onScreen = b.y > -b.radius && b.y < H + b.radius;
+        if (onScreen) SFX.playSfxBuffer('heartbeat', 0.25);
+        b.lastHeartSound = frame;
+      }
     } else if (b.type === 'mirror') {
       // Move toward the player's position from 0.5s ago at 25% strength
       // (0.005 ≈ 0.02 * 0.25) — still visibly tracks without racing.
+      const prevX = b.x;
       const idx = Math.min(playerPosHistory.length - 1, b.mirrorDelayFrames);
       const targetX = playerPosHistory[idx];
       if (targetX !== undefined) {
         b.x += (targetX - b.x) * 0.005;
+      }
+      const moved = Math.abs(b.x - prevX);
+      if (moved > 2) {
+        if (b.lastMirrorSound === undefined || frame - b.lastMirrorSound > 60) {
+          const onScreen = b.y > -b.radius && b.y < H + b.radius;
+          if (onScreen) {
+            SFX.playSfxBuffer('mirror', 0.15);
+            b.lastMirrorSound = frame;
+          }
+        }
       }
     } else if (b.type === 'skull') {
       // No rotation — face stays upright as the planet drifts down.
@@ -3680,6 +3819,15 @@ function update() {
 
   // 10-minute mark: kick off the apocalypse sequence.
   if (elapsedRunSeconds() >= 600) { startApocalypse(); return; }
+
+  // Burst trigger: also catches keyboard-held combos each frame.
+  if (leftDown && rightDown) burstTriggered = true;
+  if (burstTriggered && burstCooldown === 0) {
+    executeBurst();
+    burstCooldown = BURST_COOLDOWN_FRAMES;
+  }
+  burstTriggered = false;
+  if (burstCooldown > 0) burstCooldown--;
 
   // Run timer: wall-clock driven. Normally refresh ~8x/sec; past 3 min the
   // danger-zone shake/blink/glitch needs per-frame updates.
@@ -3800,8 +3948,9 @@ function update() {
   if (playerPosHistory.length > PLAYER_POS_HISTORY_LEN) playerPosHistory.pop();
 
   for (const b of bodies) {
-    // Skull planets scroll at 70% speed so they linger on screen.
-    const scrollMul = b.type === 'skull' ? 0.7 : 1;
+    // All phase-2+ planet types scroll at 80% speed so they stay on screen
+    // longer — their behaviors are more hazardous and need more reaction time.
+    const scrollMul = NEW_BODY_TYPES.has(b.type) ? 0.8 : 1;
     b.y += spd * scrollMul;
     b.pulse += 0.038;
     if (!b.passed && b.y > H * 0.75) {
@@ -3825,18 +3974,23 @@ function update() {
     bodies.push(spawnBody(topY - BODY_SPACING - Math.random()*50));
   }
 
-  // Powerup spawning: cooldown scales with frequency, max 2 visible at once
-  const spawnInterval = 220 / d.powerupFrequency;
+  // Powerup spawning: cooldown scales with frequency, max 2 visible at once.
+  // After 4 minutes, frequency scales +15% per extra minute survived so the
+  // powerup flow keeps up with the rising body density.
+  const minutesOver = Math.max(0, Math.floor((elapsedRunSeconds() - 240) / 60));
+  const effectivePowerupFrequency = d.powerupFrequency * (1 + minutesOver * 0.15);
+  const spawnInterval = 220 / effectivePowerupFrequency;
   if (powerups.length < 2 && frame - lastPowerupSpawn > spawnInterval && Math.random() < 0.025) {
     spawnPowerup();
     lastPowerupSpawn = frame;
   }
 
-  // Powerup scroll + pickup detection
+  // Powerup scroll + pickup detection. Pickup radius boosted 10% over the
+  // old literal 6px bumper so near-misses feel consistent with the visual.
   for (const p of powerups) {
     p.y += spd;
     p.pulse += 0.11;
-    if (!p.collected && dist(player, p) < p.radius + PLAYER_R + 6) {
+    if (!p.collected && dist(player, p) < (p.radius + PLAYER_R + 6) * 1.1) {
       if (p.pairSibling && !p.pairSibling.collected) {
         p.collected = true;
         p.pairSibling.collected = true;
@@ -3845,6 +3999,20 @@ function update() {
         p.collected = true;
         activatePowerup(p.type, p.x, p.y);
       }
+    }
+  }
+  // Pair tether pickup: if the player drifts onto the energy tether between
+  // two paired powerups, count it as a pickup. Check the closest point on
+  // the segment A→B; pickup triggers when within PLAYER_R * 2.5.
+  for (const p of powerups) {
+    if (p.collected) continue;
+    const q = p.pairSibling;
+    if (!q || q.collected) continue;
+    const d = pointSegmentDist(player.x, player.y, p.x, p.y, q.x, q.y);
+    if (d < PLAYER_R * 2.5) {
+      p.collected = true;
+      q.collected = true;
+      activatePair(p, q);
     }
   }
   powerups = powerups.filter(p => !p.collected && p.y < H + 30);
@@ -5991,6 +6159,27 @@ const powerupTimerEl = document.getElementById('powerupTimer');
 const ptLabelEl = document.getElementById('ptLabel');
 const ptFillEl = document.getElementById('ptFill');
 const ptComboEl = document.getElementById('ptCombo');
+const burstFillEl = document.getElementById('burstFill');
+const burstBarEl = document.getElementById('burstBar');
+
+function updateBurstBar() {
+  if (!burstBarEl || !burstFillEl) return;
+  // Only visible in gameplay.
+  const visible = (state === 'playing' || state === 'paused');
+  burstBarEl.style.display = visible ? 'flex' : 'none';
+  if (!visible) return;
+  const pct = 1 - burstCooldown / BURST_COOLDOWN_FRAMES;
+  burstFillEl.style.width = (pct * 100) + '%';
+  if (burstCooldown === 0) {
+    // Ready: bright orb color.
+    const rgb = activeOrbColor();
+    burstFillEl.style.background = `rgba(${rgb},0.95)`;
+    burstFillEl.style.boxShadow = `0 0 8px rgba(${rgb},0.8)`;
+  } else {
+    burstFillEl.style.background = 'rgba(180,180,180,0.45)';
+    burstFillEl.style.boxShadow = 'none';
+  }
+}
 
 function updatePowerupTimer() {
   // Priority: shield > ghost > hyperspeed (most game-relevant first)
@@ -6287,6 +6476,7 @@ function render() {
   }
 
   updatePowerupTimer();
+  updateBurstBar();
   ctx.restore();
 }
 
@@ -6343,6 +6533,9 @@ function readInput(e) {
     const cx=(t.clientX-rect.left)*(W/rect.width);
     if (cx<W/2) leftDown=true; else rightDown=true;
   }
+  // Simultaneous press = burst gesture. update() gates on cooldown. Also
+  // catches keyboard combos — update() polls leftDown/rightDown directly too.
+  if (leftDown && rightDown) burstTriggered = true;
   e.preventDefault();
 }
 function clearInput(e) {
@@ -6425,6 +6618,8 @@ function goToMainMenu() {
   playerPosHistory = [];
   playerInVoidRange = false;
   if (voidHumNodes) { try { voidHumNodes.stop(); } catch {} voidHumNodes = null; }
+  burstCooldown = 0;
+  burstTriggered = false;
   resetApocalypse();
   deathFlashFrames = 0;
   if (pendingDeathBurstTimer) { clearTimeout(pendingDeathBurstTimer); pendingDeathBurstTimer = null; }
