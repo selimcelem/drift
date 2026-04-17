@@ -1118,6 +1118,7 @@ function saveUnlockedOrbs() {
 }
 function getOrbBonus() { return ORB_DEFS[activeOrb] || ORB_DEFS.cyan; }
 function getStreakCap() { return getOrbBonus().streakCap || 8; }
+function activeOrbColor() { return getOrbBonus().color; }
 function formatCrystals(n) {
   return (n || 0).toLocaleString('en-US');
 }
@@ -2727,6 +2728,23 @@ function activateCombo(key, x, y) {
       if (activeEffects.ghost <= 0) activeEffects.ghost = GHOST_DURATION();
       if (activeEffects.shield <= 0) { activeEffects.shield = SHIELD_DURATION(); shieldBroken = false; }
       syncComboDurations('ghost', 'shield');
+    } else if (key === 'ghost_ghost') {
+      // Eternal Phantom refresh: always reset to the full 16s ghost duration
+      // when a fresh ghost pickup arrives, never downgrade to the shorter
+      // single-ghost timer.
+      activeEffects.ghost = GHOST_ETERNAL_DURATION;
+    } else if (key === 'shield_shield') {
+      // Fortress refresh: keep 2 hits, refresh duration; don't let a stale
+      // timer race lose the fortress state.
+      activeEffects.shield = SHIELD_DURATION();
+      shieldBroken = false;
+      shieldHits = Math.max(shieldHits, 2);
+      fortressShield = true;
+    } else if (key === 'nova_ghost') {
+      // Phantom Blast refresh: reset the damage aura frames and the ghost
+      // half so neither expires mid-combo.
+      activeEffects.ghost = GHOST_DURATION();
+      phantomBlastFrames = GHOST_DURATION();
     }
     lastComboLabel = key;
     screenShake = Math.max(screenShake, 6);
@@ -2998,6 +3016,7 @@ function resetGame() {
   powerups = [];
   novaRings = []; screenShake = 0;
   pickupParticles = [];
+  orbTrailParticles = [];
   planetRipples = [];
   destroyEffects = [];
   deathShards = [];
@@ -3421,6 +3440,8 @@ function update() {
 
   trail.push({ x: player.x, y: player.y });
   if (trail.length > 25) trail.shift();
+  emitOrbTrail();
+  updateOrbTrailParticles();
 
   if (checkCollisions()) triggerDeath();
 }
@@ -3813,14 +3834,126 @@ function drawBodies() {
   }
 }
 
+// Orb-specific trail particles. Emitted each playing frame behind the player
+// in the style of the active orb. Separate from the player-position `trail`
+// array so we can draw upward-drifting wisps, falling rocks, etc.
+let orbTrailParticles = [];
+const ORB_TRAIL_CAP = 140;
+
+function emitOrbTrail() {
+  if (state !== 'playing') return;
+  const orb = activeOrb;
+  const px = player.x, py = player.y;
+  if (orb === 'cosmic') {
+    // Purple wisps drifting upward.
+    if (Math.random() < 0.8) {
+      pushCapped(orbTrailParticles, {
+        kind: 'wisp',
+        x: px + (Math.random() - 0.5) * 10, y: py + 4 + Math.random() * 4,
+        vx: (Math.random() - 0.5) * 0.4,
+        vy: -1.4 - Math.random() * 1.2,
+        life: 1, size: 2.5 + Math.random() * 2.5,
+      }, ORB_TRAIL_CAP);
+    }
+  } else if (orb === 'solar') {
+    // Orange/red fire particles: dense, flickering, drift slightly upward.
+    if (Math.random() < 0.9) {
+      pushCapped(orbTrailParticles, {
+        kind: 'fire',
+        x: px + (Math.random() - 0.5) * 12, y: py + 4 + Math.random() * 3,
+        vx: (Math.random() - 0.5) * 0.8,
+        vy: -0.4 - Math.random() * 1.5,
+        life: 1, size: 3 + Math.random() * 3.5,
+        hue: Math.random() < 0.35 ? '255,210,80' : (Math.random() < 0.5 ? '255,120,40' : '255,80,30'),
+      }, ORB_TRAIL_CAP);
+    }
+  } else if (orb === 'nebula') {
+    // Blue speed lines: short vertical streaks scrolling behind the player.
+    if (Math.random() < 0.5) {
+      pushCapped(orbTrailParticles, {
+        kind: 'line',
+        x: px + (Math.random() - 0.5) * 26, y: py + 6,
+        vx: 0, vy: 4 + Math.random() * 3.5,
+        life: 1, len: 14 + Math.random() * 14,
+      }, ORB_TRAIL_CAP);
+    }
+  } else if (orb === 'asteroid') {
+    // Grey rock fragments falling behind the player.
+    if (Math.random() < 0.55) {
+      pushCapped(orbTrailParticles, {
+        kind: 'rock',
+        x: px + (Math.random() - 0.5) * 10, y: py + 5,
+        vx: (Math.random() - 0.5) * 1.5,
+        vy: 0.8 + Math.random() * 1.8,
+        life: 1, size: 2 + Math.random() * 2.5,
+        angle: Math.random() * 6.28, spin: (Math.random() - 0.5) * 0.25,
+      }, ORB_TRAIL_CAP);
+    }
+  }
+  // cyan: no extra particles — the cyan position-trail below carries the look.
+}
+
+function updateOrbTrailParticles() {
+  for (let i = orbTrailParticles.length - 1; i >= 0; i--) {
+    const p = orbTrailParticles[i];
+    p.x += p.vx; p.y += p.vy;
+    if (p.angle !== undefined) p.angle += p.spin;
+    if (p.kind === 'fire') p.vy -= 0.04; // fire lifts faster over time
+    p.life -= 0.025;
+    if (p.life <= 0) orbTrailParticles.splice(i, 1);
+  }
+}
+
+function drawOrbTrailParticles() {
+  if (!orbTrailParticles.length) return;
+  ctx.save();
+  for (const p of orbTrailParticles) {
+    const a = Math.max(0, p.life);
+    ctx.globalAlpha = a * 0.8;
+    if (p.kind === 'wisp') {
+      ctx.fillStyle = `rgba(${activeOrbColor()},1)`;
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.size * (0.6 + 0.4 * a), 0, 6.28); ctx.fill();
+    } else if (p.kind === 'fire') {
+      ctx.fillStyle = `rgba(${p.hue},1)`;
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.size * (0.5 + 0.6 * a), 0, 6.28); ctx.fill();
+    } else if (p.kind === 'line') {
+      ctx.strokeStyle = `rgba(${activeOrbColor()},1)`;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y);
+      ctx.lineTo(p.x, p.y - p.len);
+      ctx.stroke();
+    } else if (p.kind === 'rock') {
+      ctx.fillStyle = `rgba(${activeOrbColor()},1)`;
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(p.angle);
+      const s = p.size;
+      ctx.beginPath();
+      ctx.moveTo(-s, -s * 0.4);
+      ctx.lineTo(s * 0.6, -s);
+      ctx.lineTo(s, s * 0.3);
+      ctx.lineTo(-s * 0.3, s);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+  ctx.restore();
+  ctx.globalAlpha = 1;
+}
+
 function drawTrail() {
   const ghosting = activeEffects.ghost > 0;
-  const orbColor = getOrbBonus().color;
+  const orbColor = activeOrbColor();
+  // Orb-specific particles first (drawn below the cyan position trail).
+  drawOrbTrailParticles();
+  // Position trail: always drawn. Matches orb color (except during ghost,
+  // which keeps the signature purple wisp so the state reads at a glance).
   for (let i=0; i<trail.length; i++) {
     const t=i/trail.length;
     ctx.globalAlpha = t * (ghosting ? 0.55 : 0.6);
     if (ghosting) {
-      // Purple wispy trail while ghost is active (unchanged — signals ghost state)
       ctx.fillStyle = `hsl(${278 + t*12}, 75%, ${62 + t*12}%)`;
     } else {
       ctx.fillStyle = `rgba(${orbColor},1)`;
@@ -4484,7 +4617,8 @@ function loop() {
   if (loopFrameCounter % 600 === 0) {
     const total = pickupParticles.length + deathParticles.length
                 + novaRings.length + planetRipples.length
-                + destroyEffects.length + deathShards.length;
+                + destroyEffects.length + deathShards.length
+                + orbTrailParticles.length;
     if (total > 150) {
       console.warn('[loop] memory pressure: clearing', total, 'transient particles');
       pickupParticles = [];
@@ -4493,6 +4627,7 @@ function loop() {
       planetRipples = [];
       destroyEffects = [];
       deathShards = [];
+      orbTrailParticles = [];
     }
   }
   requestAnimationFrame(loop);
@@ -4582,6 +4717,7 @@ function goToMainMenu() {
   powerups = [];
   novaRings = [];
   pickupParticles = [];
+  orbTrailParticles = [];
   planetRipples = [];
   destroyEffects = [];
   deathShards = [];
