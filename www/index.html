@@ -2207,9 +2207,18 @@ function spawnBody(yBase) {
   };
 }
 
+// After 5 minutes, the playfield density ramps: +2 bodies per minute survived,
+// uncapped. Base value from difficulty settings for the first 5 minutes.
+function effectiveMaxBodies() {
+  const base = diff().maxBodies;
+  const es = elapsedRunSeconds();
+  if (es < 300) return base;
+  return base + 2 * Math.floor((es - 300) / 60);
+}
+
 function initBodies() {
   bodies = [];
-  const max = diff().maxBodies;
+  const max = effectiveMaxBodies();
   for (let i = 0; i < max; i++)
     bodies.push(spawnBody(H * 0.05 - i * BODY_SPACING));
 }
@@ -2899,25 +2908,32 @@ function activatePowerup(type, x, y) {
 }
 
 // --- Run timer ---
-// runTimerFrames is real elapsed frames (displayed as MM:SS).
-// runTimerColorFrames is speed-weighted — every update adds (scrollSpeed / baselineSpeed)
-// so the white → orange → red transition lands sooner when the game is fast.
-let runTimerFrames = 0;
-let runTimerColorFrames = 0;
-const RUN_TIMER_ORANGE = 120 * 60; // 2 minutes of baseline-speed time
-const RUN_TIMER_RED    = 240 * 60; // 4 minutes
+// Wall-clock elapsed time (Date.now() - runStartTime). Frame-rate independent
+// so the displayed MM:SS matches real seconds even during hitches.
+// Color thresholds scale with difficulty — harder difficulties stay white
+// longer because it takes more time to reach dangerous top speeds.
+let runStartTime = 0;
+const RUN_TIMER_THRESHOLDS = {
+  NORMAL:  { orange: 120, red: 240 }, // 2min / 4min
+  HARD:    { orange: 180, red: 360 }, // 3min / 6min
+  EXTREME: { orange: 240, red: 480 }, // 4min / 8min
+};
+function elapsedRunSeconds() {
+  return runStartTime ? (Date.now() - runStartTime) / 1000 : 0;
+}
 function formatRunTime(seconds) {
   const mm = Math.floor(seconds / 60);
   const ss = Math.floor(seconds % 60);
   return (mm < 10 ? '0' : '') + mm + ':' + (ss < 10 ? '0' : '') + ss;
 }
-function runTimerColor(frames) {
-  if (frames < RUN_TIMER_ORANGE) {
-    const t = frames / RUN_TIMER_ORANGE;
+function runTimerColor(seconds) {
+  const th = RUN_TIMER_THRESHOLDS[difficulty] || RUN_TIMER_THRESHOLDS.NORMAL;
+  if (seconds < th.orange) {
+    const t = seconds / th.orange;
     const r = 255, g = Math.round(255 - (255 - 180) * t), b = Math.round(255 - (255 - 80) * t);
     return `rgba(${r},${g},${b},0.92)`;
-  } else if (frames < RUN_TIMER_RED) {
-    const t = (frames - RUN_TIMER_ORANGE) / (RUN_TIMER_RED - RUN_TIMER_ORANGE);
+  } else if (seconds < th.red) {
+    const t = (seconds - th.orange) / (th.red - th.orange);
     const r = 255, g = Math.round(180 - 180 * t), b = Math.round(80 - 80 * t);
     return `rgba(${r},${g},${b},0.95)`;
   }
@@ -2926,11 +2942,22 @@ function runTimerColor(frames) {
 function updateRunTimerDisplay() {
   const el = document.getElementById('runTimer');
   if (!el) return;
-  const realSeconds = runTimerFrames / 60;
-  el.textContent = formatRunTime(realSeconds);
-  const color = runTimerColor(runTimerColorFrames);
+  const s = elapsedRunSeconds();
+  const danger = s >= 300;
+  el.textContent = formatRunTime(s) + (danger ? ' !' : '');
+  const color = runTimerColor(s);
   el.style.color = color;
   el.style.textShadow = '0 0 12px ' + color;
+  if (danger) {
+    // Blink 0.7 ↔ 1.0 every 10 frames; shake ±3px on x each frame.
+    const blinkHigh = Math.floor(frame / 10) % 2 === 0;
+    el.style.opacity = blinkHigh ? '1' : '0.7';
+    const shake = (Math.random() - 0.5) * 6; // ±3px
+    el.style.transform = `translateX(calc(-50% + ${shake.toFixed(2)}px))`;
+  } else {
+    el.style.opacity = '1';
+    el.style.transform = 'translateX(-50%)';
+  }
 }
 
 // --- Game state ---
@@ -2973,8 +3000,7 @@ function resetGame() {
   lastGainedEffects = [];
   lastGainedTimestamp = -1;
   lastPowerupSpawn = 0;
-  runTimerFrames = 0;
-  runTimerColorFrames = 0;
+  runStartTime = Date.now();
   document.getElementById('score').textContent = '0';
   updateRunTimerDisplay();
 }
@@ -3137,11 +3163,9 @@ function update() {
   const spd = scrollSpeed();
   const d = diff();
 
-  // Run timer: real seconds for display, speed-weighted frames for color.
-  runTimerFrames++;
-  const baselineSpeed = DIFFICULTIES.NORMAL.startSpeed;
-  runTimerColorFrames += Math.max(0.1, spd / baselineSpeed);
-  if ((frame & 7) === 0) updateRunTimerDisplay();
+  // Run timer: wall-clock driven. Normally refresh ~8x/sec; past 5 min the
+  // danger-zone shake/blink needs per-frame updates.
+  if (elapsedRunSeconds() >= 300 || (frame & 7) === 0) updateRunTimerDisplay();
 
   // Decrement active effect timers
   if (activeEffects.shield > 0) activeEffects.shield--;
@@ -3268,7 +3292,8 @@ function update() {
     }
   }
   bodies = bodies.filter(b => b.y < H + 80);
-  while (bodies.length < d.maxBodies) {
+  const bodyCap = effectiveMaxBodies();
+  while (bodies.length < bodyCap) {
     const topY = Math.min(...bodies.map(b => b.y));
     bodies.push(spawnBody(topY - BODY_SPACING - Math.random()*50));
   }
@@ -3384,9 +3409,17 @@ function triggerDeath() {
   // Crossfade gameplay → results over 0.3s.
   SFX.playTrack('results', 0.3);
   clearPendingNovaTimeouts();
+
+  // Time bonus: every 30s survived = score * 0.1 bonus, capped at 15 intervals.
+  const elapsedAtDeath = elapsedRunSeconds();
+  const survivedIntervals = Math.min(15, Math.floor(elapsedAtDeath / 30));
+  const timeBonus = Math.floor(score * 0.1 * survivedIntervals);
+  const baseScore = score;
+  score += timeBonus;
+
   const scores = saveScore(score, difficulty);
 
-  // Crystal earning: floor(score * difficulty multiplier)
+  // Crystal earning: floor(final score * difficulty multiplier)
   const crystalMult = DIFFICULTIES[difficulty].crystalMult || 1;
   const crystalsEarned = Math.max(0, Math.floor(score * crystalMult));
   totalCrystals = Math.max(0, totalCrystals + crystalsEarned);
@@ -3471,14 +3504,19 @@ function triggerDeath() {
 
     // Run summary
     const rs = document.getElementById('runSummary');
+    const timeBonusRow = timeBonus > 0
+      ? `<div class="rs-row" style="color:rgba(100,220,255,0.9);"><span class="rs-label" style="color:rgba(100,220,255,0.75);">TIME BONUS</span><span class="rs-val"></span><span class="rs-pts" style="color:rgba(100,220,255,0.9);">+${timeBonus} pts</span></div>`
+      : '';
     rs.innerHTML = `
       <div class="rs-title">${deathScore}</div>
       <div class="rs-row"><span class="rs-label">PLANETS PASSED</span><span class="rs-val">${deathPlanetsPassed}</span><span class="rs-pts">${deathStats.pointsFromPassing} pts</span></div>
       <div class="rs-row"><span class="rs-label">PLANETS DESTROYED</span><span class="rs-val">${deathStats.totalDestroyed}</span><span class="rs-pts">${deathStats.pointsFromDestroying} pts</span></div>
       <div class="rs-row"><span class="rs-label">LONGEST STREAK</span><span class="rs-val">${deathStats.longestStreak}</span><span class="rs-pts"></span></div>
       <div class="rs-row"><span class="rs-label">POWERUPS USED</span><span class="rs-val">${deathStats.powerupsUsed}</span><span class="rs-pts"></span></div>
+      ${timeBonusRow}
       <hr class="rs-sep">
       <div class="rs-total"><span>TOTAL</span><span>${deathScore} pts <span class="rs-diff ${deathDifficulty}">${deathDifficulty}</span></span></div>
+      <div style="text-align:right; font-size:8px; letter-spacing:1px; color:rgba(255,255,255,0.35); padding-top:2px;">× ${crystalMult} difficulty multiplier</div>
     `;
     rs.style.display = 'block';
 
@@ -4481,11 +4519,13 @@ document.getElementById('startBtn').addEventListener('click', ()=>{
   pauseBtn.classList.add('visible');
 });
 
+let runPauseStart = 0;
 function pauseGame() {
   if (state !== 'playing') return;
   state = 'paused';
   leftDown = false; rightDown = false;
   SFX.pauseMusic();
+  runPauseStart = Date.now();
   pauseBtn.classList.remove('visible');
   pauseOverlay.classList.add('visible');
 }
@@ -4494,6 +4534,9 @@ function resumeGame() {
   if (state !== 'paused') return;
   state = 'playing';
   SFX.resumeMusic();
+  // Shift runStartTime forward by the pause duration so elapsed stays real.
+  if (runPauseStart && runStartTime) runStartTime += (Date.now() - runPauseStart);
+  runPauseStart = 0;
   pauseOverlay.classList.remove('visible');
   quitMsg.style.display = 'none';
   pauseBtn.classList.add('visible');
@@ -4555,7 +4598,7 @@ function goToMainMenu() {
   document.getElementById('deathCrystalTotal').style.display = 'none';
   document.getElementById('deathActions').style.display = 'none';
   document.getElementById('orbBrowser').style.display = 'flex';
-  runTimerFrames = 0; runTimerColorFrames = 0; updateRunTimerDisplay();
+  runStartTime = 0; updateRunTimerDisplay();
   refreshOrbBrowser();
   document.getElementById('overlay').classList.remove('hidden');
   if (typeof syncUpdateBanner === 'function') syncUpdateBanner();
