@@ -989,13 +989,38 @@ Sentry.setUser({ username: localStorage.getItem('drift_username') });
 
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
-// W/H are the real viewport pixels — the canvas fills the screen, no letterbox.
-// Captured once at page load: the Android activity is locked to portrait and
-// Capacitor doesn't fire mid-session size changes we need to react to.
-const W = window.innerWidth;
-const H = window.innerHeight;
+// W/H are the playfield pixels. On Android (Capacitor), the game fills the
+// portrait-locked window. In desktop browsers, cap the playfield to a phone-
+// shaped 430x932 viewport and center it so the layout doesn't stretch.
+// Captured once at page load: Capacitor doesn't fire mid-session size changes
+// we need to react to.
+const isCapacitor = !!window.Capacitor;
+const W = isCapacitor ? window.innerWidth  : Math.min(window.innerWidth,  430);
+const H = isCapacitor ? window.innerHeight : Math.min(window.innerHeight, 932);
 canvas.width = W;
 canvas.height = H;
+
+// Desktop: size and center the wrapper when the browser window is wider/taller
+// than the capped playfield. Uses margin:auto with all four fixed offsets set
+// to 0 so the box is horizontally + vertically centered.
+if (!isCapacitor) {
+  const wrapper = document.getElementById('gameWrapper');
+  wrapper.style.width = W + 'px';
+  wrapper.style.height = H + 'px';
+  if (W < window.innerWidth) {
+    wrapper.style.left = '0';
+    wrapper.style.right = '0';
+    wrapper.style.marginLeft = 'auto';
+    wrapper.style.marginRight = 'auto';
+  }
+  if (H < window.innerHeight) {
+    wrapper.style.top = '0';
+    wrapper.style.bottom = '0';
+    wrapper.style.marginTop = 'auto';
+    wrapper.style.marginBottom = 'auto';
+  }
+  document.body.style.background = '#00000a';
+}
 
 
 // Let the game render under the status bar while keeping the system icons
