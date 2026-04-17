@@ -61,9 +61,23 @@
     text-shadow: 0 0 20px rgba(100,200,255,0.8);
   }
 
+  #runTimer {
+    position: absolute;
+    top: 56px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-family: 'Orbitron', monospace;
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: 3px;
+    color: rgba(255,255,255,0.8);
+    text-shadow: 0 0 12px rgba(255,255,255,0.4);
+    pointer-events: none;
+  }
+
   #powerupTimer {
     position: absolute;
-    top: 72px;
+    top: 104px;
     left: 50%;
     transform: translateX(-50%);
     display: none;
@@ -148,8 +162,173 @@
   #difficultySelect {
     display: flex;
     gap: 8px;
-    margin-bottom: 36px;
+    margin-bottom: 22px;
   }
+
+  #orbBrowser {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-bottom: 26px;
+    position: relative;
+    width: 300px;
+  }
+  #orbCrystalBalance {
+    position: absolute;
+    top: -18px;
+    right: 0;
+    font-family: 'Space Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 2px;
+    color: rgba(255,210,90,0.95);
+    text-shadow: 0 0 10px rgba(255,200,60,0.45);
+  }
+  .orb-nav {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .orb-arrow {
+    background: transparent;
+    border: 1px solid rgba(255,255,255,0.18);
+    color: rgba(255,255,255,0.55);
+    font-family: 'Orbitron', monospace;
+    font-size: 13px;
+    padding: 10px 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+    line-height: 1;
+  }
+  .orb-arrow:hover {
+    color: rgba(255,255,255,0.9);
+    border-color: rgba(255,255,255,0.45);
+  }
+  #orbPreview {
+    width: 120px;
+    height: 120px;
+    background: rgba(0,0,15,0.55);
+    border: 1px solid rgba(255,255,255,0.14);
+    border-radius: 4px;
+    position: relative;
+    overflow: hidden;
+  }
+  #orbPreview.locked::after {
+    content: '🔒';
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 28px;
+    color: rgba(255,255,255,0.65);
+    text-shadow: 0 0 12px rgba(0,0,0,0.8);
+  }
+  #orbPreviewCanvas {
+    width: 120px;
+    height: 120px;
+    display: block;
+  }
+  #orbPreview.locked #orbPreviewCanvas { opacity: 0.5; }
+  #orbName {
+    font-family: 'Orbitron', monospace;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 4px;
+    color: rgba(255,255,255,0.92);
+    margin-top: 10px;
+    text-transform: uppercase;
+  }
+  #orbDesc {
+    font-family: 'Space Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 1px;
+    color: rgba(255,255,255,0.5);
+    margin-top: 4px;
+    text-align: center;
+    max-width: 260px;
+    line-height: 1.4;
+  }
+  #orbDots {
+    display: flex;
+    gap: 6px;
+    margin-top: 8px;
+  }
+  .orb-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.2);
+  }
+  .orb-dot.active { background: rgba(100,220,255,0.95); box-shadow: 0 0 6px rgba(100,200,255,0.6); }
+  #orbAction {
+    margin-top: 10px;
+    min-height: 34px;
+  }
+  .orb-btn {
+    background: transparent;
+    border: 1px solid rgba(100,200,255,0.5);
+    color: rgba(100,220,255,0.9);
+    font-family: 'Orbitron', monospace;
+    font-size: 10px;
+    letter-spacing: 3px;
+    padding: 9px 20px;
+    cursor: pointer;
+    text-transform: uppercase;
+    transition: all 0.25s;
+  }
+  .orb-btn:hover { background: rgba(100,200,255,0.12); box-shadow: 0 0 16px rgba(100,200,255,0.25); }
+  .orb-btn.equipped {
+    border-color: rgba(100,200,255,0.5);
+    color: rgba(100,220,255,0.7);
+    cursor: default;
+    background: rgba(100,200,255,0.06);
+  }
+  .orb-btn.unlock {
+    border-color: rgba(255,200,60,0.75);
+    color: rgba(255,220,120,0.95);
+    text-shadow: 0 0 8px rgba(255,200,60,0.35);
+  }
+  .orb-btn.unlock:hover { background: rgba(255,200,60,0.12); box-shadow: 0 0 18px rgba(255,200,60,0.3); }
+  .orb-btn.flash-err {
+    animation: orbFlashErr 0.6s ease;
+  }
+  @keyframes orbFlashErr {
+    0%,100% { color: rgba(255,220,120,0.95); border-color: rgba(255,200,60,0.75); }
+    50% { color: rgba(255,120,120,1); border-color: rgba(255,100,100,1); }
+  }
+
+  #deathCrystals {
+    font-family: 'Orbitron', monospace;
+    font-size: 16px;
+    letter-spacing: 3px;
+    color: rgba(255,220,120,0.95);
+    text-shadow: 0 0 12px rgba(255,200,60,0.4);
+    margin-bottom: 4px;
+    display: none;
+  }
+  #deathCrystalTotal {
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 2px;
+    color: rgba(255,210,90,0.75);
+    margin-bottom: 10px;
+    display: none;
+  }
+  #deathActions {
+    display: none;
+    gap: 10px;
+    margin-top: 10px;
+  }
+  #shopBtn {
+    background: transparent;
+    border: 1px solid rgba(255,200,60,0.6);
+    color: rgba(255,220,120,0.95);
+    font-family: 'Orbitron', monospace;
+    font-size: 11px;
+    letter-spacing: 3px;
+    padding: 12px 28px;
+    cursor: pointer;
+    text-transform: uppercase;
+    transition: all 0.3s;
+  }
+  #shopBtn:hover { background: rgba(255,200,60,0.12); box-shadow: 0 0 22px rgba(255,200,60,0.3); }
   .diff-btn {
     background: transparent;
     border: 1px solid rgba(255,255,255,0.18);
@@ -266,7 +445,7 @@
 
   #streakDisplay {
     position: absolute;
-    top: 58px;
+    top: 84px;
     left: 50%;
     transform: translateX(-50%);
     font-family: 'Space Mono', monospace;
@@ -694,6 +873,7 @@
   <canvas id="c"></canvas>
   <div id="ui">
     <div id="score">0</div>
+    <div id="runTimer">00:00</div>
     <div id="powerupTimer">
       <div class="pt-label" id="ptLabel">SHIELD</div>
       <div class="pt-bar"><div class="pt-fill" id="ptFill"></div></div>
@@ -711,8 +891,22 @@
       <button class="diff-btn" data-diff="HARD">HARD</button>
       <button class="diff-btn" data-diff="EXTREME">EXTREME</button>
     </div>
+    <div id="orbBrowser">
+      <div id="orbCrystalBalance">💎 0</div>
+      <div class="orb-nav">
+        <button class="orb-arrow" id="orbPrev">◀</button>
+        <div id="orbPreview"><canvas id="orbPreviewCanvas" width="240" height="240"></canvas></div>
+        <button class="orb-arrow" id="orbNext">▶</button>
+      </div>
+      <div id="orbName">DRIFTER</div>
+      <div id="orbDesc">Balanced. Equal powerup chances.</div>
+      <div id="orbDots"></div>
+      <div id="orbAction"></div>
+    </div>
     <div id="deathScore"></div>
     <div id="runSummary"></div>
+    <div id="deathCrystals"></div>
+    <div id="deathCrystalTotal"></div>
     <div class="lb-tabs" id="lbTabs" style="display:none">
       <button class="lb-tab active" data-tab="local">LOCAL</button>
       <button class="lb-tab" data-tab="global">GLOBAL</button>
@@ -730,6 +924,9 @@
       thread the cosmos. don't get absorbed.
     </div>
     <button id="startBtn">ENTER THE VOID</button>
+    <div id="deathActions">
+      <button id="shopBtn">SHOP</button>
+    </div>
   </div>
   <button id="settingsBtn" aria-label="Settings">⚙</button>
   <button id="pauseBtn" aria-label="Pause">❚❚</button>
@@ -835,13 +1032,70 @@ const FORCE = 0.18;
 
 // --- Difficulty ---
 const DIFFICULTIES = {
-  NORMAL:  { startSpeed: 1.0, maxSpeed: 2.2, speedCapScore: 300, maxBodies: 4, powerupFrequency: 1.0 },
-  HARD:    { startSpeed: 1.3, maxSpeed: 3.0, speedCapScore: 250, maxBodies: 6, powerupFrequency: 1.3 },
-  EXTREME: { startSpeed: 1.6, maxSpeed: 4.0, speedCapScore: 200, maxBodies: 8, powerupFrequency: 1.8 },
+  NORMAL:  { startSpeed: 1.2, maxSpeed: 3.5, speedCapScore: 300, maxBodies: 4, powerupFrequency: 1.0, crystalMult: 0.75 },
+  HARD:    { startSpeed: 1.6, maxSpeed: 5.0, speedCapScore: 300, maxBodies: 6, powerupFrequency: 1.3, crystalMult: 1.0 },
+  EXTREME: { startSpeed: 2.0, maxSpeed: 8.0, speedCapScore: 300, maxBodies: 8, powerupFrequency: 1.8, crystalMult: 1.25 },
 };
 let difficulty = 'NORMAL';
 Sentry.setTag('difficulty', difficulty);
 function diff() { return DIFFICULTIES[difficulty]; }
+
+// --- Orbs & crystal currency ---
+const ORB_DEFS = {
+  cyan: {
+    name: 'Drifter', desc: 'Balanced. Equal powerup chances.',
+    color: '125,232,255', cost: 0, streakCap: 10, trail: 'cyan',
+  },
+  cosmic: {
+    name: 'Phantom', desc: 'Longer ghost. Ghosts spawn more often.',
+    color: '192,132,252', cost: 10000, streakCap: 8, trail: 'cosmic', bias: 'ghost',
+  },
+  solar: {
+    name: 'Inferno', desc: 'Bigger novas. Novas spawn more often.',
+    color: '251,146,60', cost: 20000, streakCap: 8, trail: 'solar', bias: 'nova',
+  },
+  nebula: {
+    name: 'Warp', desc: 'Hyperspeed stacks faster. Higher cap.',
+    color: '96,165,250', cost: 40000, streakCap: 8, trail: 'nebula', bias: 'hyperspeed',
+  },
+  asteroid: {
+    name: 'Fortress', desc: 'Durable shields. Shields spawn more often.',
+    color: '168,162,158', cost: 80000, streakCap: 8, trail: 'asteroid', bias: 'shield',
+  },
+};
+const ORB_ORDER = ['cyan', 'cosmic', 'solar', 'nebula', 'asteroid'];
+
+let totalCrystals = 0;
+let activeOrb = 'cyan';
+let unlockedOrbs = ['cyan'];
+try {
+  const c = parseInt(localStorage.getItem('drift_crystals') || '0', 10);
+  if (!isNaN(c) && c >= 0) totalCrystals = c;
+  const o = localStorage.getItem('drift_orb');
+  if (o && ORB_DEFS[o]) activeOrb = o;
+  const u = localStorage.getItem('drift_unlocked_orbs');
+  if (u) {
+    const arr = JSON.parse(u);
+    if (Array.isArray(arr)) unlockedOrbs = arr.filter(x => ORB_DEFS[x]);
+  }
+  if (!unlockedOrbs.includes('cyan')) unlockedOrbs.push('cyan');
+  if (!unlockedOrbs.includes(activeOrb)) activeOrb = 'cyan';
+} catch {}
+
+function saveCrystals() {
+  try { localStorage.setItem('drift_crystals', String(Math.max(0, totalCrystals))); } catch {}
+}
+function saveOrb() {
+  try { localStorage.setItem('drift_orb', activeOrb); } catch {}
+}
+function saveUnlockedOrbs() {
+  try { localStorage.setItem('drift_unlocked_orbs', JSON.stringify(unlockedOrbs)); } catch {}
+}
+function getOrbBonus() { return ORB_DEFS[activeOrb] || ORB_DEFS.cyan; }
+function getStreakCap() { return getOrbBonus().streakCap || 8; }
+function formatCrystals(n) {
+  return (n || 0).toLocaleString('en-US');
+}
 
 let state = 'idle', score = 0, frame = 0, planetsPassed = 0;
 let player = {}, bodies = [], trail = [], bgStars = [], deathParticles = [];
@@ -884,12 +1138,16 @@ function pushCapped(arr, item, cap) {
 }
 let activeEffects = { shield: 0, hyperspeed: 0, ghost: 0 };
 let lastPowerupSpawn = 0;
-const SHIELD_DURATION = 900;        // 15s @ 60fps
+const SHIELD_DURATION_DEFAULT = 900;        // 15s @ 60fps
+const SHIELD_DURATION_ASTEROID = 1800;      // 30s for asteroid orb
 const HYPERSPEED_DURATION = 360;    // 6s base
 const HYPERSPEED_COMBO_DURATION = 480; // 8s for warp time / spectral rush
-const GHOST_DURATION  = 480;        // 8s
+const GHOST_DURATION_DEFAULT = 480;        // 8s
+const GHOST_DURATION_COSMIC = 720;         // 12s for cosmic orb
 const GHOST_ETERNAL_DURATION = 960; // 16s for eternal phantom
 const SHIELD_BLINK_FRAMES = 180;    // last 3s blink
+function SHIELD_DURATION() { return activeOrb === 'asteroid' ? SHIELD_DURATION_ASTEROID : SHIELD_DURATION_DEFAULT; }
+function GHOST_DURATION() { return activeOrb === 'cosmic' ? GHOST_DURATION_COSMIC : GHOST_DURATION_DEFAULT; }
 
 // Hyperspeed state
 let hyperspeedTargetSpeed = 0;    // the normal speed to decelerate back to
@@ -903,12 +1161,15 @@ let hyperspeedWhooshNodes = null; // audio nodes for sustained whoosh
 // one — speed steps down level by level. peakHyperSpeedStacks tracks the
 // highest stack count reached this session so the final landing pull scales
 // with how aggressive the run was.
-const HYPERSPEED_MAX_STACKS = 4;
+const HYPERSPEED_MAX_STACKS_DEFAULT = 4;
+const HYPERSPEED_MAX_STACKS_NEBULA = 6;
+function HYPERSPEED_MAX_STACKS() { return activeOrb === 'nebula' ? HYPERSPEED_MAX_STACKS_NEBULA : HYPERSPEED_MAX_STACKS_DEFAULT; }
 let hyperSpeedStacks = 0;
 let hyperSpeedTimers = [];
 let peakHyperSpeedStacks = 0;
 
-// Shield hitpoints (fortress shield = 2)
+// Shield hitpoints (fortress shield = 2, asteroid orb up to 4)
+const SHIELD_HITS_MAX_ASTEROID = 4;
 let shieldHits = 1;
 
 // --- Combos ---
@@ -1966,7 +2227,19 @@ function spawnPowerup() {
   const y = Math.min(-30, topBodyY - 60 - Math.random() * 80);
   // 1 in 5 spawns is a tethered pair
   if (Math.random() < 0.2) {
-    const combo = PAIR_COMBOS[Math.floor(Math.random() * PAIR_COMBOS.length)];
+    // Pair-combo selection weighted by active orb's specialty: combos that
+    // include the orb's bias type get 2x weight so they spawn more often.
+    const bias = getOrbBonus().bias;
+    const weights = PAIR_COMBOS.map(c => (bias && (c[0] === bias || c[1] === bias)) ? 2 : 1);
+    let total = 0;
+    for (const w of weights) total += w;
+    let pick = Math.random() * total;
+    let idx = 0;
+    for (let i = 0; i < weights.length; i++) {
+      pick -= weights[i];
+      if (pick <= 0) { idx = i; break; }
+    }
+    const combo = PAIR_COMBOS[idx];
     const gap = 60;
     const cx = 80 + Math.random() * (W - 160);
     const id = nextPairId++;
@@ -2293,7 +2566,7 @@ function drawDestroyEffects() {
 
 function addDestroyPoints() {
   destroyStreak++;
-  const streakForScore = Math.min(destroyStreak, 12);
+  const streakForScore = Math.min(destroyStreak, getStreakCap());
   const pts = streakForScore * streakForScore;
   score += pts;
   runStats.totalDestroyed++;
@@ -2404,7 +2677,7 @@ function activateCombo(key, x, y) {
     } else if (key === 'nova_shield') {
       // Refresh shield duration but leave pulsarNovaTimer alone so the
       // auto-nova cadence continues uninterrupted.
-      activeEffects.shield = SHIELD_DURATION;
+      activeEffects.shield = SHIELD_DURATION();
       shieldBroken = false;
     } else if (key === 'hyperspeed_ghost') {
       activateHyperspeed(HYPERSPEED_COMBO_DURATION, 2);
@@ -2412,13 +2685,13 @@ function activateCombo(key, x, y) {
       syncComboDurations('hyperspeed', 'ghost');
     } else if (key === 'hyperspeed_shield') {
       if (activeEffects.hyperspeed <= 0) activateHyperspeed();
-      if (activeEffects.shield <= 0) { activeEffects.shield = SHIELD_DURATION; shieldBroken = false; }
+      if (activeEffects.shield <= 0) { activeEffects.shield = SHIELD_DURATION(); shieldBroken = false; }
       syncComboDurations('hyperspeed', 'shield');
     } else if (key === 'ghost_shield') {
       // Wraith refresh wasn't previously handled — make sure both halves
       // come up to whichever timer is longest so the combo doesn't die mid-effect.
-      if (activeEffects.ghost <= 0) activeEffects.ghost = GHOST_DURATION;
-      if (activeEffects.shield <= 0) { activeEffects.shield = SHIELD_DURATION; shieldBroken = false; }
+      if (activeEffects.ghost <= 0) activeEffects.ghost = GHOST_DURATION();
+      if (activeEffects.shield <= 0) { activeEffects.shield = SHIELD_DURATION(); shieldBroken = false; }
       syncComboDurations('ghost', 'shield');
     }
     lastComboLabel = key;
@@ -2451,12 +2724,12 @@ function activateCombo(key, x, y) {
     activeCombos[key] = { def, deps: ['hyperspeed'] };
   } else if (key === 'nova_ghost') {
     // PHANTOM BLAST: 8s damage aura
-    activeEffects.ghost = GHOST_DURATION;
-    phantomBlastFrames = GHOST_DURATION;
+    activeEffects.ghost = GHOST_DURATION();
+    phantomBlastFrames = GHOST_DURATION();
     activeCombos[key] = { def, deps: ['ghost'] };
   } else if (key === 'nova_shield') {
     // PULSAR: full shield + auto nova every 4s
-    activeEffects.shield = SHIELD_DURATION;
+    activeEffects.shield = SHIELD_DURATION();
     shieldBroken = false;
     pulsarNovaTimer = 0;
     activeCombos[key] = { def, deps: ['shield'] };
@@ -2469,14 +2742,14 @@ function activateCombo(key, x, y) {
   } else if (key === 'hyperspeed_shield') {
     // JUGGERNAUT: barrier + shield + refresh shield on hyperspeed end
     if (activeEffects.hyperspeed <= 0) activateHyperspeed();
-    if (activeEffects.shield <= 0) { activeEffects.shield = SHIELD_DURATION; shieldBroken = false; }
+    if (activeEffects.shield <= 0) { activeEffects.shield = SHIELD_DURATION(); shieldBroken = false; }
     syncComboDurations('hyperspeed', 'shield');
     juggernautPendingShieldRefresh = true;
     activeCombos[key] = { def, deps: ['hyperspeed'] };
   } else if (key === 'ghost_shield') {
     // WRAITH: during ghost destroy on contact; when ghost ends, shield absorbs 1 hit
-    if (activeEffects.ghost <= 0) activeEffects.ghost = GHOST_DURATION;
-    if (activeEffects.shield <= 0) { activeEffects.shield = SHIELD_DURATION; shieldBroken = false; }
+    if (activeEffects.ghost <= 0) activeEffects.ghost = GHOST_DURATION();
+    if (activeEffects.shield <= 0) { activeEffects.shield = SHIELD_DURATION(); shieldBroken = false; }
     syncComboDurations('ghost', 'shield');
     activeCombos[key] = { def, deps: ['ghost'] };
   } else if (key === 'ghost_ghost') {
@@ -2485,7 +2758,7 @@ function activateCombo(key, x, y) {
     activeCombos[key] = { def, deps: ['ghost'] };
   } else if (key === 'shield_shield') {
     // FORTRESS SHIELD: 15s, 2 hits
-    activeEffects.shield = SHIELD_DURATION;
+    activeEffects.shield = SHIELD_DURATION();
     shieldBroken = false;
     shieldHits = 2;
     fortressShield = true;
@@ -2520,13 +2793,18 @@ function activatePair(a, b) {
 
 function rawActivate(type, x, y) {
   if (type === 'shield') {
-    activeEffects.shield = SHIELD_DURATION;
+    activeEffects.shield = SHIELD_DURATION();
     shieldBroken = false;
-    shieldHits = Math.max(shieldHits, 1);
+    if (activeOrb === 'asteroid') {
+      shieldHits = Math.min(SHIELD_HITS_MAX_ASTEROID, Math.max(shieldHits, 0) + 2);
+    } else {
+      shieldHits = Math.max(shieldHits, 1);
+    }
   } else if (type === 'hyperspeed') {
     activateHyperspeed();
+    if (activeOrb === 'nebula') activateHyperspeed();
   } else if (type === 'ghost') {
-    activeEffects.ghost = GHOST_DURATION;
+    activeEffects.ghost = GHOST_DURATION();
   } else if (type === 'nova') {
     fireTripleNova(player.x, player.y);
     recentNovaFrames = 90;
@@ -2536,20 +2814,18 @@ function rawActivate(type, x, y) {
 function fireTripleNova(px, py) {
   pushCapped(novaRings, { x: px, y: py, radius: 0, life: 1, prevR: 0 }, NOVA_RINGS_CAP);
   screenShake = Math.max(screenShake, 10);
-  pendingNovaTimeouts.push(setTimeout(() => {
-    if (state === 'playing') {
-      pushCapped(novaRings, { x: player.x, y: player.y, radius: 0, life: 0.8, prevR: 0 }, NOVA_RINGS_CAP);
-      screenShake = Math.max(screenShake, 7);
-      SFX.pickup('nova');
-    }
-  }, 400));
-  pendingNovaTimeouts.push(setTimeout(() => {
-    if (state === 'playing') {
-      pushCapped(novaRings, { x: player.x, y: player.y, radius: 0, life: 0.6, prevR: 0 }, NOVA_RINGS_CAP);
-      screenShake = Math.max(screenShake, 5);
-      SFX.pickup('nova');
-    }
-  }, 800));
+  const waves = activeOrb === 'solar' ? 6 : 3;
+  for (let i = 1; i < waves; i++) {
+    const life = Math.max(0.4, 1 - i * 0.1);
+    const shake = Math.max(3, 10 - i * 1.5);
+    pendingNovaTimeouts.push(setTimeout(() => {
+      if (state === 'playing') {
+        pushCapped(novaRings, { x: player.x, y: player.y, radius: 0, life, prevR: 0 }, NOVA_RINGS_CAP);
+        screenShake = Math.max(screenShake, shake);
+        SFX.pickup('nova');
+      }
+    }, i * 400));
+  }
 }
 
 function clearPendingNovaTimeouts() {
@@ -2573,7 +2849,7 @@ function computeHyperspeedPeakMult(stacks, peakScale) {
 // of growing the array. The whoosh restarts so the engine pitch can shift up.
 function activateHyperspeed(durationOverride, peakScale) {
   const newTimer = durationOverride || HYPERSPEED_DURATION;
-  if (hyperSpeedStacks < HYPERSPEED_MAX_STACKS) {
+  if (hyperSpeedStacks < HYPERSPEED_MAX_STACKS()) {
     hyperSpeedStacks++;
     hyperSpeedTimers.push(newTimer);
     Sentry.addBreadcrumb({ category: 'hyperspeed', message: 'stacks: ' + hyperSpeedStacks, level: 'info' });
@@ -2622,6 +2898,41 @@ function activatePowerup(type, x, y) {
   lastGainedTimestamp = frame;
 }
 
+// --- Run timer ---
+// runTimerFrames is real elapsed frames (displayed as MM:SS).
+// runTimerColorFrames is speed-weighted — every update adds (scrollSpeed / baselineSpeed)
+// so the white → orange → red transition lands sooner when the game is fast.
+let runTimerFrames = 0;
+let runTimerColorFrames = 0;
+const RUN_TIMER_ORANGE = 120 * 60; // 2 minutes of baseline-speed time
+const RUN_TIMER_RED    = 240 * 60; // 4 minutes
+function formatRunTime(seconds) {
+  const mm = Math.floor(seconds / 60);
+  const ss = Math.floor(seconds % 60);
+  return (mm < 10 ? '0' : '') + mm + ':' + (ss < 10 ? '0' : '') + ss;
+}
+function runTimerColor(frames) {
+  if (frames < RUN_TIMER_ORANGE) {
+    const t = frames / RUN_TIMER_ORANGE;
+    const r = 255, g = Math.round(255 - (255 - 180) * t), b = Math.round(255 - (255 - 80) * t);
+    return `rgba(${r},${g},${b},0.92)`;
+  } else if (frames < RUN_TIMER_RED) {
+    const t = (frames - RUN_TIMER_ORANGE) / (RUN_TIMER_RED - RUN_TIMER_ORANGE);
+    const r = 255, g = Math.round(180 - 180 * t), b = Math.round(80 - 80 * t);
+    return `rgba(${r},${g},${b},0.95)`;
+  }
+  return 'rgba(255,60,60,0.95)';
+}
+function updateRunTimerDisplay() {
+  const el = document.getElementById('runTimer');
+  if (!el) return;
+  const realSeconds = runTimerFrames / 60;
+  el.textContent = formatRunTime(realSeconds);
+  const color = runTimerColor(runTimerColorFrames);
+  el.style.color = color;
+  el.style.textShadow = '0 0 12px ' + color;
+}
+
 // --- Game state ---
 function resetGame() {
   player = { x: W/2, y: H*0.72, vx: 0, vy: 0, angle: 0 };
@@ -2662,7 +2973,10 @@ function resetGame() {
   lastGainedEffects = [];
   lastGainedTimestamp = -1;
   lastPowerupSpawn = 0;
+  runTimerFrames = 0;
+  runTimerColorFrames = 0;
   document.getElementById('score').textContent = '0';
+  updateRunTimerDisplay();
 }
 
 // --- Physics: only closest body matters ---
@@ -2823,6 +3137,12 @@ function update() {
   const spd = scrollSpeed();
   const d = diff();
 
+  // Run timer: real seconds for display, speed-weighted frames for color.
+  runTimerFrames++;
+  const baselineSpeed = DIFFICULTIES.NORMAL.startSpeed;
+  runTimerColorFrames += Math.max(0.1, spd / baselineSpeed);
+  if ((frame & 7) === 0) updateRunTimerDisplay();
+
   // Decrement active effect timers
   if (activeEffects.shield > 0) activeEffects.shield--;
   if (hyperSpeedStacks > 0) {
@@ -2868,7 +3188,7 @@ function update() {
       if (hyperspeedWhooshNodes) { try { hyperspeedWhooshNodes.stop(0.5); } catch {} hyperspeedWhooshNodes = null; }
       // JUGGERNAUT: refresh shield to a fresh 15s when hyperspeed ends
       if (juggernautPendingShieldRefresh) {
-        activeEffects.shield = SHIELD_DURATION;
+        activeEffects.shield = SHIELD_DURATION();
         shieldBroken = false;
         juggernautPendingShieldRefresh = false;
       }
@@ -3066,6 +3386,12 @@ function triggerDeath() {
   clearPendingNovaTimeouts();
   const scores = saveScore(score, difficulty);
 
+  // Crystal earning: floor(score * difficulty multiplier)
+  const crystalMult = DIFFICULTIES[difficulty].crystalMult || 1;
+  const crystalsEarned = Math.max(0, Math.floor(score * crystalMult));
+  totalCrystals = Math.max(0, totalCrystals + crystalsEarned);
+  saveCrystals();
+
   // Orb shatter: 6-8 irregular shards fly outward from the player position
   // before the existing particle burst fires. Each shard has a random
   // velocity, rotation speed, and a small cyan polygon shape.
@@ -3155,6 +3481,18 @@ function triggerDeath() {
       <div class="rs-total"><span>TOTAL</span><span>${deathScore} pts <span class="rs-diff ${deathDifficulty}">${deathDifficulty}</span></span></div>
     `;
     rs.style.display = 'block';
+
+    // Crystal display: earned this run (gold) + running total
+    const dc = document.getElementById('deathCrystals');
+    const dct = document.getElementById('deathCrystalTotal');
+    dc.textContent = '+ ' + formatCrystals(crystalsEarned) + ' 💎';
+    dc.style.display = 'block';
+    dct.textContent = '💎 TOTAL: ' + formatCrystals(totalCrystals);
+    dct.style.display = 'block';
+
+    // Hide orb browser on death screen, show SHOP button next to DRIFT AGAIN.
+    document.getElementById('orbBrowser').style.display = 'none';
+    document.getElementById('deathActions').style.display = 'flex';
 
     // Render local scores filtered by difficulty
     renderLocalScores(deathDifficulty);
@@ -3386,7 +3724,8 @@ function drawBodies() {
 
     // Target indicator: bright ring + line to player when active
     if (isTarget) {
-      const lineColor = leftDown ? 'rgba(80,200,255,' : rightDown ? 'rgba(255,120,80,' : 'rgba(255,255,255,';
+      const orbRgb = getOrbBonus().color;
+      const lineColor = leftDown ? 'rgba(80,200,255,' : rightDown ? 'rgba(255,120,80,' : `rgba(${orbRgb},`;
       ctx.globalAlpha = 0.55 + 0.25*Math.sin(frame*0.18);
       ctx.strokeStyle = lineColor+'0.7)';
       ctx.lineWidth = 1.5;
@@ -3413,14 +3752,15 @@ function drawBodies() {
 
 function drawTrail() {
   const ghosting = activeEffects.ghost > 0;
+  const orbColor = getOrbBonus().color;
   for (let i=0; i<trail.length; i++) {
     const t=i/trail.length;
     ctx.globalAlpha = t * (ghosting ? 0.55 : 0.6);
     if (ghosting) {
-      // Purple wispy trail while ghost is active
+      // Purple wispy trail while ghost is active (unchanged — signals ghost state)
       ctx.fillStyle = `hsl(${278 + t*12}, 75%, ${62 + t*12}%)`;
     } else {
-      ctx.fillStyle = `hsl(${185+t*55},100%,78%)`;
+      ctx.fillStyle = `rgba(${orbColor},1)`;
     }
     ctx.beginPath(); ctx.arc(trail[i].x,trail[i].y,t*4.5,0,6.28); ctx.fill();
   }
@@ -3462,12 +3802,19 @@ function drawPlayer() {
     ctx.globalAlpha = 0.4 * shieldVis;
     ctx.lineWidth = 0.8;
     ctx.beginPath(); ctx.arc(0,0,PLAYER_R*4.0,0,6.28); ctx.stroke();
-    // FORTRESS SHIELD: extra inner concentric ring while 2 hits remain
-    if (fortressShield && shieldHits >= 2) {
+    // Extra inner concentric ring while multiple hits remain (fortress combo
+    // or asteroid orb's multi-hit shield).
+    if (shieldHits >= 2) {
       ctx.globalAlpha = 0.9 * shieldVis;
       ctx.strokeStyle = 'rgba(120,255,255,0.95)';
       ctx.lineWidth = 1.6;
       ctx.beginPath(); ctx.arc(0,0,PLAYER_R*2.6,0,6.28); ctx.stroke();
+    }
+    if (shieldHits >= 3) {
+      ctx.globalAlpha = 0.7 * shieldVis;
+      ctx.strokeStyle = 'rgba(180,240,255,0.85)';
+      ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.arc(0,0,PLAYER_R*3.0,0,6.28); ctx.stroke();
     }
   }
   // PHANTOM BLAST: red/orange damage aura around player
@@ -3551,20 +3898,23 @@ function drawPlayer() {
     }
   }
 
+  const orbColor = getOrbBonus().color;
   ctx.globalAlpha = (inGrace?gf:1) * ghostAlpha;
   const aura = ctx.createRadialGradient(0,0,0,0,0,PLAYER_R*2.8);
-  aura.addColorStop(0,'rgba(100,220,255,0.38)'); aura.addColorStop(1,'rgba(0,0,0,0)');
+  aura.addColorStop(0,`rgba(${orbColor},0.38)`); aura.addColorStop(1,'rgba(0,0,0,0)');
   ctx.fillStyle = aura; ctx.beginPath(); ctx.arc(0,0,PLAYER_R*2.8,0,6.28); ctx.fill();
 
   ctx.globalAlpha = ghostAlpha;
   const core = ctx.createRadialGradient(-1.5,-1.5,0,0,0,PLAYER_R);
-  core.addColorStop(0,'#fff'); core.addColorStop(0.4,'#7de8ff'); core.addColorStop(1,'rgba(30,110,190,0.5)');
+  core.addColorStop(0,'#fff');
+  core.addColorStop(0.4,`rgba(${orbColor},1)`);
+  core.addColorStop(1,`rgba(${orbColor},0.45)`);
   ctx.fillStyle = core; ctx.beginPath(); ctx.arc(0,0,PLAYER_R,0,6.28); ctx.fill();
 
   const spd = Math.hypot(player.vx, player.vy);
   if (spd > 0.9) {
     ctx.globalAlpha = Math.min(spd/4,0.55) * ghostAlpha;
-    ctx.strokeStyle = 'rgba(100,220,255,0.8)';
+    ctx.strokeStyle = `rgba(${orbColor},0.85)`;
     ctx.lineWidth = 1.8; ctx.lineCap = 'round';
     ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(-player.vx*2.8,-player.vy*2.8); ctx.stroke();
   }
@@ -3686,7 +4036,8 @@ function drawPowerups() {
 
     // Target indicator when powerup is closest body
     if (p === closestBody && state === 'playing') {
-      const lineColor = leftDown ? 'rgba(80,200,255,' : rightDown ? 'rgba(255,120,80,' : 'rgba(255,255,255,';
+      const orbRgb = getOrbBonus().color;
+      const lineColor = leftDown ? 'rgba(80,200,255,' : rightDown ? 'rgba(255,120,80,' : `rgba(${orbRgb},`;
       ctx.globalAlpha = 0.55 + 0.25*Math.sin(frame*0.18);
       ctx.strokeStyle = lineColor+'0.7)';
       ctx.lineWidth = 1.5;
@@ -3763,11 +4114,11 @@ function updatePowerupTimer() {
   // Priority: shield > ghost > hyperspeed (most game-relevant first)
   let label = null, remaining = 0, max = 0, fillColor = '';
   if (activeEffects.shield > 0) {
-    label = 'SHIELD'; remaining = activeEffects.shield; max = SHIELD_DURATION;
+    label = 'SHIELD'; remaining = activeEffects.shield; max = SHIELD_DURATION();
     fillColor = 'rgba(120,230,255,0.95)';
   } else if (activeEffects.ghost > 0) {
     label = 'GHOST'; remaining = activeEffects.ghost;
-    max = activeCombos.ghost_ghost ? GHOST_ETERNAL_DURATION : GHOST_DURATION;
+    max = activeCombos.ghost_ghost ? GHOST_ETERNAL_DURATION : GHOST_DURATION();
     fillColor = 'rgba(200,120,255,0.95)';
   } else if (activeEffects.hyperspeed > 0) {
     label = 'HYPERSPEED'; remaining = activeEffects.hyperspeed;
@@ -4200,6 +4551,12 @@ function goToMainMenu() {
   document.getElementById('controlsHint').style.display = '';
   document.getElementById('startBtn').textContent = 'ENTER THE VOID';
   document.getElementById('score').textContent = '0';
+  document.getElementById('deathCrystals').style.display = 'none';
+  document.getElementById('deathCrystalTotal').style.display = 'none';
+  document.getElementById('deathActions').style.display = 'none';
+  document.getElementById('orbBrowser').style.display = 'flex';
+  runTimerFrames = 0; runTimerColorFrames = 0; updateRunTimerDisplay();
+  refreshOrbBrowser();
   document.getElementById('overlay').classList.remove('hidden');
   if (typeof syncUpdateBanner === 'function') syncUpdateBanner();
 }
@@ -4308,6 +4665,188 @@ document.querySelectorAll('.diff-btn').forEach(btn => {
     difficulty = btn.dataset.diff;
     Sentry.setTag('difficulty', difficulty);
   });
+});
+
+// --- Orb browser ---
+// The orb preview panel on the main menu. Each orb is previewed via a small
+// canvas that draws an animated orb (bobbing sin wave) with stylized trail
+// particles in the orb's signature palette. Navigation cycles the 5 orbs;
+// the action button is EQUIPPED / EQUIP / UNLOCK depending on state.
+let orbBrowserIndex = ORB_ORDER.indexOf(activeOrb);
+if (orbBrowserIndex < 0) orbBrowserIndex = 0;
+const orbPreviewCanvas = document.getElementById('orbPreviewCanvas');
+const orbPreviewCtx = orbPreviewCanvas.getContext('2d');
+const orbPreviewParticles = {}; // key: orbId → array of trail particles
+
+function ensureOrbParticles(key) {
+  if (!orbPreviewParticles[key]) orbPreviewParticles[key] = [];
+  return orbPreviewParticles[key];
+}
+
+function refreshOrbBrowser() {
+  const key = ORB_ORDER[orbBrowserIndex];
+  const def = ORB_DEFS[key];
+  const locked = !unlockedOrbs.includes(key);
+  const equipped = activeOrb === key;
+  document.getElementById('orbName').textContent = def.name.toUpperCase();
+  document.getElementById('orbDesc').textContent = def.desc;
+  const preview = document.getElementById('orbPreview');
+  preview.classList.toggle('locked', locked);
+
+  // Dots
+  const dotsEl = document.getElementById('orbDots');
+  dotsEl.innerHTML = ORB_ORDER.map((_, i) =>
+    `<div class="orb-dot${i === orbBrowserIndex ? ' active' : ''}"></div>`
+  ).join('');
+
+  // Action button
+  const action = document.getElementById('orbAction');
+  if (equipped) {
+    action.innerHTML = '<button class="orb-btn equipped" disabled>EQUIPPED</button>';
+  } else if (!locked) {
+    action.innerHTML = '<button class="orb-btn" id="orbEquipBtn">EQUIP</button>';
+    document.getElementById('orbEquipBtn').addEventListener('click', () => {
+      SFX.clickPrimary();
+      activeOrb = key;
+      saveOrb();
+      refreshOrbBrowser();
+    });
+  } else {
+    action.innerHTML = `<button class="orb-btn unlock" id="orbUnlockBtn">UNLOCK — ${formatCrystals(def.cost)} 💎</button>`;
+    document.getElementById('orbUnlockBtn').addEventListener('click', () => {
+      SFX.clickSecondary();
+      const btn = document.getElementById('orbUnlockBtn');
+      if (totalCrystals < def.cost) {
+        btn.classList.remove('flash-err');
+        void btn.offsetWidth; // restart animation
+        btn.classList.add('flash-err');
+        const orig = btn.textContent;
+        btn.textContent = 'NOT ENOUGH 💎';
+        setTimeout(() => { btn.textContent = orig; }, 800);
+        return;
+      }
+      totalCrystals = Math.max(0, totalCrystals - def.cost);
+      unlockedOrbs.push(key);
+      saveCrystals();
+      saveUnlockedOrbs();
+      activeOrb = key;
+      saveOrb();
+      refreshOrbBrowser();
+    });
+  }
+
+  document.getElementById('orbCrystalBalance').textContent = '💎 ' + formatCrystals(totalCrystals);
+}
+
+function drawOrbPreview() {
+  const cw = orbPreviewCanvas.width, ch = orbPreviewCanvas.height;
+  orbPreviewCtx.clearRect(0, 0, cw, ch);
+  const key = ORB_ORDER[orbBrowserIndex];
+  const def = ORB_DEFS[key];
+  const color = def.color;
+  const t = performance.now() / 1000;
+  // Bob sin wave, amplitude 16px in canvas (8px in CSS since backing is 2x), period 2s
+  const bob = Math.sin(t * Math.PI) * 16;
+  const cx = cw / 2, cy = ch / 2 + bob;
+
+  // Trail particles
+  const particles = ensureOrbParticles(key);
+  if (Math.random() < 0.5) {
+    if (def.trail === 'cosmic') {
+      particles.push({ x: cx + (Math.random() - 0.5) * 30, y: cy + 10 + Math.random() * 15, vx: (Math.random() - 0.5) * 0.5, vy: -1.5 - Math.random(), life: 1, size: 3 + Math.random() * 3 });
+    } else if (def.trail === 'solar') {
+      particles.push({ x: cx + (Math.random() - 0.5) * 24, y: cy + 18, vx: (Math.random() - 0.5) * 1.2, vy: 1 + Math.random() * 1.5, life: 1, size: 3 + Math.random() * 3 });
+    } else if (def.trail === 'nebula') {
+      particles.push({ x: cx - 40 + Math.random() * 80, y: cy + (Math.random() - 0.5) * 40, vx: 0, vy: 4 + Math.random() * 3, life: 1, size: 2, lineLen: 18 + Math.random() * 20 });
+    } else if (def.trail === 'asteroid') {
+      particles.push({ x: cx + (Math.random() - 0.5) * 20, y: cy + 14, vx: (Math.random() - 0.5) * 2, vy: 1.5 + Math.random() * 2, life: 1, size: 2 + Math.random() * 3, angle: Math.random() * 6.28, spin: (Math.random() - 0.5) * 0.2 });
+    } else {
+      particles.push({ x: cx + (Math.random() - 0.5) * 10, y: cy + 10, vx: (Math.random() - 0.5) * 1.5, vy: 1 + Math.random() * 2, life: 1, size: 2 + Math.random() * 3 });
+    }
+  }
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx; p.y += p.vy;
+    p.life -= 0.025;
+    if (p.angle !== undefined) p.angle += p.spin;
+    if (p.life <= 0) particles.splice(i, 1);
+  }
+  if (particles.length > 40) particles.splice(0, particles.length - 40);
+
+  orbPreviewCtx.save();
+  for (const p of particles) {
+    orbPreviewCtx.globalAlpha = p.life * 0.75;
+    if (def.trail === 'nebula') {
+      orbPreviewCtx.strokeStyle = `rgba(${color},1)`;
+      orbPreviewCtx.lineWidth = 2;
+      orbPreviewCtx.beginPath();
+      orbPreviewCtx.moveTo(p.x, p.y);
+      orbPreviewCtx.lineTo(p.x, p.y - (p.lineLen || 20));
+      orbPreviewCtx.stroke();
+    } else if (def.trail === 'asteroid') {
+      orbPreviewCtx.fillStyle = `rgba(${color},1)`;
+      orbPreviewCtx.save();
+      orbPreviewCtx.translate(p.x, p.y);
+      orbPreviewCtx.rotate(p.angle || 0);
+      const s = p.size;
+      orbPreviewCtx.beginPath();
+      orbPreviewCtx.moveTo(-s, -s * 0.4);
+      orbPreviewCtx.lineTo(s * 0.6, -s);
+      orbPreviewCtx.lineTo(s, s * 0.3);
+      orbPreviewCtx.lineTo(-s * 0.3, s);
+      orbPreviewCtx.closePath();
+      orbPreviewCtx.fill();
+      orbPreviewCtx.restore();
+    } else {
+      orbPreviewCtx.fillStyle = `rgba(${color},1)`;
+      orbPreviewCtx.beginPath();
+      orbPreviewCtx.arc(p.x, p.y, p.size, 0, 6.28);
+      orbPreviewCtx.fill();
+    }
+  }
+  orbPreviewCtx.restore();
+
+  // Orb aura + core
+  orbPreviewCtx.save();
+  orbPreviewCtx.globalAlpha = 0.55;
+  const aura = orbPreviewCtx.createRadialGradient(cx, cy, 0, cx, cy, 48);
+  aura.addColorStop(0, `rgba(${color},0.75)`);
+  aura.addColorStop(0.5, `rgba(${color},0.25)`);
+  aura.addColorStop(1, `rgba(${color},0)`);
+  orbPreviewCtx.fillStyle = aura;
+  orbPreviewCtx.beginPath(); orbPreviewCtx.arc(cx, cy, 48, 0, 6.28); orbPreviewCtx.fill();
+
+  orbPreviewCtx.globalAlpha = 1;
+  const core = orbPreviewCtx.createRadialGradient(cx - 5, cy - 5, 0, cx, cy, 20);
+  core.addColorStop(0, '#fff');
+  core.addColorStop(0.5, `rgba(${color},1)`);
+  core.addColorStop(1, `rgba(${color},0.3)`);
+  orbPreviewCtx.fillStyle = core;
+  orbPreviewCtx.beginPath(); orbPreviewCtx.arc(cx, cy, 20, 0, 6.28); orbPreviewCtx.fill();
+  orbPreviewCtx.restore();
+}
+
+function orbPreviewLoop() {
+  try { drawOrbPreview(); } catch {}
+  requestAnimationFrame(orbPreviewLoop);
+}
+orbPreviewLoop();
+
+document.getElementById('orbPrev').addEventListener('click', () => {
+  SFX.clickSecondary();
+  orbBrowserIndex = (orbBrowserIndex - 1 + ORB_ORDER.length) % ORB_ORDER.length;
+  refreshOrbBrowser();
+});
+document.getElementById('orbNext').addEventListener('click', () => {
+  SFX.clickSecondary();
+  orbBrowserIndex = (orbBrowserIndex + 1) % ORB_ORDER.length;
+  refreshOrbBrowser();
+});
+refreshOrbBrowser();
+
+document.getElementById('shopBtn').addEventListener('click', () => {
+  SFX.clickSecondary();
+  goToMainMenu();
 });
 
 // Settings overlay (replaces the old mute button)
