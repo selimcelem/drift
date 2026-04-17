@@ -1059,7 +1059,7 @@ const FORCE = 0.18;
 const DIFFICULTIES = {
   NORMAL:  { startSpeed: 1.2, maxSpeed: 3.5, speedCapScore: 300, maxBodies: 4, powerupFrequency: 1.0, crystalMult: 0.75 },
   HARD:    { startSpeed: 1.6, maxSpeed: 5.0, speedCapScore: 300, maxBodies: 6, powerupFrequency: 1.3, crystalMult: 1.0 },
-  EXTREME: { startSpeed: 2.0, maxSpeed: 8.0, speedCapScore: 300, maxBodies: 8, powerupFrequency: 1.8, crystalMult: 1.25 },
+  EXTREME: { startSpeed: 2.0, maxSpeed: 6.5, speedCapScore: 300, maxBodies: 8, powerupFrequency: 1.8, crystalMult: 1.25 },
 };
 let difficulty = 'NORMAL';
 Sentry.setTag('difficulty', difficulty);
@@ -3664,79 +3664,143 @@ function drawApocalypseSun() {
   if (!apocalypseSun) return;
   const sun = apocalypseSun;
   const x = W / 2, y = sun.y, r = sun.radius;
-  const t = apocalypseElapsed();
+  const now = Date.now();
+  const tSec = apocalypseElapsed();
 
   ctx.save();
 
-  // Outer glow: large semi-transparent red gradient.
-  const glowR = r * 1.5;
-  const glow = ctx.createRadialGradient(x, y, r * 0.8, x, y, glowR);
-  glow.addColorStop(0, 'rgba(255,80,20,0.45)');
-  glow.addColorStop(0.6, 'rgba(180,40,10,0.2)');
-  glow.addColorStop(1, 'rgba(80,0,0,0)');
-  ctx.fillStyle = glow;
+  // --- Outer glow: large soft radial extending 2x sun radius. Tints the
+  // whole screen red/orange as the sun approaches.
+  const glowR = r * 2;
+  const outerGlow = ctx.createRadialGradient(x, y, r * 0.95, x, y, glowR);
+  outerGlow.addColorStop(0,    'rgba(255,100,0,0.3)');
+  outerGlow.addColorStop(0.55, 'rgba(255,50,0,0.1)');
+  outerGlow.addColorStop(1,    'rgba(255,30,0,0)');
+  ctx.fillStyle = outerGlow;
   ctx.beginPath(); ctx.arc(x, y, glowR, 0, 6.28); ctx.fill();
 
-  // Corona rays: 10 animated, flickering in length.
-  const rayCount = 10;
-  for (let i = 0; i < rayCount; i++) {
-    const a = (i / rayCount) * 6.28 + t * 0.08;
-    const freq = 1.2 + i * 0.17;
-    const flick = Math.abs(Math.sin(t * freq + i));
-    const rayLen = r * (0.22 + 0.2 * flick);
-    ctx.globalAlpha = 0.35 + 0.25 * flick;
-    ctx.strokeStyle = 'rgba(255,180,80,0.9)';
-    ctx.lineWidth = 10;
-    ctx.lineCap = 'round';
-    ctx.beginPath();
-    ctx.moveTo(x + Math.cos(a) * r, y + Math.sin(a) * r);
-    ctx.lineTo(x + Math.cos(a) * (r + rayLen), y + Math.sin(a) * (r + rayLen));
-    ctx.stroke();
+  // --- Animated corona: 4 overlapping radial gradients pulsing at different
+  // frequencies. Each gradient is offset slightly from center so the corona
+  // looks organic rather than a perfect circle.
+  const coronaLayers = [
+    { ox: 0,       oy: 0,      freq: 0.002,  phase: 0,   scale: 1.00 },
+    { ox: r * 0.04, oy: -r*0.03, freq: 0.0013, phase: 1.7, scale: 0.92 },
+    { ox: -r*0.05, oy:  r*0.04, freq: 0.0025, phase: 3.4, scale: 0.85 },
+    { ox:  r*0.02, oy:  r*0.05, freq: 0.0018, phase: 5.1, scale: 0.78 },
+  ];
+  ctx.globalCompositeOperation = 'lighter';
+  for (const L of coronaLayers) {
+    const pulse = Math.sin(now * L.freq + L.phase) * 20;
+    const cr = r * (1.25 * L.scale) + pulse;
+    const cx = x + L.ox, cy = y + L.oy;
+    const grad = ctx.createRadialGradient(cx, cy, r * 0.6, cx, cy, cr);
+    grad.addColorStop(0,    'rgba(255,247,230,0.55)');
+    grad.addColorStop(0.35, 'rgba(255,102,0,0.35)');
+    grad.addColorStop(0.75, 'rgba(204,34,0,0.18)');
+    grad.addColorStop(1,    'rgba(204,34,0,0)');
+    ctx.globalAlpha = 0.9;
+    ctx.fillStyle = grad;
+    ctx.beginPath(); ctx.arc(cx, cy, cr, 0, 6.28); ctx.fill();
   }
+  ctx.globalCompositeOperation = 'source-over';
   ctx.globalAlpha = 1;
 
-  // Core radial gradient.
+  // --- Core radial gradient.
   const core = ctx.createRadialGradient(x, y, r * 0.1, x, y, r);
-  core.addColorStop(0, '#fff7e6');
-  core.addColorStop(0.5, '#ff4500');
-  core.addColorStop(1, '#8b0000');
+  core.addColorStop(0,    '#fff7e6');
+  core.addColorStop(0.45, '#ff6600');
+  core.addColorStop(0.85, '#cc2200');
+  core.addColorStop(1,    '#8b0000');
   ctx.fillStyle = core;
   ctx.beginPath(); ctx.arc(x, y, r, 0, 6.28); ctx.fill();
 
-  // Surface noise: subtle animated blob pattern on the sun's disc.
+  // --- Surface texture: 8-10 darker sunspots rotating slowly around center
+  // and drifting. Clipped to the sun disc so they can't leak off the limb.
   ctx.save();
   ctx.beginPath(); ctx.arc(x, y, r, 0, 6.28); ctx.clip();
-  for (let i = 0; i < 6; i++) {
-    const nx = x + Math.cos(t * 0.5 + i * 1.3) * r * 0.35;
-    const ny = y + Math.sin(t * 0.4 + i * 2.1) * r * 0.35;
-    const nr = r * 0.25 * (0.5 + 0.5 * Math.sin(t * 1.1 + i));
-    ctx.globalAlpha = 0.18;
-    ctx.fillStyle = i % 2 === 0 ? '#ffb060' : '#ff4020';
-    ctx.beginPath(); ctx.arc(nx, ny, nr, 0, 6.28); ctx.fill();
+  const spotCount = 9;
+  for (let i = 0; i < spotCount; i++) {
+    const baseAngle = (i / spotCount) * 6.28 + tSec * 0.06 + i * 0.3;
+    const baseRad = r * (0.25 + 0.45 * ((i * 37) % 100) / 100);
+    const driftX = Math.cos(tSec * 0.4 + i * 1.7) * r * 0.06;
+    const driftY = Math.sin(tSec * 0.37 + i * 2.3) * r * 0.06;
+    const sx = x + Math.cos(baseAngle) * baseRad + driftX;
+    const sy = y + Math.sin(baseAngle) * baseRad + driftY;
+    const spotR = 10 + ((i * 13) % 10);
+    const darker = i % 2 === 0 ? '#cc2200' : '#880000';
+    const spotGrad = ctx.createRadialGradient(sx, sy, 0, sx, sy, spotR);
+    spotGrad.addColorStop(0,   darker);
+    spotGrad.addColorStop(0.7, 'rgba(120,20,0,0.55)');
+    spotGrad.addColorStop(1,   'rgba(120,20,0,0)');
+    ctx.globalAlpha = 0.65;
+    ctx.fillStyle = spotGrad;
+    ctx.beginPath(); ctx.arc(sx, sy, spotR, 0, 6.28); ctx.fill();
   }
   ctx.restore();
+  ctx.globalAlpha = 1;
 
-  // Solar flares: bezier arcs shooting off the surface.
-  const flareCount = 5;
+  // --- Solar flares: bezier curves arcing off the surface. Each has its own
+  // phase offset so they animate independently. Width tapers base→tip via
+  // segmented strokes with decreasing lineWidth.
+  const flareCount = 7;
   for (let i = 0; i < flareCount; i++) {
-    const a = (i / flareCount) * 6.28 + t * 0.2 + i;
-    const span = 0.35 + 0.15 * Math.sin(t * 1.7 + i);
-    const a2 = a + span;
-    const sx = x + Math.cos(a) * r * 0.95, sy = y + Math.sin(a) * r * 0.95;
-    const ex = x + Math.cos(a2) * r * 0.95, ey = y + Math.sin(a2) * r * 0.95;
-    const mMag = r * (1.1 + 0.12 * Math.sin(t + i));
-    const mx = x + Math.cos((a + a2) / 2) * mMag;
-    const my = y + Math.sin((a + a2) / 2) * mMag;
-    ctx.globalAlpha = 0.7;
-    ctx.strokeStyle = 'rgba(255,140,40,0.95)';
-    ctx.lineWidth = 4;
-    ctx.beginPath();
-    ctx.moveTo(sx, sy);
-    ctx.quadraticCurveTo(mx, my, ex, ey);
-    ctx.stroke();
+    const phase = i * 0.9;
+    const a = (i / flareCount) * 6.28 + tSec * 0.12 + Math.sin(tSec * 0.3 + phase) * 0.25;
+    const lenFrac = 0.3 + 0.3 * (0.5 + 0.5 * Math.sin(tSec * 0.7 + phase));
+    const flareLen = r * lenFrac;
+    const bx = x + Math.cos(a) * r * 0.98;
+    const by = y + Math.sin(a) * r * 0.98;
+
+    // Control points curve sideways, wobbling over time.
+    const outwardX = Math.cos(a);
+    const outwardY = Math.sin(a);
+    const tangX = -outwardY;
+    const tangY = outwardX;
+    const curveBias = Math.sin(tSec * 0.9 + phase) * 0.5;
+    const c1x = bx + outwardX * flareLen * 0.35 + tangX * flareLen * (0.18 + curveBias * 0.15);
+    const c1y = by + outwardY * flareLen * 0.35 + tangY * flareLen * (0.18 + curveBias * 0.15);
+    const c2x = bx + outwardX * flareLen * 0.75 + tangX * flareLen * (0.35 + curveBias * 0.2);
+    const c2y = by + outwardY * flareLen * 0.75 + tangY * flareLen * (0.35 + curveBias * 0.2);
+    const tipX = bx + outwardX * flareLen + tangX * flareLen * 0.4 * curveBias;
+    const tipY = by + outwardY * flareLen + tangY * flareLen * 0.4 * curveBias;
+
+    // Stroke the bezier as a series of short segments so lineWidth can taper
+    // from thick base to 0 at the tip; paint them over a base→tip gradient.
+    const steps = 10;
+    const baseW = 10 + ((i * 7) % 3);
+    for (let s = 0; s < steps; s++) {
+      const u0 = s / steps;
+      const u1 = (s + 1) / steps;
+      const p0 = bezierPoint(bx, by, c1x, c1y, c2x, c2y, tipX, tipY, u0);
+      const p1 = bezierPoint(bx, by, c1x, c1y, c2x, c2y, tipX, tipY, u1);
+      // Color: #ff4500 at base → transparent at tip.
+      const fadeAtBase = 0.85;
+      const a0 = fadeAtBase * (1 - u0);
+      ctx.globalAlpha = a0;
+      ctx.strokeStyle = 'rgba(255,69,0,1)';
+      ctx.lineWidth = baseW * (1 - u0);
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(p0.x, p0.y);
+      ctx.lineTo(p1.x, p1.y);
+      ctx.stroke();
+    }
   }
   ctx.globalAlpha = 1;
   ctx.restore();
+}
+
+// Cubic bezier point at parameter u∈[0,1].
+function bezierPoint(x0, y0, x1, y1, x2, y2, x3, y3, u) {
+  const iu = 1 - u;
+  const b0 = iu * iu * iu;
+  const b1 = 3 * iu * iu * u;
+  const b2 = 3 * iu * u * u;
+  const b3 = u * u * u;
+  return {
+    x: b0 * x0 + b1 * x1 + b2 * x2 + b3 * x3,
+    y: b0 * y0 + b1 * y1 + b2 * y2 + b3 * y3,
+  };
 }
 
 function drawApocalypseOverlay() {
@@ -3857,6 +3921,7 @@ function triggerDeath() {
   const deathScore = score;
   const deathPlanetsPassed = planetsPassed;
   const deathStats = { ...runStats };
+  const deathElapsedSeconds = elapsedAtDeath;
   let lbViewDifficulty = deathDifficulty;
 
   // Fetch global leaderboard for current difficulty
@@ -3910,7 +3975,7 @@ function triggerDeath() {
       ? `<div class="rs-row" style="color:rgba(100,220,255,0.9);"><span class="rs-label" style="color:rgba(100,220,255,0.75);">TIME BONUS</span><span class="rs-val"></span><span class="rs-pts" style="color:rgba(100,220,255,0.9);">+${timeBonus} pts</span></div>`
       : '';
     const apocalypseBanner = apocalypseDeathFlag
-      ? `<div style="font-family:'Orbitron',monospace;font-weight:900;letter-spacing:3px;font-size:15px;color:rgba(255,110,60,0.98);text-shadow:0 0 18px rgba(255,80,40,0.6);text-align:center;margin-bottom:8px;">CONSUMED BY THE SUN &#9728;</div>`
+      ? `<div style="font-family:'Orbitron',monospace;font-weight:900;letter-spacing:3px;font-size:15px;color:rgba(255,110,60,0.98);text-shadow:0 0 18px rgba(255,80,40,0.6);text-align:center;margin-bottom:8px;">CONSUMED BY THE SUN</div>`
       : '';
     rs.innerHTML = `
       ${apocalypseBanner}
@@ -3919,6 +3984,7 @@ function triggerDeath() {
       <div class="rs-row"><span class="rs-label">PLANETS DESTROYED</span><span class="rs-val">${deathStats.totalDestroyed}</span><span class="rs-pts">${deathStats.pointsFromDestroying} pts</span></div>
       <div class="rs-row"><span class="rs-label">LONGEST STREAK</span><span class="rs-val">${deathStats.longestStreak}</span><span class="rs-pts"></span></div>
       <div class="rs-row"><span class="rs-label">POWERUPS USED</span><span class="rs-val">${deathStats.powerupsUsed}</span><span class="rs-pts"></span></div>
+      <div class="rs-row"><span class="rs-label">TIME SURVIVED</span><span class="rs-val">${formatRunTime(deathElapsedSeconds)}</span><span class="rs-pts"></span></div>
       ${timeBonusRow}
       <hr class="rs-sep">
       <div class="rs-total"><span>TOTAL</span><span>${deathScore} pts <span class="rs-diff ${deathDifficulty}">${deathDifficulty}</span></span></div>
