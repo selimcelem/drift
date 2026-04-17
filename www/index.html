@@ -1145,6 +1145,14 @@ let novaRings = [];
 let screenShake = 0;
 let pickupParticles = [];
 let planetRipples = [];
+// Fragments from cracked planets that erupt. Small attract/repel-capable bodies
+// that scroll with the world and despawn after their lifetime.
+let crackFragments = [];
+const CRACK_FRAGMENTS_CAP = 30;
+// Historical player.x values, newest first. Mirror orbs read from the tail
+// after their delay so they follow where the player recently was.
+let playerPosHistory = [];
+const PLAYER_POS_HISTORY_LEN = 90; // 1.5s @ 60fps — covers 0.5s mirror delay
 let pendingNovaTimeouts = [];
 let destroyEffects = [];   // per-planet destruction visuals (flash + ring + debris)
 let deathShards = [];      // orb shatter pieces spawned on player death
@@ -1903,6 +1911,13 @@ const SFX = (function() {
     });
   }
 
+  // Screaming planet cue: high-pitched sine sweep 800→200hz over 0.3s.
+  function screamShriek() {
+    safeSfx(t => {
+      chipSweep('sine', 800, 200, t, 0.3, 0.2);
+    });
+  }
+
   function death() {
     safeSfx(t => {
       // Iconic chromatic descent: C5-B4-Bb4-A4-Ab4-G4-F#4-F4-E4-Eb4-D4-C4,
@@ -2177,7 +2192,7 @@ const SFX = (function() {
   return {
     init, attract, repel, pickup, planetDestroyed, death,
     comboActivate, comboDestroySound, startHyperspeedWhoosh,
-    startApocalypseRumble, playApocalypseImpact,
+    startApocalypseRumble, playApocalypseImpact, screamShriek,
     playTrack, pauseMusic, resumeMusic,
     clickPrimary, clickSecondary,
     setMusicEnabled, setSfxEnabled, isMusicEnabled, isSfxEnabled,
@@ -2267,11 +2282,26 @@ function initBgStars() {
 }
 
 // --- Bodies ---
+// Phase-based spawn pools. Each phase weights planets toward its signature
+// aesthetic; early ticks keep the classic set, late ticks push full horror.
+const PHASE_POOLS = {
+  1: ['star','star','planet','blackhole'],
+  2: ['star','planet','blackhole','toothed','eye','cracked','toothed','eye'],
+  3: ['toothed','eye','cracked','tentacle','screaming','void','tentacle','screaming'],
+  4: ['tentacle','screaming','void','heart','mirror','skull','heart','mirror'],
+};
+function phaseForElapsed(es) {
+  return es < 180 ? 1 : es < 300 ? 2 : es < 480 ? 3 : 4;
+}
+
 function spawnBody(yBase) {
-  const types = ['star','star','planet','blackhole'];
-  const type = types[Math.floor(Math.random() * types.length)];
+  const pool = PHASE_POOLS[phaseForElapsed(elapsedRunSeconds())];
+  const type = pool[Math.floor(Math.random() * pool.length)];
   const x = 70 + Math.random() * (W - 140);
   let radius, color, glowColor;
+
+  // Base sizing + palette per type. Custom-drawn types still carry color/glow
+  // so the glow gradient and target indicator have something to work with.
   if (type === 'star') {
     radius = 13 + Math.random() * 9;
     const hue = Math.random() < 0.5 ? 42 : 200;
@@ -2280,9 +2310,39 @@ function spawnBody(yBase) {
     radius = 17 + Math.random() * 13;
     const hue = 100 + Math.random() * 220;
     color = `hsl(${hue},55%,50%)`; glowColor = `hsl(${hue},80%,58%)`;
-  } else {
+  } else if (type === 'blackhole') {
     radius = 11 + Math.random() * 7;
     color = '#080808'; glowColor = 'rgba(170,70,255,0.9)';
+  } else if (type === 'toothed') {
+    radius = 16 + Math.random() * 10;
+    color = '#8b0000'; glowColor = 'rgba(220,30,30,0.9)';
+  } else if (type === 'eye') {
+    radius = 18 + Math.random() * 8;
+    color = '#f6efd6'; glowColor = 'rgba(255,220,160,0.7)';
+  } else if (type === 'cracked') {
+    radius = 17 + Math.random() * 10;
+    color = '#5a2b16'; glowColor = 'rgba(255,120,40,0.85)';
+  } else if (type === 'tentacle') {
+    radius = 16 + Math.random() * 8;
+    color = '#4a0080'; glowColor = 'rgba(140,40,200,0.85)';
+  } else if (type === 'screaming') {
+    radius = 17 + Math.random() * 9;
+    color = '#1a1a1a'; glowColor = 'rgba(60,60,60,0.7)';
+  } else if (type === 'void') {
+    radius = 14 + Math.random() * 7;
+    color = '#000'; glowColor = 'rgba(180,240,255,0.6)';
+  } else if (type === 'heart') {
+    radius = 17 + Math.random() * 8;
+    color = '#cc0000'; glowColor = 'rgba(255,40,40,0.85)';
+  } else if (type === 'mirror') {
+    radius = 14 + Math.random() * 6;
+    color = '#222'; glowColor = 'rgba(255,255,255,0.5)';
+  } else if (type === 'skull') {
+    // Spec: radius * 1.3 compared to normal planets of same type.
+    radius = (17 + Math.random() * 10) * 1.3;
+    color = '#0d0d0d'; glowColor = 'rgba(200,200,200,0.6)';
+  } else {
+    radius = 16; color = '#888'; glowColor = 'rgba(255,255,255,0.5)';
   }
 
   // Pre-build gradients at local origin (0,0). drawBodies translates by
@@ -2293,19 +2353,59 @@ function spawnBody(yBase) {
   cachedGlow.addColorStop(0, glowColor);
   cachedGlow.addColorStop(1, 'rgba(0,0,0,0)');
 
+  // Only the "classic" star/planet types use the cached radial fill — custom
+  // drawers build their own look.
   let cachedFill = null;
-  if (type !== 'blackhole') {
+  if (type === 'star' || type === 'planet') {
     cachedFill = ctx.createRadialGradient(-radius*0.28, -radius*0.28, 0, 0, 0, radius);
     cachedFill.addColorStop(0, '#fff');
     cachedFill.addColorStop(0.3, color);
     cachedFill.addColorStop(1, 'rgba(0,0,0,0.5)');
   }
 
-  return {
+  const body = {
     x, y: yBase, radius, type, color, glowColor,
     passed: false, pulse: Math.random()*6.28,
     cachedFill, cachedGlow, cachedMaxGlowR: maxGlowR,
   };
+
+  // Type-specific animation state.
+  if (type === 'toothed') {
+    body.toothAngle = Math.random() * 6.28;
+    body.spikeLen = radius * 0.35;
+  } else if (type === 'eye') {
+    body.pupilDx = 0; body.pupilDy = 0;
+    body.eyePulse = Math.random() * 6.28;
+    body.veinSeed = Math.floor(Math.random() * 1e6);
+  } else if (type === 'cracked') {
+    body.nextEruptFrame = 180 + Math.floor(Math.random() * 60); // 3-4s
+    body.eruptFlash = 0;
+    body.crackSeed = Math.floor(Math.random() * 1e6);
+  } else if (type === 'tentacle') {
+    body.tentacleCount = 5;
+    body.tentaclePhases = [];
+    for (let i = 0; i < 5; i++) body.tentaclePhases.push(Math.random() * 3.5);
+  } else if (type === 'screaming') {
+    body.screamPhase = Math.random() * 6; // offset within 6s cycle
+    body.screamActive = false;
+    body.screamSurgeFrames = 0;
+    body.lastMouth = 0;
+  } else if (type === 'void') {
+    body.voidPulse = Math.random() * 6.28;
+  } else if (type === 'heart') {
+    body.heartScale = 1;
+    body.heartPhase = Math.random() * 6.28;
+    body.bloodDrip = 0;
+  } else if (type === 'mirror') {
+    body.mirrorVx = 0;
+    body.mirrorDelayFrames = 30; // 0.5s @ 60fps
+  } else if (type === 'skull') {
+    body.skullRotation = 0;
+    body.skullEyeFlash = 0;
+    body.nextSkullFlash = 60 + Math.floor(Math.random() * 240);
+  }
+
+  return body;
 }
 
 // After 4 minutes, +1 body per minute of survival, uncapped. Formula:
@@ -3113,6 +3213,8 @@ function resetGame() {
   planetRipples = [];
   destroyEffects = [];
   deathShards = [];
+  crackFragments = [];
+  playerPosHistory = [];
   resetApocalypse();
   deathFlashFrames = 0;
   if (pendingDeathBurstTimer) { clearTimeout(pendingDeathBurstTimer); pendingDeathBurstTimer = null; }
@@ -3156,7 +3258,36 @@ function findClosest() {
     const d = dist(player, p);
     if (d < bd) { bd = d; best = p; }
   }
+  // Crack fragments: small drifting bodies that the player can attract/repel.
+  for (const f of crackFragments) {
+    const d = dist(player, f);
+    if (d < bd) { bd = d; best = f; }
+  }
   closestBody = best;
+}
+
+// Passive forces from body types that act on the player without needing
+// input: screaming-planet surge and void-orb noise. Called once per frame
+// just before applyForce so drag and position updates see the combined
+// velocity change.
+function applyEnvironmentForces() {
+  for (const b of bodies) {
+    if (b.type === 'screaming' && b.screamSurgeFrames > 0) {
+      const d = dist(player, b);
+      if (d < b.radius * 4 && d > 0.5) {
+        const nx = (b.x - player.x) / d;
+        const ny = (b.y - player.y) / d;
+        player.vx += nx * 0.15;
+        player.vy += ny * 0.15;
+      }
+    } else if (b.type === 'void') {
+      const d = dist(player, b);
+      if (d < b.radius * 3) {
+        player.vx += Math.sin(frame * 0.07 + b.pulse) * 0.04;
+        player.vy += Math.cos(frame * 0.05) * 0.04;
+      }
+    }
+  }
 }
 
 function applyForce() {
@@ -3232,6 +3363,63 @@ function applyForce() {
   player.angle = Math.atan2(player.vy, player.vx);
 }
 
+// Body-vs-player hit check. Encapsulates the per-type dynamic hitbox: toothed
+// planets also check each rotating spike tip; tentacles check each extended
+// tentacle line segment; pulsing hearts use a scaled radius.
+function bodyHits(b, padding) {
+  const pad = padding || 0;
+  if (b.type === 'toothed') {
+    if (dist(player, b) < b.radius + PLAYER_R + pad) return true;
+    // 8 spikes rotating together. Each tip sits at toothAngle + i*(π/4)
+    // extended by spikeLen * |sin(toothAngle + i*(π/4))|.
+    for (let i = 0; i < 8; i++) {
+      const a = b.toothAngle + i * (Math.PI / 4);
+      const ext = b.spikeLen * Math.abs(Math.sin(a));
+      const tipX = b.x + Math.cos(a) * (b.radius + ext);
+      const tipY = b.y + Math.sin(a) * (b.radius + ext);
+      if (Math.hypot(player.x - tipX, player.y - tipY) < PLAYER_R + 6) return true;
+    }
+    return false;
+  }
+  if (b.type === 'tentacle') {
+    if (dist(player, b) < b.radius + PLAYER_R + pad) return true;
+    const count = b.tentacleCount;
+    for (let i = 0; i < count; i++) {
+      const ext = tentacleExtension(b.tentaclePhases[i]);
+      if (ext < 0.1) continue;
+      const angle = (i / count) * Math.PI * 2;
+      const tipX = b.x + Math.cos(angle) * (b.radius + b.radius * 1.2 * ext);
+      const tipY = b.y + Math.sin(angle) * (b.radius + b.radius * 1.2 * ext);
+      // Distance from player to the line segment (b.x,b.y → tipX,tipY)
+      const d = pointSegmentDist(player.x, player.y, b.x, b.y, tipX, tipY);
+      if (d < 8 + PLAYER_R - 2) return true;
+    }
+    return false;
+  }
+  if (b.type === 'heart') {
+    const dynR = b.radius * (b.heartScale || 1);
+    return dist(player, b) < dynR + PLAYER_R + pad;
+  }
+  return dist(player, b) < b.radius + PLAYER_R + pad;
+}
+
+// 0→1 extension curve for a tentacle cycle phase (0-3.5s):
+//   0-2s extending, 2-2.5s fully extended, 2.5-3.5s retracting.
+function tentacleExtension(phase) {
+  if (phase < 2)       return phase / 2;
+  if (phase < 2.5)     return 1;
+  return Math.max(0, 1 - (phase - 2.5) / 1);
+}
+
+function pointSegmentDist(px, py, ax, ay, bx, by) {
+  const dx = bx - ax, dy = by - ay;
+  const len2 = dx * dx + dy * dy;
+  if (len2 === 0) return Math.hypot(px - ax, py - ay);
+  let t = ((px - ax) * dx + (py - ay) * dy) / len2;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+}
+
 function checkCollisions() {
   if (frame < GRACE_FRAMES) return false;
   // Borders are always lethal — shield/ghost only protect against bodies
@@ -3244,7 +3432,7 @@ function checkCollisions() {
     const wraith = activeEffects.shield > 0;
     for (let i = bodies.length - 1; i >= 0; i--) {
       const b = bodies[i];
-      if (dist(player, b) < b.radius + PLAYER_R) {
+      if (bodyHits(b, 0)) {
         if (wraith) {
           emitDestroyBurst(b.x, b.y, POWERUP_COLORS.ghost.rgb);
           emitDestroyEffects(b, 'ghost');
@@ -3270,7 +3458,7 @@ function checkCollisions() {
   // SHIELD: absorb hit(s). FORTRESS SHIELD has 2 hit points.
   if (activeEffects.shield > 0) {
     for (let i = 0; i < bodies.length; i++) {
-      if (dist(player, bodies[i]) < bodies[i].radius + PLAYER_R) {
+      if (bodyHits(bodies[i], 0)) {
         emitDestroyBurst(bodies[i].x, bodies[i].y, POWERUP_COLORS.shield.rgb);
         emitDestroyEffects(bodies[i], 'shield');
         SFX.planetDestroyed('shield');
@@ -3286,12 +3474,110 @@ function checkCollisions() {
         break;
       }
     }
+    // Also die on a crack fragment (no shield protection — they're tiny).
     return false;
   }
 
   for (const b of bodies)
-    if (dist(player, b) < b.radius + PLAYER_R - 3) return true;
+    if (bodyHits(b, -3)) return true;
+  // Crack fragments are lethal on contact as well.
+  for (const f of crackFragments) {
+    if (dist(player, f) < f.radius + PLAYER_R - 2) return true;
+  }
   return false;
+}
+
+// Per-body animation + behavior state tick. Called each frame after the
+// world-scroll pass; mutates body fields used by drawing and collision.
+function updateBodyTypes(spd) {
+  for (const b of bodies) {
+    if (b.type === 'toothed') {
+      b.toothAngle += 0.02;
+    } else if (b.type === 'eye') {
+      // Slow horizontal drift toward player + pupil tracking.
+      b.x += (player.x - b.x) * 0.0008;
+      b.eyePulse += 0.08;
+      const dx = player.x - b.x, dy = player.y - b.y;
+      const mag = Math.hypot(dx, dy) || 1;
+      const maxOff = b.radius * 0.3;
+      b.pupilDx = (dx / mag) * maxOff;
+      b.pupilDy = (dy / mag) * maxOff;
+    } else if (b.type === 'cracked') {
+      b.nextEruptFrame--;
+      if (b.eruptFlash > 0) b.eruptFlash--;
+      if (b.nextEruptFrame <= 0) {
+        const count = 2 + Math.floor(Math.random() * 2);
+        for (let i = 0; i < count; i++) {
+          if (crackFragments.length >= CRACK_FRAGMENTS_CAP) crackFragments.shift();
+          const ang = Math.random() * Math.PI * 2;
+          const speed = 2 + Math.random() * 2;
+          crackFragments.push({
+            x: b.x, y: b.y,
+            vx: Math.cos(ang) * speed,
+            vy: Math.sin(ang) * speed,
+            radius: 4 + Math.random() * 2,
+            life: 180, maxLife: 180,
+            color: b.color,
+            glow: b.glowColor,
+            pulse: Math.random() * 6.28,
+          });
+        }
+        b.nextEruptFrame = 180 + Math.floor(Math.random() * 60);
+        b.eruptFlash = 10;
+      }
+    } else if (b.type === 'tentacle') {
+      for (let i = 0; i < b.tentaclePhases.length; i++) {
+        b.tentaclePhases[i] += 1 / 60; // 3.5s full cycle
+        if (b.tentaclePhases[i] >= 3.5) b.tentaclePhases[i] -= 3.5;
+      }
+    } else if (b.type === 'screaming') {
+      b.screamPhase += 1 / 60;
+      if (b.screamPhase >= 6) b.screamPhase -= 6;
+      // Cycle: 0-4s closed, 4-4.5s opening, 4.5-5.5s screaming, 5.5-6s closing.
+      const p = b.screamPhase;
+      const wasScreaming = b.screamActive;
+      b.screamActive = (p >= 4.5 && p < 5.5);
+      if (b.screamActive && !wasScreaming) {
+        SFX.screamShriek();
+        b.screamSurgeFrames = 48; // 0.8s @ 60fps
+      }
+      if (b.screamSurgeFrames > 0) b.screamSurgeFrames--;
+    } else if (b.type === 'void') {
+      b.voidPulse += 0.03;
+    } else if (b.type === 'heart') {
+      const hz = 1.2 + scrollSpeed() * 0.05;
+      b.heartPhase += hz * (1 / 60) * 2 * Math.PI;
+      b.heartScale = 1 + 0.125 * (1 + Math.sin(b.heartPhase));
+      if (Math.random() < 0.06) b.bloodDrip = 30;
+      if (b.bloodDrip > 0) b.bloodDrip--;
+    } else if (b.type === 'mirror') {
+      const idx = Math.min(playerPosHistory.length - 1, b.mirrorDelayFrames);
+      const targetX = playerPosHistory[idx];
+      if (targetX !== undefined) {
+        b.x += (targetX - b.x) * 0.02;
+      }
+    } else if (b.type === 'skull') {
+      b.skullRotation += 0.003;
+      if (b.skullEyeFlash > 0) b.skullEyeFlash--;
+      b.nextSkullFlash--;
+      if (b.nextSkullFlash <= 0) {
+        b.skullEyeFlash = 30;
+        b.nextSkullFlash = 60 + Math.floor(Math.random() * 240);
+      }
+    }
+  }
+}
+
+function updateCrackFragments(spd) {
+  for (let i = crackFragments.length - 1; i >= 0; i--) {
+    const f = crackFragments[i];
+    f.x += f.vx;
+    f.y += f.vy + spd;
+    f.vx *= 0.985; f.vy *= 0.985;
+    f.life--;
+    f.pulse += 0.15;
+    if (f.life <= 0 || f.y > H + 50) crackFragments.splice(i, 1);
+  }
 }
 
 // --- Update ---
@@ -3419,8 +3705,15 @@ function update() {
     bodies = survivors;
   }
 
+  // Track recent player x so mirror orbs can read it with a delay.
+  playerPosHistory.unshift(player.x);
+  if (playerPosHistory.length > PLAYER_POS_HISTORY_LEN) playerPosHistory.pop();
+
   for (const b of bodies) {
-    b.y += spd; b.pulse += 0.038;
+    // Skull planets scroll at 70% speed so they linger on screen.
+    const scrollMul = b.type === 'skull' ? 0.7 : 1;
+    b.y += spd * scrollMul;
+    b.pulse += 0.038;
     if (!b.passed && b.y > H * 0.75) {
       b.passed = true;
       score++;
@@ -3433,6 +3726,8 @@ function update() {
       document.getElementById('score').textContent = score;
     }
   }
+  updateBodyTypes(spd);
+  updateCrackFragments(spd);
   bodies = bodies.filter(b => b.y < H + 80);
   const bodyCap = effectiveMaxBodies();
   while (bodies.length < bodyCap) {
@@ -3530,6 +3825,7 @@ function update() {
   for (const s of bgStars) { s.y += s.spd * spd * 0.28; if (s.y > H) s.y = -2; }
 
   findClosest();
+  applyEnvironmentForces();
   applyForce();
 
   // Throttled audio for held attract/repel input
@@ -4210,27 +4506,23 @@ function drawBodies() {
 
     // Body
     ctx.globalAlpha=1;
-    if (b.type==='blackhole') {
-      // Flat-color accretion disk (simplified from radial gradient) — ellipse
-      // scaled vertically for the disk silhouette.
-      ctx.save();
-      ctx.globalAlpha = 0.35;
-      ctx.fillStyle = 'rgba(170,70,255,1)';
-      ctx.scale(1, 0.3);
-      ctx.beginPath(); ctx.arc(b.x, b.y/0.3, b.radius*2.2, 0, 6.28); ctx.fill();
-      ctx.restore();
-      ctx.fillStyle='#000'; ctx.beginPath(); ctx.arc(b.x,b.y,b.radius,0,6.28); ctx.fill();
-      ctx.strokeStyle='rgba(160,70,255,0.65)'; ctx.lineWidth=1.5;
-      ctx.beginPath(); ctx.arc(b.x,b.y,b.radius+1.5,0,6.28); ctx.stroke();
-    } else {
-      // Cached radial fill: gradient is pre-built in spawnBody at local origin,
-      // so we translate to (b.x, b.y) and draw from (0,0).
+    if (b.type === 'blackhole') {
+      drawBlackhole(b);
+    } else if (b.type === 'star' || b.type === 'planet') {
       ctx.save();
       ctx.translate(b.x, b.y);
       ctx.fillStyle = b.cachedFill;
       ctx.beginPath(); ctx.arc(0, 0, b.radius, 0, 6.28); ctx.fill();
       ctx.restore();
-    }
+    } else if (b.type === 'toothed')   drawToothed(b);
+    else if (b.type === 'eye')         drawEye(b);
+    else if (b.type === 'cracked')     drawCracked(b);
+    else if (b.type === 'tentacle')    drawTentacle(b);
+    else if (b.type === 'screaming')   drawScreaming(b);
+    else if (b.type === 'void')        drawVoid(b);
+    else if (b.type === 'heart')       drawHeart(b);
+    else if (b.type === 'mirror')      drawMirror(b);
+    else if (b.type === 'skull')       drawSkull(b);
 
     // Target indicator: bright ring + line to player when active
     if (isTarget) {
@@ -4258,6 +4550,385 @@ function drawBodies() {
     [b.radius*2, b.radius*3.5].forEach(r=>{ ctx.beginPath(); ctx.arc(b.x,b.y,r,0,6.28); ctx.stroke(); });
     ctx.globalAlpha=1;
   }
+}
+
+function drawBlackhole(b) {
+  ctx.save();
+  ctx.globalAlpha = 0.35;
+  ctx.fillStyle = 'rgba(170,70,255,1)';
+  ctx.scale(1, 0.3);
+  ctx.beginPath(); ctx.arc(b.x, b.y/0.3, b.radius*2.2, 0, 6.28); ctx.fill();
+  ctx.restore();
+  ctx.fillStyle='#000'; ctx.beginPath(); ctx.arc(b.x,b.y,b.radius,0,6.28); ctx.fill();
+  ctx.strokeStyle='rgba(160,70,255,0.65)'; ctx.lineWidth=1.5;
+  ctx.beginPath(); ctx.arc(b.x,b.y,b.radius+1.5,0,6.28); ctx.stroke();
+}
+
+function drawToothed(b) {
+  ctx.save();
+  // Rotating spikes.
+  for (let i = 0; i < 8; i++) {
+    const a = b.toothAngle + i * (Math.PI / 4);
+    const ext = b.spikeLen * Math.abs(Math.sin(a));
+    const baseX = b.x + Math.cos(a) * b.radius;
+    const baseY = b.y + Math.sin(a) * b.radius;
+    const tipX = b.x + Math.cos(a) * (b.radius + ext);
+    const tipY = b.y + Math.sin(a) * (b.radius + ext);
+    const tangX = -Math.sin(a), tangY = Math.cos(a);
+    ctx.fillStyle = '#cc0000';
+    ctx.beginPath();
+    ctx.moveTo(baseX + tangX * 4, baseY + tangY * 4);
+    ctx.lineTo(tipX, tipY);
+    ctx.lineTo(baseX - tangX * 4, baseY - tangY * 4);
+    ctx.closePath();
+    ctx.fill();
+  }
+  // Base circle — crimson gradient.
+  const grad = ctx.createRadialGradient(b.x - b.radius*0.28, b.y - b.radius*0.28, 0, b.x, b.y, b.radius);
+  grad.addColorStop(0, '#ff3030');
+  grad.addColorStop(0.4, '#cc0000');
+  grad.addColorStop(1, '#5a0000');
+  ctx.fillStyle = grad;
+  ctx.beginPath(); ctx.arc(b.x, b.y, b.radius, 0, 6.28); ctx.fill();
+  ctx.restore();
+}
+
+function drawEye(b) {
+  ctx.save();
+  // Eyeball base.
+  const pulseR = b.radius + Math.sin(b.eyePulse) * 3;
+  const grad = ctx.createRadialGradient(b.x - pulseR*0.3, b.y - pulseR*0.3, 0, b.x, b.y, pulseR);
+  grad.addColorStop(0, '#fff');
+  grad.addColorStop(0.6, '#f6efd6');
+  grad.addColorStop(1, '#c4b78a');
+  ctx.fillStyle = grad;
+  ctx.beginPath(); ctx.arc(b.x, b.y, pulseR, 0, 6.28); ctx.fill();
+  // Bloodshot veins.
+  const rng = mulberry32(b.veinSeed);
+  ctx.strokeStyle = 'rgba(180,30,30,0.55)';
+  ctx.lineWidth = 1;
+  const veinCount = 5;
+  for (let i = 0; i < veinCount; i++) {
+    const a = rng() * Math.PI * 2;
+    const len = pulseR * 0.75;
+    const curveAmt = (rng() - 0.5) * 0.6;
+    ctx.beginPath();
+    ctx.moveTo(b.x + Math.cos(a) * pulseR * 0.95, b.y + Math.sin(a) * pulseR * 0.95);
+    const midA = a + curveAmt;
+    ctx.quadraticCurveTo(
+      b.x + Math.cos(midA) * (pulseR * 0.55),
+      b.y + Math.sin(midA) * (pulseR * 0.55),
+      b.x + Math.cos(a + curveAmt * 2) * (pulseR * 0.2),
+      b.y + Math.sin(a + curveAmt * 2) * (pulseR * 0.2)
+    );
+    ctx.stroke();
+  }
+  // Iris: hue cycles through blue→green→red over 10s.
+  const hueT = (Date.now() % 10000) / 10000;
+  const hue = Math.floor(hueT * 360);
+  const irisR = pulseR * 0.55;
+  const irisX = b.x + b.pupilDx;
+  const irisY = b.y + b.pupilDy;
+  const irisGrad = ctx.createRadialGradient(irisX, irisY, 0, irisX, irisY, irisR);
+  irisGrad.addColorStop(0, `hsl(${hue},85%,60%)`);
+  irisGrad.addColorStop(0.7, `hsl(${hue},70%,35%)`);
+  irisGrad.addColorStop(1, `hsl(${hue},60%,20%)`);
+  ctx.fillStyle = irisGrad;
+  ctx.beginPath(); ctx.arc(irisX, irisY, irisR, 0, 6.28); ctx.fill();
+  // Pupil.
+  ctx.fillStyle = '#000';
+  ctx.beginPath(); ctx.arc(irisX, irisY, pulseR * 0.25, 0, 6.28); ctx.fill();
+  ctx.restore();
+}
+
+function drawCracked(b) {
+  ctx.save();
+  // Base planet (darker).
+  const grad = ctx.createRadialGradient(b.x - b.radius*0.28, b.y - b.radius*0.28, 0, b.x, b.y, b.radius);
+  grad.addColorStop(0, '#b85c30');
+  grad.addColorStop(0.4, '#5a2b16');
+  grad.addColorStop(1, '#2a1000');
+  ctx.fillStyle = grad;
+  ctx.beginPath(); ctx.arc(b.x, b.y, b.radius, 0, 6.28); ctx.fill();
+
+  // Crack glow pulse.
+  const pulseAlpha = 0.6 + 0.4 * Math.abs(Math.sin(Date.now() * 0.0012 + b.crackSeed));
+  ctx.save();
+  ctx.beginPath(); ctx.arc(b.x, b.y, b.radius, 0, 6.28); ctx.clip();
+  ctx.shadowBlur = 8;
+  ctx.shadowColor = 'rgba(255,120,40,0.9)';
+  ctx.strokeStyle = `rgba(255,140,40,${pulseAlpha})`;
+  ctx.lineWidth = 1.6;
+  const rng = mulberry32(b.crackSeed);
+  const crackCount = 4;
+  for (let c = 0; c < crackCount; c++) {
+    const startA = rng() * Math.PI * 2;
+    ctx.beginPath();
+    let x = b.x + Math.cos(startA) * b.radius * 0.9;
+    let y = b.y + Math.sin(startA) * b.radius * 0.9;
+    ctx.moveTo(x, y);
+    const segs = 4 + Math.floor(rng() * 3);
+    for (let s = 0; s < segs; s++) {
+      const ta = startA + Math.PI + (rng() - 0.5) * 1.5;
+      const step = b.radius * (0.3 + rng() * 0.4);
+      x += Math.cos(ta) * step;
+      y += Math.sin(ta) * step;
+      ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  // Eruption flash.
+  if (b.eruptFlash > 0) {
+    const k = b.eruptFlash / 10;
+    ctx.globalAlpha = k * 0.75;
+    const fg = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, b.radius * 1.6);
+    fg.addColorStop(0, 'rgba(255,220,140,1)');
+    fg.addColorStop(1, 'rgba(255,120,40,0)');
+    ctx.fillStyle = fg;
+    ctx.beginPath(); ctx.arc(b.x, b.y, b.radius * 1.6, 0, 6.28); ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawTentacle(b) {
+  ctx.save();
+  // Tentacles first (behind body).
+  const count = b.tentacleCount;
+  for (let i = 0; i < count; i++) {
+    const ext = tentacleExtension(b.tentaclePhases[i]);
+    if (ext < 0.05) continue;
+    const angle = (i / count) * Math.PI * 2;
+    const tipX = b.x + Math.cos(angle) * (b.radius + b.radius * 1.2 * ext);
+    const tipY = b.y + Math.sin(angle) * (b.radius + b.radius * 1.2 * ext);
+    // Curve the tentacle sideways with a bezier midpoint.
+    const tangX = -Math.sin(angle), tangY = Math.cos(angle);
+    const baseX = b.x + Math.cos(angle) * b.radius;
+    const baseY = b.y + Math.sin(angle) * b.radius;
+    const waveOff = Math.sin(b.tentaclePhases[i] * 3) * b.radius * 0.2 * ext;
+    const midX = (baseX + tipX) / 2 + tangX * waveOff;
+    const midY = (baseY + tipY) / 2 + tangY * waveOff;
+    // Draw tapering: stroke segments from base to tip.
+    const steps = 6;
+    for (let s = 0; s < steps; s++) {
+      const u0 = s / steps, u1 = (s + 1) / steps;
+      const p0 = quadPt(baseX, baseY, midX, midY, tipX, tipY, u0);
+      const p1 = quadPt(baseX, baseY, midX, midY, tipX, tipY, u1);
+      const w = 8 * (1 - u0) + 2 * u0;
+      ctx.lineWidth = w;
+      ctx.lineCap = 'round';
+      ctx.strokeStyle = `rgba(${74 + u0*30}, ${0 + u0*20}, ${128 + u0*30}, ${0.85 * (1 - u0 * 0.3)})`;
+      ctx.beginPath();
+      ctx.moveTo(p0.x, p0.y); ctx.lineTo(p1.x, p1.y);
+      ctx.stroke();
+    }
+  }
+  // Body.
+  const grad = ctx.createRadialGradient(b.x - b.radius*0.3, b.y - b.radius*0.3, 0, b.x, b.y, b.radius);
+  grad.addColorStop(0, '#8040b0');
+  grad.addColorStop(0.5, '#4a0080');
+  grad.addColorStop(1, '#1a0030');
+  ctx.fillStyle = grad;
+  ctx.beginPath(); ctx.arc(b.x, b.y, b.radius, 0, 6.28); ctx.fill();
+  ctx.restore();
+}
+
+function quadPt(x0, y0, x1, y1, x2, y2, u) {
+  const iu = 1 - u;
+  return {
+    x: iu * iu * x0 + 2 * iu * u * x1 + u * u * x2,
+    y: iu * iu * y0 + 2 * iu * u * y1 + u * u * y2,
+  };
+}
+
+function drawScreaming(b) {
+  ctx.save();
+  const p = b.screamPhase;
+  // mouthT = 0 closed, 1 fully open.
+  let mouthT = 0;
+  if (p < 4) mouthT = 0;
+  else if (p < 4.5) mouthT = (p - 4) / 0.5;
+  else if (p < 5.5) mouthT = 1;
+  else if (p < 6)   mouthT = 1 - (p - 5.5) / 0.5;
+
+  // Base (red tint when screaming).
+  const tintR = 26 + mouthT * 70;
+  ctx.fillStyle = `rgb(${tintR},26,26)`;
+  ctx.beginPath(); ctx.arc(b.x, b.y, b.radius, 0, 6.28); ctx.fill();
+
+  // Eyes (two white ovals, dilating pupils when screaming).
+  const eyeOffX = b.radius * 0.35;
+  const eyeOffY = -b.radius * 0.25;
+  const eyeW = b.radius * 0.22, eyeH = b.radius * 0.17;
+  for (const side of [-1, 1]) {
+    ctx.fillStyle = '#fff';
+    ctx.beginPath(); ctx.ellipse(b.x + side * eyeOffX, b.y + eyeOffY, eyeW, eyeH, 0, 0, 6.28); ctx.fill();
+    const pupilR = eyeH * (0.4 + mouthT * 0.5);
+    ctx.fillStyle = '#000';
+    ctx.beginPath(); ctx.arc(b.x + side * eyeOffX, b.y + eyeOffY, pupilR, 0, 6.28); ctx.fill();
+  }
+
+  // Mouth: ellipse that grows with mouthT.
+  const mouthRX = b.radius * (0.15 + 0.35 * mouthT);
+  const mouthRY = b.radius * (0.03 + 0.45 * mouthT);
+  ctx.fillStyle = '#000';
+  ctx.beginPath();
+  ctx.ellipse(b.x, b.y + b.radius * 0.3, mouthRX, mouthRY, 0, 0, 6.28);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawVoid(b) {
+  ctx.save();
+  // Dark aura.
+  const auraR = b.radius * 2;
+  const aura = ctx.createRadialGradient(b.x, b.y, b.radius, b.x, b.y, auraR);
+  aura.addColorStop(0, 'rgba(0,0,0,0.4)');
+  aura.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = aura;
+  ctx.beginPath(); ctx.arc(b.x, b.y, auraR, 0, 6.28); ctx.fill();
+  // Pure black disc.
+  ctx.fillStyle = '#000';
+  ctx.beginPath(); ctx.arc(b.x, b.y, b.radius, 0, 6.28); ctx.fill();
+  // Cyan/white ring.
+  ctx.strokeStyle = 'rgba(180,240,255,0.85)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(b.x, b.y, b.radius, 0, 6.28); ctx.stroke();
+  ctx.restore();
+}
+
+function drawHeart(b) {
+  ctx.save();
+  const s = b.heartScale || 1;
+  const w = b.radius * 1.2 * s;
+  // Glow behind.
+  const glow = ctx.createRadialGradient(b.x, b.y, w * 0.3, b.x, b.y, w * 2);
+  glow.addColorStop(0, 'rgba(255,40,40,0.35)');
+  glow.addColorStop(1, 'rgba(255,0,0,0)');
+  ctx.fillStyle = glow;
+  ctx.beginPath(); ctx.arc(b.x, b.y, w * 2, 0, 6.28); ctx.fill();
+  // Heart shape.
+  ctx.fillStyle = '#cc0000';
+  ctx.beginPath();
+  ctx.moveTo(b.x, b.y + w * 0.6);
+  ctx.bezierCurveTo(b.x + w * 1.2, b.y - w * 0.15, b.x + w * 0.5, b.y - w * 0.9, b.x, b.y - w * 0.25);
+  ctx.bezierCurveTo(b.x - w * 0.5, b.y - w * 0.9, b.x - w * 1.2, b.y - w * 0.15, b.x, b.y + w * 0.6);
+  ctx.closePath();
+  ctx.fill();
+  // Highlight.
+  ctx.fillStyle = 'rgba(255,80,80,0.8)';
+  ctx.beginPath();
+  ctx.arc(b.x - w * 0.35, b.y - w * 0.35, w * 0.18, 0, 6.28);
+  ctx.fill();
+  // Blood drip.
+  if (b.bloodDrip > 0) {
+    const dripAlpha = b.bloodDrip / 30;
+    ctx.fillStyle = `rgba(160,0,0,${dripAlpha})`;
+    ctx.beginPath();
+    ctx.arc(b.x, b.y + w * 0.7 + (30 - b.bloodDrip), 2.5, 0, 6.28);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawMirror(b) {
+  ctx.save();
+  // Dark core, bright outline — inverted look vs player.
+  const orbRgb = activeOrbColor();
+  // Complement: approximate inverse of the current orb color.
+  const parts = orbRgb.split(',').map(v => 255 - parseInt(v, 10));
+  const invRgb = parts.join(',');
+
+  ctx.fillStyle = '#101010';
+  ctx.beginPath(); ctx.arc(b.x, b.y, b.radius, 0, 6.28); ctx.fill();
+  ctx.strokeStyle = `rgba(${invRgb},0.95)`;
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(b.x, b.y, b.radius - 1, 0, 6.28); ctx.stroke();
+  // Ghostly inner ring.
+  ctx.strokeStyle = `rgba(${invRgb},0.35)`;
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.arc(b.x, b.y, b.radius * 0.55, 0, 6.28); ctx.stroke();
+  ctx.restore();
+}
+
+function drawSkull(b) {
+  ctx.save();
+  ctx.translate(b.x, b.y);
+  ctx.rotate(b.skullRotation);
+  // Dark body.
+  ctx.fillStyle = '#0d0d0d';
+  ctx.beginPath(); ctx.arc(0, 0, b.radius, 0, 6.28); ctx.fill();
+  ctx.strokeStyle = 'rgba(200,200,200,0.35)';
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.arc(0, 0, b.radius, 0, 6.28); ctx.stroke();
+
+  // Eye sockets.
+  const eyeX = b.radius * 0.33;
+  const eyeY = -b.radius * 0.15;
+  const eyeR = b.radius * 0.2;
+  const flash = b.skullEyeFlash > 0;
+  for (const side of [-1, 1]) {
+    ctx.fillStyle = flash ? 'rgba(200,30,30,0.95)' : '#000';
+    ctx.beginPath(); ctx.arc(side * eyeX, eyeY, eyeR, 0, 6.28); ctx.fill();
+    if (flash) {
+      ctx.fillStyle = 'rgba(255,80,80,0.55)';
+      ctx.beginPath(); ctx.arc(side * eyeX, eyeY, eyeR * 0.6, 0, 6.28); ctx.fill();
+    }
+  }
+
+  // Nasal cavity: inverted triangle.
+  ctx.fillStyle = '#000';
+  ctx.beginPath();
+  ctx.moveTo(0, b.radius * 0.05);
+  ctx.lineTo(-b.radius * 0.08, b.radius * 0.25);
+  ctx.lineTo(b.radius * 0.08, b.radius * 0.25);
+  ctx.closePath();
+  ctx.fill();
+
+  // Teeth row.
+  const toothCount = 6;
+  const toothY = b.radius * 0.45;
+  const toothW = b.radius * 0.11;
+  ctx.fillStyle = 'rgba(220,215,200,0.95)';
+  for (let i = 0; i < toothCount; i++) {
+    const tx = -b.radius * 0.42 + i * toothW * 1.4;
+    ctx.fillRect(tx - toothW / 2, toothY - toothW * 0.6, toothW, toothW * 1.1);
+  }
+  ctx.restore();
+}
+
+// Tiny deterministic PRNG used for stable per-body random details (veins,
+// cracks). Keyed off a seed on the body so the pattern doesn't jitter.
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return function() {
+    a = (a + 0x6D2B79F5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// Crack fragments drawn as small glowing discs.
+function drawCrackFragments() {
+  for (const f of crackFragments) {
+    const life = Math.max(0, f.life / f.maxLife);
+    ctx.save();
+    const glowR = f.radius * 3.5;
+    const g = ctx.createRadialGradient(f.x, f.y, 0, f.x, f.y, glowR);
+    g.addColorStop(0, 'rgba(255,150,60,0.6)');
+    g.addColorStop(1, 'rgba(255,100,40,0)');
+    ctx.globalAlpha = life * 0.65;
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(f.x, f.y, glowR, 0, 6.28); ctx.fill();
+    ctx.globalAlpha = life;
+    ctx.fillStyle = '#ff8040';
+    ctx.beginPath(); ctx.arc(f.x, f.y, f.radius * (0.7 + 0.3 * life), 0, 6.28); ctx.fill();
+    ctx.restore();
+  }
+  ctx.globalAlpha = 1;
 }
 
 // Orb-specific trail particles. Every orb (including cyan) emits behind the
@@ -5032,6 +5703,7 @@ function render() {
   }
   drawBg();
   drawBodies();
+  drawCrackFragments();
 
   // Hyperspeed gold tint over the world
   if (activeEffects.hyperspeed > 0 && hyperspeedCurrentMult > 1.05) {
@@ -5101,8 +5773,8 @@ function loop() {
     const total = pickupParticles.length + deathParticles.length
                 + novaRings.length + planetRipples.length
                 + destroyEffects.length + deathShards.length
-                + orbTrailParticles.length;
-    if (total > 150) {
+                + orbTrailParticles.length + crackFragments.length;
+    if (total > 180) {
       console.warn('[loop] memory pressure: clearing', total, 'transient particles');
       pickupParticles = [];
       deathParticles = [];
@@ -5111,6 +5783,7 @@ function loop() {
       destroyEffects = [];
       deathShards = [];
       orbTrailParticles = [];
+      crackFragments = [];
     }
   }
   requestAnimationFrame(loop);
@@ -5204,6 +5877,8 @@ function goToMainMenu() {
   planetRipples = [];
   destroyEffects = [];
   deathShards = [];
+  crackFragments = [];
+  playerPosHistory = [];
   resetApocalypse();
   deathFlashFrames = 0;
   if (pendingDeathBurstTimer) { clearTimeout(pendingDeathBurstTimer); pendingDeathBurstTimer = null; }
