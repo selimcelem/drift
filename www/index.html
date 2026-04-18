@@ -1196,10 +1196,10 @@ const PLAYER_POS_HISTORY_LEN = 90; // 1.5s @ 60fps — covers 0.5s mirror delay
 // the purple targeting-line tint and the low-frequency hum.
 let playerInVoidRange = false;
 let voidHumNodes = null;
-// Burst ability: simultaneous left+right press. 15s cooldown. Reset by
-// resetGame(). burstTriggered is a one-shot flag consumed by update().
-const BURST_COOLDOWN_FRAMES = 1800;
-let burstCooldown = 0;
+// Burst ability: simultaneous left+right press. 30s cooldown (wall-clock).
+// Reset by resetGame(). burstTriggered is a one-shot flag consumed by update().
+const BURST_COOLDOWN_MS = 30000;
+let burstCooldownEnd = 0;
 let burstTriggered = false;
 let pendingNovaTimeouts = [];
 let destroyEffects = [];   // per-planet destruction visuals (flash + ring + debris)
@@ -3332,7 +3332,7 @@ function resetGame() {
   playerPosHistory = [];
   playerInVoidRange = false;
   if (voidHumNodes) { try { voidHumNodes.stop(); } catch {} voidHumNodes = null; }
-  burstCooldown = 0;
+  burstCooldownEnd = 0;
   burstTriggered = false;
   resetApocalypse();
   deathFlashFrames = 0;
@@ -3362,6 +3362,7 @@ function resetGame() {
   runStartTime = Date.now();
   document.getElementById('score').textContent = '0';
   updateRunTimerDisplay();
+  console.log('[reset] elapsedRunSeconds after reset:', elapsedRunSeconds());
 }
 
 // --- Physics: only closest body matters ---
@@ -3835,12 +3836,12 @@ function update() {
 
   // Burst trigger: also catches keyboard-held combos each frame.
   if (leftDown && rightDown) burstTriggered = true;
-  if (burstTriggered && burstCooldown === 0) {
+  const burstReady = Date.now() >= burstCooldownEnd;
+  if (burstTriggered && burstReady) {
     executeBurst();
-    burstCooldown = BURST_COOLDOWN_FRAMES;
+    burstCooldownEnd = Date.now() + BURST_COOLDOWN_MS;
   }
   burstTriggered = false;
-  if (burstCooldown > 0) burstCooldown--;
 
   // Run timer: wall-clock driven. Normally refresh ~8x/sec; past 3 min the
   // danger-zone shake/blink/glitch needs per-frame updates.
@@ -6226,9 +6227,9 @@ function updateBurstBar() {
   const visible = (state === 'playing' || state === 'paused');
   burstBarEl.style.display = visible ? 'flex' : 'none';
   if (!visible) return;
-  const pct = 1 - burstCooldown / BURST_COOLDOWN_FRAMES;
+  const pct = Math.max(0, Math.min(1, (Date.now() - (burstCooldownEnd - BURST_COOLDOWN_MS)) / BURST_COOLDOWN_MS));
   burstFillEl.style.width = (pct * 100) + '%';
-  if (burstCooldown === 0) {
+  if (Date.now() >= burstCooldownEnd) {
     // Ready: bright orb color.
     const rgb = activeOrbColor();
     burstFillEl.style.background = `rgba(${rgb},0.95)`;
@@ -6676,7 +6677,7 @@ function goToMainMenu() {
   playerPosHistory = [];
   playerInVoidRange = false;
   if (voidHumNodes) { try { voidHumNodes.stop(); } catch {} voidHumNodes = null; }
-  burstCooldown = 0;
+  burstCooldownEnd = 0;
   burstTriggered = false;
   resetApocalypse();
   deathFlashFrames = 0;
