@@ -1518,9 +1518,17 @@ const SFX = (function() {
   // Three tracks: menu / gameplay / results. Each is fetched + decoded
   // lazily on first play and cached. The seamless 2-second loop crossfade
   // and track-switch crossfades share the same source-pair machinery.
-  const MUSIC_TRACKS = ['menu', 'gameplay', 'results'];
-  const musicBuffers = { menu: null, gameplay: null, results: null };
-  const musicLoading = { menu: null, gameplay: null, results: null };
+  const MUSIC_TRACKS = ['menu', 'gameplay', 'results', 'gameplay2', 'gameplay3', 'gameplay4'];
+  const musicBuffers = { menu: null, gameplay: null, results: null, gameplay2: null, gameplay3: null, gameplay4: null };
+  const musicLoading = { menu: null, gameplay: null, results: null, gameplay2: null, gameplay3: null, gameplay4: null };
+  // Phase-based gameplay music: each phase has its own track with independent
+  // source/gain chains so crossfades can ramp them against each other without
+  // fighting the shared musicGain.
+  const GAMEPLAY_PHASE_TRACKS = { 1: 'gameplay', 2: 'gameplay2', 3: 'gameplay3', 4: 'gameplay4' };
+  const GAMEPLAY_PHASE_CROSSFADE = 3.0; // seconds for phase-change crossfade
+  // Active gameplay-phase voices keyed by track name; each entry tracks its
+  // own source, gain, and loop timer so they can be stopped independently.
+  const gameplayVoices = {};
 
   // Destruction SFX files — shield/nova/barrier play decoded AudioBuffers
   // instead of procedural synths. Files loaded lazily on first touch, cached
@@ -1587,6 +1595,13 @@ const SFX = (function() {
       currentMusicSource = null;
       currentMusicSourceGain = null;
       currentTrackName = null;
+      // Gameplay-phase voices are tied to the dead context too; drop them
+      // so the next phase tick re-arms against the fresh context.
+      for (const k of Object.keys(gameplayVoices)) {
+        const v = gameplayVoices[k];
+        if (v && v.loopTimer) { clearTimeout(v.loopTimer); }
+        delete gameplayVoices[k];
+      }
       // Decoded buffers are tied to the dead AudioContext — invalidate them
       // so the next playTrack() refetches against the new context.
       for (const k of MUSIC_TRACKS) {
@@ -2413,6 +2428,188 @@ const SFX = (function() {
     armCrossfade(started.startTime, buf);
   }
 
+  // ---- Phase-based gameplay tracks ----
+  //
+  // Each of gameplay, gameplay2, gameplay3, gameplay4 runs as a standalone
+  // "voice": its own BufferSource + per-voice GainNode chained into musicGain,
+  // with a per-voice setTimeout that re-schedules the next gapless loop. This
+  // keeps each phase track independent so phase changes can crossfade two
+  // voices against each other without touching the shared musicGain ramp.
+
+  // Start a fresh loop iteration of a named voice at `targetGain` (ramped in
+  // over fadeIn seconds if >0). Re-arms its own loop timer MUSIC_CROSSFADE
+  // seconds before the buffer ends.
+  function startGameplayVoiceLoop(name, targetGain, fadeIn) {
+    if (!ctx || !musicGain) return;
+    const buf = musicBuffers[name];
+    if (!buf) return;
+    const t = ctx.currentTime;
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    const g = ctx.createGain();
+    if (fadeIn > 0) {
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(targetGain, t + fadeIn);
+    } else {
+      g.gain.setValueAtTime(targetGain, t);
+    }
+    src.connect(g); g.connect(musicGain);
+    try { src.start(t); } catch { return; }
+    // Tear down any previous voice record for this name.
+    const prev = gameplayVoices[name];
+    if (prev && prev.loopTimer) { clearTimeout(prev.loopTimer); }
+    const voice = { name, src, gain: g, startTime: t, buffer: buf, targetGain, loopTimer: null };
+    gameplayVoices[name] = voice;
+    // Schedule the next loop iteration — a little overlap via MUSIC_CROSSFADE
+    // keeps the loop point inaudible.
+    const fireAt = t + buf.duration - MUSIC_CROSSFADE;
+    const delayMs = Math.max(0, (fireAt - ctx.currentTime) * 1000);
+    voice.loopTimer = setTimeout(() => {
+      // Only loop if this voice is still the current record (otherwise we've
+      // been replaced/stopped).
+      if (gameplayVoices[name] !== voice) return;
+      // Fade current iteration out and start a new one overlapping for the
+      // seamless handoff. Use the voice's live targetGain in case a phase
+      // crossfade or pause-duck has adjusted it.
+      const now = ctx.currentTime;
+      const liveTarget = voice.targetGain;
+      try {
+        voice.gain.gain.cancelScheduledValues(now);
+        voice.gain.gain.setValueAtTime(voice.gain.gain.value, now);
+        voice.gain.gain.linearRampToValueAtTime(0, now + MUSIC_CROSSFADE);
+      } catch {}
+      try { voice.src.stop(now + MUSIC_CROSSFADE + 0.05); } catch {}
+      killOnEnd(voice.src, voice.gain);
+      startGameplayVoiceLoop(name, liveTarget, MUSIC_CROSSFADE);
+    }, delayMs);
+  }
+
+  // Immediately ramp a voice to 0 and stop it. Safe to call on a missing voice.
+  function stopGameplayVoice(name, fadeOut) {
+    const voice = gameplayVoices[name];
+    if (!voice) return;
+    if (voice.loopTimer) { clearTimeout(voice.loopTimer); voice.loopTimer = null; }
+    delete gameplayVoices[name];
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    const fade = fadeOut == null ? 0.05 : fadeOut;
+    try {
+      voice.gain.gain.cancelScheduledValues(t);
+      voice.gain.gain.setValueAtTime(voice.gain.gain.value, t);
+      voice.gain.gain.linearRampToValueAtTime(0, t + fade);
+    } catch {}
+    try { voice.src.stop(t + fade + 0.05); } catch {}
+    killOnEnd(voice.src, voice.gain);
+  }
+
+  // Public: stop every gameplay-phase voice — called on resetGame and
+  // goToMainMenu so nothing lingers into the next state.
+  function stopAllGameplayTracks(fadeOut) {
+    for (const k of Object.keys(gameplayVoices)) {
+      stopGameplayVoice(k, fadeOut);
+    }
+  }
+
+  // Public: start the track for a given phase (1-4) with a fade-in. Cancels
+  // any single-track source that playTrack() had armed, since the gameplay
+  // tracks now drive themselves through the voice system.
+  function startGameplayPhaseTrack(phase, fade) {
+    if (!ensureRunning()) return;
+    const name = GAMEPLAY_PHASE_TRACKS[phase] || GAMEPLAY_PHASE_TRACKS[1];
+    const fadeDur = fade == null ? 0.5 : fade;
+    // Make sure the shared musicGain envelope is at the correct target before
+    // voices start so fades come through at full level.
+    setMusicGainTarget(currentMusicGainTarget(), 0.05);
+    // Fade out the legacy single-track source if it's still running (e.g.
+    // coming from the menu track), then hand off to the phase-voice system.
+    // Always clear any pending loop-crossfade timer so the old single-track
+    // loop can't re-arm itself mid-handoff.
+    if (crossfadeTimer) { clearTimeout(crossfadeTimer); crossfadeTimer = null; }
+    if (currentMusicSource) {
+      fadeOutCurrentSource(fadeDur);
+    }
+    // If some other gameplay voice is already running (shouldn't happen but
+    // defensive), fade it out.
+    for (const k of Object.keys(gameplayVoices)) {
+      if (k !== name) stopGameplayVoice(k, fadeDur);
+    }
+    currentTrackName = name;
+    const target = 1;
+    loadMusicBuffer(name)
+      .then(() => {
+        // If we were preempted (e.g. user went back to menu), bail.
+        if (currentTrackName !== name) return;
+        // If already playing, just nudge the gain back to target in case we
+        // had been ducked.
+        const existing = gameplayVoices[name];
+        if (existing) {
+          const t = ctx.currentTime;
+          existing.targetGain = target;
+          try {
+            existing.gain.gain.cancelScheduledValues(t);
+            existing.gain.gain.setValueAtTime(existing.gain.gain.value, t);
+            existing.gain.gain.linearRampToValueAtTime(target, t + 0.2);
+          } catch {}
+          return;
+        }
+        startGameplayVoiceLoop(name, target, fadeDur);
+      })
+      .catch(() => {});
+  }
+
+  // Public: crossfade from phase `fromPhase` track to phase `toPhase` track
+  // over GAMEPLAY_PHASE_CROSSFADE seconds using linearRampToValueAtTime on
+  // each voice's gain node.
+  function crossfadeGameplayPhase(fromPhase, toPhase) {
+    if (!ensureRunning()) return;
+    const fromName = GAMEPLAY_PHASE_TRACKS[fromPhase];
+    const toName   = GAMEPLAY_PHASE_TRACKS[toPhase];
+    if (!toName) return;
+    const fade = GAMEPLAY_PHASE_CROSSFADE;
+    // Ramp outgoing voice to 0 and free it after the fade. Covers both the
+    // tracked fromPhase voice and any stragglers from even earlier phases.
+    for (const k of Object.keys(gameplayVoices)) {
+      if (k !== toName) stopGameplayVoice(k, fade);
+    }
+    currentTrackName = toName;
+    setMusicGainTarget(currentMusicGainTarget(), 0.05);
+    loadMusicBuffer(toName)
+      .then(() => {
+        if (currentTrackName !== toName) return;
+        startGameplayVoiceLoop(toName, 1, fade);
+      })
+      .catch(() => {});
+  }
+
+  // Pause-duck / resume-restore the currently active gameplay voice. Mirrors
+  // the single-track pause behaviour (which only adjusts musicGain). For the
+  // phase-voice system we additionally ramp the active voice's per-voice gain
+  // to keep behaviour identical to the single-track path.
+  function pauseGameplayActiveVoice() {
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    for (const k of Object.keys(gameplayVoices)) {
+      const v = gameplayVoices[k];
+      try {
+        v.gain.gain.cancelScheduledValues(t);
+        v.gain.gain.setValueAtTime(v.gain.gain.value, t);
+        v.gain.gain.linearRampToValueAtTime(PAUSE_DUCK_LEVEL, t + 0.3);
+      } catch {}
+    }
+  }
+  function resumeGameplayActiveVoice() {
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    for (const k of Object.keys(gameplayVoices)) {
+      const v = gameplayVoices[k];
+      try {
+        v.gain.gain.cancelScheduledValues(t);
+        v.gain.gain.setValueAtTime(v.gain.gain.value, t);
+        v.gain.gain.linearRampToValueAtTime(v.targetGain || 1, t + 0.3);
+      } catch {}
+    }
+  }
+
   // Public: switch to a named track ('menu' | 'gameplay' | 'results') with
   // a `fade` second crossfade. Pass null/'' to stop music entirely.
   function playTrack(name, fade) {
@@ -2423,11 +2620,26 @@ const SFX = (function() {
       currentTrackName = null;
       if (crossfadeTimer) { clearTimeout(crossfadeTimer); crossfadeTimer = null; }
       fadeOutCurrentSource(fadeDur);
+      // Gameplay-phase voices are separate — stop them too so a null
+      // playTrack() actually silences everything.
+      stopAllGameplayTracks(fadeDur);
       return;
     }
 
     if (!ensureRunning()) return;
     resetThrottles();
+
+    // 'gameplay' is the phase-track entry point — route through the
+    // phase-voice system so the active phase track gets its own voice/loop
+    // and crossfades between phases happen on per-voice gains.
+    if (name === 'gameplay') {
+      startGameplayPhaseTrack(1, fadeDur);
+      return;
+    }
+
+    // Non-gameplay request: make sure all gameplay-phase voices are stopped
+    // so menu/results music can play cleanly.
+    stopAllGameplayTracks(fadeDur);
 
     // Already on this track — just make sure musicGain matches the current
     // target (e.g. unducking from pause). Never restart the source.
@@ -2455,12 +2667,16 @@ const SFX = (function() {
   }
 
   // Pause and resume "duck" musicGain rather than stopping the source so
-  // gameplay returns instantly when the player hits resume.
+  // gameplay returns instantly when the player hits resume. The shared
+  // musicGain ramp handles the single-track path; pauseGameplayActiveVoice
+  // mirrors the same duck on each phase-voice's per-voice gain.
   function pauseMusic() {
     setMusicGainTarget(musicEnabled ? MUSIC_GAIN_VALUE * PAUSE_DUCK_LEVEL : 0, 0.3);
+    pauseGameplayActiveVoice();
   }
   function resumeMusic() {
     setMusicGainTarget(currentMusicGainTarget(), 0.3);
+    resumeGameplayActiveVoice();
   }
 
   // ---- UI button click sounds ----
@@ -2480,6 +2696,7 @@ const SFX = (function() {
     startApocalypseRumble, playApocalypseImpact, screamShriek, startVoidHum,
     playSfxBuffer,
     playTrack, pauseMusic, resumeMusic,
+    crossfadeGameplayPhase, stopAllGameplayTracks,
     clickPrimary, clickSecondary,
     setMusicEnabled, setSfxEnabled, isMusicEnabled, isSfxEnabled,
     suspendCtx, resumeCtx,
@@ -2584,6 +2801,19 @@ const PHASE_POOLS = {
 };
 function phaseForElapsed(es) {
   return es < 180 ? 1 : es < 300 ? 2 : es < 480 ? 3 : 4;
+}
+
+// Phase-based gameplay music: currentGameplayTrack mirrors whichever phase's
+// track is currently playing. update() calls checkGameplayPhase() each frame
+// while state === 'playing'; when the live phase diverges from the tracked
+// one, we fire a 3-second crossfade on the SFX module.
+let currentGameplayTrack = 1;
+function checkGameplayPhase() {
+  const phase = phaseForElapsed(elapsedRunSeconds());
+  if (phase === currentGameplayTrack) return;
+  const prev = currentGameplayTrack;
+  currentGameplayTrack = phase;
+  try { SFX.crossfadeGameplayPhase(prev, phase); } catch {}
 }
 
 function spawnBody(yBase) {
@@ -3642,6 +3872,12 @@ function resetGame() {
   lastPowerupSpawn = 0;
   runStartTime = Date.now();
   graceEndTime = Date.now() + GRACE_DURATION_MS;
+  // Phase-track state: clear any leftover voices from the previous run and
+  // rewind so the first checkGameplayPhase() call sees phase 1 as current.
+  // The start-button handler re-arms 'gameplay' after this, which now routes
+  // to the phase-voice system.
+  try { SFX.stopAllGameplayTracks(0.1); } catch {}
+  currentGameplayTrack = 1;
   document.getElementById('score').textContent = '0';
   updateRunTimerDisplay();
   console.log('[reset] elapsedRunSeconds after reset:', elapsedRunSeconds());
@@ -3682,9 +3918,9 @@ function applyEnvironmentForces() {
     } else if (b.type === 'void') {
       const dx = player.x - b.x, dy = player.y - b.y;
       const d = Math.hypot(dx, dy);
-      if (d < b.radius * 3.5 && d > 0.5) {
+      if (d < b.radius * 5 && d > 0.5) {
         // Gentle repel away from the void, strongest at the center.
-        const repelStrength = 0.18 * (1 - d / (b.radius * 3.5));
+        const repelStrength = 0.25 * (1 - d / (b.radius * 5));
         player.vx += (dx / d) * repelStrength;
         player.vy += (dy / d) * repelStrength;
         nearVoid = true;
@@ -3904,7 +4140,31 @@ function checkCollisions() {
         break;
       }
     }
-    // Also die on a crack fragment (no shield protection — they're tiny).
+    // Shield also absorbs crack fragments — each fragment costs 1 hit, no
+    // points, no streak, no combo contribution.
+    if (activeEffects.shield > 0) {
+      const shieldR = PLAYER_R * 3.6; // matches the visible shield aura radius
+      for (let i = crackFragments.length - 1; i >= 0; i--) {
+        const f = crackFragments[i];
+        if (dist(player, f) < f.radius + shieldR) {
+          // Half-size shield-scan visual: synthetic body with halved radius
+          // so emitDestroyEffects scales everything down.
+          emitDestroyEffects({ x: f.x, y: f.y, radius: f.radius * 0.5 }, 'shield');
+          emitDestroyBurst(f.x, f.y, POWERUP_COLORS.shield.rgb);
+          SFX.playSfxBuffer('shieldDestroy', 0.3);
+          crackFragments.splice(i, 1);
+          shieldHits--;
+          if (shieldHits <= 0) {
+            shieldEndTime = 0;
+            activeEffects.shield = 0;
+            shieldBroken = true;
+            fortressShield = false;
+            shieldHits = 0;
+            break;
+          }
+        }
+      }
+    }
     return false;
   }
 
@@ -4133,6 +4393,8 @@ function update() {
   if (state === 'apocalypse') { frame++; updateApocalypse(); return; }
   if (state !== 'playing') return;
   frame++;
+  // Phase-based gameplay music crossfade — only during active play.
+  checkGameplayPhase();
   const spd = scrollSpeed();
   const d = diff();
 
@@ -4381,6 +4643,18 @@ function update() {
       if (!killed) survivors.push(b);
     }
     bodies = survivors;
+    // Crack fragments swept by nova rings die silently — no points / streak.
+    for (let i = crackFragments.length - 1; i >= 0; i--) {
+      const f = crackFragments[i];
+      for (const r of novaRings) {
+        const rm = r.radiusMult || 1;
+        const dd = dist(r, f);
+        if (dd < r.radius * rm && dd >= (r.prevR * rm) - 6 && r.radius < 360 * rm) {
+          crackFragments.splice(i, 1);
+          break;
+        }
+      }
+    }
   }
 
   // Shield-EMP rings: expand at EMP_EXPAND_PX_PER_SEC. First planet each ring
@@ -4417,6 +4691,19 @@ function update() {
         if (!killed) survivors.push(b);
       }
       bodies = survivors;
+      // EMP rings also wipe out crack fragments they sweep over. No chain
+      // EMP, no points, no streak — just clear the hazard.
+      for (let i = crackFragments.length - 1; i >= 0; i--) {
+        const f = crackFragments[i];
+        for (const r of empRings) {
+          if (r.radius > EMP_MAX_RADIUS) continue;
+          const dd = dist(r, f);
+          if (dd < r.radius + f.radius && dd >= r.prevR - 6) {
+            crackFragments.splice(i, 1);
+            break;
+          }
+        }
+      }
     }
   }
 
@@ -4438,6 +4725,18 @@ function update() {
       }
     }
     bodies = bSurvivors;
+    // Fragments clipping the barrier wedge die silently (barrier sfx at lower
+    // volume to avoid stacking with bigger body hits).
+    let barrierAteFragment = false;
+    for (let i = crackFragments.length - 1; i >= 0; i--) {
+      const f = crackFragments[i];
+      if (f.y < barrierY + f.radius + 20 && f.y > barrierY - 30 &&
+          Math.abs(f.x - player.x) < barrierHalfW + f.radius) {
+        crackFragments.splice(i, 1);
+        barrierAteFragment = true;
+      }
+    }
+    if (barrierAteFragment) SFX.playSfxBuffer('hyperspeedBarrier', 0.3);
   }
 
   // Planet ripples scroll with the world. expand/speed stays frame-based
@@ -4985,17 +5284,45 @@ function renderNebulaOffscreen() {
 // object is drawn into a circular mask with a dark radial vignette so it
 // fades into the deep-space background. Spawning is paced by planetsPassed
 // and alternates screen sides; no two consecutive spawns share an image.
-const BG_IMAGE_KEYS = ['nebula', 'dyingStar', 'galaxy', 'supernova'];
+const BG_IMAGE_KEYS = [
+  'nebula', 'dyingStar', 'galaxy', 'supernova',
+  'redNebula', 'pulsar',
+  'blackhole', 'remnant',
+  'void', 'darkMatter',
+];
 const bgImages = {
-  nebula:    new Image(),
-  dyingStar: new Image(),
-  galaxy:    new Image(),
-  supernova: new Image(),
+  nebula:     new Image(),
+  dyingStar:  new Image(),
+  galaxy:     new Image(),
+  supernova:  new Image(),
+  redNebula:  new Image(),
+  pulsar:     new Image(),
+  blackhole:  new Image(),
+  remnant:    new Image(),
+  void:       new Image(),
+  darkMatter: new Image(),
 };
-bgImages.nebula.src    = './assets/bg-nebula.jpg?v=' + Date.now();
-bgImages.dyingStar.src = './assets/bg-dying-star.jpg?v=' + Date.now();
-bgImages.galaxy.src    = './assets/bg-galaxy.jpg?v=' + Date.now();
-bgImages.supernova.src = './assets/bg-supernova.jpg?v=' + Date.now();
+bgImages.nebula.src     = './assets/bg-nebula.jpg?v=' + Date.now();
+bgImages.dyingStar.src  = './assets/bg-dying-star.jpg?v=' + Date.now();
+bgImages.galaxy.src     = './assets/bg-galaxy.jpg?v=' + Date.now();
+bgImages.supernova.src  = './assets/bg-supernova.jpg?v=' + Date.now();
+bgImages.redNebula.src  = './assets/bg-red-nebula.jpg?v=' + Date.now();
+bgImages.pulsar.src     = './assets/bg-pulsar.jpg?v=' + Date.now();
+bgImages.blackhole.src  = './assets/bg-blackhole.jpg?v=' + Date.now();
+bgImages.remnant.src    = './assets/bg-remnant.jpg?v=' + Date.now();
+bgImages.void.src       = './assets/bg-void.jpg?v=' + Date.now();
+bgImages.darkMatter.src = './assets/bg-darkmatter.jpg?v=' + Date.now();
+
+// Phase-scoped image pools: each run phase draws from a different slice of
+// the imagery set so the backdrop evolves with the difficulty curve. Phase
+// boundaries match phaseForElapsed(). Already-spawned objects from the old
+// phase keep scrolling off naturally; only new spawns pick from the new pool.
+const BG_IMAGE_POOLS = {
+  1: ['nebula', 'dyingStar', 'galaxy', 'supernova'],
+  2: ['redNebula', 'pulsar'],
+  3: ['blackhole', 'remnant'],
+  4: ['void', 'darkMatter'],
+};
 
 let bgObjects = [];
 let lastBgSpawnFrame = -99999;  // frame index of most recent spawn
@@ -5018,13 +5345,20 @@ function resetBgObjects() {
 resetBgObjects();
 
 function spawnBgObject() {
-  const pool = BG_IMAGE_KEYS.filter(k => k !== lastBgImageKey);
+  // Current-phase pool only — old objects already in flight keep their own
+  // imagery as they scroll off. If the phase pool has only one image, repeats
+  // are unavoidable; otherwise we still avoid two-in-a-row of the same key.
+  const phase = phaseForElapsed(elapsedRunSeconds());
+  const phasePool = BG_IMAGE_POOLS[phase] || BG_IMAGE_POOLS[1];
+  const filtered = phasePool.length > 1 ? phasePool.filter(k => k !== lastBgImageKey) : phasePool;
+  const pool = filtered.length ? filtered : phasePool;
   const key = pool[Math.floor(Math.random() * pool.length)];
   const x = nextBgSide === 'left'
     ? 40 + Math.random() * 100            // 40..140
     : (W - 140) + Math.random() * 100;    // W-140..W-40
   // Nebula and dying-star read better bigger; supernova/galaxy stay tighter
-  // so their bright cores don't dominate the screen.
+  // so their bright cores don't dominate the screen. Phase-2+ imagery uses
+  // the tighter 220..320 range to match supernova/galaxy's read.
   const size = (key === 'nebula' || key === 'dyingStar')
     ? 280 + Math.random() * 120   // 280..400
     : 220 + Math.random() * 100;  // 220..320
@@ -5036,11 +5370,22 @@ function spawnBgObject() {
   nextBgSpawnDelay = nextBgSpawnStep();
 }
 
+// Scale a frame-count interval by current scrollSpeed so fast runs see
+// proportionally more imagery. Floor at 20s so spawns never pile up.
+function scaledBgInterval(baseFrames) {
+  const spd = scrollSpeed();
+  const factor = Math.max(0.0001, spd / 1.5);
+  const scaled = baseFrames / factor;
+  const minFrames = 20 * 60; // 20 seconds @60fps
+  return Math.max(minFrames, scaled);
+}
+
 function maybeSpawnBgObject() {
   if (bgObjects.length >= 2) return;
   const sinceLast = frame - lastBgSpawnFrame;
-  // Normal schedule: wait nextBgSpawnDelay frames since last spawn.
-  const scheduledReady = sinceLast >= nextBgSpawnDelay;
+  // Normal schedule: wait nextBgSpawnDelay frames since last spawn, with the
+  // wait shortened by current scrollSpeed (floored at 20s).
+  const scheduledReady = sinceLast >= scaledBgInterval(nextBgSpawnDelay);
   // Hyperspeed shortcut: counts as distance travelled — while stacks >= 3,
   // allow an extra spawn if it's been at least 30s since the last one.
   const hyperspeedReady = hyperSpeedStacks >= 3 && sinceLast >= 30 * 60;
@@ -5689,7 +6034,16 @@ function drawScreaming(b) {
 
 function drawVoid(b) {
   ctx.save();
-  // Expanding sonar-style pulse rings showing the repel zone. 3 concentric
+  // Dashed boundary at the exact repel-zone edge (radius*5). Rotates slowly
+  // so the edge reads as an active force field.
+  ctx.save();
+  ctx.strokeStyle = 'rgba(100,0,180,0.3)';
+  ctx.lineWidth = 1.4;
+  ctx.setLineDash([8, 8]);
+  ctx.lineDashOffset = -b.voidPulse * 10; // voidPulse advances each frame
+  ctx.beginPath(); ctx.arc(b.x, b.y, b.radius * 5, 0, 6.28); ctx.stroke();
+  ctx.restore();
+  // Expanding sonar-style pulse rings inside the boundary. 3 concentric
   // rings at 120deg phase offsets, oscillating between radius*1.5 and *3.5.
   ctx.strokeStyle = 'rgba(100,0,180,0.15)';
   ctx.lineWidth = 1.5;
@@ -5713,17 +6067,42 @@ function drawVoid(b) {
   ctx.strokeStyle = 'rgba(180,240,255,0.85)';
   ctx.lineWidth = 1.5;
   ctx.beginPath(); ctx.arc(b.x, b.y, b.radius, 0, 6.28); ctx.stroke();
-  // Purple dashed repel-force line to the player when in range.
+  // Repel force arrows — short outward-pointing lines between void and player.
   if (b.voidRepellingPlayer) {
-    ctx.save();
-    ctx.strokeStyle = 'rgba(100,0,180,0.4)';
-    ctx.lineWidth = 1.2;
-    ctx.setLineDash([6, 5]);
-    ctx.beginPath();
-    ctx.moveTo(b.x, b.y);
-    ctx.lineTo(player.x, player.y);
-    ctx.stroke();
-    ctx.restore();
+    const dx = player.x - b.x, dy = player.y - b.y;
+    const d = Math.hypot(dx, dy) || 1;
+    const nx = dx / d, ny = dy / d;
+    // Place 5 arrows along the void→player segment, inside the repel zone.
+    const inner = b.radius * 1.3;
+    const outer = Math.min(d - 4, b.radius * 4.7);
+    if (outer > inner) {
+      ctx.save();
+      ctx.strokeStyle = 'rgba(150,0,255,0.4)';
+      ctx.fillStyle = 'rgba(150,0,255,0.4)';
+      ctx.lineWidth = 1.4;
+      const arrowCount = 5;
+      const arrowLen = 12;
+      for (let i = 0; i < arrowCount; i++) {
+        const u = (i + 0.5) / arrowCount;
+        const cx = b.x + nx * (inner + (outer - inner) * u);
+        const cy = b.y + ny * (inner + (outer - inner) * u);
+        const ex = cx + nx * arrowLen;
+        const ey = cy + ny * arrowLen;
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.lineTo(ex, ey);
+        ctx.stroke();
+        // Arrowhead.
+        const perpX = -ny, perpY = nx;
+        ctx.beginPath();
+        ctx.moveTo(ex, ey);
+        ctx.lineTo(ex - nx * 4 + perpX * 2.5, ey - ny * 4 + perpY * 2.5);
+        ctx.lineTo(ex - nx * 4 - perpX * 2.5, ey - ny * 4 - perpY * 2.5);
+        ctx.closePath();
+        ctx.fill();
+      }
+      ctx.restore();
+    }
   }
   ctx.restore();
 }
@@ -7270,6 +7649,12 @@ function goToMainMenu() {
   graceEndTime = 0;
   lastGainedEffects = [];
   lastGainedTimestamp = -1;
+  // Stop any gameplay-phase voices and reset the tracker so the next run
+  // starts cleanly on phase 1. playTrack('menu') below also clears them via
+  // its non-gameplay branch, but we do it explicitly to keep the reset
+  // symmetric with resetGame().
+  try { SFX.stopAllGameplayTracks(0.5); } catch {}
+  currentGameplayTrack = 1;
   // Crossfade whatever's playing back to the menu track over 0.5s.
   SFX.playTrack('menu', 0.5);
   pauseOverlay.classList.remove('visible');
