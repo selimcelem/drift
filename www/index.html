@@ -1184,6 +1184,13 @@ let novaRings = [];
 let screenShake = 0;
 let pickupParticles = [];
 let planetRipples = [];
+// Shield EMP rings — single expanding cyan ring spawned when a shield (or
+// wraith) destroys a planet. First planet it touches gets destroyed, but no
+// chain reaction. Capped at EMP_RINGS_CAP.
+let empRings = [];
+const EMP_RINGS_CAP = 10;
+const EMP_EXPAND_PX_PER_SEC = 420;
+const EMP_MAX_RADIUS = 180;
 // Fragments from cracked planets that erupt. Small attract/repel-capable bodies
 // that scroll with the world and despawn after their lifetime.
 let crackFragments = [];
@@ -1196,9 +1203,9 @@ const PLAYER_POS_HISTORY_LEN = 90; // 1.5s @ 60fps — covers 0.5s mirror delay
 // the purple targeting-line tint and the low-frequency hum.
 let playerInVoidRange = false;
 let voidHumNodes = null;
-// Burst ability: simultaneous left+right press. 30s cooldown (wall-clock).
+// Burst ability: simultaneous left+right press. 20s cooldown (wall-clock).
 // Reset by resetGame(). burstTriggered is a one-shot flag consumed by update().
-const BURST_COOLDOWN_MS = 30000;
+const BURST_COOLDOWN_MS = 20000;
 let burstCooldownEnd = 0;
 let burstTriggered = false;
 let pendingNovaTimeouts = [];
@@ -1226,14 +1233,14 @@ function pushCapped(arr, item, cap) {
 // in the same unit (ms).
 let activeEffects = { shield: 0, hyperspeed: 0, ghost: 0 };
 let lastPowerupSpawn = 0;
-const SHIELD_DURATION_MS_DEFAULT = 10000;        // 10s
-const SHIELD_DURATION_MS_ASTEROID = 15000;       // 15s for asteroid orb
-const HYPERSPEED_DURATION_MS = 6000;             // 6s base
-const HYPERSPEED_COMBO_DURATION = 8000;          // 8s for warp time / spectral rush
-const GHOST_DURATION_MS_DEFAULT = 8000;          // 8s
-const GHOST_DURATION_MS_COSMIC = 12000;          // 12s for cosmic orb
-const GHOST_ETERNAL_DURATION_DEFAULT = 12000;    // 12s Eternal Phantom
-const GHOST_ETERNAL_DURATION_COSMIC  = 16000;    // 16s Eternal Phantom on cosmic orb
+const SHIELD_DURATION_MS_DEFAULT = 6000;         // 6s
+const SHIELD_DURATION_MS_ASTEROID = 10000;       // 10s for asteroid orb
+const HYPERSPEED_DURATION_MS = 3000;             // 3s base
+const HYPERSPEED_COMBO_DURATION = 5000;          // 5s for warp time / spectral rush
+const GHOST_DURATION_MS_DEFAULT = 5000;          // 5s
+const GHOST_DURATION_MS_COSMIC = 8000;           // 8s for cosmic orb
+const GHOST_ETERNAL_DURATION_DEFAULT = 8000;     // 8s Eternal Phantom
+const GHOST_ETERNAL_DURATION_COSMIC  = 12000;    // 12s Eternal Phantom on cosmic orb
 const SHIELD_BLINK_MS = 1000;                    // last 1s blink
 function SHIELD_DURATION() { return activeOrb === 'asteroid' ? SHIELD_DURATION_MS_ASTEROID : SHIELD_DURATION_MS_DEFAULT; }
 function GHOST_DURATION() { return activeOrb === 'cosmic' ? GHOST_DURATION_MS_COSMIC : GHOST_DURATION_MS_DEFAULT; }
@@ -3242,6 +3249,18 @@ function clearPendingNovaTimeouts() {
   pendingNovaTimeouts = [];
 }
 
+// Spawn a single shield-EMP ring at (x, y). Expands at EMP_EXPAND_PX_PER_SEC
+// up to EMP_MAX_RADIUS; first planet it sweeps gets destroyed (shield visual /
+// sound, NO recursive EMP), earning the same points as a direct shield kill.
+function spawnEmpRing(x, y) {
+  pushCapped(empRings, {
+    x, y,
+    radius: 0, prevR: 0,
+    startTime: Date.now(),
+    triggered: false, // only destroys one planet ever
+  }, EMP_RINGS_CAP);
+}
+
 // Recompute the peak speed multiplier for the current stack count. Stacks
 // scale both the speed-relative cap (3.5 * stacks) and the absolute floor
 // (6.0 * stacks). peakScale is an optional combo bonus (e.g. Spectral Rush
@@ -3388,6 +3407,7 @@ function resetGame() {
   document.getElementById('streakDisplay').classList.remove('visible');
   powerups = [];
   novaRings = []; screenShake = 0;
+  empRings = [];
   pickupParticles = [];
   orbTrailParticles = [];
   planetRipples = [];
@@ -3653,6 +3673,7 @@ function checkCollisions() {
           // Wraith eats the planet — use the file-backed shield destroy clip
           // so it feels like a destroy, not the soft ghost passthrough.
           SFX.planetDestroyed('shield');
+          spawnEmpRing(b.x, b.y);
           bodies.splice(i, 1);
           continue;
         }
@@ -3677,6 +3698,7 @@ function checkCollisions() {
         emitDestroyEffects(bodies[i], 'shield');
         SFX.planetDestroyed('shield');
         addDestroyPoints();
+        spawnEmpRing(bodies[i].x, bodies[i].y);
         bodies.splice(i, 1);
         shieldHits--;
         if (shieldHits <= 0) {
@@ -3722,8 +3744,16 @@ function executeBurst() {
     activateHyperspeed();
     SFX.pickup('hyperspeed', { stacks: hyperSpeedStacks });
   } else if (activeOrb === 'asteroid') {
-    // Fortress Shield — shield+shield combo.
-    activateCombo('shield_shield', player.x, player.y);
+    // Fortress Shield — full 4-hit shield directly without routing through
+    // the shield_shield combo (which would cap at 2 hits).
+    shieldEndTime = Date.now() + SHIELD_DURATION_MS_ASTEROID;
+    activeEffects.shield = SHIELD_DURATION_MS_ASTEROID;
+    shieldHits = 4;
+    shieldBroken = false;
+    fortressShield = true;
+    const def = COMBOS.shield_shield;
+    activeCombos.shield_shield = { def, deps: ['shield'] };
+    lastComboLabel = 'shield_shield';
   }
   screenShake = Math.max(screenShake, 6);
 }
@@ -4011,18 +4041,18 @@ function update() {
     }
   }
 
-  // Warp Time: auto full triple nova every 2s during hyperspeed
+  // Warp Time: auto full triple nova every 3s during hyperspeed
   if (activeCombos.nova_hyperspeed && activeEffects.hyperspeed > 0) {
     if (Date.now() >= warpNextNovaTime) {
       fireTripleNova(player.x, player.y);
-      warpNextNovaTime = Date.now() + 2000;
+      warpNextNovaTime = Date.now() + 3000;
     }
   }
-  // Pulsar: auto full triple nova every 4s during shield
+  // Pulsar: auto full triple nova every 6s during shield
   if (activeCombos.nova_shield && activeEffects.shield > 0) {
     if (Date.now() >= pulsarNextNovaTime) {
       fireTripleNova(player.x, player.y);
-      pulsarNextNovaTime = Date.now() + 4000;
+      pulsarNextNovaTime = Date.now() + 6000;
     }
   }
   // Phantom Blast: damage aura around player
@@ -4158,6 +4188,40 @@ function update() {
       if (!killed) survivors.push(b);
     }
     bodies = survivors;
+  }
+
+  // Shield-EMP rings: expand at EMP_EXPAND_PX_PER_SEC. First planet each ring
+  // touches gets destroyed (shield visual/sfx) — single hop, no chaining.
+  if (empRings.length) {
+    const nowMsE = Date.now();
+    const live = [];
+    for (const r of empRings) {
+      r.prevR = r.radius;
+      r.radius = (nowMsE - r.startTime) / 1000 * EMP_EXPAND_PX_PER_SEC;
+      if (r.radius <= EMP_MAX_RADIUS) live.push(r);
+    }
+    empRings = live;
+    if (empRings.length) {
+      const survivors = [];
+      for (const b of bodies) {
+        let killed = false;
+        for (const r of empRings) {
+          if (r.triggered) continue;
+          const dd = dist(r, b);
+          if (dd < r.radius + b.radius && dd >= r.prevR - 6) {
+            killed = true;
+            r.triggered = true;
+            emitDestroyBurst(b.x, b.y, POWERUP_COLORS.shield.rgb);
+            emitDestroyEffects(b, 'shield');
+            addDestroyPoints();
+            SFX.planetDestroyed('shield');
+            break;
+          }
+        }
+        if (!killed) survivors.push(b);
+      }
+      bodies = survivors;
+    }
   }
 
   // Hyperspeed barrier: destroy planets touching the wedge in front of the player
@@ -6309,6 +6373,28 @@ function drawPlanetRipples() {
   ctx.globalAlpha = 1;
 }
 
+function drawEmpRings() {
+  if (!empRings.length) return;
+  for (const r of empRings) {
+    const k = Math.max(0, 1 - r.radius / EMP_MAX_RADIUS);
+    // Outer cyan body.
+    ctx.globalAlpha = 0.7 * k + 0.2;
+    ctx.strokeStyle = 'rgba(100,220,255,0.7)';
+    ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.arc(r.x, r.y, r.radius, 0, 6.28); ctx.stroke();
+    // Soft outer halo.
+    ctx.globalAlpha = 0.25 * k;
+    ctx.lineWidth = 12;
+    ctx.beginPath(); ctx.arc(r.x, r.y, r.radius, 0, 6.28); ctx.stroke();
+    // White inner core.
+    ctx.globalAlpha = 0.9 * k;
+    ctx.strokeStyle = 'rgba(255,255,255,0.95)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(r.x, r.y, Math.max(0, r.radius - 2), 0, 6.28); ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+}
+
 function drawPickupParticles() {
   const nowPP = Date.now();
   for (const p of pickupParticles) {
@@ -6636,6 +6722,7 @@ function render() {
   if (state==='playing'||state==='dead'||state==='paused'||state==='apocalypse') {
     drawPowerups();
     drawNovaRings();
+    drawEmpRings();
     drawPlanetRipples();
     drawTrail();
     if (state==='playing'||state==='paused'||state==='apocalypse') {
@@ -6699,6 +6786,7 @@ function loop() {
       pickupParticles = [];
       deathParticles = [];
       novaRings = [];
+      empRings = [];
       planetRipples = [];
       destroyEffects = [];
       deathShards = [];
@@ -6800,6 +6888,9 @@ function resumeGame() {
       if (r.startTime !== undefined) r.startTime += pauseDelta;
       if (r._decayStart !== undefined) r._decayStart += pauseDelta;
     }
+    for (const r of empRings) {
+      if (r.startTime !== undefined) r.startTime += pauseDelta;
+    }
     // Particle arrays with startTime fields.
     const shiftStart = (arr) => {
       for (const p of arr) {
@@ -6834,6 +6925,7 @@ function goToMainMenu() {
   leftDown = false; rightDown = false;
   powerups = [];
   novaRings = [];
+  empRings = [];
   pickupParticles = [];
   orbTrailParticles = [];
   planetRipples = [];
