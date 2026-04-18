@@ -2915,7 +2915,11 @@ function spawnBody(yBase) {
   const zoneEnd   = (zone + 1) * (W / 3);
   const xMin = Math.max(radius, zoneStart);
   const xMax = Math.min(W - radius, zoneEnd);
-  const x = xMin >= xMax ? (xMin + xMax) * 0.5 : xMin + Math.random() * (xMax - xMin);
+  let x = xMin >= xMax ? (xMin + xMax) * 0.5 : xMin + Math.random() * (xMax - xMin);
+  // Defensive: never let an invalid x leak into the world; centre as fallback.
+  if (isNaN(x) || x < 0 || x > W) x = W / 2;
+  // And the same for the caller-supplied yBase — never spawn at NaN.
+  if (isNaN(yBase)) yBase = -100;
 
   // Pre-build gradients at local origin (0,0). drawBodies translates by
   // (b.x, b.y). Cached gradients avoid per-frame createRadialGradient calls,
@@ -4622,12 +4626,29 @@ function update() {
   }
   updateBodyTypes(spd);
   updateCrackFragments(spd);
-  bodies = bodies.filter(b => b.y < H + 80);
+  // Drop scrolled-off bodies AND defensive cleanup: NaN coords, the (0,0)
+  // stuck-corner case, and bodies that drifted absurdly far above the screen.
+  bodies = bodies.filter(b => !isNaN(b.x) && !isNaN(b.y) && !(b.x <= 1 && b.y <= 1) && b.y > -H * 3 && b.y < H + 80);
   const bodyCap = effectiveMaxBodies();
   const refillSpacing = effectiveBodySpacing();
   while (bodies.length < bodyCap) {
-    const topY = Math.min(...bodies.map(b => b.y));
-    bodies.push(spawnBody(topY - refillSpacing - Math.random()*50));
+    let yBase;
+    if (bodies.length === 0) {
+      // Math.min of an empty array is +Infinity — explicit fallback so the
+      // first refill seeds a body just above the screen instead of NaN-land.
+      yBase = -BODY_SPACING - Math.random() * 100;
+    } else {
+      const topY = Math.min(...bodies.map(b => b.y));
+      if (topY < 0) {
+        yBase = topY - refillSpacing - Math.random() * 50;
+      } else {
+        // All current bodies are on-screen; force the new one above the
+        // screen so nothing pops in mid-frame.
+        yBase = -50 - Math.random() * 100;
+      }
+    }
+    if (isNaN(yBase)) yBase = -100;
+    bodies.push(spawnBody(yBase));
   }
 
   // Powerup spawning: cooldown scales with frequency, max 2 visible at once.
