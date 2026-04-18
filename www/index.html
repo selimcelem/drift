@@ -1260,7 +1260,12 @@ let nebulaRenderedFrame = -1; // force first render
 
 const PLAYER_R = 6;
 const GRACE_DURATION_MS = 1500; // 1.5s post-reset invulnerability window
-const BODY_SPACING = 180;
+// Vertical gap between bodies — H/4 guarantees ~4 slots visible regardless
+// of device height. Computed at load since H is a const captured at init.
+const BODY_SPACING = Math.floor(H / 4);
+// Round-robin spawn zone (0=left, 1=center, 2=right) so consecutive bodies
+// land in different zones for natural horizontal spread.
+let lastSpawnZone = -1;
 const FORCE = 0.18;
 
 // --- Difficulty ---
@@ -2845,18 +2850,6 @@ function checkGameplayPhase() {
 function spawnBody(yBase) {
   const pool = PHASE_POOLS[phaseForElapsed(elapsedRunSeconds())];
   const type = pool[Math.floor(Math.random() * pool.length)];
-  // After 4 minutes, 50% of new bodies cluster horizontally within 120-180px
-  // of the most recently spawned body (different y because yBase already
-  // offsets vertically). Creates natural side-by-side pairs that fill more of
-  // the screen width than purely random independent spawns.
-  let x;
-  const recent = bodies[bodies.length - 1];
-  if (recent && elapsedRunSeconds() > 240 && Math.random() < 0.5) {
-    const offset = (120 + Math.random() * 60) * (Math.random() < 0.5 ? -1 : 1);
-    x = Math.max(70, Math.min(W - 70, recent.x + offset));
-  } else {
-    x = 70 + Math.random() * (W - 140);
-  }
   let radius, color, glowColor;
 
   // Base sizing + palette per type. Custom-drawn types still carry color/glow
@@ -2903,6 +2896,23 @@ function spawnBody(yBase) {
   } else {
     radius = 16; color = '#888'; glowColor = 'rgba(255,255,255,0.5)';
   }
+
+  // Pick a horizontal zone different from the previous spawn so consecutive
+  // bodies spread across the screen instead of stacking. Within the zone,
+  // x is uniform from body.radius to W-body.radius (no margin).
+  let zone;
+  if (lastSpawnZone < 0) {
+    zone = Math.floor(Math.random() * 3);
+  } else {
+    const choices = [0, 1, 2].filter(z => z !== lastSpawnZone);
+    zone = choices[Math.floor(Math.random() * choices.length)];
+  }
+  lastSpawnZone = zone;
+  const zoneStart = zone * (W / 3);
+  const zoneEnd   = (zone + 1) * (W / 3);
+  const xMin = Math.max(radius, zoneStart);
+  const xMax = Math.min(W - radius, zoneEnd);
+  const x = xMin >= xMax ? (xMin + xMax) * 0.5 : xMin + Math.random() * (xMax - xMin);
 
   // Pre-build gradients at local origin (0,0). drawBodies translates by
   // (b.x, b.y). Cached gradients avoid per-frame createRadialGradient calls,
@@ -2984,26 +2994,19 @@ function spawnBody(yBase) {
 }
 
 // After 4 minutes, +1 body per minute of survival, capped per difficulty so
-// the late-game density bump comes from spacing reduction (effectiveBodySpacing)
-// rather than ever-growing body count.
+// the late-game density bump comes from more bodies filling the H/4 grid
+// rather than runaway counts.
 function effectiveMaxBodies() {
   const d = diff();
   const ramped = d.maxBodies + Math.max(0, Math.floor((elapsedRunSeconds() - 240) / 60));
   return Math.min(ramped, d.maxBodiesCap);
 }
 
-// Spawn spacing is constant — late-game density now comes from the reduced
-// base spacing (BODY_SPACING) and horizontal pair-clustering in spawnBody.
-function effectiveBodySpacing() {
-  return diff().bodySpacing;
-}
-
 function initBodies() {
   bodies = [];
   const max = effectiveMaxBodies();
-  const spacing = effectiveBodySpacing();
   for (let i = 0; i < max; i++)
-    bodies.push(spawnBody(H * 0.05 - i * spacing));
+    bodies.push(spawnBody(H * 0.05 - i * BODY_SPACING));
 }
 
 // --- Powerup helpers ---
@@ -3868,6 +3871,7 @@ function updateRunTimerDisplay() {
 function resetGame() {
   player = { x: W/2, y: H*0.72, vx: 0, vy: 0, angle: 0 };
   trail = []; deathParticles = [];
+  lastSpawnZone = -1;
   initBodies();
   score = 0; frame = 0; planetsPassed = 0;
   closestBody = null;
@@ -4028,15 +4032,15 @@ function applyForce() {
     player.vx += rnx*f; player.vy += rny*f;
   }
 
-  // Very gentle upward bias so player doesn't just sink
-  player.vy -= 0.016;
-
-  // Soft vertical centering: pull the player back down when drifting off the
-  // top. During the final 2s of hyperspeed, gently nudge toward the spawn
-  // position so the player isn't dumped at the top edge when speed snaps back.
+  // Center-seeking vertical gravity: gently pulls the player toward the
+  // vertical midline (H * 0.5) from either side. Replaces the previous
+  // upward drift so neither edge is "free real estate". Emergency boundary
+  // forces below still kick in nearer the deadly top/bottom.
   let ay = 0;
-  if (player.y < H * 0.2) {
-    ay += 0.04 * ((H * 0.2 - player.y) / (H * 0.2));
+  if (player.y < H * 0.5) {
+    ay += 0.015 * ((H * 0.5 - player.y) / (H * 0.5));
+  } else {
+    ay -= 0.015 * ((player.y - H * 0.5) / (H * 0.5));
   }
   if (activeEffects.hyperspeed > 0 && activeEffects.hyperspeed < 3000) {
     // Stacked hyperspeed lands harder: scale pull by the peak stacks reached
@@ -4594,10 +4598,9 @@ function update() {
   updateCrackFragments(spd);
   bodies = bodies.filter(b => b.y < H + 80);
   const bodyCap = effectiveMaxBodies();
-  const spacing = effectiveBodySpacing();
   while (bodies.length < bodyCap) {
     const topY = Math.min(...bodies.map(b => b.y));
-    bodies.push(spawnBody(topY - spacing - Math.random()*50));
+    bodies.push(spawnBody(topY - BODY_SPACING - Math.random()*50));
   }
 
   // Powerup spawning: cooldown scales with frequency, max 2 visible at once.
@@ -7657,6 +7660,7 @@ function restartFromPause() {
 function goToMainMenu() {
   state = 'idle';
   leftDown = false; rightDown = false;
+  lastSpawnZone = -1;
   powerups = [];
   novaRings = [];
   empRings = [];
