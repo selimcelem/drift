@@ -611,6 +611,24 @@
     background: rgba(100,220,255,0.95);
     box-shadow: 0 0 6px rgba(100,200,255,0.6);
   }
+  #guideReturnBtn {
+    margin-top: 14px;
+    background: transparent;
+    border: 1px solid rgba(100,200,255,0.5);
+    color: rgba(100,200,255,0.9);
+    font-family: 'Orbitron', monospace;
+    font-size: 12px;
+    letter-spacing: 4px;
+    padding: 14px 36px;
+    cursor: pointer;
+    text-transform: uppercase;
+    transition: all 0.3s;
+  }
+  #guideReturnBtn:hover {
+    background: rgba(100,200,255,0.1);
+    border-color: rgba(100,200,255,0.9);
+    box-shadow: 0 0 30px rgba(100,200,255,0.3);
+  }
 
   #streakDisplay {
     position: absolute;
@@ -1113,6 +1131,7 @@
         <div id="guideDots" class="guide-dots"></div>
         <button class="guide-arrow" id="guideNext" aria-label="Next">▶</button>
       </div>
+      <button id="guideReturnBtn">RETURN</button>
     </div>
   </div>
   <button id="settingsBtn" aria-label="Settings">⚙</button>
@@ -1420,9 +1439,11 @@ let hyperSpeedStacks = 0;
 let hyperSpeedTimers = [];
 let peakHyperSpeedStacks = 0;
 
-// Shield hitpoints (fortress shield = 2, asteroid orb up to 4)
+// Shield hitpoints (fortress shield = 2, asteroid orb up to 4). Baseline is 0
+// when no shield is active — pickups add via rawActivate's +1/+2 formula, so
+// keeping a stale 1 across breaks would produce off-by-one stacks on pickup.
 const SHIELD_HITS_MAX_ASTEROID = 4;
-let shieldHits = 1;
+let shieldHits = 0;
 
 // --- Combos ---
 const COMBO_DEFS = {
@@ -3399,15 +3420,37 @@ function clearPendingNovaTimeouts() {
   pendingNovaTimeouts = [];
 }
 
-// Spawn a single shield-EMP ring at (x, y). Expands at EMP_EXPAND_PX_PER_SEC
-// up to EMP_MAX_RADIUS; first planet it sweeps gets destroyed (shield visual /
-// sound, NO recursive EMP), earning the same points as a direct shield kill.
+// Spawn a single shield-EMP burst at (x, y). Expands to EMP_MAX_RADIUS; first
+// planet it sweeps gets destroyed (shield visual / sound, NO recursive EMP),
+// earning the same points as a direct shield kill. Visual is an electric dome:
+// expanding ring with lightning inside, sparks on the edge, center flash.
 function spawnEmpRing(x, y) {
+  // 4-6 lightning bolts originating at center and reaching the dome edge.
+  // Each bolt has a fixed angle; its segment offsets are re-randomized during
+  // draw to produce the flicker effect. Segment count is fixed per-bolt.
+  const boltCount = 4 + Math.floor(Math.random() * 3);
+  const bolts = [];
+  for (let i = 0; i < boltCount; i++) {
+    bolts.push({
+      angle: (i / boltCount) * Math.PI * 2 + Math.random() * 0.4,
+      segs: 5 + Math.floor(Math.random() * 2), // 5-6
+    });
+  }
+  // 12-16 edge spark angles — sparks ride the ring circumference.
+  const sparkCount = 12 + Math.floor(Math.random() * 5);
+  const sparks = [];
+  for (let i = 0; i < sparkCount; i++) {
+    sparks.push({
+      angle: (i / sparkCount) * Math.PI * 2 + Math.random() * 0.25,
+      phase: Math.random() * 6.28,
+    });
+  }
   pushCapped(empRings, {
     x, y,
     radius: 0, prevR: 0,
     startTime: Date.now(),
     triggered: false, // only destroys one planet ever
+    bolts, sparks,
   }, EMP_RINGS_CAP);
 }
 
@@ -3584,7 +3627,7 @@ function resetGame() {
   peakHyperSpeedStacks = 0;
   if (hyperspeedWhooshNodes) { try { hyperspeedWhooshNodes.stop(0.1); } catch {} hyperspeedWhooshNodes = null; }
   shieldBroken = false;
-  shieldHits = 1;
+  shieldHits = 0;
   fortressShield = false;
   activeCombos = {};
   lastComboLabel = null;
@@ -3856,7 +3899,7 @@ function checkCollisions() {
           activeEffects.shield = 0;
           shieldBroken = true;
           fortressShield = false;
-          shieldHits = 1;
+          shieldHits = 0;
         }
         break;
       }
@@ -4342,13 +4385,14 @@ function update() {
 
   // Shield-EMP rings: expand at EMP_EXPAND_PX_PER_SEC. First planet each ring
   // touches gets destroyed (shield visual/sfx) — single hop, no chaining.
+  // Keep rings alive through the 400ms dome window (+ small fade tail).
   if (empRings.length) {
     const nowMsE = Date.now();
     const live = [];
     for (const r of empRings) {
       r.prevR = r.radius;
       r.radius = (nowMsE - r.startTime) / 1000 * EMP_EXPAND_PX_PER_SEC;
-      if (r.radius <= EMP_MAX_RADIUS) live.push(r);
+      if (nowMsE - r.startTime < 420) live.push(r);
     }
     empRings = live;
     if (empRings.length) {
@@ -4357,10 +4401,12 @@ function update() {
         let killed = false;
         for (const r of empRings) {
           if (r.triggered) continue;
+          if (r.radius > EMP_MAX_RADIUS) continue;
           const dd = dist(r, b);
           if (dd < r.radius + b.radius && dd >= r.prevR - 6) {
             killed = true;
             r.triggered = true;
+            r.victim = { x: b.x, y: b.y, expiry: nowMsE + 100 };
             emitDestroyBurst(b.x, b.y, POWERUP_COLORS.shield.rgb);
             emitDestroyEffects(b, 'shield');
             addDestroyPoints();
@@ -6526,22 +6572,127 @@ function drawPlanetRipples() {
 
 function drawEmpRings() {
   if (!empRings.length) return;
+  const now = Date.now();
+  const maxLifeMs = 400; // dome expansion window — everything keyed off this
   for (const r of empRings) {
-    const k = Math.max(0, 1 - r.radius / EMP_MAX_RADIUS);
-    // Outer cyan body.
-    ctx.globalAlpha = 0.7 * k + 0.2;
-    ctx.strokeStyle = 'rgba(100,220,255,0.7)';
-    ctx.lineWidth = 4;
-    ctx.beginPath(); ctx.arc(r.x, r.y, r.radius, 0, 6.28); ctx.stroke();
-    // Soft outer halo.
-    ctx.globalAlpha = 0.25 * k;
-    ctx.lineWidth = 12;
-    ctx.beginPath(); ctx.arc(r.x, r.y, r.radius, 0, 6.28); ctx.stroke();
-    // White inner core.
-    ctx.globalAlpha = 0.9 * k;
-    ctx.strokeStyle = 'rgba(255,255,255,0.95)';
-    ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.arc(r.x, r.y, Math.max(0, r.radius - 2), 0, 6.28); ctx.stroke();
+    const age = now - r.startTime;
+    const life = Math.max(0, Math.min(1, age / maxLifeMs)); // 0..1 progress
+    const fade = 1 - life;                                   // 1..0 alpha
+
+    ctx.save();
+    ctx.translate(r.x, r.y);
+
+    // 1) GROUND SHOCKWAVE — faint squashed ellipse beneath the dome so it
+    // feels grounded. Expands horizontally faster than vertically.
+    if (life < 1) {
+      const gx = 40 + life * 180;
+      const gy = 10 + life * 45;
+      ctx.save();
+      ctx.globalAlpha = 0.08 * fade;
+      ctx.fillStyle = 'rgba(100,220,255,1)';
+      ctx.beginPath();
+      ctx.ellipse(0, 18, gx, gy, 0, 0, 6.28);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // 2) EXPANDING DOME RING — inner and outer concentric circles with a
+    // semi-transparent cyan fill between them.
+    const outerR = 20 + life * (EMP_MAX_RADIUS - 20); // 20 → 180
+    const innerR = Math.max(0, outerR - 20);           // ~0 → 160
+    // Ring-fill band (draw outer-filled then punch out inner via even-odd).
+    ctx.save();
+    ctx.globalAlpha = fade;
+    ctx.fillStyle = 'rgba(100,220,255,0.15)';
+    ctx.beginPath();
+    ctx.arc(0, 0, outerR, 0, 6.28);
+    ctx.arc(0, 0, innerR, 0, 6.28, true);
+    ctx.fill('evenodd');
+    ctx.restore();
+    // Outer stroke — bright cyan.
+    ctx.globalAlpha = fade;
+    ctx.strokeStyle = 'rgba(100,220,255,0.9)';
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(0, 0, outerR, 0, 6.28); ctx.stroke();
+    // Inner stroke — white edge.
+    ctx.globalAlpha = fade * 0.75;
+    ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(0, 0, innerR, 0, 6.28); ctx.stroke();
+
+    // 3) LIGHTNING BOLTS — from center to dome edge, flicker every 3 frames.
+    // Fade over first 0.3s (life < 0.75 at maxLifeMs=400).
+    const boltT = Math.min(1, age / 300);
+    const boltFade = 1 - boltT;
+    if (boltFade > 0 && r.bolts) {
+      // Re-randomize offsets on a 3-frame cycle so bolts visibly flicker.
+      const flickerTick = Math.floor(frame / 3);
+      const rng = mulberry32((r.startTime & 0xffff) ^ flickerTick);
+      ctx.save();
+      ctx.shadowColor = 'rgba(150,255,255,0.7)';
+      ctx.shadowBlur = 6;
+      ctx.lineWidth = 1.6;
+      ctx.strokeStyle = `rgba(255,255,255,${0.9 * boltFade + 0.1})`;
+      for (const b of r.bolts) {
+        const tipR = outerR - 4;
+        const dx = Math.cos(b.angle);
+        const dy = Math.sin(b.angle);
+        const perpX = -dy, perpY = dx;
+        ctx.globalAlpha = boltFade;
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        for (let i = 1; i < b.segs; i++) {
+          const u = i / b.segs;
+          const bx = dx * tipR * u;
+          const by = dy * tipR * u;
+          const off = (rng() - 0.5) * 30; // ±15px perpendicular
+          ctx.lineTo(bx + perpX * off, by + perpY * off);
+        }
+        // Final segment snaps onto the dome edge.
+        ctx.lineTo(dx * tipR, dy * tipR);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    // 4) BRIGHT CENTER FLASH — implodes: 20px → 0 over first 0.2s.
+    const flashT = Math.min(1, age / 200);
+    if (flashT < 1) {
+      const fk = 1 - flashT;
+      const fr = 20 * fk;
+      ctx.save();
+      ctx.globalAlpha = fk;
+      const flash = ctx.createRadialGradient(0, 0, 0, 0, 0, Math.max(0.5, fr));
+      flash.addColorStop(0, 'rgba(255,255,255,1)');
+      flash.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = flash;
+      ctx.beginPath(); ctx.arc(0, 0, Math.max(0.5, fr), 0, 6.28); ctx.fill();
+      ctx.restore();
+    }
+
+    // 5) ELECTRIC SPARKS on the dome edge — ride the expanding ring,
+    // flicker on/off every 2 frames, fade with the ring.
+    if (r.sparks && fade > 0) {
+      const flick = (frame & 2) ? 1 : 0.25;
+      for (const s of r.sparks) {
+        // Individual sparks get a phase-offset flicker so they're not uniform.
+        const on = (((frame + (s.phase * 7 | 0)) / 2) | 0) & 1 ? 1 : 0.25;
+        const a = on * flick;
+        const sx = Math.cos(s.angle) * outerR;
+        const sy = Math.sin(s.angle) * outerR;
+        ctx.globalAlpha = fade * a;
+        const sg = ctx.createRadialGradient(sx, sy, 0, sx, sy, 5);
+        sg.addColorStop(0, 'rgba(255,255,255,1)');
+        sg.addColorStop(0.5, 'rgba(170,240,255,0.7)');
+        sg.addColorStop(1, 'rgba(100,220,255,0)');
+        ctx.fillStyle = sg;
+        ctx.beginPath(); ctx.arc(sx, sy, 4, 0, 6.28); ctx.fill();
+        ctx.fillStyle = 'rgba(255,255,255,1)';
+        ctx.beginPath(); ctx.arc(sx, sy, 2, 0, 6.28); ctx.fill();
+      }
+    }
+
+    ctx.restore();
   }
   ctx.globalAlpha = 1;
 }
@@ -7044,6 +7195,7 @@ function resumeGame() {
     }
     for (const r of empRings) {
       if (r.startTime !== undefined) r.startTime += pauseDelta;
+      if (r.victim && r.victim.expiry !== undefined) r.victim.expiry += pauseDelta;
     }
     // Particle arrays with startTime fields.
     const shiftStart = (arr) => {
@@ -7106,7 +7258,7 @@ function goToMainMenu() {
   peakHyperSpeedStacks = 0;
   if (hyperspeedWhooshNodes) { try { hyperspeedWhooshNodes.stop(0.1); } catch {} hyperspeedWhooshNodes = null; }
   shieldBroken = false;
-  shieldHits = 1;
+  shieldHits = 0;
   fortressShield = false;
   activeCombos = {};
   lastComboLabel = null;
@@ -7521,6 +7673,10 @@ document.getElementById('guideBtn').addEventListener('click', () => {
 });
 guideCloseBtn.addEventListener('click', () => {
   SFX.clickSecondary();
+  closeGuide();
+});
+document.getElementById('guideReturnBtn').addEventListener('click', () => {
+  SFX.clickPrimary();
   closeGuide();
 });
 guidePrevBtn.addEventListener('click', () => {
