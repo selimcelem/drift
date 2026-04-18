@@ -6,7 +6,7 @@
     "backgroundColor": "#00000a",
     "allowMixedContent": true,
     "captureInput": true,
-    "webContentsDebuggingEnabled": false,
+    "webContentsDebuggingEnabled": true,
     "appendUserAgent": "Drift",
     "overrideUserAgent": null
   },
