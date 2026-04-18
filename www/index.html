@@ -1353,7 +1353,9 @@ function saveUnlockedOrbs() {
   try { localStorage.setItem('drift_unlocked_orbs', JSON.stringify(unlockedOrbs)); } catch {}
 }
 function getOrbBonus() { return ORB_DEFS[activeOrb] || ORB_DEFS.cyan; }
-function getStreakCap() { return getOrbBonus().streakCap || 8; }
+// Universal streak cap — all orbs share the same 15-streak ceiling. Per-orb
+// streakCap fields in ORB_DEFS are intentionally ignored.
+function getStreakCap() { return 15; }
 function activeOrbColor() { return getOrbBonus().color; }
 function formatCrystals(n) {
   return (n || 0).toLocaleString('en-US');
@@ -3434,7 +3436,8 @@ function addDestroyPoints() {
   destroyStreak++;
   lastDestroyTime = Date.now();
   const streakForScore = Math.min(destroyStreak, getStreakCap());
-  const pts = streakForScore * streakForScore;
+  // Flat ×4 multiplier per streak slot — max per kill = 15 × 4 = 60 pts.
+  const pts = streakForScore * 4;
   score += pts;
   runStats.totalDestroyed++;
   runStats.pointsFromDestroying += pts;
@@ -3711,9 +3714,11 @@ function rawActivate(type, x, y) {
     shieldEndTime = Date.now() + SHIELD_DURATION();
     activeEffects.shield = SHIELD_DURATION();
     shieldBroken = false;
-    // Either/or increment — NOT additive. Exactly one branch runs.
+    // Both orbs gain +1 hit per pickup; only the cap differs (asteroid 4,
+    // default 2). Asteroid players reach the 4-hit max via burst (Fortress
+    // gives 2) plus 2 shield pickups.
     if (activeOrb === 'asteroid') {
-      shieldHits = Math.min(4, shieldHits + 2);
+      shieldHits = Math.min(4, shieldHits + 1);
     } else {
       shieldHits = Math.min(2, shieldHits + 1);
     }
@@ -4746,10 +4751,10 @@ function update() {
   }
 
   // Powerup spawning: cooldown scales with frequency, max 2 visible at once.
-  // After 2 minutes, frequency scales +15% per extra minute survived so the
-  // powerup flow keeps up with the rising body density.
+  // After 2 minutes, frequency scales +8% per extra minute survived, capped at
+  // a +50% total boost above the base difficulty rate.
   const minutesOver = Math.max(0, Math.floor((elapsedRunSeconds() - 120) / 60));
-  const effectivePowerupFrequency = d.powerupFrequency * (1 + minutesOver * 0.15);
+  const effectivePowerupFrequency = d.powerupFrequency * Math.min(1.5, 1 + 0.08 * minutesOver);
   const spawnInterval = 220 / effectivePowerupFrequency;
   if (powerups.length < 2 && frame - lastPowerupSpawn > spawnInterval && Math.random() < 0.025) {
     spawnPowerup();
@@ -4758,9 +4763,9 @@ function update() {
 
   // Powerup scroll + pickup detection. Pickup radius boosted 10% over the
   // old literal 6px bumper so near-misses feel consistent with the visual.
-  // Powerups scroll at a capped speed so at high game speeds they slow
-  // relative to planets, giving more time to grab them.
-  const powerupScrollSpeed = Math.min(spd, 2.5) * 0.8 + Math.max(0, spd - 2.5) * 0.3;
+  // Powerups scroll slightly slower than the world so the player always has
+  // a touch more time to grab them, regardless of game speed.
+  const powerupScrollSpeed = spd * 0.85;
   for (const p of powerups) {
     p.y += powerupScrollSpeed;
     p.pulse += 0.11;
@@ -5305,10 +5310,11 @@ function triggerDeath() {
   SFX.playTrack('results', 0.3);
   clearPendingNovaTimeouts();
 
-  // Time bonus: every 30s survived = score * 0.1 bonus, capped at 15 intervals.
+  // Time bonus: every 30s survived = score * 0.05 bonus, capped at 20 intervals
+  // (= 10 minutes, the apocalypse mark). Half the previous generosity.
   const elapsedAtDeath = elapsedRunSeconds();
   const survivedIntervals = Math.min(20, Math.floor(elapsedAtDeath / 30));
-  const timeBonus = Math.floor(score * 0.1 * survivedIntervals);
+  const timeBonus = Math.floor(score * 0.05 * survivedIntervals);
   const baseScore = score;
   score += timeBonus;
 
