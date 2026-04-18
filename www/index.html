@@ -8359,7 +8359,10 @@ function openLeaderboardFromMenu() {
     setDifficulty: (d) => { menuLbDifficulty = d; },
   };
   renderMenuLocal(menuLbDifficulty);
-  document.getElementById('leaderboardReturnBtn').style.display = '';
+  // The CSS rule for #leaderboardReturnBtn defaults to display:none, so
+  // setting '' would just fall back to that. Force an explicit display value.
+  console.log('showing return btn');
+  document.getElementById('leaderboardReturnBtn').style.display = 'inline-block';
 }
 
 document.getElementById('leaderboardBtn').addEventListener('click', () => {
