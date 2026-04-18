@@ -1198,7 +1198,7 @@ let playerInVoidRange = false;
 let voidHumNodes = null;
 // Burst ability: simultaneous left+right press. 15s cooldown. Reset by
 // resetGame(). burstTriggered is a one-shot flag consumed by update().
-const BURST_COOLDOWN_FRAMES = 900;
+const BURST_COOLDOWN_FRAMES = 1800;
 let burstCooldown = 0;
 let burstTriggered = false;
 let pendingNovaTimeouts = [];
@@ -2000,7 +2000,7 @@ const SFX = (function() {
   // or before the asset finishes decoding.
   function screamShriek() {
     if (sfxBuffers.scream) {
-      playSfxBuffer('scream', 0.4);
+      playSfxBuffer('scream', 0.2);
       return;
     }
     // Kick off a background load so subsequent cues can use the file.
@@ -2426,7 +2426,7 @@ function spawnBody(yBase) {
     color = '#4a0080'; glowColor = 'rgba(140,40,200,0.85)';
   } else if (type === 'screaming') {
     radius = 17 + Math.random() * 9;
-    color = '#1a1a1a'; glowColor = 'rgba(60,60,60,0.7)';
+    color = '#4a4040'; glowColor = 'rgba(80,20,20,0.3)';
   } else if (type === 'void') {
     radius = 14 + Math.random() * 7;
     color = '#000'; glowColor = 'rgba(180,240,255,0.6)';
@@ -2492,6 +2492,7 @@ function spawnBody(yBase) {
     body.screamSurgeFrames = 0;
     body.screamSeed = Math.floor(Math.random() * 1e6);
     body.shockwaves = [];
+    body.contractRings = [];
   } else if (type === 'void') {
     body.voidPulse = Math.random() * 6.28;
   } else if (type === 'heart') {
@@ -3398,12 +3399,15 @@ function applyEnvironmentForces() {
     } else if (b.type === 'void') {
       const dx = player.x - b.x, dy = player.y - b.y;
       const d = Math.hypot(dx, dy);
-      if (d < b.radius * 2 && d > 0.5) {
+      if (d < b.radius * 3.5 && d > 0.5) {
         // Gentle repel away from the void, strongest at the center.
-        const repelStrength = 0.08 * (1 - d / (b.radius * 2));
+        const repelStrength = 0.18 * (1 - d / (b.radius * 3.5));
         player.vx += (dx / d) * repelStrength;
         player.vy += (dy / d) * repelStrength;
         nearVoid = true;
+        b.voidRepellingPlayer = true;
+      } else {
+        b.voidRepellingPlayer = false;
       }
     }
   }
@@ -3483,8 +3487,8 @@ function applyForce() {
     if (player.y > H * 0.85) {
       ay -= 0.035 * ((player.y - H * 0.85) / (H * 0.15));
     }
-    if (player.y < H * 0.15) {
-      ay += 0.025 * ((H * 0.15 - player.y) / (H * 0.15));
+    if (player.y < H * 0.22) {
+      ay += 0.06 * ((H * 0.22 - player.y) / (H * 0.22));
     }
   }
   player.vy += ay;
@@ -3662,7 +3666,7 @@ function updateBodyTypes(spd) {
       if (onScreen) {
         if (b.lastToothSound === undefined) b.lastToothSound = frame - 90;
         if (frame - b.lastToothSound > 180) {
-          SFX.playSfxBuffer('toothed', 0.15);
+          SFX.playSfxBuffer('toothed', 0.08);
           b.lastToothSound = frame;
         }
       }
@@ -3736,20 +3740,31 @@ function updateBodyTypes(spd) {
         b.screamSurgeFrames = 48; // 0.8s @ 60fps
         // Fire a visible shockwave ripple emanating from the body.
         b.shockwaves.push({ age: 0, maxLife: 28 });
+        // Contracting "suck" rings — 3 rings staggered so they drop in over
+        // the 0.8s surge, each shrinking toward the planet center.
+        if (!b.contractRings) b.contractRings = [];
+        b.contractRings.push({ age: 0,   maxLife: 48 });
+        b.contractRings.push({ age: -16, maxLife: 48 });
+        b.contractRings.push({ age: -32, maxLife: 48 });
       }
       if (b.screamSurgeFrames > 0) b.screamSurgeFrames--;
       if (b.shockwaves.length) {
         for (const sw of b.shockwaves) sw.age++;
         b.shockwaves = b.shockwaves.filter(sw => sw.age < sw.maxLife);
       }
+      if (b.contractRings && b.contractRings.length) {
+        for (const cr of b.contractRings) cr.age++;
+        b.contractRings = b.contractRings.filter(cr => cr.age < cr.maxLife);
+      }
     } else if (b.type === 'void') {
       b.voidPulse += 0.03;
     } else if (b.type === 'heart') {
-      const hz = 1.2 + scrollSpeed() * 0.05;
+      const hz = 0.6 + scrollSpeed() * 0.025;
       b.heartPhase += hz * (1 / 60) * 2 * Math.PI;
-      b.heartScale = 1 + 0.125 * (1 + Math.sin(b.heartPhase));
-      // Irregular blood drips off the bottom.
-      if (Math.random() < 0.025 && b.bloodDrops.length < 6) {
+      b.heartScale = 1 + 0.225 * (1 + Math.sin(b.heartPhase));
+      // Irregular blood drips off the bottom — halved rate to match the
+      // slower heartbeat pulse.
+      if (Math.random() < 0.0125 && b.bloodDrops.length < 6) {
         b.bloodDrops.push({
           offX: (Math.random() - 0.5) * b.radius * 0.6,
           age: 0, maxAge: 60 + Math.floor(Math.random() * 30),
@@ -3758,12 +3773,10 @@ function updateBodyTypes(spd) {
       }
       for (const d of b.bloodDrops) d.age++;
       b.bloodDrops = b.bloodDrops.filter(d => d.age < d.maxAge);
-      // Heartbeat SFX once per pulse: arm when scale drops below 1.1, fire
-      // once when it crosses 1.2 on the way up.
-      if (b.heartScale < 1.1) b.lastHeartSound = 0;
-      if (b.heartScale > 1.2 && !b.lastHeartSound) {
+      // Heartbeat SFX throttled to at most once every 2 seconds per planet.
+      if (b.lastHeartSound === undefined || frame - b.lastHeartSound > 120) {
         const onScreen = b.y > -b.radius && b.y < H + b.radius;
-        if (onScreen) SFX.playSfxBuffer('heartbeat', 0.25);
+        if (onScreen) SFX.playSfxBuffer('heartbeat', 0.15);
         b.lastHeartSound = frame;
       }
     } else if (b.type === 'mirror') {
@@ -3987,8 +4000,11 @@ function update() {
 
   // Powerup scroll + pickup detection. Pickup radius boosted 10% over the
   // old literal 6px bumper so near-misses feel consistent with the visual.
+  // Powerups scroll at a capped speed so at high game speeds they slow
+  // relative to planets, giving more time to grab them.
+  const powerupScrollSpeed = Math.min(spd, 2.5) * 0.8 + Math.max(0, spd - 2.5) * 0.3;
   for (const p of powerups) {
-    p.y += spd;
+    p.y += powerupScrollSpeed;
     p.pulse += 0.11;
     if (!p.collected && dist(player, p) < (p.radius + PLAYER_R + 6) * 1.1) {
       if (p.pairSibling && !p.pairSibling.collected) {
@@ -5143,6 +5159,14 @@ function drawScreaming(b) {
   else if (p < 5.5) mouthT = 1;
   else if (p < 6)   mouthT = 1 - (p - 5.5) / 0.5;
 
+  // Subtle outer blood-glow so the dark planet reads against space.
+  const outerR = b.radius * 1.8;
+  const outerGlow = ctx.createRadialGradient(b.x, b.y, b.radius, b.x, b.y, outerR);
+  outerGlow.addColorStop(0, 'rgba(80,20,20,0.3)');
+  outerGlow.addColorStop(1, 'rgba(80,20,20,0)');
+  ctx.fillStyle = outerGlow;
+  ctx.beginPath(); ctx.arc(b.x, b.y, outerR, 0, 6.28); ctx.fill();
+
   // Shockwaves emanating outward when screaming.
   if (b.shockwaves.length) {
     for (const sw of b.shockwaves) {
@@ -5156,12 +5180,27 @@ function drawScreaming(b) {
     ctx.globalAlpha = 1;
   }
 
+  // Contracting "suck" rings — 3 rings shrinking inward during the surge,
+  // visually signalling the gravity pull toward the planet.
+  if (b.contractRings && b.contractRings.length) {
+    ctx.strokeStyle = 'rgba(255,50,50,1)';
+    ctx.lineWidth = 1.5;
+    for (const cr of b.contractRings) {
+      if (cr.age < 0) continue;
+      const k = cr.age / cr.maxLife;
+      const rr = b.radius * (3 - k * 2.5);
+      ctx.globalAlpha = (1 - k) * 0.25;
+      ctx.beginPath(); ctx.arc(b.x, b.y, rr, 0, 6.28); ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  }
+
   // Base: dark grey with brown/rust undertones — use a slight radial gradient.
   const baseGrad = ctx.createRadialGradient(b.x - b.radius*0.3, b.y - b.radius*0.3, 0, b.x, b.y, b.radius);
   const hotTint = mouthT * 40;
-  baseGrad.addColorStop(0, `rgb(${66 + hotTint},54,46)`);
-  baseGrad.addColorStop(0.6, `rgb(${42 + hotTint},36,30)`);
-  baseGrad.addColorStop(1, '#1a1410');
+  baseGrad.addColorStop(0, `rgb(${96 + hotTint},78,70)`);
+  baseGrad.addColorStop(0.6, `rgb(${74 + hotTint},64,58)`);
+  baseGrad.addColorStop(1, '#3a2e28');
   ctx.fillStyle = baseGrad;
   ctx.beginPath(); ctx.arc(b.x, b.y, b.radius, 0, 6.28); ctx.fill();
 
@@ -5290,6 +5329,16 @@ function drawScreaming(b) {
 
 function drawVoid(b) {
   ctx.save();
+  // Expanding sonar-style pulse rings showing the repel zone. 3 concentric
+  // rings at 120deg phase offsets, oscillating between radius*1.5 and *3.5.
+  ctx.strokeStyle = 'rgba(100,0,180,0.15)';
+  ctx.lineWidth = 1.5;
+  for (let i = 0; i < 3; i++) {
+    const phase = b.voidPulse + i * 2.0944;
+    const t = (Math.sin(phase) + 1) * 0.5;
+    const rr = b.radius * (1.5 + 2 * t);
+    ctx.beginPath(); ctx.arc(b.x, b.y, rr, 0, 6.28); ctx.stroke();
+  }
   // Dark aura.
   const auraR = b.radius * 2;
   const aura = ctx.createRadialGradient(b.x, b.y, b.radius, b.x, b.y, auraR);
@@ -5304,6 +5353,18 @@ function drawVoid(b) {
   ctx.strokeStyle = 'rgba(180,240,255,0.85)';
   ctx.lineWidth = 1.5;
   ctx.beginPath(); ctx.arc(b.x, b.y, b.radius, 0, 6.28); ctx.stroke();
+  // Purple dashed repel-force line to the player when in range.
+  if (b.voidRepellingPlayer) {
+    ctx.save();
+    ctx.strokeStyle = 'rgba(100,0,180,0.4)';
+    ctx.lineWidth = 1.2;
+    ctx.setLineDash([6, 5]);
+    ctx.beginPath();
+    ctx.moveTo(b.x, b.y);
+    ctx.lineTo(player.x, player.y);
+    ctx.stroke();
+    ctx.restore();
+  }
   ctx.restore();
 }
 
