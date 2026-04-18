@@ -1176,22 +1176,24 @@
 </div>
 
 <script>
-Sentry.init({
-  dsn: "https://b52c3bbfca4f71a5b09e4a7e9e7352c8@o4511234672689152.ingest.de.sentry.io/4511234681339984",
-  tracesSampleRate: 0.2,
-  release: "drift@1.4.0",
-  environment: "production",
-  beforeSend(event) {
-    // Don't send events from localhost/dev
-    if (window.location.hostname === 'localhost' ||
-        window.location.hostname === '127.0.0.1') {
-      return null;
+if (typeof Sentry !== 'undefined') {
+  Sentry.init({
+    dsn: "https://b52c3bbfca4f71a5b09e4a7e9e7352c8@o4511234672689152.ingest.de.sentry.io/4511234681339984",
+    tracesSampleRate: 0.2,
+    release: "drift@1.4.0",
+    environment: "production",
+    beforeSend(event) {
+      // Don't send events from localhost/dev
+      if (window.location.hostname === 'localhost' ||
+          window.location.hostname === '127.0.0.1') {
+        return null;
+      }
+      return event;
     }
-    return event;
-  }
-});
+  });
 
-Sentry.setUser({ username: localStorage.getItem('drift_username') });
+  Sentry.setUser({ username: localStorage.getItem('drift_username') });
+}
 
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
@@ -1268,7 +1270,7 @@ const DIFFICULTIES = {
   EXTREME: { startSpeed: 2.0, maxSpeed: 5.0, speedCapScore: 300, maxBodies: 8, powerupFrequency: 1.8, crystalMult: 1.25 },
 };
 let difficulty = 'NORMAL';
-Sentry.setTag('difficulty', difficulty);
+if (typeof Sentry !== 'undefined') Sentry.setTag('difficulty', difficulty);
 function diff() { return DIFFICULTIES[difficulty]; }
 
 // --- Orbs & crystal currency ---
@@ -2740,7 +2742,7 @@ function getUsername() {
 
 function setUsername(name) {
   try { localStorage.setItem('drift_username', name); } catch {}
-  Sentry.setUser({ username: localStorage.getItem('drift_username') });
+  if (typeof Sentry !== 'undefined') Sentry.setUser({ username: localStorage.getItem('drift_username') });
 }
 
 function submitScoreOnline(username, s, d) {
@@ -3437,7 +3439,7 @@ function syncComboDurations(...effectKeys) {
 function activateCombo(key, x, y) {
   const def = COMBO_DEFS[key];
   if (!def) return;
-  Sentry.addBreadcrumb({ category: 'combo', message: 'combo activated: ' + key, level: 'info' });
+  if (typeof Sentry !== 'undefined') Sentry.addBreadcrumb({ category: 'combo', message: 'combo activated: ' + key, level: 'info' });
   // Guard: if the same combo is already active, refresh its timers without
   // re-running the activation body. Re-activating Warp Time or Pulsar while
   // already running would schedule a second stream of setTimeout-driven nova
@@ -3579,8 +3581,8 @@ function activateCombo(key, x, y) {
 }
 
 function activatePair(a, b) {
-  Sentry.addBreadcrumb({ category: 'powerup', message: 'picked up ' + a.type, level: 'info' });
-  Sentry.addBreadcrumb({ category: 'powerup', message: 'picked up ' + b.type, level: 'info' });
+  if (typeof Sentry !== 'undefined') Sentry.addBreadcrumb({ category: 'powerup', message: 'picked up ' + a.type, level: 'info' });
+  if (typeof Sentry !== 'undefined') Sentry.addBreadcrumb({ category: 'powerup', message: 'picked up ' + b.type, level: 'info' });
   emitPickupParticles(a.x, a.y, a.type);
   emitPickupParticles(b.x, b.y, b.type);
   // Defer hyperspeed pickup sound until after activation so it picks up the
@@ -3706,7 +3708,7 @@ function activateHyperspeed(durationOverride, peakScale) {
   if (hyperSpeedStacks < HYPERSPEED_MAX_STACKS()) {
     hyperSpeedStacks++;
     hyperSpeedTimers.push(newEnd);
-    Sentry.addBreadcrumb({ category: 'hyperspeed', message: 'stacks: ' + hyperSpeedStacks, level: 'info' });
+    if (typeof Sentry !== 'undefined') Sentry.addBreadcrumb({ category: 'hyperspeed', message: 'stacks: ' + hyperSpeedStacks, level: 'info' });
   } else {
     // At max: refresh the timer that would expire soonest so the player still
     // feels the pickup as a duration extension.
@@ -3732,7 +3734,7 @@ function activateHyperspeed(durationOverride, peakScale) {
 }
 
 function activatePowerup(type, x, y) {
-  Sentry.addBreadcrumb({ category: 'powerup', message: 'picked up ' + type, level: 'info' });
+  if (typeof Sentry !== 'undefined') Sentry.addBreadcrumb({ category: 'powerup', message: 'picked up ' + type, level: 'info' });
   emitPickupParticles(x, y, type);
   // Hyperspeed pickup sound is played AFTER rawActivate so it can use the
   // new stack count for its pitch shift; everything else plays immediately.
@@ -4180,7 +4182,7 @@ function checkCollisions() {
 // Burst ability — per-orb effect. Called once when cooldown hits 0 and the
 // player is holding both sides simultaneously.
 function executeBurst() {
-  Sentry.addBreadcrumb({ category: 'burst', message: 'burst: ' + activeOrb, level: 'info' });
+  if (typeof Sentry !== 'undefined') Sentry.addBreadcrumb({ category: 'burst', message: 'burst: ' + activeOrb, level: 'info' });
   if (activeOrb === 'cyan') {
     const types = ['shield','nova','hyperspeed','ghost'];
     const type = types[Math.floor(Math.random() * types.length)];
@@ -4789,7 +4791,7 @@ function apocalypseElapsed() {
 
 function startApocalypse() {
   if (state === 'apocalypse' || state === 'dead') return;
-  Sentry.addBreadcrumb({ category: 'apocalypse', message: 'sequence start', level: 'info' });
+  if (typeof Sentry !== 'undefined') Sentry.addBreadcrumb({ category: 'apocalypse', message: 'sequence start', level: 'info' });
   state = 'apocalypse';
   apocalypseStart = Date.now();
   apocalypseImpactTriggered = false;
@@ -5094,7 +5096,7 @@ function resetApocalypse() {
 }
 
 function triggerDeath() {
-  Sentry.addBreadcrumb({ category: 'death', message: 'died at score ' + score, level: 'info' });
+  if (typeof Sentry !== 'undefined') Sentry.addBreadcrumb({ category: 'death', message: 'died at score ' + score, level: 'info' });
   state = 'dead';
   if (typeof syncUpdateBanner === 'function') syncUpdateBanner();
   pauseBtn.classList.remove('visible');
@@ -7782,7 +7784,7 @@ document.querySelectorAll('.diff-btn').forEach(btn => {
     document.querySelectorAll('.diff-btn').forEach(b => b.classList.remove('selected'));
     btn.classList.add('selected');
     difficulty = btn.dataset.diff;
-    Sentry.setTag('difficulty', difficulty);
+    if (typeof Sentry !== 'undefined') Sentry.setTag('difficulty', difficulty);
   });
 });
 
