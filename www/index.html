@@ -1353,9 +1353,10 @@ function saveUnlockedOrbs() {
   try { localStorage.setItem('drift_unlocked_orbs', JSON.stringify(unlockedOrbs)); } catch {}
 }
 function getOrbBonus() { return ORB_DEFS[activeOrb] || ORB_DEFS.cyan; }
-// Universal streak cap — all orbs share the same 15-streak ceiling. Per-orb
-// streakCap fields in ORB_DEFS are intentionally ignored.
-function getStreakCap() { return 15; }
+// Universal streak cap — all orbs share the same 8-streak ceiling. Per-orb
+// streakCap fields in ORB_DEFS are intentionally ignored. Max per-kill is
+// 8 × 4 = 32 pts.
+function getStreakCap() { return 8; }
 function activeOrbColor() { return getOrbBonus().color; }
 function formatCrystals(n) {
   return (n || 0).toLocaleString('en-US');
@@ -4128,12 +4129,15 @@ function applyForce() {
       ay -= 0.15 * launchK;
       player.vx += (W / 2 - player.x) * 0.002 * launchK;
     }
-    if (activeEffects.hyperspeed < 2000) {
+    if (activeEffects.hyperspeed < 800) {
       // Stacked hyperspeed lands harder: scale pull by the peak stacks reached
       // this session. 1 stack = 1× (unchanged from pre-stacking), 4 stack = 4×.
-      // Landing window is the final 2s — gentler arc than the old 800ms.
+      // Landing window is the final 800ms. If the player is actively pressing
+      // attract/repel during landing the pull drops to 50% so they can still
+      // steer — otherwise full strength carries them back to centre.
       const stackBoost = Math.max(1, peakHyperSpeedStacks);
-      const pullStrength = Math.max(0.0004, (1 - activeEffects.hyperspeed / 2000) * 0.002 * stackBoost);
+      const inputYield = (leftDown || rightDown) ? 0.5 : 1.0;
+      const pullStrength = Math.max(0.0004, (1 - activeEffects.hyperspeed / 800) * 0.002 * stackBoost) * inputYield;
       ay += (H * 0.72 - player.y) * pullStrength;
       // Also pull horizontally toward centre for the same window.
       player.vx += (W / 2 - player.x) * pullStrength;
@@ -5312,11 +5316,11 @@ function triggerDeath() {
   SFX.playTrack('results', 0.3);
   clearPendingNovaTimeouts();
 
-  // Time bonus: every 30s survived = score * 0.05 bonus, capped at 20 intervals
-  // (= 10 minutes, the apocalypse mark). Half the previous generosity.
+  // Time bonus: every 30s survived = score * 0.03 bonus, capped at 20 intervals
+  // (= 10 minutes, the apocalypse mark).
   const elapsedAtDeath = elapsedRunSeconds();
   const survivedIntervals = Math.min(20, Math.floor(elapsedAtDeath / 30));
-  const timeBonus = Math.floor(score * 0.05 * survivedIntervals);
+  const timeBonus = Math.floor(score * 0.03 * survivedIntervals);
   const baseScore = score;
   score += timeBonus;
 
