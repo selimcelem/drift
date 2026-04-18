@@ -1397,8 +1397,13 @@ let crackFragments = [];
 const CRACK_FRAGMENTS_CAP = 30;
 // Historical player.x values, newest first. Mirror orbs read from the tail
 // after their delay so they follow where the player recently was.
-let playerPosHistory = [];
-const PLAYER_POS_HISTORY_LEN = 90; // 1.5s @ 60fps — covers 0.5s mirror delay
+// Wall-clock log of {leftDown, rightDown, timestamp} each frame. Mirror
+// planets read input from ~500ms ago to replay the player's attract/repel
+// against their own nearest body. Trimmed to MIRROR_INPUT_HISTORY_MS each frame.
+let inputHistory = [];
+const MIRROR_INPUT_HISTORY_MS = 2000;
+const MIRROR_INPUT_DELAY_MS = 500;
+const MIRROR_INPUT_FORCE_MUL = 0.15;
 // Set true each frame if the player is within any void orb's range. Drives
 // the purple targeting-line tint and the low-frequency hum.
 let playerInVoidRange = false;
@@ -3018,7 +3023,7 @@ function spawnBody(yBase) {
     body.bloodDrops = []; // {offX, age, maxAge, size}
   } else if (type === 'mirror') {
     body.mirrorVx = 0;
-    body.mirrorDelayFrames = 30; // 0.5s @ 60fps
+    body.mirrorVy = 0;
     body.mirrorSeed = Math.floor(Math.random() * 1e6);
   } else if (type === 'skull') {
     body.skullRotation = 0;
@@ -3947,7 +3952,7 @@ function resetGame() {
   destroyEffects = [];
   deathShards = [];
   crackFragments = [];
-  playerPosHistory = [];
+  inputHistory = [];
   playerInVoidRange = false;
   if (voidHumNodes) { try { voidHumNodes.stop(); } catch {} voidHumNodes = null; }
   burstCooldownEnd = 0;
@@ -4479,15 +4484,45 @@ function updateBodyTypes(spd) {
         b.lastHeartSound = frame;
       }
     } else if (b.type === 'mirror') {
-      // Move toward the player's position from 0.5s ago at 15% strength
-      // (0.003 ≈ 0.02 * 0.15) — still visibly tracks but no longer aggressive
-      // when many bodies are on screen in late game.
+      // Replays the player's input from MIRROR_INPUT_DELAY_MS ago against
+      // the mirror's OWN nearest body. If neither button was pressed at that
+      // moment, the mirror doesn't apply any force this frame.
       const prevX = b.x;
-      const idx = Math.min(playerPosHistory.length - 1, b.mirrorDelayFrames);
-      const targetX = playerPosHistory[idx];
-      if (targetX !== undefined) {
-        b.x += (targetX - b.x) * 0.003;
+      const targetTs = Date.now() - MIRROR_INPUT_DELAY_MS;
+      let pastInput = null;
+      // Walk newest→oldest to find the first entry at or before targetTs.
+      for (let i = inputHistory.length - 1; i >= 0; i--) {
+        if (inputHistory[i].timestamp <= targetTs) { pastInput = inputHistory[i]; break; }
       }
+      if (pastInput && (pastInput.leftDown || pastInput.rightDown)) {
+        // Find nearest other body to this mirror.
+        let nearest = null, nd = Infinity;
+        for (const ob of bodies) {
+          if (ob === b) continue;
+          const ddx = ob.x - b.x, ddy = ob.y - b.y;
+          const dd2 = ddx * ddx + ddy * ddy;
+          if (dd2 < nd) { nd = dd2; nearest = ob; }
+        }
+        if (nearest) {
+          const ddx = nearest.x - b.x, ddy = nearest.y - b.y;
+          const dd = Math.max(Math.hypot(ddx, ddy), nearest.radius * 2.2);
+          const nnx = ddx / dd, nny = ddy / dd;
+          const influence = Math.min(140 / dd, 1.8);
+          const f = FORCE * influence * MIRROR_INPUT_FORCE_MUL;
+          if (pastInput.leftDown)  { b.mirrorVx += nnx * f; b.mirrorVy += nny * f; }
+          if (pastInput.rightDown) { b.mirrorVx -= nnx * f; b.mirrorVy -= nny * f; }
+        }
+      }
+      // Drag and integrate. Drag matches the player's mid-range coefficient
+      // so the mirror coasts but doesn't accumulate forever.
+      b.mirrorVx *= 0.92;
+      b.mirrorVy *= 0.92;
+      b.x += b.mirrorVx;
+      b.y += b.mirrorVy;
+      // Keep mirrors inside the playfield horizontally — they shouldn't
+      // wander off-screen sideways.
+      if (b.x < b.radius) { b.x = b.radius; b.mirrorVx = 0; }
+      if (b.x > W - b.radius) { b.x = W - b.radius; b.mirrorVx = 0; }
       const moved = Math.abs(b.x - prevX);
       if (moved > 2) {
         if (b.lastMirrorSound === undefined || frame - b.lastMirrorSound > 60) {
@@ -4687,9 +4722,14 @@ function update() {
     bodies = survivors;
   }
 
-  // Track recent player x so mirror orbs can read it with a delay.
-  playerPosHistory.unshift(player.x);
-  if (playerPosHistory.length > PLAYER_POS_HISTORY_LEN) playerPosHistory.pop();
+  // Log this frame's input so mirror orbs can replay it ~500ms later. We
+  // store the timestamp inline so lookups are real-time (frame-rate
+  // independent). Trim entries older than MIRROR_INPUT_HISTORY_MS.
+  const nowInput = Date.now();
+  inputHistory.push({ leftDown, rightDown, timestamp: nowInput });
+  while (inputHistory.length && nowInput - inputHistory[0].timestamp > MIRROR_INPUT_HISTORY_MS) {
+    inputHistory.shift();
+  }
 
   for (const b of bodies) {
     b.y += spd;
@@ -7814,7 +7854,7 @@ function goToMainMenu() {
   destroyEffects = [];
   deathShards = [];
   crackFragments = [];
-  playerPosHistory = [];
+  inputHistory = [];
   playerInVoidRange = false;
   if (voidHumNodes) { try { voidHumNodes.stop(); } catch {} voidHumNodes = null; }
   burstCooldownEnd = 0;
