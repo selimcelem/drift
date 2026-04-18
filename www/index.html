@@ -4033,7 +4033,12 @@ function applyForce() {
   // the player glide further per input at higher speeds.
   const dragCoef   = 0.91 + Math.min((speedRatio - 1) / 4, 1) * 0.03;
 
-  const f = FORCE * influence * forceMult;
+  // Hyperspeed makes the world fly past — full input force feels chaotic and
+  // uncontrollable. Damp to 40% so steering still works without throwing the
+  // player around. Landing pull and boundaries are handled separately below.
+  const inHyperspeedInput = activeEffects.hyperspeed > 0;
+  const inputDamp = inHyperspeedInput ? 0.4 : 1;
+  const f = FORCE * influence * forceMult * inputDamp;
 
   if (leftDown)  { player.vx += nx*f; player.vy += ny*f; }
   if (rightDown) {
@@ -4055,17 +4060,15 @@ function applyForce() {
   }
 
   // Center-seeking vertical gravity: gently pulls the player toward the
-  // vertical midline (H * 0.5) from either side. Skipped during hyperspeed
-  // so the run-up is uninterrupted; the late landing pull below handles
-  // re-centering at the end.
+  // vertical midline (H * 0.5) from either side. During hyperspeed it
+  // softens to 25% so it acts as a safety net without fighting the player.
   let ay = 0;
   const inHyperspeed = activeEffects.hyperspeed > 0;
-  if (!inHyperspeed) {
-    if (player.y < H * 0.5) {
-      ay += 0.06 * ((H * 0.5 - player.y) / (H * 0.5));
-    } else {
-      ay -= 0.015 * ((player.y - H * 0.5) / (H * 0.5));
-    }
+  const safetyMul = inHyperspeed ? 0.25 : 1;
+  if (player.y < H * 0.5) {
+    ay += 0.06 * safetyMul * ((H * 0.5 - player.y) / (H * 0.5));
+  } else {
+    ay -= 0.015 * safetyMul * ((player.y - H * 0.5) / (H * 0.5));
   }
   if (inHyperspeed && activeEffects.hyperspeed < 800) {
     // Stacked hyperspeed lands harder: scale pull by the peak stacks reached
@@ -4076,14 +4079,15 @@ function applyForce() {
     ay += (H * 0.72 - player.y) * pullStrength;
   }
 
-  // Soft boundary forces — keep the player off the deadly edges. Skipped
-  // while hyperspeed is active so the physics run completely clean.
-  if (!inHyperspeed) {
+  // Soft boundary forces — keep the player off the deadly edges. During
+  // hyperspeed they apply at 25% so they act purely as safety nets without
+  // fighting the player's input.
+  {
     if (player.y > H * 0.85) {
-      ay -= 0.035 * ((player.y - H * 0.85) / (H * 0.15));
+      ay -= 0.035 * safetyMul * ((player.y - H * 0.85) / (H * 0.15));
     }
     if (player.y < H * 0.22) {
-      ay += 0.06 * ((H * 0.22 - player.y) / (H * 0.22));
+      ay += 0.06 * safetyMul * ((H * 0.22 - player.y) / (H * 0.22));
     }
   }
   player.vy += ay;
