@@ -3961,10 +3961,7 @@ function update() {
   if (playerPosHistory.length > PLAYER_POS_HISTORY_LEN) playerPosHistory.pop();
 
   for (const b of bodies) {
-    // All phase-2+ planet types scroll at 80% speed so they stay on screen
-    // longer — their behaviors are more hazardous and need more reaction time.
-    const scrollMul = NEW_BODY_TYPES.has(b.type) ? 0.8 : 1;
-    b.y += spd * scrollMul;
+    b.y += spd;
     b.pulse += 0.038;
     if (!b.passed && b.y > H * 0.75) {
       b.passed = true;
