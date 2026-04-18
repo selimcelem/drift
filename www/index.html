@@ -3584,13 +3584,13 @@ function activateCombo(key, x, y) {
       ghostEndTime = Date.now() + GHOST_ETERNAL_DURATION();
       activeEffects.ghost = GHOST_ETERNAL_DURATION();
     } else if (key === 'shield_shield') {
-      // Fortress refresh: 4 hits on asteroid, 2 hits on other orbs; refresh
-      // duration; don't let a stale timer race lose the fortress state.
+      // Fortress refresh: additive +2 hits, capped per orb (asteroid 4,
+      // others 2) so burst → pair → pickups all stack consistently.
       shieldEndTime = Date.now() + SHIELD_DURATION();
       activeEffects.shield = SHIELD_DURATION();
       shieldBroken = false;
-      const fortressHits = activeOrb === 'asteroid' ? 4 : 2;
-      shieldHits = Math.max(shieldHits, fortressHits);
+      const fortressCap = activeOrb === 'asteroid' ? 4 : 2;
+      shieldHits = Math.min(fortressCap, shieldHits + 2);
       fortressShield = true;
     } else if (key === 'nova_ghost') {
       // Phantom Blast refresh: reset the damage aura and the ghost half so
@@ -3674,11 +3674,13 @@ function activateCombo(key, x, y) {
     activeEffects.ghost = GHOST_ETERNAL_DURATION();
     activeCombos[key] = { def, deps: ['ghost'] };
   } else if (key === 'shield_shield') {
-    // FORTRESS SHIELD: 4 hits on asteroid orb, 2 hits on other orbs.
+    // FORTRESS SHIELD: additive +2 hits, capped per orb (asteroid 4,
+    // others 2). So burst (2 on asteroid) + fortress pair lands at 4.
     shieldEndTime = Date.now() + SHIELD_DURATION();
     activeEffects.shield = SHIELD_DURATION();
     shieldBroken = false;
-    shieldHits = activeOrb === 'asteroid' ? 4 : 2;
+    const fortressCap = activeOrb === 'asteroid' ? 4 : 2;
+    shieldHits = Math.min(fortressCap, shieldHits + 2);
     fortressShield = true;
     activeCombos[key] = { def, deps: ['shield'] };
   }
@@ -4335,11 +4337,11 @@ function executeBurst() {
     activateHyperspeed();
     SFX.pickup('hyperspeed', { stacks: hyperSpeedStacks });
   } else if (activeOrb === 'asteroid') {
-    // Fortress Shield — full 4-hit shield directly without routing through
-    // the shield_shield combo (which would cap at 2 hits).
+    // Fortress Shield — burst grants 2 hits. Players can stack up to 4 by
+    // adding shield pickups (+1 each) afterward.
     shieldEndTime = Date.now() + SHIELD_DURATION_MS_ASTEROID;
     activeEffects.shield = SHIELD_DURATION_MS_ASTEROID;
-    shieldHits = 4;
+    shieldHits = 2;
     shieldBroken = false;
     fortressShield = true;
     const def = COMBO_DEFS.shield_shield;
