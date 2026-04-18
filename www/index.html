@@ -1233,8 +1233,8 @@ function pushCapped(arr, item, cap) {
 // in the same unit (ms).
 let activeEffects = { shield: 0, hyperspeed: 0, ghost: 0 };
 let lastPowerupSpawn = 0;
-const SHIELD_DURATION_MS_DEFAULT = 6000;         // 6s
-const SHIELD_DURATION_MS_ASTEROID = 10000;       // 10s for asteroid orb
+const SHIELD_DURATION_MS_DEFAULT = 8000;         // 8s
+const SHIELD_DURATION_MS_ASTEROID = 12000;       // 12s for asteroid orb
 const HYPERSPEED_DURATION_MS = 3000;             // 3s base
 const HYPERSPEED_COMBO_DURATION = 5000;          // 5s for warp time / spectral rush
 const GHOST_DURATION_MS_DEFAULT = 5000;          // 5s
@@ -3751,7 +3751,7 @@ function executeBurst() {
     shieldHits = 4;
     shieldBroken = false;
     fortressShield = true;
-    const def = COMBOS.shield_shield;
+    const def = COMBO_DEFS.shield_shield;
     activeCombos.shield_shield = { def, deps: ['shield'] };
     lastComboLabel = 'shield_shield';
   }
