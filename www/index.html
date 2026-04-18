@@ -478,7 +478,8 @@
     box-shadow: 0 0 30px rgba(100,200,255,0.3);
   }
 
-  #guideBtn {
+  #guideBtn,
+  #leaderboardBtn {
     margin-top: 10px;
     background: transparent;
     border: 1px solid rgba(255,255,255,0.28);
@@ -491,10 +492,30 @@
     text-transform: uppercase;
     transition: all 0.25s;
   }
-  #guideBtn:hover {
+  #guideBtn:hover,
+  #leaderboardBtn:hover {
     background: rgba(255,255,255,0.06);
     border-color: rgba(255,255,255,0.6);
     color: rgba(255,255,255,0.95);
+  }
+  #leaderboardReturnBtn {
+    display: none;
+    margin-top: 14px;
+    background: transparent;
+    border: 1px solid rgba(100,200,255,0.5);
+    color: rgba(100,200,255,0.9);
+    font-family: 'Orbitron', monospace;
+    font-size: 12px;
+    letter-spacing: 4px;
+    padding: 14px 36px;
+    cursor: pointer;
+    text-transform: uppercase;
+    transition: all 0.3s;
+  }
+  #leaderboardReturnBtn:hover {
+    background: rgba(100,200,255,0.1);
+    border-color: rgba(100,200,255,0.9);
+    box-shadow: 0 0 30px rgba(100,200,255,0.3);
   }
 
   #guideOverlay {
@@ -1116,6 +1137,8 @@
     </div>
     <button id="startBtn">ENTER THE VOID</button>
     <button id="guideBtn">GUIDE</button>
+    <button id="leaderboardBtn">LEADERBOARD</button>
+    <button id="leaderboardReturnBtn">RETURN</button>
     <div id="deathActions">
       <button id="shopBtn">SHOP</button>
     </div>
@@ -5344,6 +5367,9 @@ function triggerDeath() {
     document.getElementById('orbBrowser').style.display = 'none';
     document.getElementById('deathActions').style.display = 'flex';
     document.getElementById('guideBtn').style.display = 'none';
+    document.getElementById('leaderboardBtn').style.display = 'none';
+    document.getElementById('leaderboardReturnBtn').style.display = 'none';
+    leaderboardFromMenu = false;
 
     // Render local scores filtered by difficulty
     renderLocalScores(deathDifficulty);
@@ -7789,6 +7815,11 @@ function goToMainMenu() {
   document.getElementById('deathActions').style.display = 'none';
   document.getElementById('orbBrowser').style.display = 'flex';
   document.getElementById('guideBtn').style.display = '';
+  document.getElementById('leaderboardBtn').style.display = '';
+  document.getElementById('leaderboardReturnBtn').style.display = 'none';
+  document.getElementById('startBtn').style.display = '';
+  document.getElementById('difficultySelect').style.display = '';
+  leaderboardFromMenu = false;
   runStartTime = 0; updateRunTimerDisplay();
   refreshOrbBrowser();
   document.getElementById('overlay').classList.remove('hidden');
@@ -8204,6 +8235,85 @@ document.addEventListener('keydown', (e) => {
   else if (e.key === 'ArrowRight' && guidePageIdx < GUIDE_PAGES.length - 1) {
     guidePageIdx++; guideStartTs = performance.now(); refreshGuidePage();
   }
+});
+
+// --- Leaderboard from main menu ---
+// True while the menu's Leaderboard view is on screen. Drives whether the
+// RETURN button is shown vs. the death-screen action buttons.
+let leaderboardFromMenu = false;
+let menuLbDifficulty = 'NORMAL';
+
+function openLeaderboardFromMenu() {
+  leaderboardFromMenu = true;
+  menuLbDifficulty = difficulty || 'NORMAL';
+  // Hide menu chrome that doesn't belong on the leaderboard view.
+  document.getElementById('orbBrowser').style.display = 'none';
+  document.getElementById('controlsHint').style.display = 'none';
+  document.getElementById('startBtn').style.display = 'none';
+  document.getElementById('guideBtn').style.display = 'none';
+  document.getElementById('leaderboardBtn').style.display = 'none';
+  document.getElementById('difficultySelect').style.display = 'none';
+  document.getElementById('deathActions').style.display = 'none';
+  // Show the leaderboard pieces.
+  const lbTabs = document.getElementById('lbTabs');
+  const diffTabs = document.getElementById('lbDiffTabs');
+  const hsel = document.getElementById('highscores');
+  const globalEl = document.getElementById('globalScores');
+  lbTabs.style.display = 'flex';
+  diffTabs.style.display = 'flex';
+  hsel.style.display = 'block';
+  globalEl.style.display = 'none';
+  // Default to LOCAL tab + the player's selected difficulty.
+  lbTabs.querySelectorAll('.lb-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === 'local'));
+  diffTabs.querySelectorAll('.lb-diff-tab').forEach(t => t.classList.toggle('active', t.dataset.diff === menuLbDifficulty));
+  // Wire the same handler shape the death-screen flow uses so the existing
+  // tab click handlers (lbTabs / lbDiffTabs) keep working unchanged.
+  function renderMenuLocal(diff) {
+    const allScores = getScores();
+    const filtered = allScores.filter(s => s.difficulty === diff);
+    if (filtered.length === 0) {
+      hsel.innerHTML = '<div class="gs-status">no local scores</div>';
+    } else {
+      hsel.innerHTML = filtered.map((s, i) =>
+        `<div class="hs-row"><span class="hs-rank">${i+1}</span><span class="hs-val">${s.score}</span><span class="hs-diff ${s.difficulty}">${s.difficulty}</span></div>`
+      ).join('');
+    }
+  }
+  function fetchMenuGlobal(diff) {
+    globalEl.innerHTML = '<div class="gs-status">connecting...</div>';
+    fetchLeaderboard(diff, (err, entries) => {
+      if (err) {
+        globalEl.innerHTML = '<div class="gs-status">offline</div>';
+        return;
+      }
+      if (!entries || !entries.length) {
+        globalEl.innerHTML = '<div class="gs-status">no global scores</div>';
+        return;
+      }
+      globalEl.innerHTML = entries.map((e, i) =>
+        `<div class="hs-row"><span class="hs-rank">${i+1}</span><span class="hs-name">${e.username || '???'}</span><span class="hs-val">${e.score}</span></div>`
+      ).join('');
+    });
+  }
+  window._deathLbHandlers = {
+    fetchGlobal: fetchMenuGlobal,
+    renderLocal: renderMenuLocal,
+    getDifficulty: () => menuLbDifficulty,
+    setDifficulty: (d) => { menuLbDifficulty = d; },
+  };
+  renderMenuLocal(menuLbDifficulty);
+  document.getElementById('leaderboardReturnBtn').style.display = '';
+}
+
+document.getElementById('leaderboardBtn').addEventListener('click', () => {
+  SFX.clickSecondary();
+  openLeaderboardFromMenu();
+});
+document.getElementById('leaderboardReturnBtn').addEventListener('click', () => {
+  SFX.clickPrimary();
+  // goToMainMenu resets all the chrome (orb browser, controls hint, startBtn,
+  // guideBtn, leaderboardBtn) and hides the LB tabs + return button.
+  goToMainMenu();
 });
 
 // --- Guide illustrations ---
