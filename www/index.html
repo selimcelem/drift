@@ -1283,9 +1283,9 @@ let nebulaRenderedFrame = -1; // force first render
 
 const PLAYER_R = 6;
 const GRACE_DURATION_MS = 1500; // 1.5s post-reset invulnerability window
-// Vertical gap between bodies — H/4 guarantees ~4 slots visible regardless
-// of device height. Computed at load since H is a const captured at init.
-const BODY_SPACING = Math.floor(H / 4);
+// Vertical gap between bodies — H/3.5 gives ~3-4 slots visible at any
+// device height. Computed at load since H is a const captured at init.
+const BODY_SPACING = Math.floor(H / 3.5);
 // Round-robin spawn zone (0=left, 1=center, 2=right) so consecutive bodies
 // land in different zones for natural horizontal spread.
 let lastSpawnZone = -1;
@@ -1407,6 +1407,11 @@ let voidHumNodes = null;
 // Reset by resetGame(). burstTriggered is a one-shot flag consumed by update().
 const BURST_COOLDOWN_MS = 20000;
 let burstCooldownEnd = 0;
+// Set true when a burst grants a shield. Cooldown countdown is deferred
+// until the shield fully expires, so the player isn't punished for keeping
+// the shield alive (asteroid burst, or a cyan-orb random pick that landed
+// on shield). Reset in resetGame() and goToMainMenu().
+let burstShieldPending = false;
 let burstTriggered = false;
 let pendingNovaTimeouts = [];
 let destroyEffects = [];   // per-planet destruction visuals (flash + ring + debris)
@@ -2923,22 +2928,32 @@ function spawnBody(yBase) {
     radius = 16; color = '#888'; glowColor = 'rgba(255,255,255,0.5)';
   }
 
-  // Pick a horizontal zone different from the previous spawn so consecutive
-  // bodies spread across the screen instead of stacking. Within the zone,
-  // x is uniform from body.radius to W-body.radius (no margin).
-  let zone;
-  if (lastSpawnZone < 0) {
-    zone = Math.floor(Math.random() * 3);
+  // 70% chance to pick a horizontal zone different from the previous spawn
+  // (spreads bodies across the screen). 30% chance to pick a fully random
+  // x — keeps spawn variety so the player can't lock onto a strict pattern.
+  let x;
+  const useZone = lastSpawnZone < 0 || Math.random() < 0.7;
+  if (useZone) {
+    let zone;
+    if (lastSpawnZone < 0) {
+      zone = Math.floor(Math.random() * 3);
+    } else {
+      const choices = [0, 1, 2].filter(z => z !== lastSpawnZone);
+      zone = choices[Math.floor(Math.random() * choices.length)];
+    }
+    lastSpawnZone = zone;
+    const zoneStart = zone * (W / 3);
+    const zoneEnd   = (zone + 1) * (W / 3);
+    const xMin = Math.max(radius, zoneStart);
+    const xMax = Math.min(W - radius, zoneEnd);
+    x = xMin >= xMax ? (xMin + xMax) * 0.5 : xMin + Math.random() * (xMax - xMin);
   } else {
-    const choices = [0, 1, 2].filter(z => z !== lastSpawnZone);
-    zone = choices[Math.floor(Math.random() * choices.length)];
+    // Fully random x; record which zone it landed in so the next zone-mode
+    // pick still rotates away from it.
+    const xMin = radius, xMax = Math.max(radius, W - radius);
+    x = xMin + Math.random() * (xMax - xMin);
+    lastSpawnZone = Math.min(2, Math.floor(x / (W / 3)));
   }
-  lastSpawnZone = zone;
-  const zoneStart = zone * (W / 3);
-  const zoneEnd   = (zone + 1) * (W / 3);
-  const xMin = Math.max(radius, zoneStart);
-  const xMax = Math.min(W - radius, zoneEnd);
-  let x = xMin >= xMax ? (xMin + xMax) * 0.5 : xMin + Math.random() * (xMax - xMin);
   // Defensive: never let an invalid x leak into the world; centre as fallback.
   if (isNaN(x) || x < 0 || x > W) x = W / 2;
   // And the same for the caller-supplied yBase — never spawn at NaN.
@@ -3937,6 +3952,7 @@ function resetGame() {
   if (voidHumNodes) { try { voidHumNodes.stop(); } catch {} voidHumNodes = null; }
   burstCooldownEnd = 0;
   burstTriggered = false;
+  burstShieldPending = false;
   resetApocalypse();
   deathFlashFrames = 0;
   if (pendingDeathBurstTimer) { clearTimeout(pendingDeathBurstTimer); pendingDeathBurstTimer = null; }
@@ -4093,13 +4109,29 @@ function applyForce() {
   } else {
     ay -= 0.015 * safetyMul * ((player.y - H * 0.5) / (H * 0.5));
   }
-  if (inHyperspeed && activeEffects.hyperspeed < 800) {
-    // Stacked hyperspeed lands harder: scale pull by the peak stacks reached
-    // this session. 1 stack = 1× (unchanged from pre-stacking), 4 stack = 4×.
-    // Landing window is the final 800ms of the longest stack.
-    const stackBoost = Math.max(1, peakHyperSpeedStacks);
-    const pullStrength = Math.max(0.0004, (1 - activeEffects.hyperspeed / 800) * 0.002 * stackBoost);
-    ay += (H * 0.72 - player.y) * pullStrength;
+  // Hyperspeed has three feel-phases over its active duration:
+  //   LAUNCH (0-500ms): rocket-like upward boost + gentle pull to horizontal
+  //                     centre, fading out by 500ms
+  //   CRUISE (mid):     just the 25% safety nets, no extra forces
+  //   LANDING (last 2000ms): pull toward (W/2, H*0.72) for a satisfying
+  //                          arc back into the playfield
+  if (inHyperspeed) {
+    const hsElapsed = Math.max(0, hyperspeedActiveDuration - activeEffects.hyperspeed);
+    if (hsElapsed < 500) {
+      const launchK = 1 - hsElapsed / 500;
+      ay -= 0.15 * launchK;
+      player.vx += (W / 2 - player.x) * 0.002 * launchK;
+    }
+    if (activeEffects.hyperspeed < 2000) {
+      // Stacked hyperspeed lands harder: scale pull by the peak stacks reached
+      // this session. 1 stack = 1× (unchanged from pre-stacking), 4 stack = 4×.
+      // Landing window is the final 2s — gentler arc than the old 800ms.
+      const stackBoost = Math.max(1, peakHyperSpeedStacks);
+      const pullStrength = Math.max(0.0004, (1 - activeEffects.hyperspeed / 2000) * 0.002 * stackBoost);
+      ay += (H * 0.72 - player.y) * pullStrength;
+      // Also pull horizontally toward centre for the same window.
+      player.vx += (W / 2 - player.x) * pullStrength;
+    }
   }
 
   // Soft boundary forces — keep the player off the deadly edges. During
@@ -4281,12 +4313,16 @@ function checkCollisions() {
 
 // Burst ability — per-orb effect. Called once when cooldown hits 0 and the
 // player is holding both sides simultaneously.
+// Returns true if the burst granted the player a shield (so the caller can
+// defer the cooldown until the shield expires).
 function executeBurst() {
   if (typeof Sentry !== 'undefined') Sentry.addBreadcrumb({ category: 'burst', message: 'burst: ' + activeOrb, level: 'info' });
+  let grantedShield = false;
   if (activeOrb === 'cyan') {
     const types = ['shield','nova','hyperspeed','ghost'];
     const type = types[Math.floor(Math.random() * types.length)];
     activatePowerup(type, player.x, player.y);
+    if (type === 'shield') grantedShield = true;
   } else if (activeOrb === 'cosmic') {
     // Eternal Phantom — ghost+ghost combo.
     activateCombo('ghost_ghost', player.x, player.y);
@@ -4309,8 +4345,10 @@ function executeBurst() {
     const def = COMBO_DEFS.shield_shield;
     activeCombos.shield_shield = { def, deps: ['shield'] };
     lastComboLabel = 'shield_shield';
+    grantedShield = true;
   }
   screenShake = Math.max(screenShake, 6);
+  return grantedShield;
 }
 
 // Per-body animation + behavior state tick. Called each frame after the
@@ -4441,13 +4479,14 @@ function updateBodyTypes(spd) {
         b.lastHeartSound = frame;
       }
     } else if (b.type === 'mirror') {
-      // Move toward the player's position from 0.5s ago at 25% strength
-      // (0.005 ≈ 0.02 * 0.25) — still visibly tracks without racing.
+      // Move toward the player's position from 0.5s ago at 15% strength
+      // (0.003 ≈ 0.02 * 0.15) — still visibly tracks but no longer aggressive
+      // when many bodies are on screen in late game.
       const prevX = b.x;
       const idx = Math.min(playerPosHistory.length - 1, b.mirrorDelayFrames);
       const targetX = playerPosHistory[idx];
       if (targetX !== undefined) {
-        b.x += (targetX - b.x) * 0.005;
+        b.x += (targetX - b.x) * 0.003;
       }
       const moved = Math.abs(b.x - prevX);
       if (moved > 2) {
@@ -4503,14 +4542,27 @@ function update() {
   // 10-minute mark: kick off the apocalypse sequence.
   if (elapsedRunSeconds() >= 600) { startApocalypse(); return; }
 
-  // Burst trigger: also catches keyboard-held combos each frame.
+  // Burst trigger: also catches keyboard-held combos each frame. Burst is
+  // ready only when both the cooldown timer has elapsed AND there's no
+  // shield-pending grant from the previous burst still in flight.
   if (leftDown && rightDown) burstTriggered = true;
-  const burstReady = Date.now() >= burstCooldownEnd;
+  const burstReady = !burstShieldPending && Date.now() >= burstCooldownEnd;
   if (burstTriggered && burstReady) {
-    executeBurst();
-    burstCooldownEnd = Date.now() + BURST_COOLDOWN_MS;
+    const grantedShield = executeBurst();
+    if (grantedShield) {
+      // Defer cooldown — countdown starts only after the shield fully expires.
+      burstShieldPending = true;
+    } else {
+      burstCooldownEnd = Date.now() + BURST_COOLDOWN_MS;
+    }
   }
   burstTriggered = false;
+  // Shield-pending cooldown gate: once the shield has fully expired (no hits
+  // left and not active), kick off the normal cooldown.
+  if (burstShieldPending && shieldHits === 0 && activeEffects.shield <= 0) {
+    burstCooldownEnd = Date.now() + BURST_COOLDOWN_MS;
+    burstShieldPending = false;
+  }
 
   // Run timer: wall-clock driven. Normally refresh ~8x/sec; past 3 min the
   // danger-zone shake/blink/glitch needs per-frame updates.
@@ -6713,7 +6765,9 @@ function drawOrbTrailParticles() {
   const orbRgb = activeOrbColor();
   ctx.save();
   for (const p of orbTrailParticles) {
-    const a = Math.max(0, p.life) * (p.alphaMul || 0.8);
+    // 0.6 = 40% opacity reduction so trails are less distracting at high
+    // speeds while still visible.
+    const a = Math.max(0, p.life) * (p.alphaMul || 0.8) * 0.6;
     ctx.globalAlpha = a;
     if (p.kind === 'cyan' || p.kind === 'wisp') {
       ctx.fillStyle = `rgba(${orbRgb},1)`;
@@ -7248,10 +7302,12 @@ function updateBurstBar() {
   const visible = (state === 'playing' || state === 'paused');
   burstBarEl.style.display = visible ? 'flex' : 'none';
   if (!visible) return;
-  const ready = (burstCooldownEnd === 0) || (Date.now() >= burstCooldownEnd);
+  const ready = !burstShieldPending && ((burstCooldownEnd === 0) || (Date.now() >= burstCooldownEnd));
   const pct = ready
     ? 1
-    : Math.max(0, Math.min(1, (Date.now() - (burstCooldownEnd - BURST_COOLDOWN_MS)) / BURST_COOLDOWN_MS));
+    : burstShieldPending
+      ? 0
+      : Math.max(0, Math.min(1, (Date.now() - (burstCooldownEnd - BURST_COOLDOWN_MS)) / BURST_COOLDOWN_MS));
   burstFillEl.style.width = (pct * 100) + '%';
   if (ready) {
     // Ready: bright gold/orange so it reads clearly against the grey cooldown
@@ -7763,6 +7819,7 @@ function goToMainMenu() {
   if (voidHumNodes) { try { voidHumNodes.stop(); } catch {} voidHumNodes = null; }
   burstCooldownEnd = 0;
   burstTriggered = false;
+  burstShieldPending = false;
   resetApocalypse();
   deathFlashFrames = 0;
   if (pendingDeathBurstTimer) { clearTimeout(pendingDeathBurstTimer); pendingDeathBurstTimer = null; }
