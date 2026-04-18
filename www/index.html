@@ -1270,9 +1270,9 @@ const FORCE = 0.18;
 
 // --- Difficulty ---
 const DIFFICULTIES = {
-  NORMAL:  { startSpeed: 1.2, maxSpeed: 2.8, speedCapScore: 300, maxBodies: 2, maxBodiesCap: 4, bodySpacing: 180, powerupFrequency: 1.0, crystalMult: 0.75 },
-  HARD:    { startSpeed: 1.6, maxSpeed: 3.6, speedCapScore: 300, maxBodies: 3, maxBodiesCap: 5, bodySpacing: 180, powerupFrequency: 1.3, crystalMult: 1.0 },
-  EXTREME: { startSpeed: 2.0, maxSpeed: 5.0, speedCapScore: 300, maxBodies: 4, maxBodiesCap: 6, bodySpacing: 180, powerupFrequency: 1.8, crystalMult: 1.25 },
+  NORMAL:  { startSpeed: 1.2, maxSpeed: 2.8, speedCapScore: 180, maxBodies: 2, maxBodiesCap: 4, bodySpacing: 180, powerupFrequency: 1.0, crystalMult: 0.75 },
+  HARD:    { startSpeed: 1.6, maxSpeed: 3.6, speedCapScore: 180, maxBodies: 3, maxBodiesCap: 5, bodySpacing: 180, powerupFrequency: 1.3, crystalMult: 1.0 },
+  EXTREME: { startSpeed: 2.0, maxSpeed: 5.0, speedCapScore: 180, maxBodies: 4, maxBodiesCap: 6, bodySpacing: 180, powerupFrequency: 1.8, crystalMult: 1.25 },
 };
 let difficulty = 'NORMAL';
 if (typeof Sentry !== 'undefined') Sentry.setTag('difficulty', difficulty);
@@ -3005,7 +3005,7 @@ function spawnBody(yBase) {
 // rather than runaway counts.
 function effectiveMaxBodies() {
   const d = diff();
-  const ramped = d.maxBodies + Math.max(0, Math.floor((elapsedRunSeconds() - 240) / 60));
+  const ramped = d.maxBodies + Math.max(0, Math.floor((elapsedRunSeconds() - 120) / 60));
   return Math.min(ramped, d.maxBodiesCap);
 }
 
