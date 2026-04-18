@@ -3079,12 +3079,13 @@ function activateCombo(key, x, y) {
       ghostEndTime = Date.now() + GHOST_ETERNAL_DURATION();
       activeEffects.ghost = GHOST_ETERNAL_DURATION();
     } else if (key === 'shield_shield') {
-      // Fortress refresh: keep 2 hits, refresh duration; don't let a stale
-      // timer race lose the fortress state.
+      // Fortress refresh: 4 hits on asteroid, 2 hits on other orbs; refresh
+      // duration; don't let a stale timer race lose the fortress state.
       shieldEndTime = Date.now() + SHIELD_DURATION();
       activeEffects.shield = SHIELD_DURATION();
       shieldBroken = false;
-      shieldHits = Math.max(shieldHits, 2);
+      const fortressHits = activeOrb === 'asteroid' ? 4 : 2;
+      shieldHits = Math.max(shieldHits, fortressHits);
       fortressShield = true;
     } else if (key === 'nova_ghost') {
       // Phantom Blast refresh: reset the damage aura and the ghost half so
@@ -3168,11 +3169,11 @@ function activateCombo(key, x, y) {
     activeEffects.ghost = GHOST_ETERNAL_DURATION();
     activeCombos[key] = { def, deps: ['ghost'] };
   } else if (key === 'shield_shield') {
-    // FORTRESS SHIELD: 15s, 2 hits
+    // FORTRESS SHIELD: 4 hits on asteroid orb, 2 hits on other orbs.
     shieldEndTime = Date.now() + SHIELD_DURATION();
     activeEffects.shield = SHIELD_DURATION();
     shieldBroken = false;
-    shieldHits = 2;
+    shieldHits = activeOrb === 'asteroid' ? 4 : 2;
     fortressShield = true;
     activeCombos[key] = { def, deps: ['shield'] };
   }
@@ -6427,9 +6428,12 @@ function updateBurstBar() {
   const visible = (state === 'playing' || state === 'paused');
   burstBarEl.style.display = visible ? 'flex' : 'none';
   if (!visible) return;
-  const pct = Math.max(0, Math.min(1, (Date.now() - (burstCooldownEnd - BURST_COOLDOWN_MS)) / BURST_COOLDOWN_MS));
+  const ready = (burstCooldownEnd === 0) || (Date.now() >= burstCooldownEnd);
+  const pct = ready
+    ? 1
+    : Math.max(0, Math.min(1, (Date.now() - (burstCooldownEnd - BURST_COOLDOWN_MS)) / BURST_COOLDOWN_MS));
   burstFillEl.style.width = (pct * 100) + '%';
-  if (Date.now() >= burstCooldownEnd) {
+  if (ready) {
     // Ready: bright orb color.
     const rgb = activeOrbColor();
     burstFillEl.style.background = `rgba(${rgb},0.95)`;
