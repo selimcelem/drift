@@ -1341,8 +1341,11 @@ let player = {}, bodies = [], trail = [], bgStars = [], deathParticles = [];
 let leftDown = false, rightDown = false;
 let closestBody = null;
 
-// Streak scoring
+// Streak scoring. lastDestroyTime tracks the wall-clock of the most recent
+// destroy so the streak resets after 5s of inactivity instead of on the next
+// passed-planet — rewards any aggressive playstyle, not just nova chains.
 let destroyStreak = 0;
+let lastDestroyTime = 0;
 let runStats = { totalPassed: 0, totalDestroyed: 0, pointsFromPassing: 0, pointsFromDestroying: 0, longestStreak: 0, powerupsUsed: 0 };
 
 // --- Powerups ---
@@ -3379,6 +3382,7 @@ function drawDestroyEffects() {
 
 function addDestroyPoints() {
   destroyStreak++;
+  lastDestroyTime = Date.now();
   const streakForScore = Math.min(destroyStreak, getStreakCap());
   const pts = streakForScore * streakForScore;
   score += pts;
@@ -3699,11 +3703,13 @@ function clearPendingNovaTimeouts() {
   pendingNovaTimeouts = [];
 }
 
-// Spawn a single shield-EMP burst at (x, y). Expands to EMP_MAX_RADIUS; first
-// planet it sweeps gets destroyed (shield visual / sound, NO recursive EMP),
-// earning the same points as a direct shield kill. Visual is an electric dome:
-// expanding ring with lightning inside, sparks on the edge, center flash.
-function spawnEmpRing(x, y) {
+// Spawn a single shield-EMP burst at (x, y). Expands to EMP_MAX_RADIUS;
+// first planet it sweeps gets destroyed. Primary rings (isChain=false) spawn
+// a secondary EMP at the victim's position; secondary rings (isChain=true)
+// destroy without further chaining (max one level deep). Visual is an
+// electric dome: expanding ring with lightning inside, sparks on the edge,
+// center flash. Secondary rings are smaller (120px) and dimmer.
+function spawnEmpRing(x, y, isChain) {
   // 4-6 lightning bolts originating at center and reaching the dome edge.
   // Each bolt has a fixed angle; its segment offsets are re-randomized during
   // draw to produce the flicker effect. Segment count is fixed per-bolt.
@@ -3729,6 +3735,9 @@ function spawnEmpRing(x, y) {
     radius: 0, prevR: 0,
     startTime: Date.now(),
     triggered: false, // only destroys one planet ever
+    isChain: !!isChain,
+    maxRadius: isChain ? 120 : EMP_MAX_RADIUS,
+    opacity: isChain ? 0.6 : 1,
     bolts, sparks,
   }, EMP_RINGS_CAP);
 }
@@ -3876,6 +3885,7 @@ function resetGame() {
   score = 0; frame = 0; planetsPassed = 0;
   closestBody = null;
   destroyStreak = 0;
+  lastDestroyTime = 0;
   runStats = { totalPassed: 0, totalDestroyed: 0, pointsFromPassing: 0, pointsFromDestroying: 0, longestStreak: 0, powerupsUsed: 0 };
   document.getElementById('streakDisplay').classList.remove('visible');
   powerups = [];
@@ -4033,27 +4043,30 @@ function applyForce() {
   }
 
   // Center-seeking vertical gravity: gently pulls the player toward the
-  // vertical midline (H * 0.5) from either side. Replaces the previous
-  // upward drift so neither edge is "free real estate". Emergency boundary
-  // forces below still kick in nearer the deadly top/bottom.
+  // vertical midline (H * 0.5) from either side. Skipped during hyperspeed
+  // so the run-up is uninterrupted; the late landing pull below handles
+  // re-centering at the end.
   let ay = 0;
-  if (player.y < H * 0.5) {
-    ay += 0.015 * ((H * 0.5 - player.y) / (H * 0.5));
-  } else {
-    ay -= 0.015 * ((player.y - H * 0.5) / (H * 0.5));
+  const inHyperspeed = activeEffects.hyperspeed > 0;
+  if (!inHyperspeed) {
+    if (player.y < H * 0.5) {
+      ay += 0.015 * ((H * 0.5 - player.y) / (H * 0.5));
+    } else {
+      ay -= 0.015 * ((player.y - H * 0.5) / (H * 0.5));
+    }
   }
-  if (activeEffects.hyperspeed > 0 && activeEffects.hyperspeed < 3000) {
+  if (inHyperspeed && activeEffects.hyperspeed < 800) {
     // Stacked hyperspeed lands harder: scale pull by the peak stacks reached
     // this session. 1 stack = 1× (unchanged from pre-stacking), 4 stack = 4×.
-    // Landing window is the final 3s (3000ms) of the longest stack.
+    // Landing window is the final 800ms of the longest stack.
     const stackBoost = Math.max(1, peakHyperSpeedStacks);
-    const pullStrength = Math.max(0.0004, (1 - activeEffects.hyperspeed / 3000) * 0.002 * stackBoost);
+    const pullStrength = Math.max(0.0004, (1 - activeEffects.hyperspeed / 800) * 0.002 * stackBoost);
     ay += (H * 0.72 - player.y) * pullStrength;
   }
 
   // Soft boundary forces — keep the player off the deadly edges. Skipped
-  // while hyperspeed is active (landing has its own centering logic).
-  if (!(activeEffects.hyperspeed > 0)) {
+  // while hyperspeed is active so the physics run completely clean.
+  if (!inHyperspeed) {
     if (player.y > H * 0.85) {
       ay -= 0.035 * ((player.y - H * 0.85) / (H * 0.15));
     }
@@ -4464,6 +4477,14 @@ function update() {
   // danger-zone shake/blink/glitch needs per-frame updates.
   if (elapsedRunSeconds() >= 180 || (frame & 7) === 0) updateRunTimerDisplay();
 
+  // Streak timeout: if no destroy in 5 seconds, drop the streak. Replaces
+  // the old "passed-planet resets streak" rule so any aggressive playstyle
+  // (shield, nova, hyperspeed, EMP) keeps the meter alive.
+  if (destroyStreak > 0 && Date.now() - lastDestroyTime > 5000) {
+    destroyStreak = 0;
+    document.getElementById('streakDisplay').classList.remove('visible');
+  }
+
   // Recompute active effect remaining-ms from absolute end timestamps.
   const nowMs = Date.now();
   activeEffects.shield = Math.max(0, shieldEndTime - nowMs);
@@ -4588,9 +4609,6 @@ function update() {
       planetsPassed++;
       runStats.totalPassed++;
       runStats.pointsFromPassing++;
-      // Passing a planet resets destroy streak
-      destroyStreak = 0;
-      document.getElementById('streakDisplay').classList.remove('visible');
       document.getElementById('score').textContent = score;
     }
   }
@@ -4708,7 +4726,8 @@ function update() {
   }
 
   // Shield-EMP rings: expand at EMP_EXPAND_PX_PER_SEC. First planet each ring
-  // touches gets destroyed (shield visual/sfx) — single hop, no chaining.
+  // touches gets destroyed (shield visual/sfx). Primary rings spawn a smaller
+  // secondary EMP at the victim's position; secondary rings do NOT chain.
   // Keep rings alive through the 400ms dome window (+ small fade tail).
   if (empRings.length) {
     const nowMsE = Date.now();
@@ -4721,11 +4740,15 @@ function update() {
     empRings = live;
     if (empRings.length) {
       const survivors = [];
+      // Track positions where primary rings landed a kill so we can spawn
+      // secondaries AFTER the body sweep completes (avoid mutating empRings
+      // while iterating it).
+      const secondarySpawns = [];
       for (const b of bodies) {
         let killed = false;
         for (const r of empRings) {
           if (r.triggered) continue;
-          if (r.radius > EMP_MAX_RADIUS) continue;
+          if (r.radius > r.maxRadius) continue;
           const dd = dist(r, b);
           if (dd < r.radius + b.radius && dd >= r.prevR - 6) {
             killed = true;
@@ -4735,18 +4758,21 @@ function update() {
             emitDestroyEffects(b, 'shield');
             addDestroyPoints();
             SFX.planetDestroyed('shield');
+            // Only primary rings chain — one level deep, no recursion.
+            if (!r.isChain) secondarySpawns.push({ x: b.x, y: b.y });
             break;
           }
         }
         if (!killed) survivors.push(b);
       }
       bodies = survivors;
+      for (const s of secondarySpawns) spawnEmpRing(s.x, s.y, true);
       // EMP rings also wipe out crack fragments they sweep over. No chain
       // EMP, no points, no streak — just clear the hazard.
       for (let i = crackFragments.length - 1; i >= 0; i--) {
         const f = crackFragments[i];
         for (const r of empRings) {
-          if (r.radius > EMP_MAX_RADIUS) continue;
+          if (r.radius > r.maxRadius) continue;
           const dd = dist(r, f);
           if (dd < r.radius + f.radius && dd >= r.prevR - 6) {
             crackFragments.splice(i, 1);
@@ -7008,7 +7034,8 @@ function drawEmpRings() {
   for (const r of empRings) {
     const age = now - r.startTime;
     const life = Math.max(0, Math.min(1, age / maxLifeMs)); // 0..1 progress
-    const fade = 1 - life;                                   // 1..0 alpha
+    const fade = (1 - life) * (r.opacity != null ? r.opacity : 1);
+    const ringMax = r.maxRadius != null ? r.maxRadius : EMP_MAX_RADIUS;
 
     ctx.save();
     ctx.translate(r.x, r.y);
@@ -7028,9 +7055,10 @@ function drawEmpRings() {
     }
 
     // 2) EXPANDING DOME RING — inner and outer concentric circles with a
-    // semi-transparent cyan fill between them.
-    const outerR = 20 + life * (EMP_MAX_RADIUS - 20); // 20 → 180
-    const innerR = Math.max(0, outerR - 20);           // ~0 → 160
+    // semi-transparent cyan fill between them. Ring sized per-burst so chain
+    // (secondary) bursts read as smaller.
+    const outerR = 20 + life * (ringMax - 20);
+    const innerR = Math.max(0, outerR - 20);
     // Ring-fill band (draw outer-filled then punch out inner via even-odd).
     ctx.save();
     ctx.globalAlpha = fade;
