@@ -1469,6 +1469,351 @@ function preloadPlanetSprites() {
   }
 }
 
+// --- Per-body sprite builders ---
+// Each builder returns an offscreen canvas (sized ceil(radius*3)²) with only
+// the static parts of that planet type rendered, centred at (size/2, size/2).
+// The draw functions composite dynamic layers on top of ctx.drawImage(sprite).
+// All builders wrap in try/catch and return null on failure so the draw
+// functions can fall back to their full path-based rendering.
+
+function bodySpriteSize(b) {
+  return Math.max(2, Math.ceil(b.radius * 3));
+}
+
+function buildEyeVeinSprite(b) {
+  try {
+    const size = bodySpriteSize(b);
+    const c = document.createElement('canvas');
+    c.width = size; c.height = size;
+    const cctx = c.getContext('2d');
+    const cx = size / 2, cy = size / 2;
+    // Veins are drawn at b.radius instead of the live pulseR (±3 px breath
+    // on the eye base). The 3-pixel mismatch at the pulse extremes is
+    // imperceptible against the jittering eyeball.
+    const pulseR = b.radius;
+    const rng = mulberry32(b.veinSeed);
+    const veinCount = 11;
+    for (let i = 0; i < veinCount; i++) {
+      const a = rng() * Math.PI * 2;
+      const curveAmt = (rng() - 0.5) * 0.7;
+      const startX = cx + Math.cos(a) * pulseR * 0.96;
+      const startY = cy + Math.sin(a) * pulseR * 0.96;
+      const midA = a + curveAmt;
+      const midX = cx + Math.cos(midA) * (pulseR * 0.55);
+      const midY = cy + Math.sin(midA) * (pulseR * 0.55);
+      const endA = a + curveAmt * 2;
+      const endX = cx + Math.cos(endA) * (pulseR * 0.25);
+      const endY = cy + Math.sin(endA) * (pulseR * 0.25);
+      cctx.strokeStyle = 'rgba(200,30,30,0.85)';
+      cctx.lineWidth = 2;
+      cctx.beginPath();
+      cctx.moveTo(startX, startY);
+      cctx.quadraticCurveTo(midX, midY, endX, endY);
+      cctx.stroke();
+      cctx.strokeStyle = 'rgba(200,30,30,0.55)';
+      cctx.lineWidth = 1;
+      for (let j = 0; j < 2; j++) {
+        const branchA = midA + (rng() - 0.5) * 1.4;
+        const branchLen = pulseR * (0.15 + rng() * 0.2);
+        const bx = midX + Math.cos(branchA) * branchLen;
+        const by = midY + Math.sin(branchA) * branchLen;
+        cctx.beginPath();
+        cctx.moveTo(midX, midY); cctx.lineTo(bx, by);
+        cctx.stroke();
+      }
+    }
+    return c;
+  } catch { return null; }
+}
+
+function buildSkullFaceSprite(b) {
+  try {
+    const size = bodySpriteSize(b);
+    const c = document.createElement('canvas');
+    c.width = size; c.height = size;
+    const cctx = c.getContext('2d');
+    const cx = size / 2, cy = size / 2;
+    const r = b.radius;
+    // Seeded cloud patches on the upper half — drawn first so face parts
+    // layer on top exactly like the original.
+    const rng = mulberry32(b.skullSeed);
+    cctx.fillStyle = 'rgba(240,240,230,0.35)';
+    for (let i = 0; i < 7; i++) {
+      const yFrac = -0.55 + rng() * 0.6;
+      const cr = r * (0.1 + rng() * 0.22);
+      const ddx = (rng() - 0.5) * r * 1.6;
+      const ddy = yFrac * r;
+      const d = Math.hypot(ddx, ddy);
+      const cap = Math.max(0.1, r - cr);
+      const k = d > cap ? cap / d : 1;
+      cctx.beginPath(); cctx.arc(cx + ddx * k, cy + ddy * k, cr, 0, 6.28); cctx.fill();
+    }
+    // Eye sockets (black cavities — flash glow stays live).
+    const eyeOffX = r * 0.32;
+    const eyeOffY = r * 0.05;
+    for (const side of [-1, 1]) {
+      const ex = cx + side * eyeOffX;
+      const ey = cy + eyeOffY;
+      cctx.save();
+      cctx.translate(ex, ey);
+      cctx.rotate(side * 0.22);
+      cctx.fillStyle = '#000';
+      cctx.beginPath();
+      cctx.ellipse(0, 0, r * 0.19, r * 0.22, 0, 0, 6.28);
+      cctx.fill();
+      cctx.restore();
+    }
+    // Cheekbone highlights.
+    cctx.strokeStyle = 'rgba(230,220,200,0.5)';
+    cctx.lineWidth = 2;
+    cctx.lineCap = 'round';
+    for (const side of [-1, 1]) {
+      cctx.beginPath();
+      cctx.moveTo(cx + side * r * 0.5, cy + r * 0.18);
+      cctx.quadraticCurveTo(
+        cx + side * r * 0.45, cy + r * 0.35,
+        cx + side * r * 0.2,  cy + r * 0.5
+      );
+      cctx.stroke();
+    }
+    // Nasal cavity.
+    cctx.fillStyle = '#000';
+    cctx.beginPath();
+    cctx.moveTo(cx, cy + r * 0.55);
+    cctx.quadraticCurveTo(cx - r * 0.12, cy + r * 0.45, cx - r * 0.1, cy + r * 0.3);
+    cctx.quadraticCurveTo(cx - r * 0.06, cy + r * 0.22, cx, cy + r * 0.32);
+    cctx.quadraticCurveTo(cx + r * 0.06, cy + r * 0.22, cx + r * 0.1, cy + r * 0.3);
+    cctx.quadraticCurveTo(cx + r * 0.12, cy + r * 0.45, cx, cy + r * 0.55);
+    cctx.closePath();
+    cctx.fill();
+    // Teeth.
+    const toothRng = mulberry32(b.skullSeed ^ 0x7e5);
+    const toothCount = 7;
+    const toothBaseY = cy + r * 0.72;
+    const toothLen = r * 0.18;
+    const toothStartX = cx - r * 0.45;
+    const toothSpan = r * 0.9;
+    cctx.fillStyle = 'rgba(220,215,200,0.92)';
+    for (let i = 0; i < toothCount; i++) {
+      const tu = (i + 0.5) / toothCount;
+      const tx = toothStartX + tu * toothSpan;
+      const baseW = r * 0.085 * (0.85 + toothRng() * 0.3);
+      const tlen = toothLen * (0.75 + toothRng() * 0.4);
+      cctx.beginPath();
+      cctx.moveTo(tx - baseW, toothBaseY);
+      cctx.lineTo(tx + baseW, toothBaseY);
+      cctx.lineTo(tx, toothBaseY + tlen);
+      cctx.closePath();
+      cctx.fill();
+    }
+    // Jaw shadow.
+    cctx.fillStyle = 'rgba(0,0,0,0.55)';
+    cctx.beginPath();
+    cctx.ellipse(cx, toothBaseY, r * 0.5, r * 0.06, 0, 0, 6.28);
+    cctx.fill();
+    // Outer rim.
+    cctx.strokeStyle = 'rgba(0,0,0,0.6)';
+    cctx.lineWidth = 1;
+    cctx.beginPath(); cctx.arc(cx, cy, r, 0, 6.28); cctx.stroke();
+    return c;
+  } catch { return null; }
+}
+
+function buildMirrorBodySprite(b) {
+  try {
+    const size = bodySpriteSize(b);
+    const c = document.createElement('canvas');
+    c.width = size; c.height = size;
+    const cctx = c.getContext('2d');
+    const cx = size / 2, cy = size / 2;
+    const r = b.radius;
+    // Chrome sphere.
+    const chrome = cctx.createRadialGradient(cx - r * 0.35, cy - r * 0.35, 0, cx, cy, r);
+    chrome.addColorStop(0,    '#ffffff');
+    chrome.addColorStop(0.25, '#d8d8d8');
+    chrome.addColorStop(0.65, '#c0c0c0');
+    chrome.addColorStop(0.9,  '#404040');
+    chrome.addColorStop(1,    '#0a0a0a');
+    cctx.fillStyle = chrome;
+    cctx.beginPath(); cctx.arc(cx, cy, r, 0, 6.28); cctx.fill();
+    // Reflected stars.
+    const rng = mulberry32(b.mirrorSeed);
+    for (let i = 0; i < 7; i++) {
+      const a = rng() * Math.PI * 2;
+      const rd = rng() * r * 0.88;
+      const rx = cx + Math.cos(a) * rd;
+      const ry = cy + Math.sin(a) * rd;
+      const rr = 0.6 + rng() * 1.1;
+      cctx.globalAlpha = 0.6 + rng() * 0.35;
+      cctx.fillStyle = '#fff';
+      cctx.beginPath(); cctx.arc(rx, ry, rr, 0, 6.28); cctx.fill();
+    }
+    cctx.globalAlpha = 1;
+    // Crescent highlight.
+    const highlight = cctx.createRadialGradient(
+      cx - r * 0.45, cy - r * 0.45, 0,
+      cx - r * 0.2,  cy - r * 0.2,  r * 0.6
+    );
+    highlight.addColorStop(0, 'rgba(255,255,255,0.95)');
+    highlight.addColorStop(0.5, 'rgba(255,255,255,0.25)');
+    highlight.addColorStop(1, 'rgba(255,255,255,0)');
+    cctx.fillStyle = highlight;
+    cctx.beginPath(); cctx.arc(cx - r * 0.3, cy - r * 0.3, r * 0.55, 0, 6.28); cctx.fill();
+    // Dark rim.
+    cctx.strokeStyle = 'rgba(0,0,0,0.75)';
+    cctx.lineWidth = 1.5;
+    cctx.beginPath(); cctx.arc(cx, cy, r - 0.5, 0, 6.28); cctx.stroke();
+    return c;
+  } catch { return null; }
+}
+
+function buildScreamingStaticSprite(b) {
+  try {
+    const size = bodySpriteSize(b);
+    const c = document.createElement('canvas');
+    c.width = size; c.height = size;
+    const cctx = c.getContext('2d');
+    const cx = size / 2, cy = size / 2;
+    const r = b.radius;
+    // Craters — seeded, 9 dark circles clipped within 0.75*r.
+    const rng = mulberry32(b.screamSeed);
+    for (let i = 0; i < 9; i++) {
+      const cr = r * (0.08 + rng() * 0.2);
+      const ang = rng() * Math.PI * 2;
+      const dist = rng() * r * 0.75;
+      const px = cx + Math.cos(ang) * dist;
+      const py = cy + Math.sin(ang) * dist;
+      cctx.fillStyle = `rgba(20,12,8,${0.3 + rng() * 0.4})`;
+      cctx.beginPath(); cctx.arc(px, py, cr, 0, 6.28); cctx.fill();
+    }
+    // Brow ridge.
+    const browY = cy - r * 0.45;
+    cctx.strokeStyle = '#0a0604';
+    cctx.lineWidth = r * 0.12;
+    cctx.lineCap = 'round';
+    for (const side of [-1, 1]) {
+      cctx.beginPath();
+      cctx.moveTo(cx + side * r * 0.1,  browY + r * 0.12);
+      cctx.lineTo(cx + side * r * 0.55, browY - r * 0.05);
+      cctx.stroke();
+    }
+    // Eye socket base (black oval). Inner red glow stays live during scream.
+    const eyeOffX = r * 0.32;
+    const eyeOffY = -r * 0.18;
+    for (const side of [-1, 1]) {
+      const ex = cx + side * eyeOffX;
+      const ey = cy + eyeOffY;
+      cctx.save();
+      cctx.translate(ex, ey);
+      cctx.rotate(side * 0.22);
+      cctx.fillStyle = '#000';
+      cctx.beginPath();
+      cctx.ellipse(0, 0, r * 0.24, r * 0.2, 0, 0, 6.28);
+      cctx.fill();
+      cctx.restore();
+    }
+    return c;
+  } catch { return null; }
+}
+
+function buildHeartStaticSprite(b) {
+  try {
+    const size = bodySpriteSize(b);
+    const c = document.createElement('canvas');
+    c.width = size; c.height = size;
+    const cctx = c.getContext('2d');
+    const cx = size / 2, cy = size / 2;
+    const w = b.radius;
+    // Baked at heartScale = 1 (no pulse). Live drawHeart applies ctx.scale
+    // to approximate the pulse. Asymmetric top/bot squeeze from the old code
+    // can't be captured by a uniform scale — minor visual simplification.
+    // Arteries.
+    cctx.strokeStyle = '#6b0000';
+    cctx.lineCap = 'round';
+    const arteries = [
+      { offX: -w * 0.35, tipX: -w * 0.55, tipY: -w * 1.25, width: 6 },
+      { offX:  0,        tipX:  w * 0.05, tipY: -w * 1.45, width: 8 },
+      { offX:  w * 0.4,  tipX:  w * 0.6,  tipY: -w * 1.2,  width: 5 },
+    ];
+    for (const a of arteries) {
+      cctx.lineWidth = a.width;
+      cctx.beginPath();
+      cctx.moveTo(cx + a.offX, cy - w * 0.7);
+      cctx.quadraticCurveTo(
+        cx + a.offX * 0.5, cy - w,
+        cx + a.tipX, cy + a.tipY
+      );
+      cctx.stroke();
+    }
+    // Blob fill.
+    const points = 16;
+    const fill = cctx.createRadialGradient(cx - w * 0.35, cy - w * 0.3, 0, cx, cy, w * 1.2);
+    fill.addColorStop(0,   '#cc0000');
+    fill.addColorStop(0.5, '#8b0000');
+    fill.addColorStop(1,   '#3d0000');
+    cctx.fillStyle = fill;
+    cctx.beginPath();
+    for (let i = 0; i < points; i++) {
+      const u = i / points;
+      const a = u * Math.PI * 2 - Math.PI / 2;
+      const rng2 = mulberry32(b.heartSeed + i * 31);
+      const lump = 0.88 + rng2() * 0.25;
+      const rr = w * 1.05 * lump;
+      const px = cx + Math.cos(a) * rr;
+      const py = cy + Math.sin(a) * rr;
+      if (i === 0) cctx.moveTo(px, py);
+      else cctx.lineTo(px, py);
+    }
+    cctx.closePath();
+    cctx.fill();
+    // Surface veins.
+    cctx.strokeStyle = 'rgba(60,0,0,0.85)';
+    cctx.lineWidth = 1.3;
+    const veinRng = mulberry32(b.heartSeed ^ 0xbeef);
+    for (let i = 0; i < 7; i++) {
+      const startA = veinRng() * Math.PI * 2;
+      let x = cx + Math.cos(startA) * w * 0.9;
+      let y = cy + Math.sin(startA) * w * 0.9;
+      cctx.beginPath();
+      cctx.moveTo(x, y);
+      const segs = 3 + Math.floor(veinRng() * 3);
+      let ang = startA + Math.PI + (veinRng() - 0.5) * 1.2;
+      for (let s2 = 0; s2 < segs; s2++) {
+        ang += (veinRng() - 0.5) * 1.4;
+        const step = w * (0.2 + veinRng() * 0.25);
+        x += Math.cos(ang) * step;
+        y += Math.sin(ang) * step;
+        cctx.lineTo(x, y);
+      }
+      cctx.stroke();
+      cctx.beginPath();
+      cctx.moveTo(x, y);
+      const brAng = ang + (veinRng() - 0.5) * 1.8;
+      cctx.lineTo(x + Math.cos(brAng) * w * 0.2, y + Math.sin(brAng) * w * 0.2);
+      cctx.stroke();
+    }
+    // Glossy sheen on the upper-left.
+    cctx.globalAlpha = 0.45;
+    const sheen = cctx.createRadialGradient(cx - w * 0.3, cy - w * 0.5, 0, cx - w * 0.3, cy - w * 0.5, w * 0.55);
+    sheen.addColorStop(0,   'rgba(255,150,150,0.8)');
+    sheen.addColorStop(0.6, 'rgba(255,120,120,0.25)');
+    sheen.addColorStop(1,   'rgba(255,120,120,0)');
+    cctx.fillStyle = sheen;
+    cctx.beginPath(); cctx.arc(cx - w * 0.3, cy - w * 0.5, w * 0.55, 0, 6.28); cctx.fill();
+    cctx.globalAlpha = 1;
+    return c;
+  } catch { return null; }
+}
+
+function releaseBodyCanvases(b) {
+  if (!b) return;
+  b.veinCanvas = null;
+  b.faceCanvas = null;
+  b.mirrorCanvas = null;
+  b.screamStaticCanvas = null;
+  b.heartCanvas = null;
+}
+
 // Desktop: size and center the wrapper when the browser window is wider/taller
 // than the capped playfield. Uses margin:auto with all four fixed offsets set
 // to 0 so the box is horizontally + vertically centered.
@@ -3412,6 +3757,16 @@ function spawnBody(yBase) {
     body.skullPalette = palettes[Math.floor(Math.random() * palettes.length)];
   }
 
+  // Per-body static sprites. Built once here so each draw frame can blit the
+  // static parts via drawImage instead of rebuilding paths. Failures (try/catch
+  // inside each builder) fall back to null → draw functions detect and use the
+  // original path-based rendering.
+  if      (type === 'eye')       body.veinCanvas         = buildEyeVeinSprite(body);
+  else if (type === 'skull')     body.faceCanvas         = buildSkullFaceSprite(body);
+  else if (type === 'mirror')    body.mirrorCanvas       = buildMirrorBodySprite(body);
+  else if (type === 'screaming') body.screamStaticCanvas = buildScreamingStaticSprite(body);
+  else if (type === 'heart')     body.heartCanvas        = buildHeartStaticSprite(body);
+
   // First body of a fresh run has been built — release the phase-1 lock so
   // phase selection resumes using real elapsed time.
   if (forcePhase1) forcePhase1 = false;
@@ -3576,6 +3931,20 @@ function pushEffect(e) {
   destroyEffects.push(e);
 }
 
+// Flat [dx0, dy0, dx1, dy1, ...] polygon vertex list, already rotated by
+// `angle`. Used to bake the fragment polygon at spawn so drawDestroyEffects
+// can batch same-colour fragments into a single Path2D fill. Loses per-frame
+// rotation (the old `e.angle += e.spin` visual), in exchange for batching.
+function computeFragVerts(angle, sides, size) {
+  const verts = new Array(sides * 2);
+  for (let k = 0; k < sides; k++) {
+    const a = (k / sides) * 6.28 + angle;
+    verts[k * 2]     = Math.cos(a) * size;
+    verts[k * 2 + 1] = Math.sin(a) * size;
+  }
+  return verts;
+}
+
 // destroyEffects: maxLife values are in MILLISECONDS. Per-frame update in
 // drawDestroyEffects computes e.age = Date.now() - e.startTime so the
 // (1 - age/maxLife) and (maxR * age/maxLife) math keep working unchanged.
@@ -3603,10 +3972,13 @@ function emitDestroyEffects(body, kind) {
         kind: 'novaFrag', x: body.x, y: body.y,
         vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
         startTime: now, age: 0, maxLife: 500,
-        angle: Math.random() * Math.PI * 2,
-        spin: (Math.random() - 0.5) * 0.35,
-        size: 4 + Math.random() * 4,
-        sides: 3 + Math.floor(Math.random() * 2),
+        // Rotation baked into vertex positions at spawn (no per-frame spin)
+        // so fragments of the same colour can batch into one Path2D fill.
+        verts: computeFragVerts(
+          Math.random() * Math.PI * 2,
+          3 + Math.floor(Math.random() * 2),
+          4 + Math.random() * 4
+        ),
         color: body.glowColor || 'rgba(255,180,120,1)',
       });
     }
@@ -3655,10 +4027,10 @@ function emitDestroyEffects(body, kind) {
         kind: 'barrierFrag', x: body.x, y: body.y,
         vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
         startTime: now, age: 0, maxLife: 367,
-        angle: Math.random() * Math.PI * 2,
-        spin: (Math.random() - 0.5) * 0.4,
-        size: 3 + Math.random() * 3,
-        sides: 3,
+        // Rotation baked at spawn so same-colour fragments batch.
+        verts: computeFragVerts(
+          Math.random() * Math.PI * 2, 3, 3 + Math.random() * 3
+        ),
         color: '255,220,120',
       });
     }
@@ -3690,6 +4062,17 @@ function drawDestroyEffects() {
     if (e.startTime !== undefined) e.age = nowDe - e.startTime;
   }
   destroyEffects = destroyEffects.filter(e => e.age < e.maxLife);
+
+  // Batch accumulators. Frags and scans collect into Path2Ds keyed by colour
+  // and life bucket; barrierComp ellipses all share one yellow ring style so
+  // they combine into a single Path2D with averaged alpha. Bucket midpoints
+  // (0.125/0.375/0.625/0.875) are the alphas applied at flush time.
+  const fragBatches = {};  // "color|bucket" -> Path2D
+  const scanBatches = {};  // bucket -> Path2D
+  const compPath = new Path2D();
+  let compAlphaSum = 0, compCount = 0;
+  const BUCKET_ALPHA = [0.125, 0.375, 0.625, 0.875];
+
   for (const e of destroyEffects) {
     const t = e.age / e.maxLife;
 
@@ -3705,35 +4088,36 @@ function drawDestroyEffects() {
       ctx.lineWidth = 2.5;
       ctx.beginPath(); ctx.arc(e.x, e.y, r, 0, 6.28); ctx.stroke();
 
-    } else if (e.kind === 'novaFrag') {
+    } else if (e.kind === 'novaFrag' || e.kind === 'barrierFrag') {
       e.x += e.vx; e.y += e.vy;
-      e.vx *= 0.96;
-      e.vy = e.vy * 0.96 + 0.1; // slight gravity
-      e.angle += e.spin;
-      ctx.globalAlpha = 1 - t;
-      ctx.fillStyle = e.color;
-      ctx.save();
-      ctx.translate(e.x, e.y); ctx.rotate(e.angle);
-      ctx.beginPath();
-      for (let i = 0; i < e.sides; i++) {
-        const a = (i / e.sides) * 6.28;
-        const px = Math.cos(a) * e.size;
-        const py = Math.sin(a) * e.size;
-        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      if (e.kind === 'novaFrag') {
+        e.vx *= 0.96;
+        e.vy = e.vy * 0.96 + 0.1;
+      } else {
+        e.vx *= 0.95;
+        e.vy = e.vy * 0.95 + 0.1;
       }
-      ctx.closePath(); ctx.fill();
-      ctx.restore();
+      const verts = e.verts;
+      if (verts && verts.length >= 2) {
+        const bi = Math.min(3, Math.floor((1 - t) * 4));
+        const key = e.color + '|' + bi;
+        let path = fragBatches[key];
+        if (!path) path = fragBatches[key] = new Path2D();
+        path.moveTo(e.x + verts[0], e.y + verts[1]);
+        for (let k = 2; k < verts.length; k += 2) {
+          path.lineTo(e.x + verts[k], e.y + verts[k + 1]);
+        }
+        path.closePath();
+      }
 
     } else if (e.kind === 'shieldScan') {
       const half = e.baseR * 1.2;
       const lineX = e.x + e.dir * (-half + t * 2 * half);
-      ctx.globalAlpha = (1 - t) * 0.85;
-      ctx.strokeStyle = 'rgba(180,240,255,1)';
-      ctx.lineWidth = 1.8;
-      ctx.beginPath();
-      ctx.moveTo(lineX - e.dir * 8, e.y);
-      ctx.lineTo(lineX, e.y);
-      ctx.stroke();
+      const bi = Math.min(3, Math.floor((1 - t) * 4));
+      let path = scanBatches[bi];
+      if (!path) path = scanBatches[bi] = new Path2D();
+      path.moveTo(lineX - e.dir * 8, e.y);
+      path.lineTo(lineX, e.y);
 
     } else if (e.kind === 'shieldSpark') {
       e.x += e.vx; e.y += e.vy;
@@ -3763,35 +4147,12 @@ function drawDestroyEffects() {
       ctx.stroke();
 
     } else if (e.kind === 'barrierComp') {
+      // Accumulate into one ellipse batch (ctx.ellipse replaces the old
+      // scale+circle trick — same visual, one stroke call at flush time).
       const r = e.maxR * t;
-      ctx.globalAlpha = (1 - t) * 0.75;
-      ctx.strokeStyle = 'rgba(255,220,100,1)';
-      ctx.lineWidth = 2;
-      ctx.save();
-      ctx.translate(e.x, e.y);
-      ctx.rotate(e.angle);
-      ctx.scale(0.55, 1);
-      ctx.beginPath(); ctx.arc(0, 0, r, 0, 6.28); ctx.stroke();
-      ctx.restore();
-
-    } else if (e.kind === 'barrierFrag') {
-      e.x += e.vx; e.y += e.vy;
-      e.vx *= 0.95;
-      e.vy = e.vy * 0.95 + 0.1;
-      e.angle += e.spin;
-      ctx.globalAlpha = 1 - t;
-      ctx.fillStyle = `rgba(${e.color},1)`;
-      ctx.save();
-      ctx.translate(e.x, e.y); ctx.rotate(e.angle);
-      ctx.beginPath();
-      for (let i = 0; i < e.sides; i++) {
-        const a = (i / e.sides) * 6.28;
-        const px = Math.cos(a) * e.size;
-        const py = Math.sin(a) * e.size;
-        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
-      }
-      ctx.closePath(); ctx.fill();
-      ctx.restore();
+      compPath.ellipse(e.x, e.y, r * 0.55, r, e.angle, 0, 6.28);
+      compAlphaSum += (1 - t) * 0.75;
+      compCount++;
 
     } else if (e.kind === 'ghostRipple') {
       const r = e.maxR * t;
@@ -3807,6 +4168,32 @@ function drawDestroyEffects() {
       ctx.fillStyle = 'rgba(210,180,255,1)';
       ctx.beginPath(); ctx.arc(e.x, e.y, e.size, 0, 6.28); ctx.fill();
     }
+  }
+
+  // Flush batches.
+  for (const key in fragBatches) {
+    const pipe = key.lastIndexOf('|');
+    const color = key.slice(0, pipe);
+    const bi = +key.slice(pipe + 1);
+    ctx.globalAlpha = BUCKET_ALPHA[bi];
+    // `color` can be a raw "r,g,b" (barrierFrag) or a full CSS colour string
+    // like "rgba(...)" / "hsl(...)" (novaFrag uses body.glowColor which the
+    // body factory sets to either). Detect by looking for the '(' of a CSS
+    // colour function and pass through unchanged; otherwise wrap.
+    ctx.fillStyle = color.indexOf('(') >= 0 ? color : `rgba(${color},1)`;
+    ctx.fill(fragBatches[key]);
+  }
+  for (const bi in scanBatches) {
+    ctx.globalAlpha = BUCKET_ALPHA[+bi] * 0.85;
+    ctx.strokeStyle = 'rgba(180,240,255,1)';
+    ctx.lineWidth = 1.8;
+    ctx.stroke(scanBatches[bi]);
+  }
+  if (compCount > 0) {
+    ctx.globalAlpha = compAlphaSum / compCount;
+    ctx.strokeStyle = 'rgba(255,220,100,1)';
+    ctx.lineWidth = 2;
+    ctx.stroke(compPath);
   }
   ctx.globalAlpha = 1;
 }
@@ -3967,13 +4354,17 @@ function activateCombo(key, x, y) {
       ghostEndTime = Date.now() + GHOST_ETERNAL_DURATION();
       activeEffects.ghost = GHOST_ETERNAL_DURATION();
     } else if (key === 'shield_shield') {
-      // Fortress refresh: additive +2 hits, capped per orb (asteroid 4,
-      // others 2) so burst → pair → pickups all stack consistently.
+      // Fortress refresh. Asteroid gets an instant 4-hit fortress (direct set)
+      // so the pair is always a guaranteed full stack. Other orbs add +2
+      // capped at 2, so the pair still tops the stack on a non-asteroid run.
       shieldEndTime = Date.now() + FORTRESS_SHIELD_DURATION_MS;
       activeEffects.shield = FORTRESS_SHIELD_DURATION_MS;
       shieldBroken = false;
-      const fortressCap = activeOrb === 'asteroid' ? 4 : 2;
-      shieldHits = Math.min(fortressCap, shieldHits + 2);
+      if (activeOrb === 'asteroid') {
+        shieldHits = 4;
+      } else {
+        shieldHits = Math.min(2, shieldHits + 2);
+      }
       fortressShield = true;
     } else if (key === 'nova_ghost') {
       // Phantom Blast refresh: reset the damage aura and the ghost half so
@@ -4057,13 +4448,16 @@ function activateCombo(key, x, y) {
     activeEffects.ghost = GHOST_ETERNAL_DURATION();
     activeCombos[key] = { def, deps: ['ghost'] };
   } else if (key === 'shield_shield') {
-    // FORTRESS SHIELD: additive +2 hits, capped per orb (asteroid 4,
-    // others 2). So burst (2 on asteroid) + fortress pair lands at 4.
+    // FORTRESS SHIELD. Asteroid: direct set to the 4-hit cap so the pair is
+    // an instant fortress. Other orbs: +2 additive capped at 2.
     shieldEndTime = Date.now() + FORTRESS_SHIELD_DURATION_MS;
     activeEffects.shield = FORTRESS_SHIELD_DURATION_MS;
     shieldBroken = false;
-    const fortressCap = activeOrb === 'asteroid' ? 4 : 2;
-    shieldHits = Math.min(fortressCap, shieldHits + 2);
+    if (activeOrb === 'asteroid') {
+      shieldHits = 4;
+    } else {
+      shieldHits = Math.min(2, shieldHits + 2);
+    }
     fortressShield = true;
     activeCombos[key] = { def, deps: ['shield'] };
   }
@@ -4099,11 +4493,14 @@ function rawActivate(type, x, y) {
     shieldEndTime = Date.now() + SHIELD_DURATION();
     activeEffects.shield = SHIELD_DURATION();
     shieldBroken = false;
-    // Both orbs gain +1 hit per pickup; only the cap differs (asteroid 4,
-    // default 2). Asteroid players reach the 4-hit max via burst (Fortress
-    // gives 2) plus 2 shield pickups.
+    // Shield pickup rules:
+    //   - Asteroid orb: +2 hits per pickup, cap 4.
+    //   - Other orbs:   +1 hit  per pickup, cap 2.
+    // Related paths (elsewhere in this file) for the Asteroid fortress stack:
+    //   - Burst           -> shieldHits = 4 (direct set, instant full stack).
+    //   - Fortress pair   -> shieldHits = 4 (direct set, instant full stack).
     if (activeOrb === 'asteroid') {
-      shieldHits = Math.min(4, shieldHits + 1);
+      shieldHits = Math.min(4, shieldHits + 2);
     } else {
       shieldHits = Math.min(2, shieldHits + 1);
     }
@@ -4647,6 +5044,7 @@ function checkCollisions() {
           // so it feels like a destroy, not the soft ghost passthrough.
           SFX.planetDestroyed('shield');
           spawnEmpRing(b.x, b.y);
+          releaseBodyCanvases(b);
           bodies.splice(i, 1);
           continue;
         }
@@ -4672,6 +5070,7 @@ function checkCollisions() {
         SFX.planetDestroyed('shield');
         addDestroyPoints();
         spawnEmpRing(bodies[i].x, bodies[i].y);
+        releaseBodyCanvases(bodies[i]);
         bodies.splice(i, 1);
         shieldHits--;
         if (shieldHits <= 0) {
@@ -4741,12 +5140,14 @@ function executeBurst() {
     activateHyperspeed();
     SFX.pickup('hyperspeed', { stacks: hyperSpeedStacks });
   } else if (activeOrb === 'asteroid') {
-    // Fortress Shield — burst grants 2 hits. Players can stack up to 4 by
-    // adding shield pickups (+1 each) afterward. Uses the fortress-tier
-    // duration so the burst matches a manually-triggered shield_shield combo.
+    // Fortress Shield — burst gives an instant full 4-hit fortress (direct
+    // set) on asteroid, matching the fortress-pair combo. Uses the fortress-
+    // tier duration so the burst matches a manually-triggered shield_shield
+    // combo. Single shield pickups on asteroid add +2 (cap 4) on top — which
+    // is a no-op once the burst has already filled the stack.
     shieldEndTime = Date.now() + FORTRESS_SHIELD_DURATION_MS;
     activeEffects.shield = FORTRESS_SHIELD_DURATION_MS;
-    shieldHits = 2;
+    shieldHits = 4;
     shieldBroken = false;
     fortressShield = true;
     const def = COMBO_DEFS.shield_shield;
@@ -5138,6 +5539,13 @@ function update() {
   updateCrackFragments(spd);
   // Drop scrolled-off bodies AND defensive cleanup: NaN coords, the (0,0)
   // stuck-corner case, and bodies that drifted absurdly far above the screen.
+  // Null out sprite canvases on the dropped bodies so their offscreen buffers
+  // can be GC'd promptly instead of waiting for the body's own object to die.
+  for (const b of bodies) {
+    if (isNaN(b.x) || isNaN(b.y) || (b.x <= 1 && b.y <= 1) || b.y <= -H * 3 || b.y >= H + 80) {
+      releaseBodyCanvases(b);
+    }
+  }
   bodies = bodies.filter(b => !isNaN(b.x) && !isNaN(b.y) && !(b.x <= 1 && b.y <= 1) && b.y > -H * 3 && b.y < H + 80);
   const bodyCap = effectiveMaxBodies();
   const refillSpacing = effectiveBodySpacing();
@@ -6309,39 +6717,42 @@ function drawEye(b) {
   grad.addColorStop(1, '#c4b78a');
   ctx.fillStyle = grad;
   ctx.beginPath(); ctx.arc(b.x, b.y, pulseR, 0, 6.28); ctx.fill();
-  // Bloodshot veins: 10-12 primary, thicker + brighter, each with secondary
-  // branches for a more prominent, unsettling look.
-  const rng = mulberry32(b.veinSeed);
-  const veinCount = 11;
-  for (let i = 0; i < veinCount; i++) {
-    const a = rng() * Math.PI * 2;
-    const curveAmt = (rng() - 0.5) * 0.7;
-    const startX = b.x + Math.cos(a) * pulseR * 0.96;
-    const startY = b.y + Math.sin(a) * pulseR * 0.96;
-    const midA = a + curveAmt;
-    const midX = b.x + Math.cos(midA) * (pulseR * 0.55);
-    const midY = b.y + Math.sin(midA) * (pulseR * 0.55);
-    const endA = a + curveAmt * 2;
-    const endX = b.x + Math.cos(endA) * (pulseR * 0.25);
-    const endY = b.y + Math.sin(endA) * (pulseR * 0.25);
-    // Primary vein.
-    ctx.strokeStyle = 'rgba(200,30,30,0.85)';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(startX, startY);
-    ctx.quadraticCurveTo(midX, midY, endX, endY);
-    ctx.stroke();
-    // Secondary branches — two thinner veins off the midpoint.
-    ctx.strokeStyle = 'rgba(200,30,30,0.55)';
-    ctx.lineWidth = 1;
-    for (let j = 0; j < 2; j++) {
-      const branchA = midA + (rng() - 0.5) * 1.4;
-      const branchLen = pulseR * (0.15 + rng() * 0.2);
-      const bx = midX + Math.cos(branchA) * branchLen;
-      const by = midY + Math.sin(branchA) * branchLen;
+  // Veins: pre-baked into b.veinCanvas at spawn (33 strokes → 1 drawImage).
+  // Falls back to the original 33-stroke path if the sprite builder failed.
+  if (b.veinCanvas) {
+    const vs = b.veinCanvas.width;
+    ctx.drawImage(b.veinCanvas, b.x - vs / 2, b.y - vs / 2);
+  } else {
+    const rng = mulberry32(b.veinSeed);
+    const veinCount = 11;
+    for (let i = 0; i < veinCount; i++) {
+      const a = rng() * Math.PI * 2;
+      const curveAmt = (rng() - 0.5) * 0.7;
+      const startX = b.x + Math.cos(a) * pulseR * 0.96;
+      const startY = b.y + Math.sin(a) * pulseR * 0.96;
+      const midA = a + curveAmt;
+      const midX = b.x + Math.cos(midA) * (pulseR * 0.55);
+      const midY = b.y + Math.sin(midA) * (pulseR * 0.55);
+      const endA = a + curveAmt * 2;
+      const endX = b.x + Math.cos(endA) * (pulseR * 0.25);
+      const endY = b.y + Math.sin(endA) * (pulseR * 0.25);
+      ctx.strokeStyle = 'rgba(200,30,30,0.85)';
+      ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.moveTo(midX, midY); ctx.lineTo(bx, by);
+      ctx.moveTo(startX, startY);
+      ctx.quadraticCurveTo(midX, midY, endX, endY);
       ctx.stroke();
+      ctx.strokeStyle = 'rgba(200,30,30,0.55)';
+      ctx.lineWidth = 1;
+      for (let j = 0; j < 2; j++) {
+        const branchA = midA + (rng() - 0.5) * 1.4;
+        const branchLen = pulseR * (0.15 + rng() * 0.2);
+        const bx = midX + Math.cos(branchA) * branchLen;
+        const by = midY + Math.sin(branchA) * branchLen;
+        ctx.beginPath();
+        ctx.moveTo(midX, midY); ctx.lineTo(bx, by);
+        ctx.stroke();
+      }
     }
   }
   // Iris: hue cycles through blue→green→red over 10s. Slightly larger now.
@@ -6425,12 +6836,17 @@ function drawTentacle(b) {
   const count = b.tentacleCount;
   const STEPS = 10; // segments per tentacle
 
-  // Tentacles (draw first, behind body).
+  // Tentacles (draw first, behind body). Each tentacle's segments accumulate
+  // into a single Path2D and stroke once with midpoint width/colour instead
+  // of 10 per-segment strokes. Taper and per-segment colour ramp are
+  // sacrificed; save ~50 strokes/planet. Sucker dots removed entirely —
+  // barely visible at this zoom and they were 30 additional fills/planet.
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
   for (let i = 0; i < count; i++) {
     const phase = b.tentaclePhases[i];
     const ext = tentacleExtension(phase);
     if (ext < 0.05) continue;
-    // Retraction bonus: amplitude swells as tentacle retracts so it curls.
     const retract = phase > 2.5 ? (phase - 2.5) / 1 : 0;
     const ampBoost = 1 + retract * 1.5;
     const angle = (i / count) * Math.PI * 2;
@@ -6440,40 +6856,28 @@ function drawTentacle(b) {
     const outX  = Math.cos(angle), outY  = Math.sin(angle);
     const tangX = -outY, tangY = outX;
 
-    // Build per-segment wiggle and render as tapering strokes.
-    let prevX = baseX, prevY = baseY;
+    const path = new Path2D();
+    path.moveTo(baseX, baseY);
+    let tipX = baseX, tipY = baseY;
     for (let s = 1; s <= STEPS; s++) {
       const u = s / STEPS;
-      // Organic wiggle: sum of sines at different frequencies.
       const wig = (
         Math.sin(frame * 0.05 + s * 0.3 + i * 1.2) * 8 +
         Math.sin(frame * 0.09 + s * 0.7 + i * 0.4) * 4
       ) * u * ampBoost;
       const cx = baseX + outX * (maxLen - b.radius) * u + tangX * wig;
       const cy = baseY + outY * (maxLen - b.radius) * u + tangY * wig;
-      const w = 8 * (1 - u) + 4 * u; // taper: 8px → 4px (bulbous tip)
-      // Gradient from dark base to lighter tip per spec.
-      const rCol = Math.round(26 + u * 81);
-      const gCol = Math.round(0  + u * 33);
-      const bCol = Math.round(48 + u * 120);
-      ctx.strokeStyle = `rgba(${rCol},${gCol},${bCol},0.92)`;
-      ctx.lineWidth = w;
-      ctx.lineCap = 'round';
-      ctx.beginPath();
-      ctx.moveTo(prevX, prevY); ctx.lineTo(cx, cy);
-      ctx.stroke();
-      // Sucker dots along the length (every ~15px equivalent: every other step).
-      if (s > 1 && s % 2 === 0) {
-        ctx.fillStyle = 'rgba(180,140,220,0.75)';
-        ctx.beginPath(); ctx.arc(cx, cy, 1.8, 0, 6.28); ctx.fill();
-      }
-      // Bulbous tip.
-      if (s === STEPS) {
-        ctx.fillStyle = `rgba(${rCol + 20},${gCol + 20},${bCol + 20},0.95)`;
-        ctx.beginPath(); ctx.arc(cx, cy, 4.5, 0, 6.28); ctx.fill();
-      }
-      prevX = cx; prevY = cy;
+      path.lineTo(cx, cy);
+      tipX = cx; tipY = cy;
     }
+    // Midpoint colour/width — closest single value to the old per-segment ramp.
+    ctx.strokeStyle = 'rgba(66,17,108,0.92)'; // u=0.5 of the original ramp
+    ctx.lineWidth = 6;                         // midpoint of the 8→4 taper
+    ctx.stroke(path);
+    // Bulbous tip — one extra fill per tentacle, matches the old lighter-than-
+    // shaft tip colour.
+    ctx.fillStyle = 'rgba(86,37,128,0.95)';
+    ctx.beginPath(); ctx.arc(tipX, tipY, 4.5, 0, 6.28); ctx.fill();
   }
 
   // Slightly irregular body silhouette — darker navy/black. Use 10-vertex path
@@ -6586,17 +6990,23 @@ function drawScreaming(b) {
   ctx.beginPath(); ctx.arc(0, 0, b.radius, 0, 6.28); ctx.fill();
   ctx.restore();
 
-  // Cratered surface: scattered darker circles. (No clip — Android WebView
-  // crash risk. Crater centers capped at 0.8*r so they stay mostly inside.)
-  const rng = mulberry32(b.screamSeed);
-  for (let i = 0; i < 9; i++) {
-    const cr = b.radius * (0.08 + rng() * 0.2);
-    const ang = rng() * Math.PI * 2;
-    const dist = rng() * b.radius * 0.75;
-    const cx = b.x + Math.cos(ang) * dist;
-    const cy = b.y + Math.sin(ang) * dist;
-    ctx.fillStyle = `rgba(20,12,8,${0.3 + rng() * 0.4})`;
-    ctx.beginPath(); ctx.arc(cx, cy, cr, 0, 6.28); ctx.fill();
+  // Cratered surface + brow ridge + eye socket black ovals are baked into
+  // b.screamStaticCanvas at spawn. One drawImage replaces 13 fills/strokes.
+  // Fallback retains the original per-frame drawing path.
+  if (b.screamStaticCanvas) {
+    const ss = b.screamStaticCanvas.width;
+    ctx.drawImage(b.screamStaticCanvas, b.x - ss / 2, b.y - ss / 2);
+  } else {
+    const rng = mulberry32(b.screamSeed);
+    for (let i = 0; i < 9; i++) {
+      const cr = b.radius * (0.08 + rng() * 0.2);
+      const ang = rng() * Math.PI * 2;
+      const dist = rng() * b.radius * 0.75;
+      const cx = b.x + Math.cos(ang) * dist;
+      const cy = b.y + Math.sin(ang) * dist;
+      ctx.fillStyle = `rgba(20,12,8,${0.3 + rng() * 0.4})`;
+      ctx.beginPath(); ctx.arc(cx, cy, cr, 0, 6.28); ctx.fill();
+    }
   }
   // Hairline cracks during scream. Lengths sum-capped so they stay within body.
   if (mouthT > 0.2) {
@@ -6627,34 +7037,44 @@ function drawScreaming(b) {
     }
   }
 
-  // Brow ridge: two dark curves above the eyes angling inward (menacing).
-  const browY = b.y - b.radius * 0.45;
-  ctx.strokeStyle = '#0a0604';
-  ctx.lineWidth = b.radius * 0.12;
-  ctx.lineCap = 'round';
-  for (const side of [-1, 1]) {
-    ctx.beginPath();
-    ctx.moveTo(b.x + side * b.radius * 0.1,  browY + b.radius * 0.12);
-    ctx.lineTo(b.x + side * b.radius * 0.55, browY - b.radius * 0.05);
-    ctx.stroke();
-  }
-
-  // Hollow eye sockets — irregular oval cavities (skull-like).
+  // Brow ridge and eye socket base ovals are baked into the sprite when
+  // available — only the mouthT-gated inner eye glow stays live. Fallback
+  // path runs the full draw when the sprite is missing.
   const eyeOffX = b.radius * 0.32;
   const eyeOffY = -b.radius * 0.18;
-  for (const side of [-1, 1]) {
-    const ex = b.x + side * eyeOffX;
-    const ey = b.y + eyeOffY;
-    // Deep black cavity with irregular shape.
-    ctx.save();
-    ctx.translate(ex, ey);
-    ctx.rotate(side * 0.22);
-    ctx.fillStyle = '#000';
-    ctx.beginPath();
-    ctx.ellipse(0, 0, b.radius * 0.24, b.radius * 0.2, 0, 0, 6.28);
-    ctx.fill();
-    // Slight red glow deep inside the socket during scream.
-    if (mouthT > 0.2) {
+  if (!b.screamStaticCanvas) {
+    const browY = b.y - b.radius * 0.45;
+    ctx.strokeStyle = '#0a0604';
+    ctx.lineWidth = b.radius * 0.12;
+    ctx.lineCap = 'round';
+    for (const side of [-1, 1]) {
+      ctx.beginPath();
+      ctx.moveTo(b.x + side * b.radius * 0.1,  browY + b.radius * 0.12);
+      ctx.lineTo(b.x + side * b.radius * 0.55, browY - b.radius * 0.05);
+      ctx.stroke();
+    }
+    for (const side of [-1, 1]) {
+      const ex = b.x + side * eyeOffX;
+      const ey = b.y + eyeOffY;
+      ctx.save();
+      ctx.translate(ex, ey);
+      ctx.rotate(side * 0.22);
+      ctx.fillStyle = '#000';
+      ctx.beginPath();
+      ctx.ellipse(0, 0, b.radius * 0.24, b.radius * 0.2, 0, 0, 6.28);
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+  // Inner eye-socket red glow during scream — always live, positioned to
+  // match the baked socket ovals.
+  if (mouthT > 0.2) {
+    for (const side of [-1, 1]) {
+      const ex = b.x + side * eyeOffX;
+      const ey = b.y + eyeOffY;
+      ctx.save();
+      ctx.translate(ex, ey);
+      ctx.rotate(side * 0.22);
       const inner = ctx.createRadialGradient(0, 0, 0, 0, 0, b.radius * 0.22);
       inner.addColorStop(0, `rgba(180,30,30,${mouthT * 0.65})`);
       inner.addColorStop(1, 'rgba(80,0,0,0)');
@@ -6662,8 +7082,8 @@ function drawScreaming(b) {
       ctx.beginPath();
       ctx.ellipse(0, 0, b.radius * 0.22, b.radius * 0.18, 0, 0, 6.28);
       ctx.fill();
+      ctx.restore();
     }
-    ctx.restore();
   }
 
   // Mouth: grows with mouthT. Black cavity with jagged teeth when open.
@@ -6812,99 +7232,103 @@ function drawHeart(b) {
   ctx.fillStyle = glow;
   ctx.beginPath(); ctx.arc(b.x, b.y, w * 2.2, 0, 6.28); ctx.fill();
 
-  // Aorta/artery tubes extending from top. 3 curved tubes.
-  const arteryColor = '#6b0000';
-  ctx.strokeStyle = arteryColor;
-  ctx.lineCap = 'round';
-  const arteries = [
-    { offX: -w * 0.35, tipX: -w * 0.55, tipY: -w * 1.25, width: 6 },
-    { offX:  0,        tipX:  w * 0.05, tipY: -w * 1.45, width: 8 },
-    { offX:  w * 0.4,  tipX:  w * 0.6,  tipY: -w * 1.2,  width: 5 },
-  ];
-  for (const a of arteries) {
-    ctx.lineWidth = a.width;
-    ctx.beginPath();
-    ctx.moveTo(b.x + a.offX, b.y - w * 0.7 * topScale);
-    ctx.quadraticCurveTo(
-      b.x + a.offX * 0.5, b.y - w * (1.0 + squeeze * 0.05),
-      b.x + a.tipX, b.y + a.tipY * topScale
-    );
-    ctx.stroke();
-  }
-
-  // Irregular anatomical blob — closed path with jittered points, filled
-  // directly (replaces former clip + fillRect — Android WebView crash risk).
-  const rng = mulberry32(b.heartSeed);
-  const points = 16;
-  const heartKey = 'heart_base_' + Math.round(w);
-  const fill = getCachedGradient(heartKey, () => {
-    const g = ctx.createRadialGradient(-w * 0.35, -w * 0.3, 0, 0, 0, w * 1.2);
-    g.addColorStop(0, '#cc0000');
-    g.addColorStop(0.5, '#8b0000');
-    g.addColorStop(1, '#3d0000');
-    return g;
-  });
-  ctx.save();
-  ctx.translate(b.x, b.y);
-  ctx.fillStyle = fill;
-  ctx.beginPath();
-  for (let i = 0; i < points; i++) {
-    const u = i / points;
-    const a = u * Math.PI * 2 - Math.PI / 2; // start at top
-    // Asymmetric radius: contract top (sin(a) < 0), expand bottom.
-    const verticalLean = -Math.sin(a); // +1 at top, -1 at bottom
-    const asymScale = verticalLean > 0 ? topScale : botScale;
-    // Slight lumpy irregularity, stable per body via seeded rng.
-    const rng2 = mulberry32(b.heartSeed + i * 31);
-    const lump = 0.88 + rng2() * 0.25;
-    const rr = w * 1.05 * lump * asymScale;
-    const px = Math.cos(a) * rr;
-    const py = Math.sin(a) * rr;
-    if (i === 0) ctx.moveTo(px, py);
-    else ctx.lineTo(px, py);
-  }
-  ctx.closePath();
-  ctx.fill();
-  ctx.restore();
-
-  // Branching surface veins. Positions clamped inside 0.95*w.
-  ctx.strokeStyle = 'rgba(60,0,0,0.85)';
-  ctx.lineWidth = 1.3;
-  const veinRng = mulberry32(b.heartSeed ^ 0xbeef);
-  for (let i = 0; i < 7; i++) {
-    const startA = veinRng() * Math.PI * 2;
-    let x = b.x + Math.cos(startA) * w * 0.9;
-    let y = b.y + Math.sin(startA) * w * 0.9;
-    ctx.beginPath();
-    ctx.moveTo(x, y);
-    const segs = 3 + Math.floor(veinRng() * 3);
-    let ang = startA + Math.PI + (veinRng() - 0.5) * 1.2;
-    for (let s2 = 0; s2 < segs; s2++) {
-      ang += (veinRng() - 0.5) * 1.4;
-      const step = w * (0.2 + veinRng() * 0.25);
-      x += Math.cos(ang) * step;
-      y += Math.sin(ang) * step;
-      ctx.lineTo(x, y);
+  // Arteries + blob + surface veins + sheen are baked into b.heartCanvas at
+  // heartScale = 1. Live drawHeart wraps the drawImage in a uniform ctx.scale
+  // to approximate the pulse — the original top/bottom asymmetric squeeze
+  // becomes a uniform scale, a minor simplification for a large draw-call win.
+  // Fallback path (no sprite) keeps the full per-frame rendering.
+  if (b.heartCanvas) {
+    const hs = b.heartCanvas.width;
+    ctx.save();
+    ctx.translate(b.x, b.y);
+    ctx.scale(s, s);
+    ctx.drawImage(b.heartCanvas, -hs / 2, -hs / 2);
+    ctx.restore();
+  } else {
+    // Arteries.
+    ctx.strokeStyle = '#6b0000';
+    ctx.lineCap = 'round';
+    const arteries = [
+      { offX: -w * 0.35, tipX: -w * 0.55, tipY: -w * 1.25, width: 6 },
+      { offX:  0,        tipX:  w * 0.05, tipY: -w * 1.45, width: 8 },
+      { offX:  w * 0.4,  tipX:  w * 0.6,  tipY: -w * 1.2,  width: 5 },
+    ];
+    for (const a of arteries) {
+      ctx.lineWidth = a.width;
+      ctx.beginPath();
+      ctx.moveTo(b.x + a.offX, b.y - w * 0.7 * topScale);
+      ctx.quadraticCurveTo(
+        b.x + a.offX * 0.5, b.y - w * (1.0 + squeeze * 0.05),
+        b.x + a.tipX, b.y + a.tipY * topScale
+      );
+      ctx.stroke();
     }
-    ctx.stroke();
-    // Small branch off.
+    // Blob.
+    const points = 16;
+    const heartKey = 'heart_base_' + Math.round(w);
+    const fill = getCachedGradient(heartKey, () => {
+      const g = ctx.createRadialGradient(-w * 0.35, -w * 0.3, 0, 0, 0, w * 1.2);
+      g.addColorStop(0, '#cc0000');
+      g.addColorStop(0.5, '#8b0000');
+      g.addColorStop(1, '#3d0000');
+      return g;
+    });
+    ctx.save();
+    ctx.translate(b.x, b.y);
+    ctx.fillStyle = fill;
     ctx.beginPath();
-    ctx.moveTo(x, y);
-    const brAng = ang + (veinRng() - 0.5) * 1.8;
-    ctx.lineTo(x + Math.cos(brAng) * w * 0.2, y + Math.sin(brAng) * w * 0.2);
-    ctx.stroke();
+    for (let i = 0; i < points; i++) {
+      const u = i / points;
+      const a = u * Math.PI * 2 - Math.PI / 2;
+      const verticalLean = -Math.sin(a);
+      const asymScale = verticalLean > 0 ? topScale : botScale;
+      const rng2 = mulberry32(b.heartSeed + i * 31);
+      const lump = 0.88 + rng2() * 0.25;
+      const rr = w * 1.05 * lump * asymScale;
+      const px = Math.cos(a) * rr;
+      const py = Math.sin(a) * rr;
+      if (i === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+    // Veins.
+    ctx.strokeStyle = 'rgba(60,0,0,0.85)';
+    ctx.lineWidth = 1.3;
+    const veinRng = mulberry32(b.heartSeed ^ 0xbeef);
+    for (let i = 0; i < 7; i++) {
+      const startA = veinRng() * Math.PI * 2;
+      let x = b.x + Math.cos(startA) * w * 0.9;
+      let y = b.y + Math.sin(startA) * w * 0.9;
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      const segs = 3 + Math.floor(veinRng() * 3);
+      let ang = startA + Math.PI + (veinRng() - 0.5) * 1.2;
+      for (let s2 = 0; s2 < segs; s2++) {
+        ang += (veinRng() - 0.5) * 1.4;
+        const step = w * (0.2 + veinRng() * 0.25);
+        x += Math.cos(ang) * step;
+        y += Math.sin(ang) * step;
+        ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      const brAng = ang + (veinRng() - 0.5) * 1.8;
+      ctx.lineTo(x + Math.cos(brAng) * w * 0.2, y + Math.sin(brAng) * w * 0.2);
+      ctx.stroke();
+    }
+    // Sheen.
+    ctx.globalAlpha = 0.45;
+    const sheen = ctx.createRadialGradient(b.x - w * 0.3, b.y - w * 0.5, 0, b.x - w * 0.3, b.y - w * 0.5, w * 0.55);
+    sheen.addColorStop(0, 'rgba(255,150,150,0.8)');
+    sheen.addColorStop(0.6, 'rgba(255,120,120,0.25)');
+    sheen.addColorStop(1, 'rgba(255,120,120,0)');
+    ctx.fillStyle = sheen;
+    ctx.beginPath(); ctx.arc(b.x - w * 0.3, b.y - w * 0.5, w * 0.55, 0, 6.28); ctx.fill();
+    ctx.globalAlpha = 1;
   }
-
-  // Wet/glossy sheen on upper portion — bounded circle fill (gradient already
-  // fades to 0 at w*0.55 so overflow is invisible).
-  ctx.globalAlpha = 0.45;
-  const sheen = ctx.createRadialGradient(b.x - w * 0.3, b.y - w * 0.5, 0, b.x - w * 0.3, b.y - w * 0.5, w * 0.55);
-  sheen.addColorStop(0, 'rgba(255,150,150,0.8)');
-  sheen.addColorStop(0.6, 'rgba(255,120,120,0.25)');
-  sheen.addColorStop(1, 'rgba(255,120,120,0)');
-  ctx.fillStyle = sheen;
-  ctx.beginPath(); ctx.arc(b.x - w * 0.3, b.y - w * 0.5, w * 0.55, 0, 6.28); ctx.fill();
-  ctx.globalAlpha = 1;
 
   // Blood drops falling.
   for (const d of b.bloodDrops) {
@@ -6922,8 +7346,15 @@ function drawHeart(b) {
 
 function drawMirror(b) {
   ctx.save();
-  // Chrome sphere: radial gradient from white highlight through silver to
-  // dark edge, giving a metallic ball look.
+  // Entire mirror body (chrome sphere + reflected stars + crescent highlight
+  // + dark rim) is baked into b.mirrorCanvas at spawn — everything is
+  // seeded-static. Falls back to the original draw path if the builder failed.
+  if (b.mirrorCanvas) {
+    const ms = b.mirrorCanvas.width;
+    ctx.drawImage(b.mirrorCanvas, b.x - ms / 2, b.y - ms / 2);
+    ctx.restore();
+    return;
+  }
   const chrome = ctx.createRadialGradient(
     b.x - b.radius * 0.35, b.y - b.radius * 0.35, 0,
     b.x, b.y, b.radius
@@ -6935,9 +7366,6 @@ function drawMirror(b) {
   chrome.addColorStop(1,    '#0a0a0a');
   ctx.fillStyle = chrome;
   ctx.beginPath(); ctx.arc(b.x, b.y, b.radius, 0, 6.28); ctx.fill();
-
-  // Reflected stars on the surface. (No clip — Android WebView crash risk.
-  // Star positions constrained to stay within 0.9*r of body center.)
   const rng = mulberry32(b.mirrorSeed);
   for (let i = 0; i < 7; i++) {
     const a = rng() * Math.PI * 2;
@@ -6950,9 +7378,6 @@ function drawMirror(b) {
     ctx.beginPath(); ctx.arc(rx, ry, rr, 0, 6.28); ctx.fill();
   }
   ctx.globalAlpha = 1;
-
-  // Bright crescent highlight on upper-left. (No clip — gradient fades to 0
-  // at the fill edge so overflow is invisible.)
   const highlight = ctx.createRadialGradient(
     b.x - b.radius * 0.45, b.y - b.radius * 0.45, 0,
     b.x - b.radius * 0.2, b.y - b.radius * 0.2, b.radius * 0.6
@@ -6962,8 +7387,6 @@ function drawMirror(b) {
   highlight.addColorStop(1, 'rgba(255,255,255,0)');
   ctx.fillStyle = highlight;
   ctx.beginPath(); ctx.arc(b.x - b.radius * 0.3, b.y - b.radius * 0.3, b.radius * 0.55, 0, 6.28); ctx.fill();
-
-  // Dark rim for depth.
   ctx.strokeStyle = 'rgba(0,0,0,0.75)';
   ctx.lineWidth = 1.5;
   ctx.beginPath(); ctx.arc(b.x, b.y, b.radius - 0.5, 0, 6.28); ctx.stroke();
@@ -7000,112 +7423,117 @@ function drawSkull(b) {
   ctx.fillStyle = sphereShade;
   ctx.beginPath(); ctx.arc(b.x, b.y, r, 0, 6.28); ctx.fill();
 
-  // Cloud-like lighter patches on the upper portion (multiple overlapping
-  // semi-transparent circles). Positions constrained so they stay inside
-  // the body disc instead of relying on a clip.
-  const rng = mulberry32(b.skullSeed);
-  ctx.fillStyle = 'rgba(240,240,230,0.35)';
-  for (let i = 0; i < 7; i++) {
-    const a = (rng() - 0.5) * Math.PI; // confine to upper half mostly
-    const yFrac = -0.55 + rng() * 0.6;
-    const cr = r * (0.1 + rng() * 0.22);
-    const ddx = (rng() - 0.5) * r * 1.6;
-    const ddy = yFrac * r;
-    // Clamp cloud center to within (r - cr) of body center so the disc contains it.
-    const d = Math.hypot(ddx, ddy);
-    const cap = Math.max(0.1, r - cr);
-    const k = d > cap ? cap / d : 1;
-    ctx.beginPath(); ctx.arc(b.x + ddx * k, b.y + ddy * k, cr, 0, 6.28); ctx.fill();
-  }
-
-  // --- Skull face on the lower half ---
+  // Static face parts (clouds + eye sockets + cheekbones + nasal + teeth +
+  // jaw shadow + rim) are baked into b.faceCanvas at spawn. Eye glow flash
+  // draws live on top so random timing still reads. Falls back to the full
+  // path rendering if the builder failed.
   const flash = b.skullEyeFlash > 0;
-
-  // Eye sockets: irregular black cavities.
-  const eyeOffX = r * 0.32;
-  const eyeOffY = r * 0.05; // slightly below center
-  for (const side of [-1, 1]) {
-    const ex = b.x + side * eyeOffX;
-    const ey = b.y + eyeOffY;
-    ctx.save();
-    ctx.translate(ex, ey);
-    ctx.rotate(side * 0.22);
-    // Deep black cavity.
+  if (b.faceCanvas) {
+    const fs = b.faceCanvas.width;
+    ctx.drawImage(b.faceCanvas, b.x - fs / 2, b.y - fs / 2);
+  } else {
+    const rng = mulberry32(b.skullSeed);
+    ctx.fillStyle = 'rgba(240,240,230,0.35)';
+    for (let i = 0; i < 7; i++) {
+      const yFrac = -0.55 + rng() * 0.6;
+      const cr = r * (0.1 + rng() * 0.22);
+      const ddx = (rng() - 0.5) * r * 1.6;
+      const ddy = yFrac * r;
+      const d = Math.hypot(ddx, ddy);
+      const cap = Math.max(0.1, r - cr);
+      const k = d > cap ? cap / d : 1;
+      ctx.beginPath(); ctx.arc(b.x + ddx * k, b.y + ddy * k, cr, 0, 6.28); ctx.fill();
+    }
+    const eyeOffXf = r * 0.32;
+    const eyeOffYf = r * 0.05;
+    for (const side of [-1, 1]) {
+      ctx.save();
+      ctx.translate(b.x + side * eyeOffXf, b.y + eyeOffYf);
+      ctx.rotate(side * 0.22);
+      ctx.fillStyle = '#000';
+      ctx.beginPath();
+      ctx.ellipse(0, 0, r * 0.19, r * 0.22, 0, 0, 6.28);
+      ctx.fill();
+      ctx.restore();
+    }
+    ctx.strokeStyle = 'rgba(230,220,200,0.5)';
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+    for (const side of [-1, 1]) {
+      ctx.beginPath();
+      ctx.moveTo(b.x + side * r * 0.5, b.y + r * 0.18);
+      ctx.quadraticCurveTo(
+        b.x + side * r * 0.45, b.y + r * 0.35,
+        b.x + side * r * 0.2,  b.y + r * 0.5
+      );
+      ctx.stroke();
+    }
     ctx.fillStyle = '#000';
     ctx.beginPath();
-    ctx.ellipse(0, 0, r * 0.19, r * 0.22, 0, 0, 6.28);
+    ctx.moveTo(b.x, b.y + r * 0.55);
+    ctx.quadraticCurveTo(b.x - r * 0.12, b.y + r * 0.45, b.x - r * 0.1, b.y + r * 0.3);
+    ctx.quadraticCurveTo(b.x - r * 0.06, b.y + r * 0.22, b.x, b.y + r * 0.32);
+    ctx.quadraticCurveTo(b.x + r * 0.06, b.y + r * 0.22, b.x + r * 0.1, b.y + r * 0.3);
+    ctx.quadraticCurveTo(b.x + r * 0.12, b.y + r * 0.45, b.x, b.y + r * 0.55);
+    ctx.closePath();
     ctx.fill();
-    // Red glow when flashing.
-    if (flash) {
+    const toothRngF = mulberry32(b.skullSeed ^ 0x7e5);
+    const toothCountF = 7;
+    const toothBaseYF = b.y + r * 0.72;
+    const toothLenF = r * 0.18;
+    const toothStartXF = b.x - r * 0.45;
+    const toothSpanF = r * 0.9;
+    ctx.fillStyle = 'rgba(220,215,200,0.92)';
+    for (let i = 0; i < toothCountF; i++) {
+      const tu = (i + 0.5) / toothCountF;
+      const tx = toothStartXF + tu * toothSpanF;
+      const baseW = r * 0.085 * (0.85 + toothRngF() * 0.3);
+      const tlen = toothLenF * (0.75 + toothRngF() * 0.4);
+      ctx.beginPath();
+      ctx.moveTo(tx - baseW, toothBaseYF);
+      ctx.lineTo(tx + baseW, toothBaseYF);
+      ctx.lineTo(tx, toothBaseYF + tlen);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    ctx.beginPath();
+    ctx.ellipse(b.x, toothBaseYF, r * 0.5, r * 0.06, 0, 0, 6.28);
+    ctx.fill();
+  }
+
+  // Eye glow flash — live overlay, positioned to match the socket ellipses
+  // inside the baked face. Only the red-glow gradient is dynamic.
+  if (flash) {
+    const eyeOffX = r * 0.32;
+    const eyeOffY = r * 0.05;
+    for (const side of [-1, 1]) {
+      const ex = b.x + side * eyeOffX;
+      const ey = b.y + eyeOffY;
+      ctx.save();
+      ctx.translate(ex, ey);
+      ctx.rotate(side * 0.22);
       const glow = ctx.createRadialGradient(0, 0, 0, 0, 0, r * 0.22);
-      glow.addColorStop(0, 'rgba(220,30,30,0.95)');
+      glow.addColorStop(0,   'rgba(220,30,30,0.95)');
       glow.addColorStop(0.6, 'rgba(160,10,10,0.45)');
-      glow.addColorStop(1, 'rgba(80,0,0,0)');
+      glow.addColorStop(1,   'rgba(80,0,0,0)');
       ctx.fillStyle = glow;
       ctx.beginPath();
       ctx.ellipse(0, 0, r * 0.22, r * 0.24, 0, 0, 6.28);
       ctx.fill();
+      ctx.restore();
     }
-    ctx.restore();
   }
-
-  // Cheekbones: subtle highlight curves below the eye sockets.
-  ctx.strokeStyle = 'rgba(230,220,200,0.5)';
-  ctx.lineWidth = 2;
-  ctx.lineCap = 'round';
-  for (const side of [-1, 1]) {
-    ctx.beginPath();
-    ctx.moveTo(b.x + side * r * 0.5, b.y + r * 0.18);
-    ctx.quadraticCurveTo(
-      b.x + side * r * 0.45, b.y + r * 0.35,
-      b.x + side * r * 0.2,  b.y + r * 0.5
-    );
-    ctx.stroke();
-  }
-
-  // Nasal cavity: upside-down heart/triangle void in the center.
-  ctx.fillStyle = '#000';
-  ctx.beginPath();
-  ctx.moveTo(b.x, b.y + r * 0.55);
-  ctx.quadraticCurveTo(b.x - r * 0.12, b.y + r * 0.45, b.x - r * 0.1, b.y + r * 0.3);
-  ctx.quadraticCurveTo(b.x - r * 0.06, b.y + r * 0.22, b.x, b.y + r * 0.32);
-  ctx.quadraticCurveTo(b.x + r * 0.06, b.y + r * 0.22, b.x + r * 0.1,  b.y + r * 0.3);
-  ctx.quadraticCurveTo(b.x + r * 0.12, b.y + r * 0.45, b.x, b.y + r * 0.55);
-  ctx.closePath();
-  ctx.fill();
-
-  // Teeth row: irregular triangular teeth.
-  const toothRng = mulberry32(b.skullSeed ^ 0x7e5);
-  const toothCount = 7;
-  const toothBaseY = b.y + r * 0.72;
-  const toothLen = r * 0.18;
-  const toothStartX = b.x - r * 0.45;
-  const toothSpan = r * 0.9;
-  ctx.fillStyle = 'rgba(220,215,200,0.92)';
-  for (let i = 0; i < toothCount; i++) {
-    const tu = (i + 0.5) / toothCount;
-    const tx = toothStartX + tu * toothSpan;
-    const baseW = r * 0.085 * (0.85 + toothRng() * 0.3);
-    const tlen = toothLen * (0.75 + toothRng() * 0.4);
-    ctx.beginPath();
-    ctx.moveTo(tx - baseW, toothBaseY);
-    ctx.lineTo(tx + baseW, toothBaseY);
-    ctx.lineTo(tx, toothBaseY + tlen);
-    ctx.closePath();
-    ctx.fill();
-  }
-  // Jaw line shadow beneath teeth.
-  ctx.fillStyle = 'rgba(0,0,0,0.55)';
-  ctx.beginPath();
-  ctx.ellipse(b.x, toothBaseY, r * 0.5, r * 0.06, 0, 0, 6.28);
-  ctx.fill();
 
   ctx.restore();
 
-  // Outer rim (drawn after the clipped interior so it sits on the edge).
-  ctx.strokeStyle = 'rgba(0,0,0,0.6)';
-  ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.arc(b.x, b.y, r, 0, 6.28); ctx.stroke();
+  // Outer rim — only drawn here on the fallback path; when the sprite is
+  // present the rim is baked in, so we avoid a duplicate stroke.
+  if (!b.faceCanvas) {
+    ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(b.x, b.y, r, 0, 6.28); ctx.stroke();
+  }
 }
 
 // Tiny deterministic PRNG used for stable per-body random details (veins,
@@ -7606,6 +8034,8 @@ function drawPowerups() {
 }
 
 function drawNovaRings() {
+  // 2 strokes/ring (inner + outer) — the 18px glow stroke was dropped in the
+  // draw-call reduction pass. At 12 rings cap, saves 12 strokes/frame.
   for (const r of novaRings) {
     const rm = r.radiusMult || 1;
     const drawR = r.radius * rm;
@@ -7620,9 +8050,6 @@ function drawNovaRings() {
     ctx.globalAlpha = r.life * 0.85;
     ctx.strokeStyle = `rgba(${outerCol},${r.life})`;
     ctx.lineWidth = 6;
-    ctx.beginPath(); ctx.arc(r.x, r.y, drawR, 0, 6.28); ctx.stroke();
-    ctx.globalAlpha = r.life * 0.35;
-    ctx.lineWidth = 18;
     ctx.beginPath(); ctx.arc(r.x, r.y, drawR, 0, 6.28); ctx.stroke();
   }
   ctx.globalAlpha = 1;
@@ -7718,12 +8145,34 @@ function drawPickupParticles() {
     }
   }
   pickupParticles = pickupParticles.filter(p => p.life > 0.05);
+  // Physics pass: advance every particle, then group by (rgb, lifeBucket) and
+  // draw one Path2D fill per bucket. With up to 4 powerup colours × 4 life
+  // buckets we're bounded at 16 fills/frame instead of one per particle.
+  // Alpha is the bucket midpoint, so particles within the same bucket fade in
+  // lockstep — invisible at 40-particle density.
+  const buckets = {}; // key = rgb + '|' + bucketIdx
   for (const p of pickupParticles) {
     p.x += p.vx; p.y += p.vy;
     p.vx *= 0.92; p.vy *= 0.92;
-    ctx.globalAlpha = p.life;
-    ctx.fillStyle = `rgba(${p.rgb},1)`;
-    ctx.beginPath(); ctx.arc(p.x, p.y, p.size * p.life, 0, 6.28); ctx.fill();
+    const bi = Math.min(3, Math.floor(p.life * 4));
+    const key = p.rgb + '|' + bi;
+    (buckets[key] || (buckets[key] = [])).push(p);
+  }
+  const bucketMidAlpha = [0.125, 0.375, 0.625, 0.875];
+  for (const key in buckets) {
+    const arr = buckets[key];
+    const pipe = key.lastIndexOf('|');
+    const rgb = key.slice(0, pipe);
+    const bi = +key.slice(pipe + 1);
+    const path = new Path2D();
+    for (const p of arr) {
+      const r = Math.max(0.4, p.size * p.life);
+      path.moveTo(p.x + r, p.y);
+      path.arc(p.x, p.y, r, 0, 6.28);
+    }
+    ctx.globalAlpha = bucketMidAlpha[bi];
+    ctx.fillStyle = `rgba(${rgb},1)`;
+    ctx.fill(path);
   }
   ctx.globalAlpha = 1;
 }
