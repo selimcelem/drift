@@ -2865,10 +2865,12 @@ const PHASE_POOLS = {
   3: ['toothed','eye','cracked','tentacle','screaming','void','tentacle','screaming'],
   4: ['tentacle','screaming','void','heart','mirror','skull','heart','mirror'],
 };
+// Forced to phase 1 immediately after resetGame(); spawnBody() clears it once
+// the first body lands so live phase selection can resume. Prevents stale
+// elapsed time from spawning wrong-phase creatures during the reset window.
+let forcePhase1 = false;
 function phaseForElapsed(es) {
-  // Guard: always phase 1 for the first 2 seconds of a run. Prevents stale
-  // elapsed time from spawning wrong-phase creatures right after a reset.
-  if (elapsedRunSeconds() < 2) return 1;
+  if (forcePhase1) return 1;
   return es < 120 ? 1 : es < 240 ? 2 : es < 360 ? 3 : 4;
 }
 
@@ -2904,33 +2906,33 @@ function spawnBody(yBase) {
     radius = 11 + Math.random() * 7;
     color = '#080808'; glowColor = 'rgba(170,70,255,0.9)';
   } else if (type === 'toothed') {
-    radius = (16 + Math.random() * 10) * 0.75;
+    radius = (16 + Math.random() * 10) * 0.85;
     color = '#8b0000'; glowColor = 'rgba(220,30,30,0.9)';
   } else if (type === 'eye') {
-    radius = (18 + Math.random() * 8) * 0.8;
+    radius = (18 + Math.random() * 8) * 0.9;
     color = '#f6efd6'; glowColor = 'rgba(255,220,160,0.7)';
   } else if (type === 'cracked') {
-    radius = (17 + Math.random() * 10) * 0.85;
+    radius = (17 + Math.random() * 10) * 0.95;
     color = '#5a2b16'; glowColor = 'rgba(255,120,40,0.85)';
   } else if (type === 'tentacle') {
     // Tentacles add extra reach so the base disc is extra-small.
-    radius = (16 + Math.random() * 8) * 0.75;
+    radius = (16 + Math.random() * 8) * 0.85;
     color = '#4a0080'; glowColor = 'rgba(140,40,200,0.85)';
   } else if (type === 'screaming') {
-    radius = (17 + Math.random() * 9) * 0.8;
+    radius = (17 + Math.random() * 9) * 0.9;
     color = '#4a4040'; glowColor = 'rgba(80,20,20,0.3)';
   } else if (type === 'void') {
-    radius = (14 + Math.random() * 7) * 0.8;
+    radius = (14 + Math.random() * 7) * 0.9;
     color = '#000'; glowColor = 'rgba(180,240,255,0.6)';
   } else if (type === 'heart') {
-    radius = (17 + Math.random() * 8) * 0.75;
+    radius = (17 + Math.random() * 8) * 0.85;
     color = '#cc0000'; glowColor = 'rgba(255,40,40,0.85)';
   } else if (type === 'mirror') {
-    radius = (14 + Math.random() * 6) * 0.85;
+    radius = (14 + Math.random() * 6) * 0.95;
     color = '#222'; glowColor = 'rgba(255,255,255,0.5)';
   } else if (type === 'skull') {
-    // Spec: 1.3x vs normal planets, then scaled down 0.8 for mobile = ~1.04x.
-    radius = (17 + Math.random() * 10) * 1.3 * 0.8;
+    // Spec: 1.3x vs normal planets, then scaled down 0.9 for mobile = ~1.17x.
+    radius = (17 + Math.random() * 10) * 1.3 * 0.9;
     color = '#0d0d0d'; glowColor = 'rgba(200,200,200,0.6)';
   } else {
     radius = 16; color = '#888'; glowColor = 'rgba(255,255,255,0.5)';
@@ -3043,6 +3045,9 @@ function spawnBody(yBase) {
     body.skullPalette = palettes[Math.floor(Math.random() * palettes.length)];
   }
 
+  // First body of a fresh run has been built — release the phase-1 lock so
+  // phase selection resumes using real elapsed time.
+  if (forcePhase1) forcePhase1 = false;
   return body;
 }
 
@@ -3944,6 +3949,10 @@ function resetGame() {
   player = { x: W/2, y: H*0.72, vx: 0, vy: 0, angle: 0 };
   trail = []; deathParticles = [];
   lastSpawnZone = -1;
+  // Reset timing + phase lock BEFORE spawning any bodies so initBodies() can't
+  // read stale elapsed time from the previous run.
+  runStartTime = Date.now();
+  forcePhase1 = true;
   initBodies();
   score = 0; frame = 0; planetsPassed = 0;
   closestBody = null;
@@ -3993,7 +4002,6 @@ function resetGame() {
   lastGainedEffects = [];
   lastGainedTimestamp = -1;
   lastPowerupSpawn = 0;
-  runStartTime = Date.now();
   graceEndTime = Date.now() + GRACE_DURATION_MS;
   // Phase-track state: clear any leftover voices from the previous run and
   // rewind so the first checkGameplayPhase() call sees phase 1 as current.
@@ -5949,8 +5957,9 @@ function drawCracked(b) {
   ctx.fillStyle = grad;
   ctx.beginPath(); ctx.arc(b.x, b.y, b.radius, 0, 6.28); ctx.fill();
 
-  // Crack glow pulse. (No clip — Android WebView crash risk. Cracks start
-  // at 0.9*r and jag inward so minor overflow only.)
+  // Crack glow pulse. (No clip — Android WebView crash risk.) Every endpoint
+  // is clamped to within b.radius * 0.9 of the body center so cracks can't
+  // draw outside the visible planet.
   const pulseAlpha = 0.6 + 0.4 * Math.abs(Math.sin(Date.now() * 0.0012 + b.crackSeed));
   ctx.save();
   ctx.shadowBlur = 8;
@@ -5959,18 +5968,24 @@ function drawCracked(b) {
   ctx.lineWidth = 1.6;
   const rng = mulberry32(b.crackSeed);
   const crackCount = 4;
+  const rMax = b.radius * 0.9;
+  const clampToDisc = (x, y) => {
+    const ddx = x - b.x, ddy = y - b.y;
+    const d = Math.hypot(ddx, ddy);
+    if (d <= rMax || d === 0) return [x, y];
+    const k = rMax / d;
+    return [b.x + ddx * k, b.y + ddy * k];
+  };
   for (let c = 0; c < crackCount; c++) {
     const startA = rng() * Math.PI * 2;
     ctx.beginPath();
-    let x = b.x + Math.cos(startA) * b.radius * 0.9;
-    let y = b.y + Math.sin(startA) * b.radius * 0.9;
+    let [x, y] = clampToDisc(b.x + Math.cos(startA) * rMax, b.y + Math.sin(startA) * rMax);
     ctx.moveTo(x, y);
     const segs = 4 + Math.floor(rng() * 3);
     for (let s = 0; s < segs; s++) {
       const ta = startA + Math.PI + (rng() - 0.5) * 1.5;
       const step = b.radius * (0.3 + rng() * 0.4);
-      x += Math.cos(ta) * step;
-      y += Math.sin(ta) * step;
+      [x, y] = clampToDisc(x + Math.cos(ta) * step, y + Math.sin(ta) * step);
       ctx.lineTo(x, y);
     }
     ctx.stroke();
