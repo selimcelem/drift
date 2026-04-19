@@ -1480,9 +1480,9 @@ const FORCE = 0.18;
 
 // --- Difficulty ---
 const DIFFICULTIES = {
-  NORMAL:  { startSpeed: 1.2, maxSpeed: 2.5, speedCapScore: 180, maxBodies: 3, maxBodiesCap: 5, bodySpacing: 180, powerupFrequency: 1.0, crystalMult: 0.75 },
-  HARD:    { startSpeed: 1.6, maxSpeed: 3.5, speedCapScore: 180, maxBodies: 4, maxBodiesCap: 6, bodySpacing: 180, powerupFrequency: 1.3, crystalMult: 1.0 },
-  EXTREME: { startSpeed: 2.0, maxSpeed: 4.0, speedCapScore: 180, maxBodies: 4, maxBodiesCap: 7, bodySpacing: 180, powerupFrequency: 1.8, crystalMult: 1.25 },
+  NORMAL:  { startSpeed: 1.2, maxSpeed: 2.5, speedCapScore: 180, maxBodies: 3, maxBodiesCap: 5, bodySpacing: 180, powerupFrequency: 0.8,  crystalMult: 0.75 },
+  HARD:    { startSpeed: 1.6, maxSpeed: 3.5, speedCapScore: 180, maxBodies: 4, maxBodiesCap: 6, bodySpacing: 180, powerupFrequency: 1.04, crystalMult: 1.0 },
+  EXTREME: { startSpeed: 2.0, maxSpeed: 4.0, speedCapScore: 180, maxBodies: 4, maxBodiesCap: 7, bodySpacing: 180, powerupFrequency: 1.44, crystalMult: 1.25 },
 };
 let difficulty = 'NORMAL';
 if (typeof Sentry !== 'undefined') Sentry.setTag('difficulty', difficulty);
@@ -1496,19 +1496,19 @@ const ORB_DEFS = {
   },
   cosmic: {
     name: 'Phantom', desc: 'Longer ghost. Ghosts spawn more often.',
-    color: '192,132,252', cost: 20000, streakCap: 8, trail: 'cosmic', bias: 'ghost',
+    color: '192,132,252', cost: 50000, streakCap: 8, trail: 'cosmic', bias: 'ghost',
   },
   solar: {
     name: 'Inferno', desc: 'Bigger novas. Novas spawn more often.',
-    color: '251,146,60', cost: 40000, streakCap: 8, trail: 'solar', bias: 'nova',
+    color: '251,146,60', cost: 100000, streakCap: 8, trail: 'solar', bias: 'nova',
   },
   nebula: {
     name: 'Warp', desc: 'Hyperspeed stacks faster. Higher cap.',
-    color: '96,165,250', cost: 80000, streakCap: 8, trail: 'nebula', bias: 'hyperspeed',
+    color: '96,165,250', cost: 250000, streakCap: 8, trail: 'nebula', bias: 'hyperspeed',
   },
   asteroid: {
     name: 'Fortress', desc: 'Durable shields. Shields spawn more often.',
-    color: '168,162,158', cost: 160000, streakCap: 8, trail: 'asteroid', bias: 'shield',
+    color: '168,162,158', cost: 350000, streakCap: 8, trail: 'asteroid', bias: 'shield',
   },
 };
 const ORB_ORDER = ['cyan', 'cosmic', 'solar', 'nebula', 'asteroid'];
@@ -3355,8 +3355,9 @@ let nextPairId = 1;
 function spawnPowerup() {
   const topBodyY = bodies.length ? Math.min(...bodies.map(b => b.y)) : -100;
   const y = Math.min(-30, topBodyY - 60 - Math.random() * 80);
-  // 1 in 5 spawns is a tethered pair
-  if (Math.random() < 0.2) {
+  // 1 in 10 spawns is a tethered pair (halved from the previous 1 in 5 rate
+  // to reduce combo-chain pressure on the player).
+  if (Math.random() < 0.1) {
     // Pair-combo selection weighted by active orb's specialty: combos that
     // include the orb's bias type get 2x weight so they spawn more often.
     const bias = getOrbBonus().bias;
@@ -5063,12 +5064,17 @@ function update() {
   }
 
   // Powerup spawning: cooldown scales with frequency, max 2 visible at once.
-  // After 2 minutes, frequency scales +8% per extra minute survived, capped at
+  // After 2 minutes, frequency scales +5% per extra minute survived, capped at
   // a +50% total boost above the base difficulty rate.
   const minutesOver = Math.max(0, Math.floor((elapsedRunSeconds() - 120) / 60));
-  const effectivePowerupFrequency = d.powerupFrequency * Math.min(1.5, 1 + 0.08 * minutesOver);
+  const effectivePowerupFrequency = d.powerupFrequency * Math.min(1.5, 1 + 0.05 * minutesOver);
   const spawnInterval = 220 / effectivePowerupFrequency;
-  if (powerups.length < 2 && frame - lastPowerupSpawn > spawnInterval && Math.random() < 0.025) {
+  // Vertical spacing guard: if a powerup spawned in the last 3 seconds, add
+  // an extra 2-second delay on top of the normal interval so successive
+  // powerups can't appear stacked too close together vertically.
+  const timeSinceSpawn = frame - lastPowerupSpawn;
+  const extraSpacingFrames = timeSinceSpawn < 180 ? 120 : 0;
+  if (powerups.length < 2 && timeSinceSpawn > spawnInterval + extraSpacingFrames && Math.random() < 0.025) {
     spawnPowerup();
     lastPowerupSpawn = frame;
   }
@@ -9491,6 +9497,10 @@ const loadingTasks = {
   gradients: false,
 };
 let loadingCompleteFired = false;
+let warmupStarted = false;
+let warmupDone = false;
+let warmupFrame = 0;
+const WARMUP_TOTAL_FRAMES = 180; // ~3s @ 60fps
 
 function markLoaded(key) {
   if (!(key in loadingTasks) || loadingTasks[key]) return;
@@ -9501,15 +9511,117 @@ function markLoaded(key) {
 function updateLoadingProgress() {
   const total = Object.keys(loadingTasks).length;
   const done = Object.values(loadingTasks).filter(Boolean).length;
-  const pct = Math.floor((done / total) * 100);
+  // Asset loading occupies the first 80% of the bar; JIT warmup the last 20%.
+  const assetPct = Math.min(80, Math.floor((done / total) * 80));
+  const warmupPct = warmupStarted ? Math.min(20, Math.floor((warmupFrame / WARMUP_TOTAL_FRAMES) * 20)) : 0;
+  const pct = assetPct + warmupPct;
   const barEl = document.getElementById('loadingBar');
   const pctEl = document.getElementById('loadingPct');
   if (barEl) barEl.style.width = pct + '%';
   if (pctEl) pctEl.textContent = pct + '%';
-  if (done === total && !loadingCompleteFired) {
+  if (done === total && !warmupStarted) {
+    warmupStarted = true;
+    startJITWarmupPhase();
+  }
+  if (warmupDone && !loadingCompleteFired) {
     loadingCompleteFired = true;
     onLoadingComplete();
   }
+}
+
+function startJITWarmupPhase() {
+  const label = document.getElementById('loadingLabel');
+  if (label) label.textContent = 'WARMING UP';
+  runJITWarmup(() => updateLoadingProgress())
+    .catch(err => console.error('[warmup] failed', err))
+    .then(() => { warmupDone = true; updateLoadingProgress(); });
+}
+
+// Build one fixture body per custom planet type with all the fields the draw
+// functions read, so each draw actually executes its hot path (forcing JIT
+// compilation) instead of throwing on a missing field.
+function buildWarmupBodies() {
+  const types = ['toothed','eye','cracked','tentacle','screaming','void','heart','mirror','skull'];
+  return types.map((type, i) => {
+    // Off-canvas positions so the warmup draws can't show through even if
+    // anything slipped past the loading overlay. radius=25 is a representative
+    // mid-run planet size.
+    const b = {
+      type,
+      x: -400 - i * 80,
+      y: -400,
+      radius: 25,
+      pulse: 0,
+      passed: false,
+    };
+    if (type === 'toothed') {
+      b.toothAngle = 0; b.spikeLen = 15; b.innerSpikeLen = 8;
+    } else if (type === 'eye') {
+      b.eyePulse = 0; b.veinSeed = 1337; b.pupilDx = 0; b.pupilDy = 0;
+    } else if (type === 'cracked') {
+      b.crackSeed = 1337; b.eruptFlash = 0;
+    } else if (type === 'tentacle') {
+      b.tentacleCount = 6;
+      b.tentaclePhases = [0, 0.5, 1.0, 1.5, 2.0, 2.5];
+      b.tentacleSeed = 1337;
+    } else if (type === 'screaming') {
+      b.screamPhase = 4.25; // mid-scream so the mouth/teeth code paths run
+      b.shockwaves = [];
+      b.contractRings = [];
+      b.screamSeed = 1337;
+    } else if (type === 'void') {
+      b.voidPulse = 0; b.voidRepellingPlayer = false;
+    } else if (type === 'heart') {
+      b.heartScale = 1; b.heartSeed = 1337; b.bloodDrops = [];
+    } else if (type === 'mirror') {
+      b.mirrorSeed = 1337;
+    } else if (type === 'skull') {
+      b.skullSeed = 1337; b.skullEyeFlash = 0;
+      b.skullPalette = { top: '#3a6b38', mid: '#5a8a3c', low: '#6d5a30' };
+    }
+    return b;
+  });
+}
+
+// Drives one warmup frame per rAF tick for 3 seconds. Runs on the main canvas
+// context (the loading overlay sits on top of it with z-index 10000 so nothing
+// is visible). Bodies are placed off-canvas as a second line of defence.
+function runJITWarmup(onProgress) {
+  return new Promise(resolve => {
+    const warmupBodies = buildWarmupBodies();
+    warmupFrame = 0;
+    const tick = () => {
+      if (warmupFrame >= WARMUP_TOTAL_FRAMES) { resolve(); return; }
+      for (const b of warmupBodies) {
+        try {
+          if      (b.type === 'toothed')   drawToothed(b);
+          else if (b.type === 'eye')       drawEye(b);
+          else if (b.type === 'cracked')   drawCracked(b);
+          else if (b.type === 'tentacle')  drawTentacle(b);
+          else if (b.type === 'screaming') drawScreaming(b);
+          else if (b.type === 'void')      drawVoid(b);
+          else if (b.type === 'heart')     drawHeart(b);
+          else if (b.type === 'mirror')    drawMirror(b);
+          else if (b.type === 'skull')     drawSkull(b);
+          // Animate enough state that per-frame branches (pulse thresholds,
+          // mouth open/close, heart squeeze) get exercised during the 180
+          // frames, not just the steady-state draw path.
+          b.pulse = (b.pulse || 0) + 0.038;
+          b.toothAngle = (b.toothAngle || 0) + 0.02;
+          b.heartScale = 1 + Math.sin(warmupFrame * 0.1) * 0.2;
+          b.eyePulse = (b.eyePulse || 0) + 0.05;
+          b.voidPulse = (b.voidPulse || 0) + 0.04;
+          b.screamPhase = (b.screamPhase + 0.05) % 6;
+        } catch {}
+      }
+      warmupFrame++;
+      // Throttle onProgress to every 6 frames — one update every ~100ms keeps
+      // the bar responsive without burning layout on every frame.
+      if (onProgress && warmupFrame % 6 === 0) onProgress();
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  });
 }
 
 function onLoadingComplete() {

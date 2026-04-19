@@ -217,25 +217,39 @@ function dashboardHtml(items) {
     for (let ph = 1; ph <= p; ph++) phaseCounts[ph] = (phaseCounts[ph] || 0) + 1;
   }
 
-  // Per pilot
-  const pilots = {};
+  // Per pilot × difficulty — one bucket per (pilotName, difficulty) pair so
+  // each pilot gets a row per difficulty they've played.
+  const pilotDiff = {};
   for (const it of items) {
-    const p = it.pilotName || "unknown";
-    if (!pilots[p]) {
-      pilots[p] = { runs: 0, scoreSum: 0, best: 0, deaths: {}, items: [] };
+    const name = it.pilotName || "unknown";
+    const difficulty = it.difficulty || "UNKNOWN";
+    const key = name + "|" + difficulty;
+    if (!pilotDiff[key]) {
+      pilotDiff[key] = { name, difficulty, runs: 0, scoreSum: 0, best: 0, deaths: {}, items: [] };
     }
-    pilots[p].runs++;
-    pilots[p].scoreSum += it.score || 0;
-    if ((it.score || 0) > pilots[p].best) pilots[p].best = it.score || 0;
+    const p = pilotDiff[key];
+    p.runs++;
+    p.scoreSum += it.score || 0;
+    if ((it.score || 0) > p.best) p.best = it.score || 0;
     const dc = it.deathCause || "unknown";
-    pilots[p].deaths[dc] = (pilots[p].deaths[dc] || 0) + 1;
-    pilots[p].items.push(it);
+    p.deaths[dc] = (p.deaths[dc] || 0) + 1;
+    p.items.push(it);
   }
-  const pilotRows = Object.entries(pilots)
-    .map(([name, p]) => {
+  // Each pilot's highest best-score across all difficulties — used as the
+  // primary sort key so top players stay at the top and their own rows stay
+  // grouped together.
+  const pilotMaxBest = {};
+  for (const k of Object.keys(pilotDiff)) {
+    const p = pilotDiff[k];
+    pilotMaxBest[p.name] = Math.max(pilotMaxBest[p.name] || 0, p.best);
+  }
+  const DIFF_ORDER = { NORMAL: 0, HARD: 1, EXTREME: 2 };
+  const pilotRows = Object.values(pilotDiff)
+    .map((p) => {
       const topDeath = Object.entries(p.deaths).sort((a, b) => b[1] - a[1])[0];
       return {
-        name,
+        name: p.name,
+        difficulty: p.difficulty,
         runs: p.runs,
         avgScore: Math.round(p.scoreSum / p.runs),
         best: p.best,
@@ -243,7 +257,18 @@ function dashboardHtml(items) {
         items: p.items.slice().sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)),
       };
     })
-    .sort((a, b) => b.best - a.best);
+    .sort((a, b) => {
+      // Sort by the pilot's overall best (desc) so top players rank highest.
+      const ab = pilotMaxBest[a.name] || 0;
+      const bb = pilotMaxBest[b.name] || 0;
+      if (bb !== ab) return bb - ab;
+      // Same pilot: order difficulties NORMAL → HARD → EXTREME.
+      if (a.name === b.name) {
+        return (DIFF_ORDER[a.difficulty] ?? 99) - (DIFF_ORDER[b.difficulty] ?? 99);
+      }
+      // Different pilots tied on overall best: alphabetical by name.
+      return a.name.localeCompare(b.name);
+    });
 
   const deathRows = Object.entries(deathCounts)
     .sort((a, b) => b[1] - a[1])
@@ -290,9 +315,9 @@ function dashboardHtml(items) {
       (p, i) =>
         `<tr data-pilot-idx="${i}" class="pilot-row"><td>${escapeHtml(
           p.name
-        )}</td><td>${p.runs}</td><td>${p.avgScore}</td><td>${
-          p.best
-        }</td><td>${escapeHtml(p.topDeath)}</td></tr>`
+        )}</td><td>${escapeHtml(p.difficulty)}</td><td>${p.runs}</td><td>${
+          p.avgScore
+        }</td><td>${p.best}</td><td>${escapeHtml(p.topDeath)}</td></tr>`
     )
     .join("");
 
@@ -312,8 +337,8 @@ function dashboardHtml(items) {
         })
         .join("");
       return `<div class="pilot-detail" id="pilot-${i}" style="display:none">
-        <h3>${escapeHtml(p.name)} — runs</h3>
-        <table><thead><tr><th>Time</th><th>Diff</th><th>Score</th><th>Survived</th><th>Death</th><th>Orb</th><th>Phase</th></tr></thead>
+        <h3>${escapeHtml(p.name)} · ${escapeHtml(p.difficulty)} &mdash; runs</h3>
+        <table><thead><tr><th>Time</th><th>Difficulty</th><th>Score</th><th>Survived</th><th>Death</th><th>Orb</th><th>Phase</th></tr></thead>
         <tbody>${rows}</tbody></table>
       </div>`;
     })
@@ -381,8 +406,8 @@ ${phaseBars}
 </div>
 
 <div class="panel" style="margin-top:16px"><h2>Pilots</h2>
-<table><thead><tr><th>Pilot</th><th>Runs</th><th>Avg Score</th><th>Best</th><th>Most Dies By</th></tr></thead>
-<tbody>${pilotsTable || '<tr><td colspan="5">No data</td></tr>'}</tbody></table>
+<table><thead><tr><th>Pilot</th><th>Difficulty</th><th>Runs</th><th>Avg Score</th><th>Best Score</th><th>Most Dies By</th></tr></thead>
+<tbody>${pilotsTable || '<tr><td colspan="6">No data</td></tr>'}</tbody></table>
 </div>
 
 ${pilotDetails}
