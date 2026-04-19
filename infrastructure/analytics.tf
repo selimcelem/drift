@@ -117,5 +117,4 @@ resource "aws_lambda_permission" "drift_analytics" {
   function_name = aws_lambda_function.drift_analytics.function_name
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_apigatewayv2_api.api.execution_arn}/*/*"
-} 
- 
+}
