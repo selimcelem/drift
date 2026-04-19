@@ -1387,6 +1387,57 @@ function getBgVignetteCanvas(style, size) {
   return c;
 }
 
+// Shield ring atlas: the player-shield draw block was 6 stroke/fill calls per
+// frame while the shield was active. We now pre-render the whole (aura +
+// base rings + stack rings) stack into a 200×200 canvas keyed by
+// `${orb}_${hits}` and draw it with a single ctx.drawImage. shieldVis (blink
+// fade) is applied via globalAlpha on top. Cache never invalidates — orb × hits
+// combinations max out at 2 × 4 = 8 canvases over a whole session.
+const shieldRingCache = {};
+const SHIELD_RING_CANVAS_SIZE = 200;
+function getShieldRingCanvas(orb, hits) {
+  const key = orb + '_' + hits;
+  if (shieldRingCache[key]) return shieldRingCache[key];
+  const SIZE = SHIELD_RING_CANVAS_SIZE;
+  const cx = SIZE / 2, cy = SIZE / 2;
+  const c = document.createElement('canvas');
+  c.width = SIZE; c.height = SIZE;
+  const cctx = c.getContext('2d');
+  // Aura fill (baseline 0.55 alpha).
+  cctx.globalAlpha = 0.55;
+  const aura = cctx.createRadialGradient(cx, cy, 0, cx, cy, PLAYER_R * 4.2);
+  aura.addColorStop(0,    'rgba(120,230,255,0.55)');
+  aura.addColorStop(0.55, 'rgba(80,200,255,0.28)');
+  aura.addColorStop(1,    'rgba(80,200,255,0)');
+  cctx.fillStyle = aura;
+  cctx.beginPath(); cctx.arc(cx, cy, PLAYER_R * 4.2, 0, 6.28); cctx.fill();
+  // Base ring at 3.6r (alpha 0.85).
+  cctx.globalAlpha = 0.85;
+  cctx.strokeStyle = 'rgba(180,240,255,0.85)';
+  cctx.lineWidth = 1.4;
+  cctx.beginPath(); cctx.arc(cx, cy, PLAYER_R * 3.6, 0, 6.28); cctx.stroke();
+  // Base ring at 4.0r (alpha 0.4).
+  cctx.globalAlpha = 0.4;
+  cctx.lineWidth = 0.8;
+  cctx.beginPath(); cctx.arc(cx, cy, PLAYER_R * 4.0, 0, 6.28); cctx.stroke();
+  // Stack rings — one per shield hit after the first. Asteroid orb uses a
+  // stone/grey tone; others use cyan.
+  const asteroidRing = orb === 'asteroid';
+  const ringRgb = asteroidRing ? '200,195,185' : '120,255,255';
+  const ringFadeRgb = asteroidRing ? '220,215,205' : '180,240,255';
+  for (let i = 2; i <= hits; i++) {
+    const r = PLAYER_R * (2.2 + (i - 2) * 0.5);
+    cctx.globalAlpha = 0.95 - (i - 2) * 0.18;
+    cctx.strokeStyle = i === 2
+      ? `rgba(${ringRgb},0.95)`
+      : `rgba(${ringFadeRgb},0.85)`;
+    cctx.lineWidth = i === 2 ? 1.6 : 1.2;
+    cctx.beginPath(); cctx.arc(cx, cy, r, 0, 6.28); cctx.stroke();
+  }
+  shieldRingCache[key] = c;
+  return c;
+}
+
 // Offscreen planet sprites — static bases pre-rendered to offscreen canvases.
 // drawBodies() uses drawImage instead of rebuilding paths for the static parts.
 // Populated once by preloadPlanetSprites().
@@ -3117,7 +3168,54 @@ function initBgStars() {
   bgStars = [];
   for (let i = 0; i < 160; i++)
     bgStars.push({ x: Math.random()*W, y: Math.random()*H, r: Math.random()*1.3+0.2, phase: Math.random()*6.28, spd: Math.random()*0.3+0.08 });
+  rebuildStarAtlases();
 }
+
+// Star atlas optimisation: 160 individual arc+fill calls per frame collapse to
+// 4 drawImage calls by pre-rendering all stars into 4 phase-bucketed canvases.
+// Each bucket shares an average twinkle phase and an average scroll speed so
+// the whole bucket animates uniformly. Parallax still exists across buckets,
+// just not between individual stars within a bucket — imperceptible in a
+// 160-star field. Atlases rebuild on resize.
+const STAR_BUCKETS = 4;
+let starAtlases = [];
+let starBucketOffsets = [0, 0, 0, 0];
+let starBucketSpeeds  = [0.2, 0.2, 0.2, 0.2];
+function starBucket(s) {
+  return Math.floor(s.phase / (Math.PI * 2 / STAR_BUCKETS)) % STAR_BUCKETS;
+}
+function rebuildStarAtlases() {
+  starAtlases = [];
+  starBucketOffsets = [0, 0, 0, 0];
+  const speedSums = [0, 0, 0, 0];
+  const counts = [0, 0, 0, 0];
+  for (const s of bgStars) {
+    const b = starBucket(s);
+    speedSums[b] += s.spd;
+    counts[b]++;
+  }
+  for (let i = 0; i < STAR_BUCKETS; i++) {
+    starBucketSpeeds[i] = counts[i] ? speedSums[i] / counts[i] : 0.2;
+  }
+  for (let i = 0; i < STAR_BUCKETS; i++) {
+    const c = document.createElement('canvas');
+    c.width = W; c.height = H;
+    const cctx = c.getContext('2d');
+    cctx.fillStyle = '#fff';
+    for (const s of bgStars) {
+      if (starBucket(s) !== i) continue;
+      cctx.beginPath();
+      cctx.arc(s.x, s.y, s.r, 0, 6.28);
+      cctx.fill();
+    }
+    starAtlases.push(c);
+  }
+}
+window.addEventListener('resize', () => {
+  // Canvas size could have changed; reseed positions and rebuild atlases so
+  // the starfield refills the new viewport.
+  if (bgStars.length) initBgStars();
+});
 
 // --- Bodies ---
 // New planet types introduced from phase 2 onward. Shared between the spawn
@@ -5276,7 +5374,14 @@ function update() {
   }
   planetRipples = planetRipples.filter(r => r.life > 0.05);
 
-  for (const s of bgStars) { s.y += s.spd * spd * 0.28; if (s.y > H) s.y = -2; }
+  // Per-bucket scroll offset for the star atlases. Individual bgStars are
+  // kept in memory for atlas rebuilds on resize, but are no longer drawn or
+  // repositioned per frame — the atlas handles scroll via drawImage offset.
+  for (let i = 0; i < STAR_BUCKETS; i++) {
+    let o = starBucketOffsets[i] + starBucketSpeeds[i] * spd * 0.28;
+    if (o >= H) o -= H;
+    starBucketOffsets[i] = o;
+  }
 
   findClosest();
   applyEnvironmentForces();
@@ -5989,10 +6094,19 @@ function drawBg() {
     nebulaRenderedFrame = frame;
   }
   ctx.drawImage(nebulaCanvas, 0, 0);
-  // Stars animate on main canvas every frame
-  for (const s of bgStars) {
-    ctx.globalAlpha = (0.35+0.5*Math.sin(frame*0.05+s.phase));
-    ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(s.x,s.y,s.r,0,6.28); ctx.fill();
+  // Star atlases: 4 drawImage calls (8 at most if any bucket has a non-zero
+  // wrap offset) instead of 160 individual arc+fill calls. Each bucket's
+  // alpha is its mid-phase twinkle value so the whole bucket fades in/out
+  // together. Scroll is done via the offset — the atlas is drawn once at y,
+  // then again at y-H to cover the wrap band above the canvas.
+  for (let i = 0; i < STAR_BUCKETS; i++) {
+    const atlas = starAtlases[i];
+    if (!atlas) continue;
+    const midPhase = (i + 0.5) * (Math.PI * 2 / STAR_BUCKETS);
+    ctx.globalAlpha = Math.max(0, 0.35 + 0.5 * Math.sin(frame * 0.05 + midPhase));
+    const y = starBucketOffsets[i];
+    ctx.drawImage(atlas, 0, y);
+    if (y > 0) ctx.drawImage(atlas, 0, y - H);
   }
   ctx.globalAlpha = 1;
 }
@@ -7031,7 +7145,7 @@ function drawCrackFragments() {
 // player. Intensity (spawn rate, size, opacity) scales with both the player's
 // motion speed and the current scroll speed so faster play feels more visceral.
 let orbTrailParticles = [];
-const ORB_TRAIL_CAP = 30;
+const ORB_TRAIL_CAP = 15;
 
 function emitOrbTrail() {
   if (state !== 'playing') return;
@@ -7233,41 +7347,15 @@ function drawPlayer() {
 
   ctx.save(); ctx.translate(player.x, player.y); ctx.rotate(player.angle);
 
-  // Shield outer aura (drawn behind the player so it haloes around)
+  // Shield outer aura — pre-rendered atlas keyed by (orb, hits). One
+  // drawImage + globalAlpha for the blink replaces six path/fill/stroke
+  // calls. Aura gradient and stack-ring colours are baked into the canvas.
   if (shielded) {
-    ctx.globalAlpha = 0.55 * shieldVis;
-    const sg = getCachedGradient('shield_aura', () => {
-      const g = ctx.createRadialGradient(0,0,0,0,0,PLAYER_R*4.2);
-      g.addColorStop(0,'rgba(120,230,255,0.55)');
-      g.addColorStop(0.55,'rgba(80,200,255,0.28)');
-      g.addColorStop(1,'rgba(80,200,255,0)');
-      return g;
-    });
-    ctx.fillStyle = sg;
-    ctx.beginPath(); ctx.arc(0,0,PLAYER_R*4.2,0,6.28); ctx.fill();
-    ctx.globalAlpha = 0.85 * shieldVis;
-    ctx.strokeStyle = 'rgba(180,240,255,0.85)';
-    ctx.lineWidth = 1.4;
-    ctx.beginPath(); ctx.arc(0,0,PLAYER_R*3.6,0,6.28); ctx.stroke();
-    ctx.globalAlpha = 0.4 * shieldVis;
-    ctx.lineWidth = 0.8;
-    ctx.beginPath(); ctx.arc(0,0,PLAYER_R*4.0,0,6.28); ctx.stroke();
-    // Stack rings: one ring per shield hit point remaining. Asteroid orb uses
-    // a stone/grey tone, default/fortress use cyan. Each ring sits at a
-    // slightly larger radius.
-    const hits = Math.min(shieldHits, 4);
-    const asteroidRing = activeOrb === 'asteroid';
-    const ringRgb = asteroidRing ? '200,195,185' : '120,255,255';
-    const ringFadeRgb = asteroidRing ? '220,215,205' : '180,240,255';
-    for (let i = 2; i <= hits; i++) {
-      const r = PLAYER_R * (2.2 + (i - 2) * 0.5);
-      ctx.globalAlpha = (0.95 - (i - 2) * 0.18) * shieldVis;
-      ctx.strokeStyle = i === 2
-        ? `rgba(${ringRgb},0.95)`
-        : `rgba(${ringFadeRgb},0.85)`;
-      ctx.lineWidth = i === 2 ? 1.6 : 1.2;
-      ctx.beginPath(); ctx.arc(0, 0, r, 0, 6.28); ctx.stroke();
-    }
+    const hits = Math.min(Math.max(shieldHits | 0, 1), 4);
+    const atlas = getShieldRingCanvas(activeOrb, hits);
+    ctx.globalAlpha = shieldVis;
+    ctx.drawImage(atlas, -SHIELD_RING_CANVAS_SIZE / 2, -SHIELD_RING_CANVAS_SIZE / 2);
+    ctx.globalAlpha = 1;
   }
   // PHANTOM BLAST: red/orange damage aura around player
   if (phantomBlast) {
@@ -7559,122 +7647,62 @@ function drawEmpRings() {
   const maxLifeMs = 400; // dome expansion window — everything keyed off this
   for (const r of empRings) {
     const age = now - r.startTime;
-    const life = Math.max(0, Math.min(1, age / maxLifeMs)); // 0..1 progress
+    const life = Math.max(0, Math.min(1, age / maxLifeMs));
     const fade = (1 - life) * (r.opacity != null ? r.opacity : 1);
     const ringMax = r.maxRadius != null ? r.maxRadius : EMP_MAX_RADIUS;
+    const outerR = 20 + life * (ringMax - 20);
 
     ctx.save();
     ctx.translate(r.x, r.y);
 
-    // 1) GROUND SHOCKWAVE — faint squashed ellipse beneath the dome so it
-    // feels grounded. Expands horizontally faster than vertically.
-    if (life < 1) {
-      const gx = 40 + life * 180;
-      const gy = 10 + life * 45;
-      ctx.save();
-      ctx.globalAlpha = 0.08 * fade;
-      ctx.fillStyle = 'rgba(100,220,255,1)';
-      ctx.beginPath();
-      ctx.ellipse(0, 18, gx, gy, 0, 0, 6.28);
-      ctx.fill();
-      ctx.restore();
-    }
-
-    // 2) EXPANDING DOME RING — inner and outer concentric circles with a
-    // semi-transparent cyan fill between them. Ring sized per-burst so chain
-    // (secondary) bursts read as smaller.
-    const outerR = 20 + life * (ringMax - 20);
-    const innerR = Math.max(0, outerR - 20);
-    // Ring-fill band (draw outer-filled then punch out inner via even-odd).
-    ctx.save();
-    ctx.globalAlpha = fade;
-    ctx.fillStyle = 'rgba(100,220,255,0.15)';
-    ctx.beginPath();
-    ctx.arc(0, 0, outerR, 0, 6.28);
-    ctx.arc(0, 0, innerR, 0, 6.28, true);
-    ctx.fill('evenodd');
-    ctx.restore();
-    // Outer stroke — bright cyan.
+    // 1) OUTER RING — single stroke. Ground shockwave ellipse, inner stroke,
+    // ring-fill band, and individual sparks have been dropped in the Android
+    // GPU-crash mitigation pass.
     ctx.globalAlpha = fade;
     ctx.strokeStyle = 'rgba(100,220,255,0.9)';
     ctx.lineWidth = 2;
     ctx.beginPath(); ctx.arc(0, 0, outerR, 0, 6.28); ctx.stroke();
-    // Inner stroke — white edge.
-    ctx.globalAlpha = fade * 0.75;
-    ctx.strokeStyle = 'rgba(255,255,255,0.6)';
-    ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.arc(0, 0, innerR, 0, 6.28); ctx.stroke();
 
-    // 3) LIGHTNING BOLTS — from center to dome edge, flicker every 3 frames.
-    // Fade over first 0.3s (life < 0.75 at maxLifeMs=400).
+    // 2) LIGHTNING BOLTS — accumulated into a single Path2D so all bolts for
+    // this ring stroke in one call instead of one per bolt.
     const boltT = Math.min(1, age / 300);
     const boltFade = 1 - boltT;
     if (boltFade > 0 && r.bolts) {
-      // Re-randomize offsets on a 3-frame cycle so bolts visibly flicker.
       const flickerTick = Math.floor(frame / 3);
       const rng = mulberry32((r.startTime & 0xffff) ^ flickerTick);
-      ctx.save();
-      ctx.shadowColor = 'rgba(150,255,255,0.7)';
-      ctx.shadowBlur = 6;
-      ctx.lineWidth = 1.6;
-      ctx.strokeStyle = `rgba(255,255,255,${0.9 * boltFade + 0.1})`;
+      const bolts = new Path2D();
       for (const b of r.bolts) {
         const tipR = outerR - 4;
         const dx = Math.cos(b.angle);
         const dy = Math.sin(b.angle);
         const perpX = -dy, perpY = dx;
-        ctx.globalAlpha = boltFade;
-        ctx.beginPath();
-        ctx.moveTo(0, 0);
+        bolts.moveTo(0, 0);
         for (let i = 1; i < b.segs; i++) {
           const u = i / b.segs;
           const bx = dx * tipR * u;
           const by = dy * tipR * u;
-          const off = (rng() - 0.5) * 30; // ±15px perpendicular
-          ctx.lineTo(bx + perpX * off, by + perpY * off);
+          const off = (rng() - 0.5) * 30;
+          bolts.lineTo(bx + perpX * off, by + perpY * off);
         }
-        // Final segment snaps onto the dome edge.
-        ctx.lineTo(dx * tipR, dy * tipR);
-        ctx.stroke();
+        bolts.lineTo(dx * tipR, dy * tipR);
       }
-      ctx.restore();
+      ctx.globalAlpha = boltFade;
+      ctx.lineWidth = 1.6;
+      ctx.strokeStyle = `rgba(255,255,255,${0.9 * boltFade + 0.1})`;
+      ctx.stroke(bolts);
     }
 
-    // 4) BRIGHT CENTER FLASH — implodes: 20px → 0 over first 0.2s.
+    // 3) CENTER FLASH — implodes 20 → 0 over first 0.2s.
     const flashT = Math.min(1, age / 200);
     if (flashT < 1) {
       const fk = 1 - flashT;
       const fr = 20 * fk;
-      ctx.save();
       ctx.globalAlpha = fk;
       const flash = ctx.createRadialGradient(0, 0, 0, 0, 0, Math.max(0.5, fr));
       flash.addColorStop(0, 'rgba(255,255,255,1)');
       flash.addColorStop(1, 'rgba(255,255,255,0)');
       ctx.fillStyle = flash;
       ctx.beginPath(); ctx.arc(0, 0, Math.max(0.5, fr), 0, 6.28); ctx.fill();
-      ctx.restore();
-    }
-
-    // 5) ELECTRIC SPARKS on the dome edge — ride the expanding ring,
-    // flicker on/off every 2 frames, fade with the ring.
-    if (r.sparks && fade > 0) {
-      const flick = (frame & 2) ? 1 : 0.25;
-      for (const s of r.sparks) {
-        // Individual sparks get a phase-offset flicker so they're not uniform.
-        const on = (((frame + (s.phase * 7 | 0)) / 2) | 0) & 1 ? 1 : 0.25;
-        const a = on * flick;
-        const sx = Math.cos(s.angle) * outerR;
-        const sy = Math.sin(s.angle) * outerR;
-        ctx.globalAlpha = fade * a;
-        const sg = ctx.createRadialGradient(sx, sy, 0, sx, sy, 5);
-        sg.addColorStop(0, 'rgba(255,255,255,1)');
-        sg.addColorStop(0.5, 'rgba(170,240,255,0.7)');
-        sg.addColorStop(1, 'rgba(100,220,255,0)');
-        ctx.fillStyle = sg;
-        ctx.beginPath(); ctx.arc(sx, sy, 4, 0, 6.28); ctx.fill();
-        ctx.fillStyle = 'rgba(255,255,255,1)';
-        ctx.beginPath(); ctx.arc(sx, sy, 2, 0, 6.28); ctx.fill();
-      }
     }
 
     ctx.restore();
