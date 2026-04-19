@@ -2865,7 +2865,7 @@ const PHASE_POOLS = {
   4: ['tentacle','screaming','void','heart','mirror','skull','heart','mirror'],
 };
 function phaseForElapsed(es) {
-  return es < 180 ? 1 : es < 300 ? 2 : es < 480 ? 3 : 4;
+  return es < 120 ? 1 : es < 240 ? 2 : es < 360 ? 3 : 4;
 }
 
 // Phase-based gameplay music: currentGameplayTrack mirrors whichever phase's
@@ -5684,6 +5684,16 @@ function drawBg() {
   ctx.globalAlpha = 1;
 }
 
+// Run a per-body custom drawer in a try/catch so a single bad frame from a
+// new planet type can't kill the render loop. Wraps in save/restore so the
+// canvas state stays balanced even if the drawer throws mid-stream.
+function safeDrawBody(b, drawer) {
+  ctx.save();
+  try { drawer(b); }
+  catch (err) { console.error('[draw] ' + b.type + ' threw, skipping body', err); }
+  finally { ctx.restore(); }
+}
+
 function drawBodies() {
   for (const b of bodies) {
     const isTarget = b === closestBody && state === 'playing';
@@ -5710,15 +5720,15 @@ function drawBodies() {
       ctx.fillStyle = b.cachedFill;
       ctx.beginPath(); ctx.arc(0, 0, b.radius, 0, 6.28); ctx.fill();
       ctx.restore();
-    } else if (b.type === 'toothed')   drawToothed(b);
-    else if (b.type === 'eye')         drawEye(b);
-    else if (b.type === 'cracked')     drawCracked(b);
-    else if (b.type === 'tentacle')    drawTentacle(b);
-    else if (b.type === 'screaming')   drawScreaming(b);
-    else if (b.type === 'void')        drawVoid(b);
-    else if (b.type === 'heart')       drawHeart(b);
-    else if (b.type === 'mirror')      drawMirror(b);
-    else if (b.type === 'skull')       drawSkull(b);
+    } else if (b.type === 'toothed')   safeDrawBody(b, drawToothed);
+    else if (b.type === 'eye')         safeDrawBody(b, drawEye);
+    else if (b.type === 'cracked')     safeDrawBody(b, drawCracked);
+    else if (b.type === 'tentacle')    safeDrawBody(b, drawTentacle);
+    else if (b.type === 'screaming')   safeDrawBody(b, drawScreaming);
+    else if (b.type === 'void')        safeDrawBody(b, drawVoid);
+    else if (b.type === 'heart')       safeDrawBody(b, drawHeart);
+    else if (b.type === 'mirror')      safeDrawBody(b, drawMirror);
+    else if (b.type === 'skull')       safeDrawBody(b, drawSkull);
 
     // Target indicator: bright ring + line to player when active
     if (isTarget) {
