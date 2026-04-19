@@ -17,7 +17,6 @@ const CORS_HEADERS = {
 
 const VALID_DIFFICULTIES = ["NORMAL", "HARD", "EXTREME"];
 const SHORT_TTL_SECONDS = 7 * 24 * 60 * 60;
-const LONG_TTL_SECONDS = 30 * 24 * 60 * 60;
 
 exports.handler = async (event) => {
   if (event.requestContext?.http?.method === "OPTIONS") {
@@ -82,7 +81,6 @@ exports.handler = async (event) => {
 
   const now = Math.floor(Date.now() / 1000);
   const shortTtl = now + SHORT_TTL_SECONDS;
-  const longTtl = now + LONG_TTL_SECONDS;
 
   await ddb.send(
     new PutCommand({
@@ -97,9 +95,10 @@ exports.handler = async (event) => {
     })
   );
 
-  // Query all scores for this difficulty, descending, and reassign TTLs:
-  // top 10 get the long TTL, everything else gets the short TTL. Nothing is
-  // ever deleted — scores outside the top 10 expire naturally.
+  // Query all scores for this difficulty, descending, and rebalance TTLs.
+  // Top 10 become permanent: REMOVE the ttl attribute so DynamoDB TTL never
+  // touches them. Positions 11+ get a fresh 7-day ttl. Scores falling out of
+  // the top 10 transition from no-ttl back to the 7-day window.
   const all = await ddb.send(
     new QueryCommand({
       TableName: "drift-leaderboard",
@@ -110,19 +109,27 @@ exports.handler = async (event) => {
   );
   const items = all.Items || [];
   await Promise.all(
-    items.map((item, index) =>
-      ddb.send(
+    items.map((item, index) => {
+      if (index < 10) {
+        return ddb.send(
+          new UpdateCommand({
+            TableName: "drift-leaderboard",
+            Key: { difficulty: item.difficulty, score: item.score },
+            UpdateExpression: "REMOVE #ttl",
+            ExpressionAttributeNames: { "#ttl": "ttl" },
+          })
+        );
+      }
+      return ddb.send(
         new UpdateCommand({
           TableName: "drift-leaderboard",
           Key: { difficulty: item.difficulty, score: item.score },
           UpdateExpression: "SET #ttl = :ttl",
           ExpressionAttributeNames: { "#ttl": "ttl" },
-          ExpressionAttributeValues: {
-            ":ttl": index < 10 ? longTtl : shortTtl,
-          },
+          ExpressionAttributeValues: { ":ttl": shortTtl },
         })
-      )
-    )
+      );
+    })
   );
 
   return {
