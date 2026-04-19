@@ -593,6 +593,7 @@
     text-align: center;
     max-width: 320px;
     letter-spacing: 0.5px;
+    white-space: pre-wrap;
   }
   .guide-nav {
     display: flex;
@@ -8246,6 +8247,11 @@ const GUIDE_PAGES = [
     draw: drawGuideControls,
   },
   {
+    title: 'POWERUPS',
+    text: 'Collect powerups to gain abilities. SHIELD absorbs planet hits. NOVA destroys nearby planets. HYPERSPEED creates a barrier at high speed. GHOST lets you phase through planets.\n\nGrab two matching powerups — or any two together — to trigger powerful COMBOS.',
+    draw: drawGuidePowerups,
+  },
+  {
     title: 'SCORING',
     text: 'Pass planets = 1 pt each. Destroy planets = streak² pts (bigger streak = more points). Survive longer for a TIME BONUS at the end of your run.',
     draw: drawGuideScoring,
@@ -8527,6 +8533,122 @@ function drawGuideControls(ctx, t) {
   const rPress = Math.max(0, Math.sin(t * 2.4 + Math.PI));
   guidePhoneBtn(ctx, W - 40, H / 2 + 28, '255,140,180', rPress);
   guideLabel(ctx, 'REPEL', W - 40, H / 2 + 62, 'rgba(255,140,180,0.9)', 9);
+}
+
+function drawGuidePowerups(ctx, t) {
+  const W = 320, H = 200;
+  // 2x2 grid of powerup icons. Each slot: big orb glow + icon drawn in
+  // the matching in-game style, with a label and sub-caption below.
+  const slots = [
+    { type: 'shield',     rgb: '120,230,255', label: 'SHIELD',     sub: 'absorbs hits',     cx: 80,      cy: 56 },
+    { type: 'nova',       rgb: '255,180,80',  label: 'NOVA',       sub: 'destroys nearby',  cx: W - 80,  cy: 56 },
+    { type: 'hyperspeed', rgb: '255,220,60',  label: 'HYPERSPEED', sub: 'barrier + speed',  cx: 80,      cy: 128 },
+    { type: 'ghost',      rgb: '200,120,255', label: 'GHOST',      sub: 'phase through',    cx: W - 80,  cy: 128 },
+  ];
+
+  slots.forEach((s, i) => {
+    const pulse = 0.5 + 0.5 * Math.sin(t * 1.8 + i * 0.9);
+    const r = 18;
+
+    // Outer glow halo — matches the in-game powerup pulse.
+    ctx.save();
+    ctx.globalAlpha = 0.55 * pulse;
+    const halo = ctx.createRadialGradient(s.cx, s.cy, 0, s.cx, s.cy, r * 2.4);
+    halo.addColorStop(0,   `rgba(${s.rgb},0.65)`);
+    halo.addColorStop(0.5, `rgba(${s.rgb},0.22)`);
+    halo.addColorStop(1,   `rgba(${s.rgb},0)`);
+    ctx.fillStyle = halo;
+    ctx.beginPath(); ctx.arc(s.cx, s.cy, r * 2.4, 0, 6.28); ctx.fill();
+    ctx.restore();
+
+    // Bright inner ring.
+    ctx.save();
+    ctx.globalAlpha = 0.85;
+    ctx.strokeStyle = `rgba(${s.rgb},0.9)`;
+    ctx.lineWidth = 1.4;
+    ctx.beginPath(); ctx.arc(s.cx, s.cy, r * 1.1, 0, 6.28); ctx.stroke();
+    ctx.restore();
+
+    // Icon (same shapes as drawPowerups).
+    ctx.save();
+    ctx.fillStyle = `rgba(${s.rgb},1)`;
+    ctx.strokeStyle = `rgba(${s.rgb},1)`;
+    ctx.lineWidth = 1.6;
+    if (s.type === 'shield') {
+      ctx.beginPath();
+      ctx.moveTo(s.cx, s.cy - r * 0.72);
+      ctx.lineTo(s.cx + r * 0.56, s.cy);
+      ctx.lineTo(s.cx, s.cy + r * 0.72);
+      ctx.lineTo(s.cx - r * 0.56, s.cy);
+      ctx.closePath(); ctx.fill();
+      ctx.globalAlpha = 0.85;
+      ctx.fillStyle = '#fff';
+      ctx.beginPath(); ctx.arc(s.cx, s.cy, r * 0.2, 0, 6.28); ctx.fill();
+    } else if (s.type === 'nova') {
+      ctx.beginPath(); ctx.arc(s.cx, s.cy, r * 0.3, 0, 6.28); ctx.fill();
+      ctx.lineWidth = 1.4;
+      ctx.beginPath(); ctx.arc(s.cx, s.cy, r * 0.56, 0, 6.28); ctx.stroke();
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.arc(s.cx, s.cy, r * 0.82, 0, 6.28); ctx.stroke();
+    } else if (s.type === 'hyperspeed') {
+      ctx.beginPath();
+      ctx.moveTo(s.cx + r * 0.11, s.cy - r * 0.7);
+      ctx.lineTo(s.cx - r * 0.33, s.cy + r * 0.07);
+      ctx.lineTo(s.cx - r * 0.04, s.cy + r * 0.07);
+      ctx.lineTo(s.cx - r * 0.11, s.cy + r * 0.7);
+      ctx.lineTo(s.cx + r * 0.33, s.cy - r * 0.07);
+      ctx.lineTo(s.cx + r * 0.04, s.cy - r * 0.07);
+      ctx.closePath(); ctx.fill();
+    } else { // ghost
+      ctx.beginPath();
+      ctx.arc(s.cx, s.cy - r * 0.11, r * 0.62, Math.PI, 0);
+      ctx.lineTo(s.cx + r * 0.62, s.cy + r * 0.48);
+      ctx.lineTo(s.cx + r * 0.36, s.cy + r * 0.25);
+      ctx.lineTo(s.cx + r * 0.11, s.cy + r * 0.48);
+      ctx.lineTo(s.cx - r * 0.11, s.cy + r * 0.25);
+      ctx.lineTo(s.cx - r * 0.36, s.cy + r * 0.48);
+      ctx.lineTo(s.cx - r * 0.62, s.cy + r * 0.25);
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.beginPath(); ctx.arc(s.cx - r * 0.2, s.cy - r * 0.15, r * 0.09, 0, 6.28); ctx.fill();
+      ctx.beginPath(); ctx.arc(s.cx + r * 0.2, s.cy - r * 0.15, r * 0.09, 0, 6.28); ctx.fill();
+    }
+    ctx.restore();
+
+    // Label + sub-caption.
+    guideLabel(ctx, s.label, s.cx, s.cy + r + 14, `rgba(${s.rgb},0.95)`, 10);
+    guideLabel(ctx, s.sub,   s.cx, s.cy + r + 26, 'rgba(220,230,255,0.55)', 8);
+  });
+
+  // "PAIR" indicator connecting the four icons — two dashed lines forming an
+  // X through the middle, with a pulsing "PAIR = COMBO" pill at the centre.
+  const mx = W / 2, my = (56 + 128) / 2;
+  const dashT = -t * 18;
+  ctx.save();
+  ctx.setLineDash([4, 4]);
+  ctx.lineDashOffset = dashT;
+  ctx.lineWidth = 1;
+  const linkPulse = 0.45 + 0.55 * Math.abs(Math.sin(t * 1.6));
+  ctx.strokeStyle = `rgba(255,220,120,${0.35 + 0.35 * linkPulse})`;
+  ctx.beginPath();
+  ctx.moveTo(slots[0].cx + 22, slots[0].cy + 4);
+  ctx.lineTo(slots[3].cx - 22, slots[3].cy - 4);
+  ctx.moveTo(slots[1].cx - 22, slots[1].cy + 4);
+  ctx.lineTo(slots[2].cx + 22, slots[2].cy - 4);
+  ctx.stroke();
+  ctx.restore();
+
+  // Central PAIR pill.
+  ctx.save();
+  const pillW = 64, pillH = 20;
+  ctx.globalAlpha = 0.75 + 0.2 * linkPulse;
+  ctx.fillStyle = 'rgba(20,18,36,0.85)';
+  ctx.strokeStyle = `rgba(255,220,120,${0.6 + 0.35 * linkPulse})`;
+  ctx.lineWidth = 1.2;
+  ctx.beginPath(); ctx.roundRect(mx - pillW / 2, my - pillH / 2, pillW, pillH, 5);
+  ctx.fill(); ctx.stroke();
+  ctx.restore();
+  guideLabel(ctx, 'PAIR = COMBO', mx, my + 1, 'rgba(255,220,120,0.95)', 9);
 }
 
 function drawGuideScoring(ctx, t) {
