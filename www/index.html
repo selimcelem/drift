@@ -2865,6 +2865,9 @@ const PHASE_POOLS = {
   4: ['tentacle','screaming','void','heart','mirror','skull','heart','mirror'],
 };
 function phaseForElapsed(es) {
+  // Guard: always phase 1 for the first 2 seconds of a run. Prevents stale
+  // elapsed time from spawning wrong-phase creatures right after a reset.
+  if (elapsedRunSeconds() < 2) return 1;
   return es < 120 ? 1 : es < 240 ? 2 : es < 360 ? 3 : 4;
 }
 
@@ -4126,18 +4129,25 @@ function applyForce() {
     const hsElapsed = Math.max(0, hyperspeedActiveDuration - activeEffects.hyperspeed);
     if (hsElapsed < 500) {
       const launchK = 1 - hsElapsed / 500;
-      ay -= 0.15 * launchK;
+      // Skip upward boost if already in the top 30% — prevents launching off
+      // the top edge when the player is already high up.
+      if (player.y >= H * 0.3) {
+        ay -= 0.15 * launchK;
+      }
       player.vx += (W / 2 - player.x) * 0.002 * launchK;
     }
     if (activeEffects.hyperspeed < 800) {
       // Stacked hyperspeed lands harder: scale pull by the peak stacks reached
       // this session. 1 stack = 1× (unchanged from pre-stacking), 4 stack = 4×.
       // Landing window is the final 800ms. If the player is actively pressing
-      // attract/repel during landing the pull drops to 50% so they can still
+      // attract/repel during landing the pull drops to 35% so they can still
       // steer — otherwise full strength carries them back to centre.
       const stackBoost = Math.max(1, peakHyperSpeedStacks);
-      const inputYield = (leftDown || rightDown) ? 0.5 : 1.0;
-      const pullStrength = Math.max(0.0004, (1 - activeEffects.hyperspeed / 800) * 0.002 * stackBoost) * inputYield;
+      const inputYield = (leftDown || rightDown) ? 0.35 : 1.0;
+      // Emergency escape: if very close to the top edge during landing, double
+      // the pull to yank them back into the playfield fast.
+      const topEscape = (player.y < H * 0.15) ? 2 : 1;
+      const pullStrength = Math.max(0.0004, (1 - activeEffects.hyperspeed / 800) * 0.002 * stackBoost) * inputYield * topEscape;
       ay += (H * 0.72 - player.y) * pullStrength;
       // Also pull horizontally toward centre for the same window.
       player.vx += (W / 2 - player.x) * pullStrength;
@@ -5807,6 +5817,9 @@ function drawToothed(b) {
   for (let i = 0; i < 8; i++) {
     const a = b.toothAngle + i * (Math.PI / 4);
     const ext = b.spikeLen * Math.abs(Math.sin(a));
+    // Skip degenerate zero-extension spikes — their base/tip coincide which
+    // would create a zero-length linear gradient (WebView crash risk on Android).
+    if (ext < 0.5) continue;
     const baseX = b.x + Math.cos(a) * b.radius;
     const baseY = b.y + Math.sin(a) * b.radius;
     const tipX = b.x + Math.cos(a) * (b.radius + ext);
@@ -5839,9 +5852,8 @@ function drawToothed(b) {
   ctx.fillStyle = grad;
   ctx.beginPath(); ctx.arc(b.x, b.y, b.radius, 0, 6.28); ctx.fill();
 
-  // Dark veins/cracks between spike bases — faint jagged lines.
-  ctx.save();
-  ctx.beginPath(); ctx.arc(b.x, b.y, b.radius, 0, 6.28); ctx.clip();
+  // Dark veins/cracks between spike bases — faint jagged lines. (No clip —
+  // Android WebView crash risk. Veins drawn at 0.95*r → 0.1*r stay within.)
   ctx.strokeStyle = 'rgba(20,0,0,0.75)';
   ctx.lineWidth = 1.2;
   for (let i = 0; i < 8; i++) {
@@ -5859,7 +5871,6 @@ function drawToothed(b) {
     ctx.lineTo(mx, my); ctx.lineTo(ex, ey);
     ctx.stroke();
   }
-  ctx.restore();
   ctx.restore();
 }
 
@@ -5936,10 +5947,10 @@ function drawCracked(b) {
   ctx.fillStyle = grad;
   ctx.beginPath(); ctx.arc(b.x, b.y, b.radius, 0, 6.28); ctx.fill();
 
-  // Crack glow pulse.
+  // Crack glow pulse. (No clip — Android WebView crash risk. Cracks start
+  // at 0.9*r and jag inward so minor overflow only.)
   const pulseAlpha = 0.6 + 0.4 * Math.abs(Math.sin(Date.now() * 0.0012 + b.crackSeed));
   ctx.save();
-  ctx.beginPath(); ctx.arc(b.x, b.y, b.radius, 0, 6.28); ctx.clip();
   ctx.shadowBlur = 8;
   ctx.shadowColor = 'rgba(255,120,40,0.9)';
   ctx.strokeStyle = `rgba(255,140,40,${pulseAlpha})`;
@@ -6033,10 +6044,15 @@ function drawTentacle(b) {
     }
   }
 
-  // Slightly irregular body silhouette — darker navy/black. Use 8-vertex path
-  // with jittered radii for an organic blob.
+  // Slightly irregular body silhouette — darker navy/black. Use 10-vertex path
+  // with jittered radii for an organic blob. Fills the path directly (replaces
+  // former clip + fillRect, which crashed Android WebView).
   const rng = mulberry32(b.tentacleSeed);
-  ctx.save();
+  const grad = ctx.createRadialGradient(b.x - b.radius*0.3, b.y - b.radius*0.3, 0, b.x, b.y, b.radius);
+  grad.addColorStop(0, '#1a0030');
+  grad.addColorStop(0.6, '#0d0018');
+  grad.addColorStop(1, '#000');
+  ctx.fillStyle = grad;
   ctx.beginPath();
   const verts = 10;
   for (let i = 0; i < verts; i++) {
@@ -6048,20 +6064,15 @@ function drawTentacle(b) {
     else ctx.lineTo(px, py);
   }
   ctx.closePath();
-  ctx.clip();
-  const grad = ctx.createRadialGradient(b.x - b.radius*0.3, b.y - b.radius*0.3, 0, b.x, b.y, b.radius);
-  grad.addColorStop(0, '#1a0030');
-  grad.addColorStop(0.6, '#0d0018');
-  grad.addColorStop(1, '#000');
-  ctx.fillStyle = grad;
-  ctx.fillRect(b.x - b.radius * 1.2, b.y - b.radius * 1.2, b.radius * 2.4, b.radius * 2.4);
+  ctx.fill();
 
-  // Bioluminescent dots scattered on body surface (cyan/blue glow).
+  // Bioluminescent dots scattered on body surface (cyan/blue glow). Placed
+  // within 0.95*r so they stay inside the blob without needing a clip.
   const dotRng = mulberry32(b.tentacleSeed ^ 0xa5a5);
   const biolumPulse = 0.5 + 0.5 * Math.sin(frame * 0.04);
   for (let i = 0; i < 9; i++) {
     const a = dotRng() * Math.PI * 2;
-    const r = b.radius * (0.2 + dotRng() * 0.75);
+    const r = b.radius * (0.2 + dotRng() * 0.7);
     const px = b.x + Math.cos(a) * r;
     const py = b.y + Math.sin(a) * r;
     const dotR = 1.2 + dotRng() * 1.4;
@@ -6069,7 +6080,6 @@ function drawTentacle(b) {
     ctx.fillStyle = 'rgba(120,220,255,1)';
     ctx.beginPath(); ctx.arc(px, py, dotR, 0, 6.28); ctx.fill();
   }
-  ctx.restore();
   ctx.restore();
 }
 
@@ -6136,20 +6146,19 @@ function drawScreaming(b) {
   ctx.fillStyle = baseGrad;
   ctx.beginPath(); ctx.arc(b.x, b.y, b.radius, 0, 6.28); ctx.fill();
 
-  // Cratered surface: scattered darker circles clipped to the disc.
-  ctx.save();
-  ctx.beginPath(); ctx.arc(b.x, b.y, b.radius, 0, 6.28); ctx.clip();
+  // Cratered surface: scattered darker circles. (No clip — Android WebView
+  // crash risk. Crater centers capped at 0.8*r so they stay mostly inside.)
   const rng = mulberry32(b.screamSeed);
   for (let i = 0; i < 9; i++) {
     const cr = b.radius * (0.08 + rng() * 0.2);
     const ang = rng() * Math.PI * 2;
-    const dist = rng() * b.radius * 0.8;
+    const dist = rng() * b.radius * 0.75;
     const cx = b.x + Math.cos(ang) * dist;
     const cy = b.y + Math.sin(ang) * dist;
     ctx.fillStyle = `rgba(20,12,8,${0.3 + rng() * 0.4})`;
     ctx.beginPath(); ctx.arc(cx, cy, cr, 0, 6.28); ctx.fill();
   }
-  // Hairline cracks appear on the surface during scream.
+  // Hairline cracks during scream. Lengths sum-capped so they stay within body.
   if (mouthT > 0.2) {
     const crackRng = mulberry32(b.screamSeed ^ 0x1234);
     ctx.strokeStyle = `rgba(140,20,20,${mouthT * 0.75})`;
@@ -6161,16 +6170,22 @@ function drawScreaming(b) {
       const steps = 3 + Math.floor(crackRng() * 3);
       let curA = a;
       for (let s = 0; s < steps; s++) {
-        const seg = b.radius * (0.25 + crackRng() * 0.3);
+        const seg = b.radius * (0.18 + crackRng() * 0.2);
         curA += (crackRng() - 0.5) * 1.2;
-        x += Math.cos(curA) * seg;
-        y += Math.sin(curA) * seg;
+        const nx = x + Math.cos(curA) * seg;
+        const ny = y + Math.sin(curA) * seg;
+        // Clamp within 0.95*r of body center.
+        const ddx = nx - b.x, ddy = ny - b.y;
+        const d = Math.hypot(ddx, ddy);
+        if (d > b.radius * 0.95) {
+          const k = (b.radius * 0.95) / d;
+          x = b.x + ddx * k; y = b.y + ddy * k;
+        } else { x = nx; y = ny; }
         ctx.lineTo(x, y);
       }
       ctx.stroke();
     }
   }
-  ctx.restore();
 
   // Brow ridge: two dark curves above the eyes angling inward (menacing).
   const browY = b.y - b.radius * 0.45;
@@ -6370,10 +6385,15 @@ function drawHeart(b) {
     ctx.stroke();
   }
 
-  // Irregular anatomical blob — draw via a closed path with jittered points.
+  // Irregular anatomical blob — closed path with jittered points, filled
+  // directly (replaces former clip + fillRect — Android WebView crash risk).
   const rng = mulberry32(b.heartSeed);
   const points = 16;
-  ctx.save();
+  const fill = ctx.createRadialGradient(b.x - w * 0.35, b.y - w * 0.3, 0, b.x, b.y, w * 1.2);
+  fill.addColorStop(0, '#cc0000');
+  fill.addColorStop(0.5, '#8b0000');
+  fill.addColorStop(1, '#3d0000');
+  ctx.fillStyle = fill;
   ctx.beginPath();
   for (let i = 0; i < points; i++) {
     const u = i / points;
@@ -6391,30 +6411,23 @@ function drawHeart(b) {
     else ctx.lineTo(px, py);
   }
   ctx.closePath();
-  ctx.clip();
-  // Fill: dark crimson gradient.
-  const fill = ctx.createRadialGradient(b.x - w * 0.35, b.y - w * 0.3, 0, b.x, b.y, w * 1.2);
-  fill.addColorStop(0, '#cc0000');
-  fill.addColorStop(0.5, '#8b0000');
-  fill.addColorStop(1, '#3d0000');
-  ctx.fillStyle = fill;
-  ctx.fillRect(b.x - w * 1.5, b.y - w * 1.5, w * 3, w * 3);
+  ctx.fill();
 
-  // Branching surface veins.
+  // Branching surface veins. Positions clamped inside 0.95*w.
   ctx.strokeStyle = 'rgba(60,0,0,0.85)';
   ctx.lineWidth = 1.3;
   const veinRng = mulberry32(b.heartSeed ^ 0xbeef);
   for (let i = 0; i < 7; i++) {
     const startA = veinRng() * Math.PI * 2;
-    let x = b.x + Math.cos(startA) * w * 0.95;
-    let y = b.y + Math.sin(startA) * w * 0.95;
+    let x = b.x + Math.cos(startA) * w * 0.9;
+    let y = b.y + Math.sin(startA) * w * 0.9;
     ctx.beginPath();
     ctx.moveTo(x, y);
     const segs = 3 + Math.floor(veinRng() * 3);
     let ang = startA + Math.PI + (veinRng() - 0.5) * 1.2;
     for (let s2 = 0; s2 < segs; s2++) {
       ang += (veinRng() - 0.5) * 1.4;
-      const step = w * (0.25 + veinRng() * 0.35);
+      const step = w * (0.2 + veinRng() * 0.25);
       x += Math.cos(ang) * step;
       y += Math.sin(ang) * step;
       ctx.lineTo(x, y);
@@ -6424,20 +6437,20 @@ function drawHeart(b) {
     ctx.beginPath();
     ctx.moveTo(x, y);
     const brAng = ang + (veinRng() - 0.5) * 1.8;
-    ctx.lineTo(x + Math.cos(brAng) * w * 0.25, y + Math.sin(brAng) * w * 0.25);
+    ctx.lineTo(x + Math.cos(brAng) * w * 0.2, y + Math.sin(brAng) * w * 0.2);
     ctx.stroke();
   }
 
-  // Wet/glossy sheen on upper portion.
+  // Wet/glossy sheen on upper portion — bounded circle fill (gradient already
+  // fades to 0 at w*0.55 so overflow is invisible).
   ctx.globalAlpha = 0.45;
   const sheen = ctx.createRadialGradient(b.x - w * 0.3, b.y - w * 0.5, 0, b.x - w * 0.3, b.y - w * 0.5, w * 0.55);
   sheen.addColorStop(0, 'rgba(255,150,150,0.8)');
   sheen.addColorStop(0.6, 'rgba(255,120,120,0.25)');
   sheen.addColorStop(1, 'rgba(255,120,120,0)');
   ctx.fillStyle = sheen;
-  ctx.fillRect(b.x - w * 1.5, b.y - w * 1.5, w * 3, w * 3);
+  ctx.beginPath(); ctx.arc(b.x - w * 0.3, b.y - w * 0.5, w * 0.55, 0, 6.28); ctx.fill();
   ctx.globalAlpha = 1;
-  ctx.restore();
 
   // Blood drops falling.
   for (const d of b.bloodDrops) {
@@ -6469,24 +6482,23 @@ function drawMirror(b) {
   ctx.fillStyle = chrome;
   ctx.beginPath(); ctx.arc(b.x, b.y, b.radius, 0, 6.28); ctx.fill();
 
-  // Reflected stars on the surface (clipped to disc).
-  ctx.save();
-  ctx.beginPath(); ctx.arc(b.x, b.y, b.radius * 0.95, 0, 6.28); ctx.clip();
+  // Reflected stars on the surface. (No clip — Android WebView crash risk.
+  // Star positions constrained to stay within 0.9*r of body center.)
   const rng = mulberry32(b.mirrorSeed);
   for (let i = 0; i < 7; i++) {
-    const rx = b.x + (rng() - 0.5) * b.radius * 1.4;
-    const ry = b.y + (rng() - 0.5) * b.radius * 1.4;
+    const a = rng() * Math.PI * 2;
+    const rd = rng() * b.radius * 0.88;
+    const rx = b.x + Math.cos(a) * rd;
+    const ry = b.y + Math.sin(a) * rd;
     const rr = 0.6 + rng() * 1.1;
     ctx.globalAlpha = 0.6 + rng() * 0.35;
     ctx.fillStyle = '#fff';
     ctx.beginPath(); ctx.arc(rx, ry, rr, 0, 6.28); ctx.fill();
   }
   ctx.globalAlpha = 1;
-  ctx.restore();
 
-  // Bright crescent highlight on upper-left.
-  ctx.save();
-  ctx.beginPath(); ctx.arc(b.x, b.y, b.radius * 0.95, 0, 6.28); ctx.clip();
+  // Bright crescent highlight on upper-left. (No clip — gradient fades to 0
+  // at the fill edge so overflow is invisible.)
   const highlight = ctx.createRadialGradient(
     b.x - b.radius * 0.45, b.y - b.radius * 0.45, 0,
     b.x - b.radius * 0.2, b.y - b.radius * 0.2, b.radius * 0.6
@@ -6496,7 +6508,6 @@ function drawMirror(b) {
   highlight.addColorStop(1, 'rgba(255,255,255,0)');
   ctx.fillStyle = highlight;
   ctx.beginPath(); ctx.arc(b.x - b.radius * 0.3, b.y - b.radius * 0.3, b.radius * 0.55, 0, 6.28); ctx.fill();
-  ctx.restore();
 
   // Dark rim for depth.
   ctx.strokeStyle = 'rgba(0,0,0,0.75)';
@@ -6510,8 +6521,9 @@ function drawSkull(b) {
   const pal = b.skullPalette || { top: '#3a6b38', mid: '#5a8a3c', low: '#6d5a30' };
 
   ctx.save();
-  // Clip to disc so nothing leaks outside.
-  ctx.beginPath(); ctx.arc(b.x, b.y, r, 0, 6.28); ctx.clip();
+  // No clip — Android WebView crash risk. Both base gradients fill the body
+  // disc directly via arc+fill instead of clip+fillRect. Downstream features
+  // (clouds, skull face) are constrained to stay within the body.
 
   // Vertical gradient: planet colors at top transition to bone/dark at bottom.
   const vert = ctx.createLinearGradient(b.x, b.y - r, b.x, b.y + r);
@@ -6521,7 +6533,7 @@ function drawSkull(b) {
   vert.addColorStop(0.75, '#8a7d68');
   vert.addColorStop(1,    '#2a2218');
   ctx.fillStyle = vert;
-  ctx.fillRect(b.x - r, b.y - r, r * 2, r * 2);
+  ctx.beginPath(); ctx.arc(b.x, b.y, r, 0, 6.28); ctx.fill();
 
   // Subtle sphere shading — darken lower-right, brighten upper-left.
   const sphereShade = ctx.createRadialGradient(
@@ -6532,19 +6544,24 @@ function drawSkull(b) {
   sphereShade.addColorStop(0.6, 'rgba(255,255,255,0)');
   sphereShade.addColorStop(1, 'rgba(0,0,0,0.4)');
   ctx.fillStyle = sphereShade;
-  ctx.fillRect(b.x - r, b.y - r, r * 2, r * 2);
+  ctx.beginPath(); ctx.arc(b.x, b.y, r, 0, 6.28); ctx.fill();
 
   // Cloud-like lighter patches on the upper portion (multiple overlapping
-  // semi-transparent circles).
+  // semi-transparent circles). Positions constrained so they stay inside
+  // the body disc instead of relying on a clip.
   const rng = mulberry32(b.skullSeed);
   ctx.fillStyle = 'rgba(240,240,230,0.35)';
   for (let i = 0; i < 7; i++) {
     const a = (rng() - 0.5) * Math.PI; // confine to upper half mostly
     const yFrac = -0.55 + rng() * 0.6;
-    const cx = b.x + (rng() - 0.5) * r * 1.6;
-    const cy = b.y + yFrac * r;
     const cr = r * (0.1 + rng() * 0.22);
-    ctx.beginPath(); ctx.arc(cx, cy, cr, 0, 6.28); ctx.fill();
+    const ddx = (rng() - 0.5) * r * 1.6;
+    const ddy = yFrac * r;
+    // Clamp cloud center to within (r - cr) of body center so the disc contains it.
+    const d = Math.hypot(ddx, ddy);
+    const cap = Math.max(0.1, r - cr);
+    const k = d > cap ? cap / d : 1;
+    ctx.beginPath(); ctx.arc(b.x + ddx * k, b.y + ddy * k, cr, 0, 6.28); ctx.fill();
   }
 
   // --- Skull face on the lower half ---
