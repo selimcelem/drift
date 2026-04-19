@@ -2832,7 +2832,10 @@ function normalScrollSpeed() {
   // should feel a consistent "it's been 5 minutes, top speed" regardless of
   // framerate. elapsedRunSeconds() returns 0 before resetGame is called.
   const t = Math.min(elapsedRunSeconds() / d.speedCapScore, 1);
-  return d.startSpeed + (d.maxSpeed - d.startSpeed) * t;
+  const baseSpeed = d.startSpeed + (d.maxSpeed - d.startSpeed) * t;
+  const postCapMinutes = Math.max(0, (elapsedRunSeconds() - d.speedCapScore) / 60);
+  const postCapBonus = postCapMinutes * 0.25;
+  return baseSpeed + postCapBonus;
 }
 
 function scrollSpeed() {
