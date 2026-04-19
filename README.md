@@ -41,7 +41,9 @@ Top 5 scores are kept locally in `localStorage` and shown on the death screen.
 - **Run summary on death** — full breakdown of planets passed, planets destroyed, longest streak, powerups used, and points from each source
 - **Dynamic space background** — real NASA space imagery (nebulae, dying stars, galaxies, supernovae) parallax-scrolls behind the playfield, blended into the cosmos with a screen composite so only the coloured light shows
 - **3 difficulties** — Normal, Hard, Extreme — with progressively faster scroll, more bodies, and more frequent powerup drops
-- **Local + global leaderboards** — top 5 per difficulty stored locally; global top 10 served from a serverless AWS backend
+- **Local + global leaderboards** — top 5 per difficulty stored locally; global top 10 served from a serverless AWS backend. Global top 10 entries are permanent (TTL attribute removed); positions 11+ expire after 7 days
+- **Loading screen + TAP TO START** — boot shows a drifting star field and a progress bar while music/SFX buffers, background imagery, planet sprites, and warm-up gradients load in parallel. The final TAP TO START button satisfies the browser's user-gesture requirement for audio playback, so the menu track begins cleanly instead of the first-tap-anywhere hack
+- **Analytics dashboard** — password-protected `/analytics` endpoint records per-run telemetry (death cause, phase reached, orb, powerups, burst count, streak, crystals earned) and serves a server-rendered HTML dashboard with overview stats, breakdowns, and per-pilot run history
 - **Play In-App Updates** — the Android build uses Google Play's flexible in-app update flow to keep testers current without forcing them out of a run
 
 ## Tech stack
@@ -94,26 +96,34 @@ Want heavier gravity? Bump `FORCE`. Want a more forgiving ramp? Raise `SPEED_SCO
 ## Architecture
 
 ```
-┌──────────────┐     ┌───────────────────┐     ┌──────────────────┐     ┌──────────────┐
-│              │     │                   │     │                  │     │              │
-│  Game        │────▶│  API Gateway      │────▶│  Lambda          │────▶│  DynamoDB    │
-│  (Canvas)    │     │  (HTTP API)       │     │  (Node.js 20)    │     │  (on-demand) │
-│              │     │                   │     │                  │     │              │
-└──────────────┘     └───────────────────┘     └──────────────────┘     └──────────────┘
-                            CORS *                POST /score           drift-leaderboard
-                                                  GET /leaderboard      TTL: 30d top 10 / 7d rest
+          API Gateway (HTTP API, CORS *)
+          ├─ POST /score        ─▶ submit-score     ─▶ drift-leaderboard
+          ├─ GET  /leaderboard  ─▶ get-leaderboard  ─▶   (top 10: no TTL, 11+: 7-day TTL)
+          ├─ POST /analytics    ─▶ drift-analytics  ─▶ drift-analytics
+          └─ GET  /analytics    ─▶ drift-analytics      (90-day TTL, dashboard HTML)
+
+          All Lambdas: Node.js 20. All tables: DynamoDB on-demand.
 ```
 
-The leaderboard is capped at the top 10 scores per difficulty via DynamoDB TTL tiers: every submission promotes the current top 10 to a 30-day TTL and lets everything else fall out on a 7-day TTL. No explicit deletes — the table self-prunes as entries age past their tier.
+The leaderboard is kept at the top 10 scores per difficulty via DynamoDB TTL tiering: every submission **removes** the TTL attribute from the current top 10 so they persist indefinitely, and sets a 7-day TTL on everything else. Scores dropping out of the top 10 pick up a fresh 7-day window on the next submission. No explicit deletes — the table self-prunes as 11+ entries age out.
 
 ## Online leaderboard
 
 The game has a serverless AWS backend for global leaderboards. Two endpoints:
 
-- **POST /score** — submit a score with `{username, score, difficulty}`. Validated server-side (alphanumeric username, score < 10000, difficulty must be NORMAL/HARD/EXTREME). Scores expire after 90 days via DynamoDB TTL.
+- **POST /score** — submit a score with `{username, score, difficulty}`. Validated server-side (alphanumeric username, score < 999999, difficulty must be NORMAL/HARD/EXTREME). On each submit the backend rebalances TTLs: the top 10 per difficulty have their TTL removed so they persist indefinitely, and positions 11+ are set to a 7-day TTL.
 - **GET /leaderboard?difficulty=NORMAL** — returns the top 10 scores for a difficulty tier, sorted descending.
 
 All infrastructure is defined as Terraform in `/infrastructure`. No hardcoded account IDs — everything is parameterized.
+
+## Analytics dashboard
+
+A separate password-protected endpoint records per-run telemetry so I can see how the game is actually being played:
+
+- **POST /analytics** — fire-and-forget from the game on death. Records `sessionId` (anonymous UUID persisted in `localStorage`), `pilotName` (the player's chosen username), difficulty, orb, score, time survived, phase reached, death cause, planets destroyed/passed, powerups used, burst count, longest streak, and crystals earned. Rows expire after 90 days via DynamoDB TTL.
+- **GET /analytics?password=…** — returns a self-contained HTML dashboard (dark theme matching the game): overview stats for the last 7 days, a three-column grid for difficulty / death causes / orb popularity, phase-survival progress bars, and a per-pilot table with click-to-expand run history. Auto-refreshes every 60 seconds.
+
+Session IDs are generated client-side with `crypto.randomUUID` and stored locally — no login, no personal data, just a stable per-install identifier that links runs from the same device. Attaching the player's pilot name lets the dashboard surface per-player stats when the same person plays across difficulties.
 
 ## CI/CD
 

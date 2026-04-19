@@ -1627,9 +1627,6 @@ let voidHumNodes = null;
 const BURST_COOLDOWN_MS = 20000;
 let burstCooldownEnd = 0;
 let burstTriggered = false;
-// Inferno/solar burst rejected because a supernova is already active — show a
-// brief "ACTIVE" flash on the burst bar instead of starting cooldown.
-let burstActiveFlashEnd = 0;
 let pendingNovaTimeouts = [];
 let destroyEffects = [];   // per-planet destruction visuals (flash + ring + debris)
 let deathShards = [];      // orb shatter pieces spawned on player death
@@ -3833,7 +3830,9 @@ function activateCombo(key, x, y) {
   // re-running the activation body. Re-activating Warp Time or Pulsar while
   // already running would schedule a second stream of setTimeout-driven nova
   // spawns (the cause of the Android hyperspeed-combo crash at high scores).
-  if (activeCombos[key]) {
+  // Exception: nova_nova always re-fires a fresh supernova chain — players
+  // expect back-to-back nova+nova pickups to each produce a full supernova.
+  if (activeCombos[key] && key !== 'nova_nova') {
     if (key === 'nova_hyperspeed') {
       // Refresh hyperspeed duration but leave warpNextNovaTime alone so the
       // auto-nova cadence continues uninterrupted.
@@ -4626,16 +4625,6 @@ function checkCollisions() {
 // Burst ability — per-orb effect. Called once when cooldown hits 0 and the
 // player is holding both sides simultaneously.
 function executeBurst() {
-  // Inferno/solar: refuse to burst while a supernova from a previous burst or
-  // combo is still ringing — re-triggering would just restart the 6-ring chain
-  // and waste the cooldown. Single nova pickups also populate novaRings, so
-  // test specifically for supernova-tagged rings; otherwise one nova pickup
-  // would block the burst. Caller checks return value to decide whether to
-  // start the cooldown.
-  if (activeOrb === 'solar' && novaRings.some(r => r.supernova)) {
-    burstActiveFlashEnd = Date.now() + 400;
-    return false;
-  }
   if (typeof Sentry !== 'undefined') Sentry.addBreadcrumb({ category: 'burst', message: 'burst: ' + activeOrb, level: 'info' });
   if (activeOrb === 'cyan') {
     const types = ['shield','nova','hyperspeed','ghost'];
@@ -4895,12 +4884,8 @@ function update() {
   if (leftDown && rightDown) burstTriggered = true;
   const burstReady = Date.now() >= burstCooldownEnd;
   if (burstTriggered && burstReady) {
-    // Only start cooldown when the burst actually fired. Solar orb refuses
-    // to fire while a supernova is still active; that path returns false so
-    // the cooldown stays where it was.
-    if (executeBurst()) {
-      burstCooldownEnd = Date.now() + BURST_COOLDOWN_MS;
-    }
+    executeBurst();
+    burstCooldownEnd = Date.now() + BURST_COOLDOWN_MS;
   }
   burstTriggered = false;
 
@@ -7728,12 +7713,7 @@ function updateBurstBar() {
     ? 1
     : Math.max(0, Math.min(1, (Date.now() - (burstCooldownEnd - BURST_COOLDOWN_MS)) / BURST_COOLDOWN_MS));
   burstFillEl.style.width = (pct * 100) + '%';
-  // Inferno burst was pressed while a supernova was already running — flash
-  // the bar red briefly instead of consuming the cooldown.
-  if (Date.now() < burstActiveFlashEnd) {
-    burstFillEl.style.background = '#ff3040';
-    burstFillEl.style.boxShadow = '0 0 12px rgba(255,60,80,0.95)';
-  } else if (ready) {
+  if (ready) {
     // Ready: bright gold/orange so it reads clearly against the grey cooldown
     // state regardless of the active orb (asteroid's orb color is near-grey).
     burstFillEl.style.background = '#ffaa00';

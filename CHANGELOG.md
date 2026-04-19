@@ -6,6 +6,36 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- Loading screen with animated drifting star field, progress bar, percentage readout, and TAP TO START gesture gate before the AudioContext is resumed
+- Asset preloader: all music tracks, SFX buffers, background images, planet sprites, and gradient cache entries loaded in parallel with per-task progress reporting and a 15s stall timeout
+- Gradient cache warmup during preload (void/heart/scream bases at sizes 20/25/30/35/40, shield and ghost player auras, orb aura/core per orb colour) so the first few frames don't build them under load
+- Analytics dashboard at `/analytics` endpoint (password protected)
+- Per-run tracking: death cause, phase reached, orb used, score, time survived, powerups, burst count, longest streak
+- Anonymous session IDs for player tracking without login
+- Pilot name linked to analytics for per-player stats
+- DynamoDB `drift-analytics` table with 90-day TTL
+- Dynamic body-spacing scaler — spawn gap now scales inversely with `effectiveMaxBodies()` so screen density stays roughly constant as the body cap ramps up through phases
+- Post-3-minute speed scaling: +0.25 per minute after the normal speed cap is reached
+- Mirror planet movement now replays delayed player input (500ms lookback) instead of mirroring live — makes the mirror's motion readable and reactable
+
+### Changed
+- Orb unlock prices doubled: Cosmic 10k→20k, Solar 20k→40k, Nebula 40k→80k, Asteroid 80k→160k
+- Shield duration reduced: 8s → 6s default, 10s → 6s on Asteroid orb
+- Fortress Shield combo duration now a flat 8s for all orbs via dedicated `FORTRESS_SHIELD_DURATION_MS`
+- Ghost durations reduced: default 5s → 4s, Cosmic 8s → 6s; Eternal Phantom default 8s → 6s, Cosmic 12s → 8s
+- Hyperspeed combo duration 5s → 3.5s (Spectral Rush / Warp Time / Juggernaut hyperspeed phase)
+- Juggernaut post-landing shield: 6s default, 8s on Asteroid (fortress-tier reward)
+- Phase thresholds moved earlier to the 2/4/6/8 minute marks
+- Streak scoring cap lowered to 8 (× 4 flat = max 32 points per destroy)
+- Supernova (nova+nova combo) now always fires a fresh 6-ring chain on re-activation — consecutive pickups each spawn a full supernova instead of the second being suppressed
+- Top 10 leaderboard scores now permanent (no TTL expiry)
+- Scores dropping below top 10 get 7-day TTL as before
+
+### Fixed
+- WebView freeze after ~2-3 minutes on Android: heap-pressure watchdog at 150 MB that wipes effect arrays and the gradient cache; tightened orb-trail particle cap (60 → 30) with 3-frame emission throttle and 600ms max particle life; bounded gradient cache (cleared at >200 entries); vignette gradient pre-rendered to an offscreen canvas cached per size-bucket instead of rebuilt every frame
+- Game loop hardened: per-stage and top-level try/catch with `finally { requestAnimationFrame(loop); }` so an unexpected throw can never stall the rAF chain
+
 ## [1.5.0] - 2026-04-19
 
 ### Added

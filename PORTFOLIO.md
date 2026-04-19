@@ -15,6 +15,10 @@ A gravity-surfing endless runner built as a single HTML5 Canvas game, shipped as
 - **Orb + crystal progression** — five unlockable orbs, each with a unique passive bonus and a distinct burst ability triggered by pressing both controls simultaneously; runs earn crystal currency (score × difficulty multiplier) persisted in `localStorage` to drive the shop
 - **Real space imagery as parallax scenery** — NASA nebula, dying-star, galaxy, and supernova photos scroll behind the playfield using a `screen` composite blend so only the coloured light shows through
 - **Play In-App Updates API integration** — the Android build uses Google Play's flexible in-app update flow so testers never have to leave the game to pick up a new build
+- **Custom analytics pipeline** — a separate API Gateway → Lambda → DynamoDB path records per-run telemetry (score, time survived, death cause, phase reached, orb, powerups, burst count, streak, crystals) fire-and-forget from the game on death. Anonymous `crypto.randomUUID` session IDs persisted in `localStorage` link runs from the same install without a login; the player's pilot name is attached so the dashboard can surface per-player stats
+- **Real-time analytics dashboard** — a password-protected `GET /analytics` endpoint returns a self-contained HTML page (dark theme, inline CSS) with overview stats, by-difficulty/death-cause/orb-popularity panels, phase-survival progress bars, and a per-pilot table with click-to-expand run history. Auto-refreshes every 60 seconds. Entirely server-rendered — no SPA, no external assets
+- **Asset preloader with TAP TO START gesture gate** — boot renders a loading screen before any AudioContext work happens, fires parallel loads for all music/SFX buffers, background imagery, planet sprites, and gradient warmup, and reports per-task progress on a bar. A final TAP TO START button satisfies the browser's audio-gesture requirement, solving the "suspended AudioContext" pitfall on Android WebView and Safari without the usual first-click-anywhere hack. Includes a 15s stall timeout so one bad asset never blocks boot
+- **WebView freeze mitigation on long runs** — a set of targeted fixes tracking down a ~3-minute ANR on Android: a heap-pressure watchdog sampling `performance.memory.usedJSHeapSize` every 5s and pre-emptively wiping effect arrays + gradient cache over 150 MB; bounded effect caps (nova/emp rings, trail particles, destroy/crack effects) with a per-frame `cleanupEffects()` pass; orb-trail emission throttled to every 3rd frame; the vignette gradient pre-rendered to a cached offscreen canvas per size-bucket instead of rebuilt every frame; gradient cache itself bounded and cleared at >200 entries. The game loop is wrapped in nested try/catch with a `finally { requestAnimationFrame(loop); }` so even an unexpected throw can't stall the frame chain
 
 ## Tech stack
 
@@ -36,7 +40,7 @@ A gravity-surfing endless runner built as a single HTML5 Canvas game, shipped as
 
 **OIDC over long-lived keys** — GitHub Actions authenticates to AWS via OpenID Connect federation. No AWS access keys stored as secrets, no rotation needed, no risk of key leakage. The trust policy is locked to a specific repo and branch.
 
-**90-day TTL on scores** — DynamoDB TTL automatically cleans up old entries. Keeps the leaderboard fresh and prevents unbounded table growth without needing a cleanup job.
+**Tiered DynamoDB TTL** — the leaderboard uses TTL as its retention policy instead of a cleanup job: every submission strips the `ttl` attribute from the current top 10 per difficulty (they persist indefinitely) and sets a 7-day TTL on positions 11+. Scores that fall out of the top 10 pick up a fresh 7-day window on the next submission. The analytics table uses a flat 90-day TTL for the same "no cleanup cron" reason.
 
 ## What I built vs. what tools helped
 
