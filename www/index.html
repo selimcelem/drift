@@ -1232,6 +1232,51 @@ const H = isCapacitor ? window.innerHeight : Math.min(window.innerHeight, 932);
 canvas.width = W;
 canvas.height = H;
 
+// Gradient cache: createRadialGradient/createLinearGradient shows up hot on
+// mobile profiles when many identical gradients are rebuilt each frame. Keys
+// are composed by call site. Cleared on resize because position-based caches
+// would become wrong against a new canvas size.
+const gradientCache = {};
+function getCachedGradient(key, createFn) {
+  if (!gradientCache[key]) gradientCache[key] = createFn();
+  return gradientCache[key];
+}
+function clearGradientCache() {
+  for (const k in gradientCache) delete gradientCache[k];
+}
+window.addEventListener('resize', clearGradientCache);
+
+// Offscreen planet sprites — static bases pre-rendered to offscreen canvases.
+// drawBodies() uses drawImage instead of rebuilding paths for the static parts.
+// Populated once by preloadPlanetSprites().
+const planetSpriteCache = {};
+const PLANET_SPRITE_SIZE = 80;
+function preloadPlanetSprites() {
+  // Blackhole: purple stretched halo + black disc + purple rim. Nothing about
+  // the blackhole animates, so the whole thing can be a single sprite scaled
+  // to body radius via drawImage.
+  {
+    const c = document.createElement('canvas');
+    c.width = PLANET_SPRITE_SIZE; c.height = PLANET_SPRITE_SIZE;
+    const cctx = c.getContext('2d');
+    const cx = PLANET_SPRITE_SIZE / 2, cy = PLANET_SPRITE_SIZE / 2;
+    const R = PLANET_SPRITE_SIZE * 0.22; // reference body radius inside sprite
+    cctx.save();
+    cctx.globalAlpha = 0.35;
+    cctx.fillStyle = 'rgba(170,70,255,1)';
+    cctx.translate(cx, cy);
+    cctx.scale(1, 0.3);
+    cctx.beginPath(); cctx.arc(0, 0, R * 2.2, 0, 6.28); cctx.fill();
+    cctx.restore();
+    cctx.fillStyle = '#000';
+    cctx.beginPath(); cctx.arc(cx, cy, R, 0, 6.28); cctx.fill();
+    cctx.strokeStyle = 'rgba(160,70,255,0.65)';
+    cctx.lineWidth = 1.5;
+    cctx.beginPath(); cctx.arc(cx, cy, R + 1.5, 0, 6.28); cctx.stroke();
+    planetSpriteCache.blackhole = { canvas: c, refRadius: R };
+  }
+}
+
 // Desktop: size and center the wrapper when the browser window is wider/taller
 // than the capped playfield. Uses margin:auto with all four fixed offsets set
 // to 0 so the box is horizontally + vertically centered.
@@ -1310,19 +1355,19 @@ const ORB_DEFS = {
   },
   cosmic: {
     name: 'Phantom', desc: 'Longer ghost. Ghosts spawn more often.',
-    color: '192,132,252', cost: 10000, streakCap: 8, trail: 'cosmic', bias: 'ghost',
+    color: '192,132,252', cost: 20000, streakCap: 8, trail: 'cosmic', bias: 'ghost',
   },
   solar: {
     name: 'Inferno', desc: 'Bigger novas. Novas spawn more often.',
-    color: '251,146,60', cost: 20000, streakCap: 8, trail: 'solar', bias: 'nova',
+    color: '251,146,60', cost: 40000, streakCap: 8, trail: 'solar', bias: 'nova',
   },
   nebula: {
     name: 'Warp', desc: 'Hyperspeed stacks faster. Higher cap.',
-    color: '96,165,250', cost: 40000, streakCap: 8, trail: 'nebula', bias: 'hyperspeed',
+    color: '96,165,250', cost: 80000, streakCap: 8, trail: 'nebula', bias: 'hyperspeed',
   },
   asteroid: {
     name: 'Fortress', desc: 'Durable shields. Shields spawn more often.',
-    color: '168,162,158', cost: 80000, streakCap: 8, trail: 'asteroid', bias: 'shield',
+    color: '168,162,158', cost: 160000, streakCap: 8, trail: 'asteroid', bias: 'shield',
   },
 };
 const ORB_ORDER = ['cyan', 'cosmic', 'solar', 'nebula', 'asteroid'];
@@ -1392,13 +1437,13 @@ let planetRipples = [];
 // wraith) destroys a planet. First planet it touches gets destroyed, but no
 // chain reaction. Capped at EMP_RINGS_CAP.
 let empRings = [];
-const EMP_RINGS_CAP = 10;
+const EMP_RINGS_CAP = 6;
 const EMP_EXPAND_PX_PER_SEC = 420;
 const EMP_MAX_RADIUS = 180;
 // Fragments from cracked planets that erupt. Small attract/repel-capable bodies
 // that scroll with the world and despawn after their lifetime.
 let crackFragments = [];
-const CRACK_FRAGMENTS_CAP = 30;
+const CRACK_FRAGMENTS_CAP = 20;
 // Historical player.x values, newest first. Mirror orbs read from the tail
 // after their delay so they follow where the player recently was.
 // Wall-clock log of {leftDown, rightDown, timestamp} each frame. Mirror
@@ -1417,6 +1462,9 @@ let voidHumNodes = null;
 const BURST_COOLDOWN_MS = 20000;
 let burstCooldownEnd = 0;
 let burstTriggered = false;
+// Inferno/solar burst rejected because a supernova is already active — show a
+// brief "ACTIVE" flash on the burst bar instead of starting cooldown.
+let burstActiveFlashEnd = 0;
 let pendingNovaTimeouts = [];
 let destroyEffects = [];   // per-planet destruction visuals (flash + ring + debris)
 let deathShards = [];      // orb shatter pieces spawned on player death
@@ -1425,14 +1473,25 @@ let pendingDeathBurstTimer = null; // setTimeout for the delayed particle burst
 // Hard caps on visual-effect arrays. Exceeding these on Android at high
 // scores (lots of combos firing) can crash the tab — cap aggressively and
 // drop oldest elements on overflow.
-const NOVA_RINGS_CAP    = 20;
-const PICKUP_PART_CAP   = 200;
+const NOVA_RINGS_CAP    = 6;
+const PICKUP_PART_CAP   = 40;
 const PLANET_RIPPLE_CAP = 50;
 const DEATH_PART_CAP    = 60;
-const DESTROY_EFFECTS_CAP = 40;
+const DESTROY_EFFECTS_CAP = 30;
 function pushCapped(arr, item, cap) {
   if (arr.length >= cap) arr.shift();
   arr.push(item);
+}
+// Per-frame belt-and-braces pass: even with pushCapped at spawn sites, some
+// paths (chain reactions, external spawns) can briefly overshoot. Slice the
+// oldest elements so memory can't build up across very long runs.
+function cleanupEffects() {
+  if (novaRings.length > NOVA_RINGS_CAP) novaRings = novaRings.slice(novaRings.length - NOVA_RINGS_CAP);
+  if (empRings.length > EMP_RINGS_CAP) empRings = empRings.slice(empRings.length - EMP_RINGS_CAP);
+  if (orbTrailParticles.length > ORB_TRAIL_CAP) orbTrailParticles = orbTrailParticles.slice(orbTrailParticles.length - ORB_TRAIL_CAP);
+  if (destroyEffects.length > DESTROY_EFFECTS_CAP) destroyEffects = destroyEffects.slice(destroyEffects.length - DESTROY_EFFECTS_CAP);
+  if (crackFragments.length > CRACK_FRAGMENTS_CAP) crackFragments = crackFragments.slice(crackFragments.length - CRACK_FRAGMENTS_CAP);
+  if (pickupParticles.length > PICKUP_PART_CAP) pickupParticles = pickupParticles.slice(pickupParticles.length - PICKUP_PART_CAP);
 }
 // activeEffects values are REMAINING MILLISECONDS for each effect. Absolute
 // end timestamps (Date.now() + duration) live in shieldEndTime / ghostEndTime /
@@ -1442,14 +1501,15 @@ function pushCapped(arr, item, cap) {
 // in the same unit (ms).
 let activeEffects = { shield: 0, hyperspeed: 0, ghost: 0 };
 let lastPowerupSpawn = 0;
-const SHIELD_DURATION_MS_DEFAULT = 8000;         // 8s
-const SHIELD_DURATION_MS_ASTEROID = 10000;       // 10s for asteroid orb
+const SHIELD_DURATION_MS_DEFAULT = 6000;         // 6s
+const SHIELD_DURATION_MS_ASTEROID = 6000;        // 6s for asteroid orb
+const FORTRESS_SHIELD_DURATION_MS = 8000;        // 8s for shield+shield Fortress combo
 const HYPERSPEED_DURATION_MS = 3000;             // 3s base
-const HYPERSPEED_COMBO_DURATION = 5000;          // 5s for warp time / spectral rush
-const GHOST_DURATION_MS_DEFAULT = 5000;          // 5s
-const GHOST_DURATION_MS_COSMIC = 8000;           // 8s for cosmic orb
-const GHOST_ETERNAL_DURATION_DEFAULT = 8000;     // 8s Eternal Phantom
-const GHOST_ETERNAL_DURATION_COSMIC  = 12000;    // 12s Eternal Phantom on cosmic orb
+const HYPERSPEED_COMBO_DURATION = 3500;          // 3.5s for warp time / spectral rush
+const GHOST_DURATION_MS_DEFAULT = 4000;          // 4s
+const GHOST_DURATION_MS_COSMIC = 6000;           // 6s for cosmic orb
+const GHOST_ETERNAL_DURATION_DEFAULT = 6000;     // 6s Eternal Phantom
+const GHOST_ETERNAL_DURATION_COSMIC  = 8000;     // 8s Eternal Phantom on cosmic orb
 const SHIELD_BLINK_MS = 1000;                    // last 1s blink
 function SHIELD_DURATION() { return activeOrb === 'asteroid' ? SHIELD_DURATION_MS_ASTEROID : SHIELD_DURATION_MS_DEFAULT; }
 function GHOST_DURATION() { return activeOrb === 'cosmic' ? GHOST_DURATION_MS_COSMIC : GHOST_DURATION_MS_DEFAULT; }
@@ -3600,8 +3660,8 @@ function activateCombo(key, x, y) {
     } else if (key === 'shield_shield') {
       // Fortress refresh: additive +2 hits, capped per orb (asteroid 4,
       // others 2) so burst → pair → pickups all stack consistently.
-      shieldEndTime = Date.now() + SHIELD_DURATION();
-      activeEffects.shield = SHIELD_DURATION();
+      shieldEndTime = Date.now() + FORTRESS_SHIELD_DURATION_MS;
+      activeEffects.shield = FORTRESS_SHIELD_DURATION_MS;
       shieldBroken = false;
       const fortressCap = activeOrb === 'asteroid' ? 4 : 2;
       shieldHits = Math.min(fortressCap, shieldHits + 2);
@@ -3690,8 +3750,8 @@ function activateCombo(key, x, y) {
   } else if (key === 'shield_shield') {
     // FORTRESS SHIELD: additive +2 hits, capped per orb (asteroid 4,
     // others 2). So burst (2 on asteroid) + fortress pair lands at 4.
-    shieldEndTime = Date.now() + SHIELD_DURATION();
-    activeEffects.shield = SHIELD_DURATION();
+    shieldEndTime = Date.now() + FORTRESS_SHIELD_DURATION_MS;
+    activeEffects.shield = FORTRESS_SHIELD_DURATION_MS;
     shieldBroken = false;
     const fortressCap = activeOrb === 'asteroid' ? 4 : 2;
     shieldHits = Math.min(fortressCap, shieldHits + 2);
@@ -4347,6 +4407,14 @@ function checkCollisions() {
 // Burst ability — per-orb effect. Called once when cooldown hits 0 and the
 // player is holding both sides simultaneously.
 function executeBurst() {
+  // Inferno/solar: refuse to burst while a supernova from a previous burst or
+  // combo is still ringing — re-triggering would just restart the 6-ring chain
+  // and waste the cooldown. Caller checks return value to decide whether to
+  // start the cooldown.
+  if (activeOrb === 'solar' && novaRings.length > 0) {
+    burstActiveFlashEnd = Date.now() + 400;
+    return false;
+  }
   if (typeof Sentry !== 'undefined') Sentry.addBreadcrumb({ category: 'burst', message: 'burst: ' + activeOrb, level: 'info' });
   if (activeOrb === 'cyan') {
     const types = ['shield','nova','hyperspeed','ghost'];
@@ -4365,9 +4433,10 @@ function executeBurst() {
     SFX.pickup('hyperspeed', { stacks: hyperSpeedStacks });
   } else if (activeOrb === 'asteroid') {
     // Fortress Shield — burst grants 2 hits. Players can stack up to 4 by
-    // adding shield pickups (+1 each) afterward.
-    shieldEndTime = Date.now() + SHIELD_DURATION_MS_ASTEROID;
-    activeEffects.shield = SHIELD_DURATION_MS_ASTEROID;
+    // adding shield pickups (+1 each) afterward. Uses the fortress-tier
+    // duration so the burst matches a manually-triggered shield_shield combo.
+    shieldEndTime = Date.now() + FORTRESS_SHIELD_DURATION_MS;
+    activeEffects.shield = FORTRESS_SHIELD_DURATION_MS;
     shieldHits = 2;
     shieldBroken = false;
     fortressShield = true;
@@ -4376,6 +4445,7 @@ function executeBurst() {
     lastComboLabel = 'shield_shield';
   }
   screenShake = Math.max(screenShake, 6);
+  return true;
 }
 
 // Per-body animation + behavior state tick. Called each frame after the
@@ -4603,8 +4673,12 @@ function update() {
   if (leftDown && rightDown) burstTriggered = true;
   const burstReady = Date.now() >= burstCooldownEnd;
   if (burstTriggered && burstReady) {
-    executeBurst();
-    burstCooldownEnd = Date.now() + BURST_COOLDOWN_MS;
+    // Only start cooldown when the burst actually fired. Solar orb refuses
+    // to fire while a supernova is still active; that path returns false so
+    // the cooldown stays where it was.
+    if (executeBurst()) {
+      burstCooldownEnd = Date.now() + BURST_COOLDOWN_MS;
+    }
   }
   burstTriggered = false;
 
@@ -4666,10 +4740,12 @@ function update() {
       hyperSpeedTimers = [];
       peakHyperSpeedStacks = 0;
       if (hyperspeedWhooshNodes) { try { hyperspeedWhooshNodes.stop(0.5); } catch {} hyperspeedWhooshNodes = null; }
-      // JUGGERNAUT: refresh shield to a fresh 15s when hyperspeed ends
+      // JUGGERNAUT: refresh shield when hyperspeed ends. Asteroid orb gets the
+      // fortress-tier 8s reward, others get the default 6s.
       if (juggernautPendingShieldRefresh) {
-        shieldEndTime = Date.now() + SHIELD_DURATION();
-        activeEffects.shield = SHIELD_DURATION();
+        const juggShieldMs = activeOrb === 'asteroid' ? 8000 : 6000;
+        shieldEndTime = Date.now() + juggShieldMs;
+        activeEffects.shield = juggShieldMs;
         shieldBroken = false;
         juggernautPendingShieldRefresh = false;
       }
@@ -5663,13 +5739,20 @@ function drawBgObjects() {
     ctx.globalCompositeOperation = 'source-over';
     const clearStop  = o.key === 'galaxy' ? 0.08 : 0.25;
     const opaqueStop = o.key === 'galaxy' ? 0.85 : 0.90;
-    const g = ctx.createRadialGradient(o.x, o.y, 0, o.x, o.y, r);
-    g.addColorStop(0,          'rgba(0,0,10,0)');
-    g.addColorStop(clearStop,  'rgba(0,0,10,0)');
-    g.addColorStop(opaqueStop, 'rgba(0,0,10,1)');
-    g.addColorStop(1,          'rgba(0,0,10,1)');
+    const vignetteKey = 'bg_vignette_' + (o.key === 'galaxy' ? 'g' : 'd') + '_' + Math.round(r);
+    const g = getCachedGradient(vignetteKey, () => {
+      const gg = ctx.createRadialGradient(0, 0, 0, 0, 0, r);
+      gg.addColorStop(0,          'rgba(0,0,10,0)');
+      gg.addColorStop(clearStop,  'rgba(0,0,10,0)');
+      gg.addColorStop(opaqueStop, 'rgba(0,0,10,1)');
+      gg.addColorStop(1,          'rgba(0,0,10,1)');
+      return gg;
+    });
+    ctx.save();
+    ctx.translate(o.x, o.y);
     ctx.fillStyle = g;
-    ctx.fillRect(left, top, o.size, o.size);
+    ctx.fillRect(left - o.x, top - o.y, o.size, o.size);
+    ctx.restore();
     ctx.restore();
   }
 }
@@ -5785,6 +5868,14 @@ function drawBodies() {
 }
 
 function drawBlackhole(b) {
+  const sprite = planetSpriteCache.blackhole;
+  if (sprite) {
+    // Scale the 80x80 sprite to match this body's radius.
+    const scale = b.radius / sprite.refRadius;
+    const size = PLANET_SPRITE_SIZE * scale;
+    ctx.drawImage(sprite.canvas, b.x - size / 2, b.y - size / 2, size, size);
+    return;
+  }
   ctx.save();
   ctx.globalAlpha = 0.35;
   ctx.fillStyle = 'rgba(170,70,255,1)';
@@ -6158,13 +6249,21 @@ function drawScreaming(b) {
   }
 
   // Base: dark grey with brown/rust undertones — use a slight radial gradient.
-  const baseGrad = ctx.createRadialGradient(b.x - b.radius*0.3, b.y - b.radius*0.3, 0, b.x, b.y, b.radius);
-  const hotTint = mouthT * 40;
-  baseGrad.addColorStop(0, `rgb(${96 + hotTint},78,70)`);
-  baseGrad.addColorStop(0.6, `rgb(${74 + hotTint},64,58)`);
-  baseGrad.addColorStop(1, '#3a2e28');
+  const hotTintBucket = Math.round(mouthT * 5); // 0..5
+  const hotTint = (hotTintBucket / 5) * 40;
+  const screamKey = 'scream_base_' + Math.round(b.radius) + '_' + hotTintBucket;
+  const baseGrad = getCachedGradient(screamKey, () => {
+    const g = ctx.createRadialGradient(-b.radius*0.3, -b.radius*0.3, 0, 0, 0, b.radius);
+    g.addColorStop(0, `rgb(${96 + hotTint},78,70)`);
+    g.addColorStop(0.6, `rgb(${74 + hotTint},64,58)`);
+    g.addColorStop(1, '#3a2e28');
+    return g;
+  });
+  ctx.save();
+  ctx.translate(b.x, b.y);
   ctx.fillStyle = baseGrad;
-  ctx.beginPath(); ctx.arc(b.x, b.y, b.radius, 0, 6.28); ctx.fill();
+  ctx.beginPath(); ctx.arc(0, 0, b.radius, 0, 6.28); ctx.fill();
+  ctx.restore();
 
   // Cratered surface: scattered darker circles. (No clip — Android WebView
   // crash risk. Crater centers capped at 0.8*r so they stay mostly inside.)
@@ -6317,11 +6416,18 @@ function drawVoid(b) {
   }
   // Dark aura.
   const auraR = b.radius * 2;
-  const aura = ctx.createRadialGradient(b.x, b.y, b.radius, b.x, b.y, auraR);
-  aura.addColorStop(0, 'rgba(0,0,0,0.4)');
-  aura.addColorStop(1, 'rgba(0,0,0,0)');
+  const voidAuraKey = 'void_aura_' + Math.round(b.radius);
+  const aura = getCachedGradient(voidAuraKey, () => {
+    const g = ctx.createRadialGradient(0, 0, b.radius, 0, 0, auraR);
+    g.addColorStop(0, 'rgba(0,0,0,0.4)');
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+    return g;
+  });
+  ctx.save();
+  ctx.translate(b.x, b.y);
   ctx.fillStyle = aura;
-  ctx.beginPath(); ctx.arc(b.x, b.y, auraR, 0, 6.28); ctx.fill();
+  ctx.beginPath(); ctx.arc(0, 0, auraR, 0, 6.28); ctx.fill();
+  ctx.restore();
   // Pure black disc.
   ctx.fillStyle = '#000';
   ctx.beginPath(); ctx.arc(b.x, b.y, b.radius, 0, 6.28); ctx.fill();
@@ -6409,10 +6515,16 @@ function drawHeart(b) {
   // directly (replaces former clip + fillRect — Android WebView crash risk).
   const rng = mulberry32(b.heartSeed);
   const points = 16;
-  const fill = ctx.createRadialGradient(b.x - w * 0.35, b.y - w * 0.3, 0, b.x, b.y, w * 1.2);
-  fill.addColorStop(0, '#cc0000');
-  fill.addColorStop(0.5, '#8b0000');
-  fill.addColorStop(1, '#3d0000');
+  const heartKey = 'heart_base_' + Math.round(w);
+  const fill = getCachedGradient(heartKey, () => {
+    const g = ctx.createRadialGradient(-w * 0.35, -w * 0.3, 0, 0, 0, w * 1.2);
+    g.addColorStop(0, '#cc0000');
+    g.addColorStop(0.5, '#8b0000');
+    g.addColorStop(1, '#3d0000');
+    return g;
+  });
+  ctx.save();
+  ctx.translate(b.x, b.y);
   ctx.fillStyle = fill;
   ctx.beginPath();
   for (let i = 0; i < points; i++) {
@@ -6425,13 +6537,14 @@ function drawHeart(b) {
     const rng2 = mulberry32(b.heartSeed + i * 31);
     const lump = 0.88 + rng2() * 0.25;
     const rr = w * 1.05 * lump * asymScale;
-    const px = b.x + Math.cos(a) * rr;
-    const py = b.y + Math.sin(a) * rr;
+    const px = Math.cos(a) * rr;
+    const py = Math.sin(a) * rr;
     if (i === 0) ctx.moveTo(px, py);
     else ctx.lineTo(px, py);
   }
   ctx.closePath();
   ctx.fill();
+  ctx.restore();
 
   // Branching surface veins. Positions clamped inside 0.95*w.
   ctx.strokeStyle = 'rgba(60,0,0,0.85)';
@@ -6711,7 +6824,7 @@ function drawCrackFragments() {
 // player. Intensity (spawn rate, size, opacity) scales with both the player's
 // motion speed and the current scroll speed so faster play feels more visceral.
 let orbTrailParticles = [];
-const ORB_TRAIL_CAP = 200;
+const ORB_TRAIL_CAP = 60;
 
 function emitOrbTrail() {
   if (state !== 'playing') return;
@@ -6911,10 +7024,13 @@ function drawPlayer() {
   // Shield outer aura (drawn behind the player so it haloes around)
   if (shielded) {
     ctx.globalAlpha = 0.55 * shieldVis;
-    const sg = ctx.createRadialGradient(0,0,0,0,0,PLAYER_R*4.2);
-    sg.addColorStop(0,'rgba(120,230,255,0.55)');
-    sg.addColorStop(0.55,'rgba(80,200,255,0.28)');
-    sg.addColorStop(1,'rgba(80,200,255,0)');
+    const sg = getCachedGradient('shield_aura', () => {
+      const g = ctx.createRadialGradient(0,0,0,0,0,PLAYER_R*4.2);
+      g.addColorStop(0,'rgba(120,230,255,0.55)');
+      g.addColorStop(0.55,'rgba(80,200,255,0.28)');
+      g.addColorStop(1,'rgba(80,200,255,0)');
+      return g;
+    });
     ctx.fillStyle = sg;
     ctx.beginPath(); ctx.arc(0,0,PLAYER_R*4.2,0,6.28); ctx.fill();
     ctx.globalAlpha = 0.85 * shieldVis;
@@ -6966,10 +7082,13 @@ function drawPlayer() {
 
     // Soft purple gradient halo
     ctx.globalAlpha = 0.35;
-    const gg = ctx.createRadialGradient(0, 0, PLAYER_R, 0, 0, PLAYER_R * 4.4);
-    gg.addColorStop(0,   'rgba(190,110,240,0.5)');
-    gg.addColorStop(0.5, 'rgba(170,90,220,0.22)');
-    gg.addColorStop(1,   'rgba(170,90,220,0)');
+    const gg = getCachedGradient('ghost_halo', () => {
+      const g = ctx.createRadialGradient(0, 0, PLAYER_R, 0, 0, PLAYER_R * 4.4);
+      g.addColorStop(0,   'rgba(190,110,240,0.5)');
+      g.addColorStop(0.5, 'rgba(170,90,220,0.22)');
+      g.addColorStop(1,   'rgba(170,90,220,0)');
+      return g;
+    });
     ctx.fillStyle = gg;
     ctx.beginPath(); ctx.arc(0, 0, PLAYER_R * 4.4, 0, 6.28); ctx.fill();
 
@@ -7024,15 +7143,22 @@ function drawPlayer() {
 
   const orbColor = getOrbBonus().color;
   ctx.globalAlpha = (inGrace?gf:1) * ghostAlpha;
-  const aura = ctx.createRadialGradient(0,0,0,0,0,PLAYER_R*2.8);
-  aura.addColorStop(0,`rgba(${orbColor},0.38)`); aura.addColorStop(1,'rgba(0,0,0,0)');
+  const aura = getCachedGradient('orb_aura_' + orbColor, () => {
+    const g = ctx.createRadialGradient(0,0,0,0,0,PLAYER_R*2.8);
+    g.addColorStop(0,`rgba(${orbColor},0.38)`);
+    g.addColorStop(1,'rgba(0,0,0,0)');
+    return g;
+  });
   ctx.fillStyle = aura; ctx.beginPath(); ctx.arc(0,0,PLAYER_R*2.8,0,6.28); ctx.fill();
 
   ctx.globalAlpha = ghostAlpha;
-  const core = ctx.createRadialGradient(-1.5,-1.5,0,0,0,PLAYER_R);
-  core.addColorStop(0,'#fff');
-  core.addColorStop(0.4,`rgba(${orbColor},1)`);
-  core.addColorStop(1,`rgba(${orbColor},0.45)`);
+  const core = getCachedGradient('orb_core_' + orbColor, () => {
+    const g = ctx.createRadialGradient(-1.5,-1.5,0,0,0,PLAYER_R);
+    g.addColorStop(0,'#fff');
+    g.addColorStop(0.4,`rgba(${orbColor},1)`);
+    g.addColorStop(1,`rgba(${orbColor},0.45)`);
+    return g;
+  });
   ctx.fillStyle = core; ctx.beginPath(); ctx.arc(0,0,PLAYER_R,0,6.28); ctx.fill();
 
   const spd = Math.hypot(player.vx, player.vy);
@@ -7381,7 +7507,12 @@ function updateBurstBar() {
     ? 1
     : Math.max(0, Math.min(1, (Date.now() - (burstCooldownEnd - BURST_COOLDOWN_MS)) / BURST_COOLDOWN_MS));
   burstFillEl.style.width = (pct * 100) + '%';
-  if (ready) {
+  // Inferno burst was pressed while a supernova was already running — flash
+  // the bar red briefly instead of consuming the cooldown.
+  if (Date.now() < burstActiveFlashEnd) {
+    burstFillEl.style.background = '#ff3040';
+    burstFillEl.style.boxShadow = '0 0 12px rgba(255,60,80,0.95)';
+  } else if (ready) {
     // Ready: bright gold/orange so it reads clearly against the grey cooldown
     // state regardless of the active orb (asteroid's orb color is near-grey).
     burstFillEl.style.background = '#ffaa00';
@@ -7718,6 +7849,7 @@ function loop() {
     recordError('update', err);
     try { goToMainMenu(); } catch (e2) { console.error('[loop] goToMainMenu also threw', e2); }
   }
+  cleanupEffects();
   try {
     render();
   } catch (err) {
@@ -9111,7 +9243,7 @@ document.addEventListener('pointerdown', bootstrapMenuMusic);
 document.addEventListener('keydown', bootstrapMenuMusic);
 document.addEventListener('touchstart', bootstrapMenuMusic);
 
-initBgStars(); initBodies(); loop();
+preloadPlanetSprites(); initBgStars(); initBodies(); loop();
 </script>
 </body>
 </html>
