@@ -162,6 +162,13 @@ function percent(num, den) {
   return ((num / den) * 100).toFixed(1) + "%";
 }
 
+function fmtTime(seconds) {
+  const s = Math.max(0, Math.floor(seconds || 0));
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return m + ":" + String(r).padStart(2, "0");
+}
+
 function avg(nums) {
   if (!nums.length) return 0;
   return nums.reduce((a, b) => a + b, 0) / nums.length;
@@ -225,11 +232,12 @@ function dashboardHtml(items) {
     const difficulty = it.difficulty || "UNKNOWN";
     const key = name + "|" + difficulty;
     if (!pilotDiff[key]) {
-      pilotDiff[key] = { name, difficulty, runs: 0, scoreSum: 0, best: 0, deaths: {}, items: [] };
+      pilotDiff[key] = { name, difficulty, runs: 0, scoreSum: 0, timeSum: 0, best: 0, deaths: {}, items: [] };
     }
     const p = pilotDiff[key];
     p.runs++;
     p.scoreSum += it.score || 0;
+    p.timeSum  += it.timeSurvived || 0;
     if ((it.score || 0) > p.best) p.best = it.score || 0;
     const dc = it.deathCause || "unknown";
     p.deaths[dc] = (p.deaths[dc] || 0) + 1;
@@ -252,6 +260,7 @@ function dashboardHtml(items) {
         difficulty: p.difficulty,
         runs: p.runs,
         avgScore: Math.round(p.scoreSum / p.runs),
+        avgTime: p.timeSum / p.runs,
         best: p.best,
         topDeath: topDeath ? topDeath[0] : "—",
         items: p.items.slice().sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)),
@@ -291,7 +300,7 @@ function dashboardHtml(items) {
       ([d, s]) =>
         `<tr><td>${escapeHtml(d)}</td><td>${s.runs}</td><td>${Math.round(
           s.scoreSum / s.runs
-        )}</td><td>${Math.round(s.timeSum / s.runs)}s</td></tr>`
+        )}</td><td>${fmtTime(s.timeSum / s.runs)}</td></tr>`
     )
     .join("");
 
@@ -317,7 +326,7 @@ function dashboardHtml(items) {
           p.name
         )}</td><td>${escapeHtml(p.difficulty)}</td><td>${p.runs}</td><td>${
           p.avgScore
-        }</td><td>${p.best}</td><td>${escapeHtml(p.topDeath)}</td></tr>`
+        }</td><td>${fmtTime(p.avgTime)}</td><td>${p.best}</td><td>${escapeHtml(p.topDeath)}</td></tr>`
     )
     .join("");
 
@@ -329,7 +338,7 @@ function dashboardHtml(items) {
           const dt = new Date(it.timestamp || 0).toISOString().replace("T", " ").slice(0, 19);
           return `<tr><td>${dt}</td><td>${escapeHtml(it.difficulty)}</td><td>${
             it.score || 0
-          }</td><td>${it.timeSurvived || 0}s</td><td>${escapeHtml(
+          }</td><td>${fmtTime(it.timeSurvived)}</td><td>${escapeHtml(
             it.deathCause || "unknown"
           )}</td><td>${escapeHtml(it.orb || "")}</td><td>${
             it.phaseReached || 1
@@ -383,7 +392,7 @@ function dashboardHtml(items) {
 <div class="stats-row">
   <div class="stat"><div class="label">Total Runs (7d)</div><div class="value">${totalRuns}</div></div>
   <div class="stat"><div class="label">Avg Score (7d)</div><div class="value">${avgScore}</div></div>
-  <div class="stat"><div class="label">Avg Time (7d)</div><div class="value">${avgTime}s</div></div>
+  <div class="stat"><div class="label">Avg Time (7d)</div><div class="value">${fmtTime(avgTime)}</div></div>
 </div>
 
 <div class="grid">
@@ -406,8 +415,8 @@ ${phaseBars}
 </div>
 
 <div class="panel" style="margin-top:16px"><h2>Pilots</h2>
-<table><thead><tr><th>Pilot</th><th>Difficulty</th><th>Runs</th><th>Avg Score</th><th>Best Score</th><th>Most Dies By</th></tr></thead>
-<tbody>${pilotsTable || '<tr><td colspan="6">No data</td></tr>'}</tbody></table>
+<table><thead><tr><th>Pilot</th><th>Difficulty</th><th>Runs</th><th>Avg Score</th><th>Avg Time</th><th>Best Score</th><th>Most Dies By</th></tr></thead>
+<tbody>${pilotsTable || '<tr><td colspan="7">No data</td></tr>'}</tbody></table>
 </div>
 
 ${pilotDetails}
