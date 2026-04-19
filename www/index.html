@@ -1293,9 +1293,9 @@ const FORCE = 0.18;
 
 // --- Difficulty ---
 const DIFFICULTIES = {
-  NORMAL:  { startSpeed: 1.2, maxSpeed: 2.8, speedCapScore: 180, maxBodies: 3, maxBodiesCap: 5, bodySpacing: 180, powerupFrequency: 1.0, crystalMult: 0.75 },
-  HARD:    { startSpeed: 1.6, maxSpeed: 3.6, speedCapScore: 180, maxBodies: 4, maxBodiesCap: 6, bodySpacing: 180, powerupFrequency: 1.3, crystalMult: 1.0 },
-  EXTREME: { startSpeed: 2.0, maxSpeed: 4.5, speedCapScore: 180, maxBodies: 4, maxBodiesCap: 6, bodySpacing: 180, powerupFrequency: 1.8, crystalMult: 1.25 },
+  NORMAL:  { startSpeed: 1.2, maxSpeed: 2.5, speedCapScore: 180, maxBodies: 3, maxBodiesCap: 5, bodySpacing: 180, powerupFrequency: 1.0, crystalMult: 0.75 },
+  HARD:    { startSpeed: 1.6, maxSpeed: 3.5, speedCapScore: 180, maxBodies: 4, maxBodiesCap: 6, bodySpacing: 180, powerupFrequency: 1.3, crystalMult: 1.0 },
+  EXTREME: { startSpeed: 2.0, maxSpeed: 4.0, speedCapScore: 180, maxBodies: 4, maxBodiesCap: 7, bodySpacing: 180, powerupFrequency: 1.8, crystalMult: 1.25 },
 };
 let difficulty = 'NORMAL';
 if (typeof Sentry !== 'undefined') Sentry.setTag('difficulty', difficulty);
@@ -2903,32 +2903,33 @@ function spawnBody(yBase) {
     radius = 11 + Math.random() * 7;
     color = '#080808'; glowColor = 'rgba(170,70,255,0.9)';
   } else if (type === 'toothed') {
-    radius = 16 + Math.random() * 10;
+    radius = (16 + Math.random() * 10) * 0.75;
     color = '#8b0000'; glowColor = 'rgba(220,30,30,0.9)';
   } else if (type === 'eye') {
-    radius = 18 + Math.random() * 8;
+    radius = (18 + Math.random() * 8) * 0.8;
     color = '#f6efd6'; glowColor = 'rgba(255,220,160,0.7)';
   } else if (type === 'cracked') {
-    radius = 17 + Math.random() * 10;
+    radius = (17 + Math.random() * 10) * 0.85;
     color = '#5a2b16'; glowColor = 'rgba(255,120,40,0.85)';
   } else if (type === 'tentacle') {
-    radius = 16 + Math.random() * 8;
+    // Tentacles add extra reach so the base disc is extra-small.
+    radius = (16 + Math.random() * 8) * 0.75;
     color = '#4a0080'; glowColor = 'rgba(140,40,200,0.85)';
   } else if (type === 'screaming') {
-    radius = 17 + Math.random() * 9;
+    radius = (17 + Math.random() * 9) * 0.8;
     color = '#4a4040'; glowColor = 'rgba(80,20,20,0.3)';
   } else if (type === 'void') {
-    radius = 14 + Math.random() * 7;
+    radius = (14 + Math.random() * 7) * 0.8;
     color = '#000'; glowColor = 'rgba(180,240,255,0.6)';
   } else if (type === 'heart') {
-    radius = 17 + Math.random() * 8;
+    radius = (17 + Math.random() * 8) * 0.75;
     color = '#cc0000'; glowColor = 'rgba(255,40,40,0.85)';
   } else if (type === 'mirror') {
-    radius = 14 + Math.random() * 6;
+    radius = (14 + Math.random() * 6) * 0.85;
     color = '#222'; glowColor = 'rgba(255,255,255,0.5)';
   } else if (type === 'skull') {
-    // Spec: radius * 1.3 compared to normal planets of same type.
-    radius = (17 + Math.random() * 10) * 1.3;
+    // Spec: 1.3x vs normal planets, then scaled down 0.8 for mobile = ~1.04x.
+    radius = (17 + Math.random() * 10) * 1.3 * 0.8;
     color = '#0d0d0d'; glowColor = 'rgba(200,200,200,0.6)';
   } else {
     radius = 16; color = '#888'; glowColor = 'rgba(255,255,255,0.5)';
@@ -4039,9 +4040,9 @@ function applyEnvironmentForces() {
     } else if (b.type === 'void') {
       const dx = player.x - b.x, dy = player.y - b.y;
       const d = Math.hypot(dx, dy);
-      if (d < b.radius * 5 && d > 0.5) {
+      if (d < b.radius * 4 && d > 0.5) {
         // Gentle repel away from the void, strongest at the center.
-        const repelStrength = 0.25 * (1 - d / (b.radius * 5));
+        const repelStrength = 0.25 * (1 - d / (b.radius * 4));
         player.vx += (dx / d) * repelStrength;
         player.vy += (dy / d) * repelStrength;
         nearVoid = true;
@@ -6276,14 +6277,14 @@ function drawScreaming(b) {
 
 function drawVoid(b) {
   ctx.save();
-  // Dashed boundary at the exact repel-zone edge (radius*5). Rotates slowly
+  // Dashed boundary at the exact repel-zone edge (radius*4). Rotates slowly
   // so the edge reads as an active force field.
   ctx.save();
   ctx.strokeStyle = 'rgba(100,0,180,0.3)';
   ctx.lineWidth = 1.4;
   ctx.setLineDash([8, 8]);
   ctx.lineDashOffset = -b.voidPulse * 10; // voidPulse advances each frame
-  ctx.beginPath(); ctx.arc(b.x, b.y, b.radius * 5, 0, 6.28); ctx.stroke();
+  ctx.beginPath(); ctx.arc(b.x, b.y, b.radius * 4, 0, 6.28); ctx.stroke();
   ctx.restore();
   // Expanding sonar-style pulse rings inside the boundary. 3 concentric
   // rings at 120deg phase offsets, oscillating between radius*1.5 and *3.5.
@@ -6316,7 +6317,7 @@ function drawVoid(b) {
     const nx = dx / d, ny = dy / d;
     // Place 5 arrows along the void→player segment, inside the repel zone.
     const inner = b.radius * 1.3;
-    const outer = Math.min(d - 4, b.radius * 4.7);
+    const outer = Math.min(d - 4, b.radius * 3.7);
     if (outer > inner) {
       ctx.save();
       ctx.strokeStyle = 'rgba(150,0,255,0.4)';
