@@ -1075,9 +1075,122 @@
     text-align: center;
     padding: 16px 0;
   }
+
+  /* Loading screen: shown immediately on page load, before AudioContext init
+     and before the main menu (#overlay). Fades out once all preload tasks
+     complete and the player taps to start. */
+  #loadingScreen {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: #00000a;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+    overflow: hidden;
+  }
+  #loadingStars {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    pointer-events: none;
+    z-index: 0;
+  }
+  #loadingContent {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  #loadingLogo {
+    font-size: 52px;
+    font-weight: 900;
+    letter-spacing: 14px;
+    background: linear-gradient(135deg, #4af, #a4f, #4af);
+    background-size: 200% 200%;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    animation: gradShift 3s ease infinite;
+    margin-bottom: 8px;
+  }
+  #loadingLabel {
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 6px;
+    color: rgba(120,220,255,0.9);
+    margin-bottom: 24px;
+    text-transform: uppercase;
+  }
+  #loadingBarOuter {
+    width: 200px;
+    height: 6px;
+    border: 1px solid rgba(100,200,255,0.3);
+    border-radius: 3px;
+    overflow: hidden;
+    background: rgba(0,0,10,0.8);
+  }
+  #loadingBar {
+    width: 0%;
+    height: 100%;
+    background: linear-gradient(90deg, #7de8ff, #a78bfa);
+    border-radius: 3px;
+    transition: width 120ms linear;
+  }
+  #loadingPct {
+    font-family: 'Space Mono', monospace;
+    font-size: 12px;
+    color: rgba(255,255,255,0.5);
+    margin-top: 12px;
+    letter-spacing: 2px;
+  }
+  #tapToStart {
+    display: none;
+    margin-top: 32px;
+    padding: 14px 36px;
+    background: transparent;
+    color: rgba(100,200,255,0.9);
+    border: 1px solid rgba(100,200,255,0.5);
+    font-family: 'Orbitron', 'Space Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    cursor: pointer;
+    animation: tapPulse 1.6s ease-in-out infinite;
+  }
+  #tapToStart.visible { display: inline-block; }
+  @keyframes tapPulse {
+    0%, 100% { box-shadow: 0 0 8px rgba(125,232,255,0.3); transform: scale(1); }
+    50%      { box-shadow: 0 0 22px rgba(125,232,255,0.6); transform: scale(1.04); }
+  }
+  @keyframes driftStar {
+    from { transform: translateY(-10px); opacity: 0; }
+    10%  { opacity: var(--a, 0.6); }
+    90%  { opacity: var(--a, 0.6); }
+    to   { transform: translateY(110vh); opacity: 0; }
+  }
+  .load-star {
+    position: absolute;
+    width: 2px;
+    height: 2px;
+    background: #fff;
+    border-radius: 50%;
+    animation: driftStar linear infinite;
+  }
 </style>
 </head>
 <body>
+<div id="loadingScreen">
+  <div id="loadingStars" aria-hidden="true"></div>
+  <div id="loadingContent">
+    <div id="loadingLogo">DRIFT</div>
+    <div id="loadingLabel">LOADING</div>
+    <div id="loadingBarOuter"><div id="loadingBar"></div></div>
+    <div id="loadingPct">0%</div>
+    <button id="tapToStart">TAP TO START</button>
+  </div>
+</div>
 <div id="gameWrapper">
   <canvas id="c"></canvas>
   <div id="ui">
@@ -1245,6 +1358,34 @@ function clearGradientCache() {
   for (const k in gradientCache) delete gradientCache[k];
 }
 window.addEventListener('resize', clearGradientCache);
+
+// Background vignette canvas cache: the radial-gradient fillRect per bg object
+// every frame is a measurable cost on Android WebView. Pre-rendering the
+// vignette once per (style, size-bucket) and reusing via drawImage cuts it to
+// a simple blit. Size is bucketed to 10px so at most ~20 canvases ever exist
+// in the cache for a run.
+const bgVignetteCache = {};
+function getBgVignetteCanvas(style, size) {
+  const key = style + '_' + size;
+  let c = bgVignetteCache[key];
+  if (c) return c;
+  c = document.createElement('canvas');
+  c.width = size;
+  c.height = size;
+  const cctx = c.getContext('2d');
+  const r = size / 2;
+  const clearStop  = style === 'galaxy' ? 0.08 : 0.25;
+  const opaqueStop = style === 'galaxy' ? 0.85 : 0.90;
+  const g = cctx.createRadialGradient(r, r, 0, r, r, r);
+  g.addColorStop(0,          'rgba(0,0,10,0)');
+  g.addColorStop(clearStop,  'rgba(0,0,10,0)');
+  g.addColorStop(opaqueStop, 'rgba(0,0,10,1)');
+  g.addColorStop(1,          'rgba(0,0,10,1)');
+  cctx.fillStyle = g;
+  cctx.fillRect(0, 0, size, size);
+  bgVignetteCache[key] = c;
+  return c;
+}
 
 // Offscreen planet sprites — static bases pre-rendered to offscreen canvases.
 // drawBodies() uses drawImage instead of rebuilding paths for the static parts.
@@ -1516,6 +1657,10 @@ function cleanupEffects() {
   if (destroyEffects.length > DESTROY_EFFECTS_CAP) destroyEffects = destroyEffects.slice(destroyEffects.length - DESTROY_EFFECTS_CAP);
   if (crackFragments.length > CRACK_FRAGMENTS_CAP) crackFragments = crackFragments.slice(crackFragments.length - CRACK_FRAGMENTS_CAP);
   if (pickupParticles.length > PICKUP_PART_CAP) pickupParticles = pickupParticles.slice(pickupParticles.length - PICKUP_PART_CAP);
+  // Gradient cache grows by (radius, mouthT) bucket combinations as new bodies
+  // spawn. Unbounded it would slowly accumulate over a long run; wipe it when
+  // it crosses 200 entries. Cached gradients are cheap to rebuild on demand.
+  if (Object.keys(gradientCache).length > 200) clearGradientCache();
 }
 // activeEffects values are REMAINING MILLISECONDS for each effect. Absolute
 // end timestamps (Date.now() + duration) live in shieldEndTime / ghostEndTime /
@@ -2850,6 +2995,10 @@ const SFX = (function() {
     clickPrimary, clickSecondary,
     setMusicEnabled, setSfxEnabled, isMusicEnabled, isSfxEnabled,
     suspendCtx, resumeCtx,
+    // Exposed for the loading screen preloader. Both return Promises that
+    // resolve with the decoded AudioBuffer or reject on fetch/decode error.
+    loadMusicBuffer, loadSfxBuffer,
+    hasCtx: () => !!ctx,
   };
 })();
 
@@ -5813,22 +5962,13 @@ function drawBgObjects() {
     // leaks through.
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = 'source-over';
-    const clearStop  = o.key === 'galaxy' ? 0.08 : 0.25;
-    const opaqueStop = o.key === 'galaxy' ? 0.85 : 0.90;
-    const vignetteKey = 'bg_vignette_' + (o.key === 'galaxy' ? 'g' : 'd') + '_' + Math.round(r);
-    const g = getCachedGradient(vignetteKey, () => {
-      const gg = ctx.createRadialGradient(0, 0, 0, 0, 0, r);
-      gg.addColorStop(0,          'rgba(0,0,10,0)');
-      gg.addColorStop(clearStop,  'rgba(0,0,10,0)');
-      gg.addColorStop(opaqueStop, 'rgba(0,0,10,1)');
-      gg.addColorStop(1,          'rgba(0,0,10,1)');
-      return gg;
-    });
-    ctx.save();
-    ctx.translate(o.x, o.y);
-    ctx.fillStyle = g;
-    ctx.fillRect(left - o.x, top - o.y, o.size, o.size);
-    ctx.restore();
+    // Vignette: pulled from a pre-rendered canvas keyed by (style, 10px bucket).
+    // Rounding to a 10px bucket keeps the cache small without a visible step —
+    // the vignette is a radial falloff, the 10px difference is imperceptible.
+    const style = o.key === 'galaxy' ? 'galaxy' : 'dim';
+    const bucket = Math.max(20, Math.round(o.size / 10) * 10);
+    const vignetteCanvas = getBgVignetteCanvas(style, bucket);
+    ctx.drawImage(vignetteCanvas, left, top, o.size, o.size);
     ctx.restore();
   }
 }
@@ -6900,10 +7040,15 @@ function drawCrackFragments() {
 // player. Intensity (spawn rate, size, opacity) scales with both the player's
 // motion speed and the current scroll speed so faster play feels more visceral.
 let orbTrailParticles = [];
-const ORB_TRAIL_CAP = 60;
+const ORB_TRAIL_CAP = 30;
 
 function emitOrbTrail() {
   if (state !== 'playing') return;
+  // Throttle emission to every 3rd frame. On Android WebView the per-frame
+  // particle churn (alloc + push + splice) adds up over a long run and shows
+  // up as GC pauses; spacing emits out keeps the trail visible without the
+  // steady allocation drip.
+  if (frame % 3 !== 0) return;
   const orb = activeOrb;
   const pvx = player.vx, pvy = player.vy;
   const moveMag = Math.hypot(pvx, pvy);
@@ -6961,7 +7106,7 @@ function emitOrbTrail() {
         vy: by * (0.4 + Math.random() * 0.6) + (Math.random() - 0.5) * 0.4,
         drift: (Math.random() - 0.5) * 0.12, // sideways drift per frame
         life: 1, size: (2.5 + Math.random() * 2.5) * sizeMul,
-        alphaMul, startTime: nowOt, maxLifeMs: 667,
+        alphaMul, startTime: nowOt, maxLifeMs: 600,
       }, ORB_TRAIL_CAP);
     } else if (orb === 'solar') {
       // fade 0.055/frame → 18 frames → 300ms. Orange/red fire, flickers, fades fast.
@@ -7919,42 +8064,73 @@ function render() {
 let loopFrameCounter = 0;
 function loop() {
   try {
-    update();
-  } catch (err) {
-    console.error('[loop] update() threw, recovering to main menu', err);
-    recordError('update', err);
-    try { goToMainMenu(); } catch (e2) { console.error('[loop] goToMainMenu also threw', e2); }
-  }
-  cleanupEffects();
-  try {
-    render();
-  } catch (err) {
-    console.error('[loop] render() threw, skipping frame', err);
-    recordError('render', err);
-  }
-  // Memory pressure watchdog: every 600 frames (~10s @60fps) check the total
-  // particle / ring / ripple count and force-clear if it's blown past 150.
-  // Stops intense combo chains from accumulating into an OOM crash.
-  loopFrameCounter++;
-  if (loopFrameCounter % 600 === 0) {
-    const total = pickupParticles.length + deathParticles.length
-                + novaRings.length + planetRipples.length
-                + destroyEffects.length + deathShards.length
-                + orbTrailParticles.length + crackFragments.length;
-    if (total > 180) {
-      console.warn('[loop] memory pressure: clearing', total, 'transient particles');
-      pickupParticles = [];
-      deathParticles = [];
-      novaRings = [];
-      empRings = [];
-      planetRipples = [];
-      destroyEffects = [];
-      deathShards = [];
-      orbTrailParticles = [];
-      crackFragments = [];
+    try {
+      update();
+    } catch (err) {
+      console.error('[loop] update() threw, recovering to main menu', err);
+      recordError('update', err);
+      try { goToMainMenu(); } catch (e2) { console.error('[loop] goToMainMenu also threw', e2); }
     }
+    try {
+      cleanupEffects();
+    } catch (err) {
+      console.error('[loop] cleanupEffects() threw, skipping', err);
+      recordError('cleanup', err);
+    }
+    try {
+      render();
+    } catch (err) {
+      console.error('[loop] render() threw, skipping frame', err);
+      recordError('render', err);
+    }
+    // Memory pressure watchdog: every 600 frames (~10s @60fps) check the total
+    // particle / ring / ripple count and force-clear if it's blown past 150.
+    // Stops intense combo chains from accumulating into an OOM crash.
+    loopFrameCounter++;
+    if (loopFrameCounter % 600 === 0) {
+      const total = pickupParticles.length + deathParticles.length
+                  + novaRings.length + planetRipples.length
+                  + destroyEffects.length + deathShards.length
+                  + orbTrailParticles.length + crackFragments.length;
+      if (total > 180) {
+        console.warn('[loop] memory pressure: clearing', total, 'transient particles');
+        pickupParticles = [];
+        deathParticles = [];
+        novaRings = [];
+        empRings = [];
+        planetRipples = [];
+        destroyEffects = [];
+        deathShards = [];
+        orbTrailParticles = [];
+        crackFragments = [];
+      }
+    }
+    // Heap watchdog: every 300 frames (~5s @60fps) read performance.memory on
+    // Android WebView / Chromium. Over 150MB of JS heap, pre-emptively wipe
+    // transient effect arrays and the gradient cache before the WebView hits
+    // its own pressure limit and freezes the UI thread. performance.memory is
+    // a non-standard extension — feature-detect and no-op everywhere else.
+    if (loopFrameCounter % 300 === 0) {
+      try {
+        const mem = performance && performance.memory;
+        if (mem && mem.usedJSHeapSize > 150 * 1024 * 1024) {
+          console.warn('[loop] heap pressure:', Math.round(mem.usedJSHeapSize / 1024 / 1024) + 'MB — emergency cleanup');
+          orbTrailParticles.length = 0;
+          destroyEffects.length = 0;
+          pickupParticles.length = 0;
+          empRings.length = 0;
+          clearGradientCache();
+        }
+      } catch {}
+    }
+  } catch (err) {
+    // Top-level safety net: anything we didn't anticipate must not kill the
+    // rAF chain. Logged once per frame and recovered via the finally below.
+    console.error('[loop] top-level threw', err);
+    try { recordError('loop', err); } catch {}
+  } finally {
+    requestAnimationFrame(loop);
   }
-  requestAnimationFrame(loop);
 }
 
 // --- Input ---
@@ -9301,25 +9477,271 @@ if (!getUsername()) {
   showUsernamePrompt();
 }
 
-// Bootstrap menu music on the user's first interaction. Browsers won't let
-// us start audio before a gesture, so we wait for the first pointer or key
-// event, then fire the menu track if we're still on the main menu.
-function bootstrapMenuMusic() {
-  document.removeEventListener('pointerdown', bootstrapMenuMusic);
-  document.removeEventListener('keydown', bootstrapMenuMusic);
-  document.removeEventListener('touchstart', bootstrapMenuMusic);
-  try {
-    SFX.init();
-    if (state === 'idle') SFX.playTrack('menu', 0.5);
-  } catch (err) {
-    console.error('[bootstrapMenuMusic] failed', err);
+// --- Loading screen / asset preloader ---
+// The loading screen shows immediately on DOM parse. We kick off asset loads
+// in parallel and update the progress bar as each task finishes. When every
+// task has completed we reveal a TAP TO START button — the tap resumes the
+// AudioContext (required by browsers for playback) and fades the loader out.
+const loadingTasks = {
+  music_menu: false,
+  music_gameplay1: false,
+  music_gameplay2: false,
+  music_gameplay3: false,
+  music_gameplay4: false,
+  sfx_shield: false,
+  sfx_nova: false,
+  sfx_barrier: false,
+  sfx_scream: false,
+  sfx_toothed: false,
+  sfx_eruption: false,
+  sfx_tentacle: false,
+  sfx_heartbeat: false,
+  sfx_mirror: false,
+  bg_nebula: false,
+  bg_dyingStar: false,
+  bg_galaxy: false,
+  bg_supernova: false,
+  bg_redNebula: false,
+  bg_pulsar: false,
+  bg_blackhole: false,
+  bg_remnant: false,
+  bg_void: false,
+  bg_darkMatter: false,
+  sprites: false,
+  gradients: false,
+};
+let loadingCompleteFired = false;
+
+function markLoaded(key) {
+  if (!(key in loadingTasks) || loadingTasks[key]) return;
+  loadingTasks[key] = true;
+  updateLoadingProgress();
+}
+
+function updateLoadingProgress() {
+  const total = Object.keys(loadingTasks).length;
+  const done = Object.values(loadingTasks).filter(Boolean).length;
+  const pct = Math.floor((done / total) * 100);
+  const barEl = document.getElementById('loadingBar');
+  const pctEl = document.getElementById('loadingPct');
+  if (barEl) barEl.style.width = pct + '%';
+  if (pctEl) pctEl.textContent = pct + '%';
+  if (done === total && !loadingCompleteFired) {
+    loadingCompleteFired = true;
+    onLoadingComplete();
   }
 }
-document.addEventListener('pointerdown', bootstrapMenuMusic);
-document.addEventListener('keydown', bootstrapMenuMusic);
-document.addEventListener('touchstart', bootstrapMenuMusic);
 
-preloadPlanetSprites(); initBgStars(); initBodies(); loop();
+function onLoadingComplete() {
+  // Swap the "LOADING" label for a tap-to-start button — browsers (and Android
+  // WebView in particular) refuse to start audio until there's been a user
+  // gesture. The tap provides that gesture.
+  const label = document.getElementById('loadingLabel');
+  if (label) label.style.display = 'none';
+  const btn = document.getElementById('tapToStart');
+  if (!btn) return;
+  btn.classList.add('visible');
+  const handler = () => {
+    btn.removeEventListener('click', handler);
+    btn.removeEventListener('touchstart', handler);
+    startAfterGesture();
+  };
+  btn.addEventListener('click', handler);
+  btn.addEventListener('touchstart', handler, { passive: true });
+}
+
+function startAfterGesture() {
+  // Make sure the AudioContext exists (preloadAll already tried; retry in case
+  // the browser needed the gesture first). Then resume it out of 'suspended'
+  // so the menu track actually plays.
+  try { SFX.init(); } catch {}
+  try { if (state === 'idle') SFX.playTrack('menu', 0.5); } catch {}
+  const ls = document.getElementById('loadingScreen');
+  if (ls) {
+    ls.style.transition = 'opacity 0.5s';
+    ls.style.opacity = '0';
+    setTimeout(() => { ls.style.display = 'none'; }, 500);
+  }
+}
+
+// Pre-generate gradientCache entries for common planet sizes so the first few
+// frames don't have to build them under load. Covers the caller-site keys
+// we emit: void_aura_R, scream_base_R_0, heart_base_R plus the player-relative
+// shield/ghost/orb gradients.
+function warmupGradients() {
+  const sizes = [20, 25, 30, 35, 40];
+  for (const r of sizes) {
+    getCachedGradient('void_aura_' + r, () => {
+      const g = ctx.createRadialGradient(0, 0, r, 0, 0, r * 2);
+      g.addColorStop(0, 'rgba(0,0,0,0.4)');
+      g.addColorStop(1, 'rgba(0,0,0,0)');
+      return g;
+    });
+    getCachedGradient('scream_base_' + r + '_0', () => {
+      const g = ctx.createRadialGradient(-r * 0.3, -r * 0.3, 0, 0, 0, r);
+      g.addColorStop(0, 'rgb(96,78,70)');
+      g.addColorStop(0.6, 'rgb(74,64,58)');
+      g.addColorStop(1, '#3a2e28');
+      return g;
+    });
+    getCachedGradient('heart_base_' + r, () => {
+      const g = ctx.createRadialGradient(-r * 0.35, -r * 0.3, 0, 0, 0, r * 1.2);
+      g.addColorStop(0, '#cc0000');
+      g.addColorStop(0.5, '#8b0000');
+      g.addColorStop(1, '#3d0000');
+      return g;
+    });
+  }
+  // Player-centric gradients: don't depend on size, just seed them once.
+  getCachedGradient('shield_aura', () => {
+    const g = ctx.createRadialGradient(0, 0, 0, 0, 0, PLAYER_R * 4.2);
+    g.addColorStop(0, 'rgba(120,230,255,0.55)');
+    g.addColorStop(0.55, 'rgba(80,200,255,0.28)');
+    g.addColorStop(1, 'rgba(80,200,255,0)');
+    return g;
+  });
+  getCachedGradient('ghost_halo', () => {
+    const g = ctx.createRadialGradient(0, 0, PLAYER_R, 0, 0, PLAYER_R * 4.4);
+    g.addColorStop(0, 'rgba(190,110,240,0.5)');
+    g.addColorStop(0.5, 'rgba(170,90,220,0.22)');
+    g.addColorStop(1, 'rgba(170,90,220,0)');
+    return g;
+  });
+  for (const key of Object.keys(ORB_DEFS)) {
+    const color = ORB_DEFS[key].color;
+    getCachedGradient('orb_aura_' + color, () => {
+      const g = ctx.createRadialGradient(0, 0, 0, 0, 0, PLAYER_R * 2.8);
+      g.addColorStop(0, `rgba(${color},0.38)`);
+      g.addColorStop(1, 'rgba(0,0,0,0)');
+      return g;
+    });
+    getCachedGradient('orb_core_' + color, () => {
+      const g = ctx.createRadialGradient(-1.5, -1.5, 0, 0, 0, PLAYER_R);
+      g.addColorStop(0, '#fff');
+      g.addColorStop(0.4, `rgba(${color},1)`);
+      g.addColorStop(1, `rgba(${color},0.45)`);
+      return g;
+    });
+  }
+}
+
+// Drifting-star field behind the loading content. Pure CSS — a handful of
+// absolutely-positioned divs with a keyframe drift animation. Cheap on mobile
+// because it's just transform/opacity animation, no canvas.
+function seedLoadingStars() {
+  const host = document.getElementById('loadingStars');
+  if (!host) return;
+  const count = 24;
+  for (let i = 0; i < count; i++) {
+    const s = document.createElement('div');
+    s.className = 'load-star';
+    s.style.left = (Math.random() * 100) + '%';
+    s.style.top = (-Math.random() * 100) + 'vh';
+    s.style.setProperty('--a', (0.3 + Math.random() * 0.5).toFixed(2));
+    s.style.animationDuration = (8 + Math.random() * 10) + 's';
+    s.style.animationDelay = (-Math.random() * 15) + 's';
+    host.appendChild(s);
+  }
+}
+
+function preloadAll() {
+  seedLoadingStars();
+
+  // AudioContext: create now (starts 'suspended' on Android/Chrome). Decoding
+  // AudioBuffers doesn't require a running context, only playback does — so we
+  // can preload music/SFX immediately. If init() fails (no WebAudio support),
+  // we silently mark all audio tasks loaded so the loading bar can complete.
+  try { SFX.init(); } catch (err) { console.error('[preload] SFX.init failed', err); }
+  const audioReady = SFX.hasCtx && SFX.hasCtx();
+
+  // Music: menu + 4 gameplay tracks. Names in-code differ from the prompt keys
+  // (prompt uses "gameplay1" but the file/track is "gameplay").
+  const musicMap = {
+    music_menu:      'menu',
+    music_gameplay1: 'gameplay',
+    music_gameplay2: 'gameplay2',
+    music_gameplay3: 'gameplay3',
+    music_gameplay4: 'gameplay4',
+  };
+  for (const taskKey of Object.keys(musicMap)) {
+    const trackName = musicMap[taskKey];
+    if (!audioReady) { markLoaded(taskKey); continue; }
+    SFX.loadMusicBuffer(trackName)
+      .then(() => markLoaded(taskKey))
+      .catch(() => markLoaded(taskKey));
+  }
+
+  // SFX: mapping from loading-task key to the internal SFX buffer key used by
+  // loadSfxBuffer / SFX_BUFFER_URLS.
+  const sfxMap = {
+    sfx_shield:    'shieldDestroy',
+    sfx_nova:      'novaDestroy',
+    sfx_barrier:   'hyperspeedBarrier',
+    sfx_scream:    'scream',
+    sfx_toothed:   'toothed',
+    sfx_eruption:  'eruption',
+    sfx_tentacle:  'tentacle',
+    sfx_heartbeat: 'heartbeat',
+    sfx_mirror:    'mirror',
+  };
+  for (const taskKey of Object.keys(sfxMap)) {
+    const bufKey = sfxMap[taskKey];
+    if (!audioReady) { markLoaded(taskKey); continue; }
+    SFX.loadSfxBuffer(bufKey)
+      .then(() => markLoaded(taskKey))
+      .catch(() => markLoaded(taskKey));
+  }
+
+  // Background images: onload / onerror both mark loaded so a missing asset
+  // never stalls the loading screen. Already-loaded images (parsed before
+  // this function ran) are marked immediately via the complete check.
+  const bgMap = {
+    bg_nebula:     'nebula',
+    bg_dyingStar:  'dyingStar',
+    bg_galaxy:     'galaxy',
+    bg_supernova:  'supernova',
+    bg_redNebula:  'redNebula',
+    bg_pulsar:     'pulsar',
+    bg_blackhole:  'blackhole',
+    bg_remnant:    'remnant',
+    bg_void:       'void',
+    bg_darkMatter: 'darkMatter',
+  };
+  for (const taskKey of Object.keys(bgMap)) {
+    const imgKey = bgMap[taskKey];
+    const img = bgImages[imgKey];
+    if (!img) { markLoaded(taskKey); continue; }
+    // complete+naturalWidth>0 means loaded successfully.
+    // complete+naturalWidth===0 means the image already errored before we
+    // attached the listener — treat as "loaded" so we don't hang the bar.
+    if (img.complete) { markLoaded(taskKey); continue; }
+    img.addEventListener('load',  () => markLoaded(taskKey), { once: true });
+    img.addEventListener('error', () => markLoaded(taskKey), { once: true });
+  }
+
+  // Synchronous passes: planet sprites and gradient warmup are both fast.
+  try { preloadPlanetSprites(); } catch (err) { console.error('[preload] sprites failed', err); }
+  markLoaded('sprites');
+  try { warmupGradients(); } catch (err) { console.error('[preload] gradients failed', err); }
+  markLoaded('gradients');
+
+  // Safety valve: if after 15s some task still hasn't fired (network stalled,
+  // missing asset, decode hang) force-complete so the player isn't stuck on
+  // the loading screen. The underlying loads keep running in the background.
+  setTimeout(() => {
+    for (const k of Object.keys(loadingTasks)) {
+      if (!loadingTasks[k]) {
+        console.warn('[preload] forcing complete for stalled task:', k);
+        markLoaded(k);
+      }
+    }
+  }, 15000);
+}
+
+initBgStars(); initBodies();
+preloadAll();
+updateLoadingProgress();
+loop();
 </script>
 </body>
 </html>
