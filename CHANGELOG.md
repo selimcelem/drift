@@ -6,6 +6,47 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-04-19
+
+### Added
+- Orb system: 5 unlockable orbs (Cyan/Drifter, Cosmic/Phantom, Solar/Inferno, Nebula/Warp, Asteroid/Fortress) each with unique bonuses and burst effects
+- Crystal currency: earned per run based on score × difficulty multiplier, stored in localStorage
+- Burst mechanic: press both sides simultaneously for orb-specific ability, 20 second cooldown
+- 9 progressive planet types unlocking over time: toothed, eye, cracked, tentacle, screaming, void, heart, mirror, skull
+- Dynamic hitboxes matching visuals on toothed (rotating spikes), tentacle (extending/retracting), heart (pulsing expansion)
+- Apocalypse sequence at 10 minutes: bodies clear, player pulled to center, giant sun descends, cinematic death
+- Phase-based music crossfade: 4 tracks (gameplay.mp3 to gameplay4.mp3) fade between phases
+- Phase-based background imagery: NASA space images spawn matching current phase atmosphere
+- Tutorial/guide accessible from main menu: 6 pages covering controls, powerups, scoring, burst, timer, orbs
+- Leaderboard button on main menu
+- Run timer with color progression (white→orange→red) and danger zone effects after 3 minutes
+- Time bonus scoring: survive longer for bonus points (score × 0.03 per 30s interval, cap 20 intervals)
+- Soft boundary forces: gentle push away from screen edges
+- Center-seeking passive gravity replacing upward drift
+- EMP chain reaction on shield kills: expanding electric dome with lightning arcs, one chain level deep
+- Distinct visual destruction effects per powerup type (nova fragments, shield scan lines, hyperspeed impact, ghost wisps)
+
+### Changed
+- All frame-based timers refactored to real-time milliseconds (frame-rate independent on all devices)
+- Streak scoring: streak × 4 flat formula, cap 8, replacing streak² exponential
+- Dynamic canvas fills full screen on any device (removed fixed 400×700)
+- Body spawn system: 3-zone horizontal distribution, dynamic vertical spacing
+- Center-seeking gravity replaces passive upward drift
+- Difficulty rebalanced: Normal 2.5/Hard 3.5/Extreme 4.0 max speeds, body counts scale from 2 min
+- Phase thresholds: new planet types appear at 2/4/6/8 minutes
+- Powerup scroll speed capped at 85% of game speed
+- Shield EMP visual: electric dome with lightning bolts replacing nova-style ring
+
+### Fixed
+- Dynamic canvas filling full screen on all Android devices (Samsung S20, Pixel 8)
+- Status bar transparent/dark on all Android versions
+- Phase reset: Drift Again now correctly starts at phase 1
+- WebView crash: removed ctx.clip() operations from complex planet draw functions
+- Mirror planet tracking position instead of copying player input
+- Asteroid orb shield stacking (0→2→4, never 3)
+- Ghost passthrough sound restored after crunchy explosion overhaul
+- Synthesized shield destroy sound playing alongside MP3 file
+
 ## [1.4.0] - 2026-04-16
 
 ### Added

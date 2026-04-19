@@ -1,6 +1,6 @@
 # Drift — Portfolio
 
-**Current version:** v1.4.0
+**Current version:** v1.5.0
 
 ## What it is
 
@@ -8,7 +8,11 @@ A gravity-surfing endless runner built as a single HTML5 Canvas game, shipped as
 
 ## Highlights
 
-- **Three music tracks with crossfade looping** — menu, gameplay, and death-screen tracks decoded once into `AudioBuffer`s and seamlessly crossfaded at loop points so the transitions are inaudible
+- **Real-time timer refactor** — every gameplay timer (powerup durations, cooldowns, combos, spawn cadences, phase thresholds) was migrated from frame-count state to wall-clock milliseconds, giving the game frame-rate-independent behaviour across 30/60/120 Hz devices and making Android low-power throttling a non-issue
+- **Progressive difficulty system with phase-based content** — the game is carved into four two-minute phases that gate spawn pools, soundtrack, and background imagery, culminating in a scripted 10-minute "apocalypse" sequence. Phase selection has a reset-guard so a fresh run always starts in phase 1 regardless of prior wall-clock elapsed time
+- **Complex canvas animations with dynamic hitboxes** — nine custom planet types (toothed, eye, cracked, tentacle, screaming, void, heart, mirror, skull), each procedurally drawn with pulsing/rotating/extending geometry, and several with hitboxes that follow the animation (spike tips, tentacle line-segments, pulsing-heart radius). All rendered with WebView-safe canvas operations (no `clip()`, bounded gradients, guarded degenerate paths) to avoid Android native crashes
+- **Audio crossfading system** — four gameplay music tracks crossfade between phases, alongside menu/death tracks. All audio is decoded once into `AudioBuffer`s and crossfaded at loop points so transitions are inaudible
+- **Orb + crystal progression** — five unlockable orbs, each with a unique passive bonus and a distinct burst ability triggered by pressing both controls simultaneously; runs earn crystal currency (score × difficulty multiplier) persisted in `localStorage` to drive the shop
 - **Real space imagery as parallax scenery** — NASA nebula, dying-star, galaxy, and supernova photos scroll behind the playfield using a `screen` composite blend so only the coloured light shows through
 - **Play In-App Updates API integration** — the Android build uses Google Play's flexible in-app update flow so testers never have to leave the game to pick up a new build
 

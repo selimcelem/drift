@@ -26,10 +26,18 @@ Top 5 scores are kept locally in `localStorage` and shown on the death screen.
 
 ## Features
 
+- **Orb system with crystal progression** — five unlockable orbs (Cyan/Drifter, Cosmic/Phantom, Solar/Inferno, Nebula/Warp, Asteroid/Fortress), each with its own passive bonus and a unique burst ability. Runs earn 💎 Drift Crystals (score × difficulty multiplier, persisted in `localStorage`) that are spent in the shop to unlock new orbs
+- **Burst mechanic** — press both sides at once to fire the equipped orb's signature burst ability on a 20-second cooldown. Every orb's burst resolves differently (instant powerup grant, chain destruction, shield refresh, stacked hyperspeed, etc.)
+- **9 progressive planet types** — the pool rotates every 2 minutes through four phases: classic stars/planets/black holes → toothed + eye + cracked → tentacle + screaming + void → heart + mirror + skull. Several types carry dynamic hitboxes that match their animation (toothed spike tips, extending tentacles, pulsing hearts)
+- **Apocalypse sequence** — survive 10 minutes and the world stops spawning, the player is pulled to the centre, and a giant sun descends for a cinematic end-of-run death
+- **Phase-based music + backgrounds** — four gameplay tracks crossfade between phases so the soundtrack evolves with the threat level, and NASA space imagery is parallax-scrolled in sync with the current phase's mood
+- **Tutorial/guide** — a six-page in-game guide (controls, powerups, scoring, burst, timer, orbs) accessible from the main menu
 - **Combo system** — 9 powerup combinations (Supernova, Warp Time, Phantom Blast, Pulsar, Spectral Rush, Juggernaut, Wraith, Eternal Phantom, Fortress Shield), each with its own mechanics and visual identity
 - **Pair spawning** — 1 in 5 powerup spawns is a tethered pair connected by a cosmic energy beam; grabbing either one triggers the matching combo instantly
 - **Stacking hyperspeed** — pick up hyperspeed up to four times for a 4x speed run, with step-down expiry, gold/orange/red/white stack tints, and a blinking stack counter
-- **Quadratic streak scoring** — destroy a planet via Nova, Hyperspeed barrier, or Phantom Blast and your next destroy is worth more (streak² points, capped at 12 to prevent runaway scores)
+- **Streak + time-bonus scoring** — destroy a planet via Nova, Hyperspeed barrier, or Phantom Blast and your next destroy is worth more (streak × 4 flat, cap 8); survive longer and a time bonus adds a score-proportional payout every 30 seconds
+- **Run timer with danger zones** — HUD timer progresses white → orange → red, with visible danger-zone effects after the 3-minute mark
+- **Real-time timer refactor** — every game timer is driven by wall-clock milliseconds instead of frame counters, so gameplay feels identical at 30, 60, and 120 Hz
 - **Run summary on death** — full breakdown of planets passed, planets destroyed, longest streak, powerups used, and points from each source
 - **Dynamic space background** — real NASA space imagery (nebulae, dying stars, galaxies, supernovae) parallax-scrolls behind the playfield, blended into the cosmos with a screen composite so only the coloured light shows
 - **3 difficulties** — Normal, Hard, Extreme — with progressively faster scroll, more bodies, and more frequent powerup drops
