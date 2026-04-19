@@ -1420,6 +1420,30 @@ let destroyStreak = 0;
 let lastDestroyTime = 0;
 let runStats = { totalPassed: 0, totalDestroyed: 0, pointsFromPassing: 0, pointsFromDestroying: 0, longestStreak: 0, powerupsUsed: 0 };
 
+// Analytics run state. lastDeathCause is set by checkCollisions() when a lethal
+// condition is first detected; triggerDeath() reads it when posting to the
+// analytics endpoint. streakHistory records every destroyStreak peak so the
+// longest streak of a run can be derived at death time.
+const GAME_VERSION = '1.5.0';
+let sessionId = null;
+try {
+  sessionId = localStorage.getItem('drift_sessionId');
+  if (!sessionId) {
+    sessionId = (crypto && crypto.randomUUID)
+      ? crypto.randomUUID()
+      : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+          const r = Math.random() * 16 | 0;
+          return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+        });
+    localStorage.setItem('drift_sessionId', sessionId);
+  }
+} catch {}
+let lastDeathCause = 'unknown';
+let runPowerupsUsed = 0;
+let runBurstCount = 0;
+let destroyCount = 0;
+let streakHistory = [];
+
 // --- Powerups ---
 const POWERUP_TYPES = ['shield','nova','hyperspeed','ghost'];
 const POWERUP_COLORS = {
@@ -1473,7 +1497,7 @@ let pendingDeathBurstTimer = null; // setTimeout for the delayed particle burst
 // Hard caps on visual-effect arrays. Exceeding these on Android at high
 // scores (lots of combos firing) can crash the tab — cap aggressively and
 // drop oldest elements on overflow.
-const NOVA_RINGS_CAP    = 6;
+const NOVA_RINGS_CAP    = 12;
 const PICKUP_PART_CAP   = 40;
 const PLANET_RIPPLE_CAP = 50;
 const DEATH_PART_CAP    = 60;
@@ -2879,6 +2903,42 @@ function submitScoreOnline(username, s, d) {
   } catch {}
 }
 
+// Fire-and-forget analytics post on death. Never throws — if the endpoint is
+// down the death screen still renders normally.
+async function sendAnalytics() {
+  try {
+    const crystalMult = (DIFFICULTIES[difficulty] && DIFFICULTIES[difficulty].crystalMult) || 1;
+    const longestStreak = streakHistory.length
+      ? Math.max(0, ...streakHistory)
+      : (destroyStreak || 0);
+    const payload = {
+      sessionId,
+      pilotName: (typeof localStorage !== 'undefined' && localStorage.getItem('drift_username')) || 'unknown',
+      timestamp: Date.now(),
+      appVersion: GAME_VERSION,
+      difficulty,
+      orb: activeOrb,
+      score,
+      timeSurvived: Math.floor(elapsedRunSeconds()),
+      deathCause: lastDeathCause,
+      phaseReached: phaseForElapsed(elapsedRunSeconds()),
+      planetsDestroyed: destroyCount,
+      planetsPassed,
+      powerupsUsed: runPowerupsUsed,
+      burstCount: runBurstCount,
+      longestStreak,
+      crystalsEarned: Math.floor(score * crystalMult),
+    };
+    await fetch(API_URL + '/analytics', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+  } catch (e) {
+    // Silent fail — never block death screen for analytics.
+  }
+}
+
 function fetchLeaderboard(d, callback) {
   fetch(API_URL + '/leaderboard?difficulty=' + encodeURIComponent(d))
     .then(r => r.json())
@@ -3509,6 +3569,8 @@ function drawDestroyEffects() {
 function addDestroyPoints() {
   destroyStreak++;
   lastDestroyTime = Date.now();
+  destroyCount++;
+  streakHistory.push(destroyStreak);
   const streakForScore = Math.min(destroyStreak, getStreakCap());
   // Flat ×4 multiplier per streak slot — max per kill = 15 × 4 = 60 pts.
   const pts = streakForScore * 4;
@@ -3927,6 +3989,7 @@ function activatePowerup(type, x, y) {
   // new stack count for its pitch shift; everything else plays immediately.
   if (type !== 'hyperspeed') SFX.pickup(type);
   runStats.powerupsUsed++;
+  runPowerupsUsed++;
 
   // Detect combo BEFORE updating lastGainedEffects — the partner lookup
   // must see the previous pickup, not this one.
@@ -4022,6 +4085,11 @@ function resetGame() {
   destroyStreak = 0;
   lastDestroyTime = 0;
   runStats = { totalPassed: 0, totalDestroyed: 0, pointsFromPassing: 0, pointsFromDestroying: 0, longestStreak: 0, powerupsUsed: 0 };
+  lastDeathCause = 'unknown';
+  runPowerupsUsed = 0;
+  runBurstCount = 0;
+  destroyCount = 0;
+  streakHistory = [];
   document.getElementById('streakDisplay').classList.remove('visible');
   powerups = [];
   novaRings = []; screenShake = 0;
@@ -4312,8 +4380,10 @@ function pointSegmentDist(px, py, ax, ay, bx, by) {
 function checkCollisions() {
   if (Date.now() < graceEndTime) return false;
   // Borders are always lethal — shield/ghost only protect against bodies
-  if (player.x < PLAYER_R+3 || player.x > W-PLAYER_R-3) return true;
-  if (player.y > H+50 || player.y < -50) return true;
+  if (player.x < PLAYER_R+3) { lastDeathCause = 'wall_left'; return true; }
+  if (player.x > W-PLAYER_R-3) { lastDeathCause = 'wall_right'; return true; }
+  if (player.y < -50) { lastDeathCause = 'wall_top'; return true; }
+  if (player.y > H+50) { lastDeathCause = 'wall_bottom'; return true; }
 
   // GHOST: pass through bodies, emit a shimmer ripple when clipping one.
   // WRAITH (ghost + shield active): destroy on contact during ghost.
@@ -4396,10 +4466,10 @@ function checkCollisions() {
   }
 
   for (const b of bodies)
-    if (bodyHits(b, -3)) return true;
+    if (bodyHits(b, -3)) { lastDeathCause = b.type || 'unknown'; return true; }
   // Crack fragments are lethal on contact as well.
   for (const f of crackFragments) {
-    if (dist(player, f) < f.radius + PLAYER_R - 2) return true;
+    if (dist(player, f) < f.radius + PLAYER_R - 2) { lastDeathCause = 'cracked_fragment'; return true; }
   }
   return false;
 }
@@ -4409,9 +4479,11 @@ function checkCollisions() {
 function executeBurst() {
   // Inferno/solar: refuse to burst while a supernova from a previous burst or
   // combo is still ringing — re-triggering would just restart the 6-ring chain
-  // and waste the cooldown. Caller checks return value to decide whether to
+  // and waste the cooldown. Single nova pickups also populate novaRings, so
+  // test specifically for supernova-tagged rings; otherwise one nova pickup
+  // would block the burst. Caller checks return value to decide whether to
   // start the cooldown.
-  if (activeOrb === 'solar' && novaRings.length > 0) {
+  if (activeOrb === 'solar' && novaRings.some(r => r.supernova)) {
     burstActiveFlashEnd = Date.now() + 400;
     return false;
   }
@@ -4445,6 +4517,7 @@ function executeBurst() {
     lastComboLabel = 'shield_shield';
   }
   screenShake = Math.max(screenShake, 6);
+  runBurstCount++;
   return true;
 }
 
@@ -5188,6 +5261,7 @@ function updateApocalypse() {
     const impactT = (Date.now() - apocalypseImpactStart) / 1000;
     if (impactT >= 1.2) {
       apocalypseDeathFlag = true;
+      lastDeathCause = 'apocalypse';
       if (apocalypseRumbleNodes) {
         apocalypseRumbleNodes.stop();
         apocalypseRumbleNodes = null;
@@ -5455,6 +5529,8 @@ function triggerDeath() {
   // Submit score online (fire and forget)
   const uname = getUsername();
   if (uname) submitScoreOnline(uname, score, difficulty);
+  // Analytics post — fire and forget; never awaits, never throws.
+  sendAnalytics();
 
   // Save run stats snapshot for the death screen
   const deathDifficulty = difficulty;
