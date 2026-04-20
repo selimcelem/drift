@@ -10,7 +10,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Loading screen with animated drifting star field, progress bar, percentage readout, and TAP TO START gesture gate before the AudioContext is resumed
 - Asset preloader: all music tracks, SFX buffers, background images, planet sprites, and gradient cache entries loaded in parallel with per-task progress reporting and a 15s stall timeout
 - Gradient cache warmup during preload (void/heart/scream bases at sizes 20/25/30/35/40, shield and ghost player auras, orb aura/core per orb colour) so the first few frames don't build them under load
+- JIT warmup during the loading screen — 3-second hidden game simulation primes hot paths so the first real frame doesn't hitch
+- Resume after crash: game state snapshotted to `localStorage` every 5 s during gameplay; RESUME button on the main menu plays a 3-2-1 countdown before restoring difficulty, orb, score, and elapsed time
+- Version display on the main menu under the "GRAVITY SURFING" subtitle
 - Analytics dashboard at `/analytics` endpoint (password protected)
+- Analytics dashboard now shows a per-pilot difficulty breakdown alongside the existing overview panels
+- Average survival time shown in MM:SS format on the analytics dashboard (overview and per-pilot rows)
 - Per-run tracking: death cause, phase reached, orb used, score, time survived, powerups, burst count, longest streak
 - Anonymous session IDs for player tracking without login
 - Pilot name linked to analytics for per-player stats
@@ -18,22 +23,38 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Dynamic body-spacing scaler — spawn gap now scales inversely with `effectiveMaxBodies()` so screen density stays roughly constant as the body cap ramps up through phases
 - Post-3-minute speed scaling: +0.25 per minute after the normal speed cap is reached
 - Mirror planet movement now replays delayed player input (500ms lookback) instead of mirroring live — makes the mirror's motion readable and reactable
+- Deep memory cleanup every 60 s of gameplay: releases off-screen body sprite canvases, clears the gradient + vignette caches, and nulls music buffers that aren't the current or next phase track
+- Aggressive draw-call optimizations: 160-call star field reduced to 4 via pre-baked atlases; planet sprite pre-rendering for eye/skull/mirror/screaming/heart (one `drawImage` replacing many fills/strokes per frame); tentacle bodies rendered via a cached `Path2D`; pickup particles batched by colour × life bucket; destroy-effect and crack-fragment draws batched
 
 ### Changed
+- Supernova (nova+nova combo) ring count now varies by orb: 4 blasts on non-Inferno orbs, 6 blasts on Inferno (solar). Single-nova pickup still fires 3 for non-Inferno, 6 for Inferno — combo still feels rewarding without over-clearing the screen
+- Powerup frequency scaled per difficulty: Normal 2.0 (generous), Hard 1.7 (moderate), Extreme 1.44 (unchanged)
+- Pair spawn chance now per-difficulty: Normal 16 %, Hard 13 %, Extreme 10 % (replaces the flat 10 % rate)
 - Orb unlock prices doubled: Cosmic 10k→20k, Solar 20k→40k, Nebula 40k→80k, Asteroid 80k→160k
+- Further orb price rebalance: Cosmic 50k, Solar 120k (later 100k), Nebula 250k, Asteroid 350k (down from 500k)
+- Asteroid orb shield behaviour: +2 hits per pickup (cap 4); burst activates an instant 4-hit fortress; fortress-pair combo sets 4 hits directly
+- Time bonus reduced to score × 0.03 per 30 s interval (capped at 20 intervals / 10 min)
 - Shield duration reduced: 8s → 6s default, 10s → 6s on Asteroid orb
-- Fortress Shield combo duration now a flat 8s for all orbs via dedicated `FORTRESS_SHIELD_DURATION_MS`
+- Fortress Shield combo duration now a flat 8 s for all orbs via dedicated `FORTRESS_SHIELD_DURATION_MS`
 - Ghost durations reduced: default 5s → 4s, Cosmic 8s → 6s; Eternal Phantom default 8s → 6s, Cosmic 12s → 8s
 - Hyperspeed combo duration 5s → 3.5s (Spectral Rush / Warp Time / Juggernaut hyperspeed phase)
 - Juggernaut post-landing shield: 6s default, 8s on Asteroid (fortress-tier reward)
 - Phase thresholds moved earlier to the 2/4/6/8 minute marks
 - Streak scoring cap lowered to 8 (× 4 flat = max 32 points per destroy)
-- Supernova (nova+nova combo) now always fires a fresh 6-ring chain on re-activation — consecutive pickups each spawn a full supernova instead of the second being suppressed
+- Supernova (nova+nova combo) always fires a fresh chain on re-activation — consecutive pickups each spawn a full supernova instead of the second being suppressed
 - Top 10 leaderboard scores now permanent (no TTL expiry)
 - Scores dropping below top 10 get 7-day TTL as before
+- `minSdkVersion` bumped to 26 — every supported device now ships with an auto-updating Chromium WebView, eliminating pre-Chromium crash paths
+- Android bundle splits disabled (language/density/abi) to fix Play Store install crashes on some devices
+- `noCompress` added for mp3/jpg/png/html/js so Play Store asset delivery doesn't corrupt binary assets
 
 ### Fixed
-- WebView freeze after ~2-3 minutes on Android: heap-pressure watchdog at 150 MB that wipes effect arrays and the gradient cache; tightened orb-trail particle cap (60 → 30) with 3-frame emission throttle and 600ms max particle life; bounded gradient cache (cleared at >200 entries); vignette gradient pre-rendered to an offscreen canvas cached per size-bucket instead of rebuilt every frame
+- Adreno GPU driver crash: `configChanges` flags on the activity prevent Android from tearing down and recreating the WebView surface during orientation / size events
+- Resize handler now debounced 150 ms so a stream of orientation/size events coalesces into a single rebuild instead of thrashing the GPU surface and gradient/atlas caches
+- Delta-time clamping in the game loop (`dt = min(elapsed, 32 ms)`) keeps physics sane after the app is backgrounded and resumed; the first frame after resume skips `update()` entirely so a huge stale interval can never feed into the simulation
+- `visibilitychange` handler invalidates the frame-time baseline on hide and reseeds `performance.now()` on show — paired with the dt clamp above
+- Phase reset on Drift Again now uses an explicit `forcePhase1` flag so stale elapsed time can never spawn wrong-phase planets during the reset window
+- WebView freeze after ~2-3 minutes on Android: heap-pressure watchdog (now every 180 frames, 100 MB threshold) wipes effect arrays and the gradient cache; tightened orb-trail particle cap (60 → 30) with 3-frame emission throttle and 600ms max particle life; bounded gradient cache (cleared at >200 entries); vignette gradient pre-rendered to an offscreen canvas cached per size-bucket instead of rebuilt every frame
 - Game loop hardened: per-stage and top-level try/catch with `finally { requestAnimationFrame(loop); }` so an unexpected throw can never stall the rAF chain
 
 ## [1.5.0] - 2026-04-19
