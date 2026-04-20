@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>DRIFT</title>
 <script src="https://browser.sentry-cdn.com/7.99.0/bundle.min.js" crossorigin="anonymous"></script>
 <style>
@@ -21,6 +21,39 @@
   body {
     font-family: 'Orbitron', monospace;
   }
+
+  /* Safe-area insets exposed as CSS vars so JS can read them via
+     getComputedStyle without a probe element. On non-notched / non-iOS
+     WebViews the env() fallback is 0px. */
+  :root {
+    --safe-top: env(safe-area-inset-top, 0px);
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+    --safe-left: env(safe-area-inset-left, 0px);
+    --safe-right: env(safe-area-inset-right, 0px);
+  }
+
+  /* On-device debug log overlay (temporary — gated by DEBUG_RESUME in JS).
+     When the flag is off, debugLog no-ops and the element stays empty;
+     :empty suppresses rendering so there's no floating black rectangle. */
+  #debugOverlay {
+    position: fixed;
+    top: calc(var(--safe-top) + 4px);
+    left: calc(var(--safe-left) + 4px);
+    max-width: 60vw;
+    max-height: 40vh;
+    padding: 6px;
+    background: rgba(0,0,0,0.75);
+    color: #fff;
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    line-height: 1.2;
+    z-index: 99999;
+    pointer-events: none;
+    overflow: hidden;
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+  #debugOverlay:empty { display: none; }
 
   #gameWrapper {
     width: 100vw;
@@ -51,7 +84,7 @@
 
   #score {
     position: absolute;
-    top: 24px;
+    top: calc(var(--safe-top) + 24px);
     left: 50%;
     transform: translateX(-50%);
     color: rgba(255,255,255,0.9);
@@ -63,7 +96,7 @@
 
   #runTimer {
     position: absolute;
-    top: 56px;
+    top: calc(var(--safe-top) + 56px);
     left: 50%;
     transform: translateX(-50%);
     font-family: 'Orbitron', monospace;
@@ -77,7 +110,7 @@
 
   #powerupTimer {
     position: absolute;
-    top: 104px;
+    top: calc(var(--safe-top) + 104px);
     left: 50%;
     transform: translateX(-50%);
     display: none;
@@ -120,7 +153,7 @@
      smaller uppercase "BURST". */
   #burstBar {
     position: absolute;
-    top: 146px;
+    top: calc(var(--safe-top) + 146px);
     left: 50%;
     transform: translateX(-50%);
     display: flex;
@@ -154,15 +187,15 @@
 
   #hintLeft, #hintRight {
     position: absolute;
-    bottom: 80px;
+    bottom: calc(var(--safe-bottom) + 80px);
     font-family: 'Space Mono', monospace;
     font-size: 10px;
     letter-spacing: 2px;
     color: rgba(255,255,255,0.35);
     text-transform: uppercase;
   }
-  #hintLeft { left: 20px; }
-  #hintRight { right: 20px; }
+  #hintLeft { left: calc(var(--safe-left) + 20px); }
+  #hintRight { right: calc(var(--safe-right) + 20px); }
 
   #highscores {
     display: none;
@@ -208,16 +241,23 @@
     position: relative;
     width: 300px;
   }
+  /* Crystal balance HUD. Anchored top-right of #overlay, mirroring the
+     settings gear at top-left for visual balance. Only shown on the main
+     menu (#overlay.menu-mode) so it doesn't appear on death or leaderboard
+     views. Respects safe-area insets for notched devices. */
   #orbCrystalBalance {
     position: absolute;
-    top: -18px;
-    right: 0;
+    top: calc(var(--safe-top) + 16px);
+    right: calc(var(--safe-right) + 16px);
     font-family: 'Space Mono', monospace;
     font-size: 12px;
     letter-spacing: 2px;
     color: rgba(255,210,90,0.95);
     text-shadow: 0 0 10px rgba(255,200,60,0.45);
+    display: none;
+    z-index: 2;
   }
+  #overlay.menu-mode #orbCrystalBalance { display: block; }
   .orb-nav {
     display: flex;
     align-items: center;
@@ -412,6 +452,75 @@
     transition: opacity 0.6s;
   }
 
+  /* Main-menu layout. Scoped via .menu-mode so the death screen + leaderboard
+     view keep their existing justify-content:center behaviour. The menu uses
+     a column flex with responsive gap. Default alignment is centered so tall
+     screens get the composed-poster look; the short-screen media query below
+     switches to flex-start + margin-top:auto so buttons anchor at the bottom
+     (thumb reach) instead of clipping the DRIFT logo off the top. */
+  #overlay.menu-mode {
+    justify-content: center;
+    padding: calc(env(safe-area-inset-top, 0px) + 12px) 16px calc(env(safe-area-inset-bottom, 0px) + 12px);
+    gap: clamp(6px, 1.6vh, 18px);
+    box-sizing: border-box;
+    min-height: 100vh;
+    overflow: hidden;
+  }
+  /* Zero out the legacy per-child margin-bottoms so the parent gap is the
+     only source of vertical spacing in menu mode. */
+  #overlay.menu-mode .title-word,
+  #overlay.menu-mode .subtitle,
+  #overlay.menu-mode .version-label,
+  #overlay.menu-mode #difficultySelect,
+  #overlay.menu-mode #orbBrowser,
+  #overlay.menu-mode .controls-hint,
+  #overlay.menu-mode #resumeRunBtn,
+  #overlay.menu-mode #resumeRunInfo {
+    margin-bottom: 0;
+  }
+  /* Title scales fluidly between 640px and 900+px viewports. */
+  #overlay.menu-mode .title-word {
+    font-size: clamp(44px, 11vw, 80px);
+    letter-spacing: clamp(6px, 2.2vw, 16px);
+  }
+  /* Orb preview shrinks on short screens. Canvas itself stays its painted
+     aspect via object-fit-like behaviour (canvas ignores CSS aspect, so we
+     bound width/height together). */
+  #overlay.menu-mode #orbPreview,
+  #overlay.menu-mode #orbPreviewCanvas {
+    width: clamp(84px, 22vh, 120px);
+    height: clamp(84px, 22vh, 120px);
+  }
+  /* Medium-viewport rule, resume-visible only: when a returning player sees
+     the RESUME block, LEADERBOARD can get pushed off-screen between ~700 and
+     ~820px. Returning players don't need the controls hint, so drop it and
+     tighten the inter-section gap. Fresh players (no .resume-visible) still
+     see controls hint down to 700px via the rule below. */
+  @media (max-height: 820px) {
+    #overlay.menu-mode.resume-visible .controls-hint { display: none; }
+    #overlay.menu-mode.resume-visible { gap: clamp(4px, 1.2vh, 12px); }
+  }
+  /* Short-viewport rules: anchor the action buttons to the bottom instead of
+     centering. When the resume block is visible it becomes the first-of-group
+     and takes the auto margin; otherwise #startBtn does. GUIDE/LEADERBOARD
+     flow naturally underneath. Also hide the controls hint here — returning
+     players know the controls and reclaiming ~100px frees the title + buttons
+     to fit cleanly. */
+  @media (max-height: 700px) {
+    #overlay.menu-mode { justify-content: flex-start; }
+    #overlay.menu-mode.resume-visible #resumeRunBtn { margin-top: auto; }
+    #overlay.menu-mode:not(.resume-visible) #startBtn { margin-top: auto; }
+    #overlay.menu-mode .controls-hint { display: none; }
+  }
+  /* Even tighter budget on very short screens: trim orb description to a
+     single line and shrink the orb browser action slot. */
+  @media (max-height: 640px) {
+    #overlay.menu-mode #orbDesc { display: none; }
+    #overlay.menu-mode #orbAction { min-height: 28px; }
+    #overlay.menu-mode #guideBtn,
+    #overlay.menu-mode #leaderboardBtn { padding: 8px 30px; }
+  }
+
   #overlay.hidden {
     opacity: 0;
     pointer-events: none;
@@ -600,8 +709,8 @@
   }
   #guideClose {
     position: absolute;
-    top: 18px;
-    right: 18px;
+    top: calc(var(--safe-top) + 18px);
+    right: calc(var(--safe-right) + 18px);
     width: 34px;
     height: 34px;
     border-radius: 50%;
@@ -717,7 +826,7 @@
 
   #streakDisplay {
     position: absolute;
-    top: 84px;
+    top: calc(var(--safe-top) + 84px);
     left: 50%;
     transform: translateX(-50%);
     font-family: 'Space Mono', monospace;
@@ -828,8 +937,8 @@
 
   #pauseBtn {
     position: absolute;
-    top: 16px;
-    right: 16px;
+    top: calc(var(--safe-top) + 16px);
+    right: calc(var(--safe-right) + 16px);
     width: 36px;
     height: 36px;
     background: rgba(0,0,10,0.35);
@@ -850,8 +959,8 @@
 
   #settingsBtn {
     position: absolute;
-    top: 16px;
-    left: 16px;
+    top: calc(var(--safe-top) + 16px);
+    left: calc(var(--safe-left) + 16px);
     width: 36px;
     height: 36px;
     background: rgba(0,0,10,0.35);
@@ -1244,6 +1353,7 @@
 </style>
 </head>
 <body>
+<div id="debugOverlay"></div>
 <div id="loadingScreen">
   <div id="loadingStars" aria-hidden="true"></div>
   <div id="loadingContent">
@@ -1281,8 +1391,8 @@
       <button class="diff-btn" data-diff="HARD">HARD</button>
       <button class="diff-btn" data-diff="EXTREME">EXTREME</button>
     </div>
+    <div id="orbCrystalBalance">💎 0</div>
     <div id="orbBrowser">
-      <div id="orbCrystalBalance">💎 0</div>
       <div class="orb-nav">
         <button class="orb-arrow" id="orbPrev">◀</button>
         <div id="orbPreview"><canvas id="orbPreviewCanvas" width="240" height="240"></canvas></div>
@@ -1402,6 +1512,27 @@ if (typeof Sentry !== 'undefined') {
   Sentry.setUser({ username: localStorage.getItem('drift_username') });
 }
 
+// --- On-device debug overlay ---
+// When DEBUG_RESUME is true, the [resume]/BOOT logs render in a fixed-position
+// panel at the top-left of the screen instead of (or in addition to) the
+// console. Lets the user screenshot a device session without chrome://inspect.
+// Flip to false once the bug is diagnosed.
+const DEBUG_RESUME = false;
+const debugLines = [];
+function debugLog(msg) {
+  const t = Math.floor(performance.now());
+  const line = t + 'ms ' + msg;
+  try { console.log('[dbg] ' + line); } catch {}
+  if (!DEBUG_RESUME) return;
+  debugLines.push(line);
+  if (debugLines.length > 20) debugLines.splice(0, debugLines.length - 20);
+  try {
+    const el = document.getElementById('debugOverlay');
+    if (el) el.textContent = debugLines.join('\n');
+  } catch {}
+}
+debugLog('BOOT');
+
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
 // W/H are the playfield pixels. On Android (Capacitor), the game fills the
@@ -1414,6 +1545,26 @@ const W = isCapacitor ? window.innerWidth  : Math.min(window.innerWidth,  430);
 const H = isCapacitor ? window.innerHeight : Math.min(window.innerHeight, 932);
 canvas.width = W;
 canvas.height = H;
+
+// Safe-area insets read from the :root CSS vars. viewport-fit=cover makes the
+// canvas fully bleed under the status bar / gesture nav, so any HUD drawn in
+// canvas coordinates (hyperspeed stack label, etc.) must shift down by this
+// amount to stay visible. HTML HUD elements use calc(var(--safe-*) + Xpx) and
+// don't need this value. Resize listener refreshes it on orientation change.
+let safeAreaTop = 0;
+let safeAreaBottom = 0;
+function refreshSafeAreaInsets() {
+  try {
+    const cs = getComputedStyle(document.documentElement);
+    const t = parseFloat(cs.getPropertyValue('--safe-top'))    || 0;
+    const b = parseFloat(cs.getPropertyValue('--safe-bottom')) || 0;
+    if (Number.isFinite(t)) safeAreaTop = t;
+    if (Number.isFinite(b)) safeAreaBottom = b;
+  } catch {}
+}
+refreshSafeAreaInsets();
+window.addEventListener('resize', refreshSafeAreaInsets);
+window.addEventListener('orientationchange', refreshSafeAreaInsets);
 
 // Gradient cache: createRadialGradient/createLinearGradient shows up hot on
 // mobile profiles when many identical gradients are rebuilt each frame. Keys
@@ -2042,7 +2193,7 @@ let runStats = { totalPassed: 0, totalDestroyed: 0, pointsFromPassing: 0, points
 // condition is first detected; triggerDeath() reads it when posting to the
 // analytics endpoint. streakHistory records every destroyStreak peak so the
 // longest streak of a run can be derived at death time.
-const GAME_VERSION = '1.5.3';
+const GAME_VERSION = '1.5.5';
 try {
   const vl = document.getElementById('versionLabel');
   if (vl) vl.textContent = 'v' + GAME_VERSION;
@@ -5475,8 +5626,6 @@ function updateCrackFragments(spd) {
 // can offer a Resume button on next boot. Same key is always overwritten — no
 // history accumulation. Age + survived guards live on the read side.
 const RESUME_STATE_KEY = 'drift_resume_state';
-const RESUME_MAX_AGE_MS = 30 * 60 * 1000;
-const RESUME_MIN_SURVIVED_S = 30;
 let lastResumeSaveBucket = -1;
 function maybeSaveResumeState() {
   if (state !== 'playing') return;
@@ -5500,16 +5649,18 @@ function maybeSaveResumeState() {
       savedAt: Date.now(),
     };
     localStorage.setItem(RESUME_STATE_KEY, JSON.stringify(snap));
-  } catch {}
+    debugLog('[resume] save bucket=' + bucket + ' survived=' + snap.timesurvived + 's score=' + snap.score + ' diff=' + snap.difficulty);
+  } catch (e) { debugLog('[resume] save threw ' + (e && e.message || e)); }
 }
 function clearResumeState() {
   try { localStorage.removeItem(RESUME_STATE_KEY); } catch {}
   lastResumeSaveBucket = -1;
+  debugLog('[resume] cleared');
 }
 function loadResumeState() {
   let raw;
-  try { raw = localStorage.getItem(RESUME_STATE_KEY); } catch { return null; }
-  if (!raw) return null;
+  try { raw = localStorage.getItem(RESUME_STATE_KEY); } catch { debugLog('[resume] load: localStorage.getItem threw'); return null; }
+  if (!raw) { debugLog('[resume] load: no key'); return null; }
   // Parse in its own guard: a corrupt value must delete the key and return
   // null, otherwise the same bad blob gets re-read every boot and a malformed
   // snapshot can wedge the player in a permanent resume-crash loop.
@@ -5517,15 +5668,18 @@ function loadResumeState() {
   try {
     snap = JSON.parse(raw);
   } catch (e) {
+    debugLog('[resume] load: parse failed, evicting ' + (e && e.message || e));
     try { localStorage.removeItem(RESUME_STATE_KEY); } catch {}
     return null;
   }
   try {
-    if (!snap || typeof snap !== 'object') { clearResumeState(); return null; }
-    if (!snap.savedAt || Date.now() - snap.savedAt > RESUME_MAX_AGE_MS) { clearResumeState(); return null; }
-    if (!snap.timesurvived || snap.timesurvived < RESUME_MIN_SURVIVED_S) return null;
+    if (!snap || typeof snap !== 'object') { debugLog('[resume] load: not an object'); clearResumeState(); return null; }
+    // TTL and min-survived floor intentionally removed: resume persists
+    // indefinitely and at any elapsed time. Only triggerDeath / fresh-run
+    // starts / restartFromPause clear the snapshot.
+    debugLog('[resume] load: ok survived=' + snap.timesurvived + 's score=' + snap.score);
     return snap;
-  } catch { clearResumeState(); return null; }
+  } catch (e) { debugLog('[resume] load: validation threw ' + (e && e.message || e)); clearResumeState(); return null; }
 }
 
 // --- Deep cleanup (60s cadence) ---
@@ -6500,6 +6654,10 @@ function triggerDeath() {
     // Resume snapshot was already cleared in triggerDeath; sync the DOM.
     document.getElementById('resumeRunBtn').style.display = 'none';
     document.getElementById('resumeRunInfo').style.display = 'none';
+    // Death screen uses the overlay's default justify-content:center layout,
+    // not the main-menu column-flex rules.
+    overlay.classList.remove('menu-mode');
+    overlay.classList.remove('resume-visible');
     leaderboardFromMenu = false;
 
     // Render local scores filtered by difficulty
@@ -8589,7 +8747,7 @@ function drawHyperStackText() {
   ctx.fillStyle = tint.white
     ? `rgba(255,${230 + Math.round(Math.sin(frame * 0.4) * 25)},${230 + Math.round(Math.sin(frame * 0.4) * 25)},1)`
     : `rgba(${tint.r},${tint.g},${tint.b},1)`;
-  ctx.fillText(label, W / 2, 50);
+  ctx.fillText(label, W / 2, 50 + safeAreaTop);
   ctx.restore();
   ctx.globalAlpha = 1;
 }
@@ -9093,21 +9251,27 @@ function goToMainMenu() {
   leaderboardFromMenu = false;
   runStartTime = 0; updateRunTimerDisplay();
   refreshOrbBrowser();
+  const ov = document.getElementById('overlay');
+  ov.classList.add('menu-mode');
   refreshResumeButton();
-  document.getElementById('overlay').classList.remove('hidden');
+  ov.classList.remove('hidden');
   if (typeof syncUpdateBanner === 'function') syncUpdateBanner();
 }
 
 function refreshResumeButton() {
   const btn  = document.getElementById('resumeRunBtn');
   const info = document.getElementById('resumeRunInfo');
-  if (!btn || !info) return;
+  const ov   = document.getElementById('overlay');
+  if (!btn || !info) { debugLog('[resume] refresh: btn/info missing'); return; }
   const snap = loadResumeState();
   if (!snap) {
     btn.style.display = 'none';
     info.style.display = 'none';
+    if (ov) ov.classList.remove('resume-visible');
+    debugLog('[resume] refresh: hide (no snap)');
     return;
   }
+  debugLog('[resume] refresh: show survived=' + snap.timesurvived + 's score=' + snap.score);
   const mm = Math.floor(snap.timesurvived / 60);
   const ss = snap.timesurvived % 60;
   const mmss = (mm < 10 ? '0' : '') + mm + ':' + (ss < 10 ? '0' : '') + ss;
@@ -9115,6 +9279,7 @@ function refreshResumeButton() {
   info.textContent = snap.difficulty + ' • ' + mmss + ' survived • ' + snap.score + ' pts';
   btn.style.display = '';
   info.style.display = '';
+  if (ov) ov.classList.add('resume-visible');
 }
 
 function quitGame() {
@@ -9127,7 +9292,10 @@ pauseBtn.addEventListener('click', () => { SFX.clickSecondary(); pauseGame(); })
 document.getElementById('resumeBtn').addEventListener('click', () => { SFX.clickPrimary(); resumeGame(); });
 document.getElementById('restartBtn').addEventListener('click', () => { SFX.clickPrimary(); restartFromPause(); });
 document.getElementById('changeNameBtn').addEventListener('click', () => { SFX.clickSecondary(); showUsernamePrompt(); });
-document.getElementById('menuBtn').addEventListener('click', () => { SFX.clickSecondary(); clearResumeState(); goToMainMenu(); });
+// Pause menu → main menu: preserve the resume snapshot so the player can pick
+// the run back up. Fresh-start paths (startBtn, restartFromPause, triggerDeath,
+// beginResumedRun) still clear; this path now does not.
+document.getElementById('menuBtn').addEventListener('click', () => { SFX.clickSecondary(); goToMainMenu(); });
 document.getElementById('quitBtn').addEventListener('click', () => { SFX.clickSecondary(); quitGame(); });
 
 document.addEventListener('keydown', e => {
@@ -9403,6 +9571,17 @@ document.getElementById('orbNext').addEventListener('click', () => {
   refreshOrbBrowser();
 });
 refreshOrbBrowser();
+// Initial load: #overlay starts visible as the main menu, so arm the
+// menu-mode layout before refreshResumeButton runs (it reads the overlay
+// to toggle resume-visible).
+document.getElementById('overlay').classList.add('menu-mode');
+try {
+  const bootRaw = localStorage.getItem(RESUME_STATE_KEY);
+  debugLog('BOOT key len=' + (bootRaw == null ? 'null' : bootRaw.length));
+} catch (e) {
+  debugLog('BOOT key read threw ' + (e && e.message || e));
+}
+debugLog('BOOT refreshResumeButton');
 refreshResumeButton();
 
 document.getElementById('shopBtn').addEventListener('click', () => {
@@ -9555,6 +9734,9 @@ function openLeaderboardFromMenu() {
   document.getElementById('leaderboardBtn').style.display = 'none';
   document.getElementById('difficultySelect').style.display = 'none';
   document.getElementById('deathActions').style.display = 'none';
+  // Leaderboard view uses centered layout, not the menu's column-flex rules.
+  document.getElementById('overlay').classList.remove('menu-mode');
+  document.getElementById('overlay').classList.remove('resume-visible');
   document.getElementById('resumeRunBtn').style.display = 'none';
   document.getElementById('resumeRunInfo').style.display = 'none';
   // Show the leaderboard pieces.
