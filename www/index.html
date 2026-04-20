@@ -4384,8 +4384,10 @@ function activateCombo(key, x, y) {
   SFX.comboActivate(key);
 
   if (key === 'nova_nova') {
-    // SUPERNOVA: 6 red/crimson waves at 400ms intervals, each larger
-    for (let i = 0; i < 6; i++) {
+    // SUPERNOVA: red/crimson waves at 400ms intervals, each larger.
+    // Inferno orb (solar) fires 6; other orbs fire 4.
+    const supernovaWaves = activeOrb === 'solar' ? 6 : 4;
+    for (let i = 0; i < supernovaWaves; i++) {
       pendingNovaTimeouts.push(setTimeout(() => {
         if (state !== 'playing') return;
         pushCapped(novaRings, {
