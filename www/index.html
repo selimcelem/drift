@@ -1729,14 +1729,23 @@ const PIXI_PLAYER_CANVAS_SIZE = 256;
 // rebuilt each frame — particles are scattered across the screen so a single
 // canvas would be viewport-sized with heavy upload. Radial gradients (crack
 // fragment glow) are approximated with 3 concentric alpha rings.
-// Not ported this step: drawPowerups (per-pickup offscreen canvas for halo
-// gradient + icon) and drawDestroyEffects (8 kinds inc. gradient). Step 5b.
+// Step 5b adds: drawPowerups (per-pickup offscreen canvas for halo gradient +
+// procedural icon via ctx-shadow refactor), drawPairTethers (native Graphics),
+// drawDestroyEffects (native Graphics for all 11 kinds; shieldAfter gradient
+// approximated as concentric rings).
 let pixiParticleLayer = null;
 let pixiPickupParticlesG = null;
 let pixiDeathParticlesG = null;
 let pixiDeathShardsG = null;
 let pixiCrackFragmentsG = null;
 let pixiDeathFlashG = null;
+let pixiDestroyEffectsG = null;
+// Powerup layer: pixiPairTethersG rebuilt each frame; per-pickup sprites in
+// pixiPowerupEntries (keyed by the powerup object) with their own offscreen
+// canvases re-rendered via drawSinglePowerup(p, tctx) every frame.
+let pixiPowerupLayer = null;
+let pixiPairTethersG = null;
+const pixiPowerupEntries = new Map(); // powerup -> { sprite, canvas, ctx, canvasSize }
 
 // --- FPS counter ---
 // Rolling average of the last 60 frame intervals. DOM update throttled to
@@ -4176,6 +4185,16 @@ function initPixiStars() {
     pixiParticleLayer.addChild(pixiDeathFlashG);
     pixiParticleLayer.addChild(pixiDeathParticlesG);
     pixiParticleLayer.addChild(pixiPickupParticlesG);
+    // Step 5b: destroy effects draw on top of particles (nova flashes + shield
+    // sparks + barrier frags should visually sit over pickup particles).
+    pixiDestroyEffectsG = new PIXI.Graphics();
+    pixiParticleLayer.addChild(pixiDestroyEffectsG);
+    // Step 5b: powerups on their own layer above particles. Pair tethers go
+    // first so per-pickup sprites render on top of the beam connecting them.
+    pixiPowerupLayer = new PIXI.Container();
+    pixiApp.stage.addChild(pixiPowerupLayer);
+    pixiPairTethersG = new PIXI.Graphics();
+    pixiPowerupLayer.addChild(pixiPairTethersG);
     pixiActive = true;
   } catch (err) {
     console.warn('[pixi] init failed, falling back to Canvas 2D stars:', err);
@@ -4523,13 +4542,22 @@ function updatePixiBodySpriteLayer() {
 function updatePixiBodyEffectsLayer() {
   if (!pixiActive || !pixiBodyEffectsLayer) return;
   // Target highlight ring (drawn around the closestBody during gameplay).
+  // Powerups use a pulsing inner-ring-relative radius (r*1.55+5) — match the
+  // original drawPowerups math; bodies use b.radius+5.
   if (pixiTargetRingGraphics) {
     pixiTargetRingGraphics.clear();
     if (state === 'playing' && closestBody) {
       const b = closestBody;
       const orbRgb = getOrbBonus().color;
       const lineColor = leftDown ? '80,200,255' : rightDown ? '255,120,80' : orbRgb;
-      const ringR = b.radius + 5 + Math.sin(frame * 0.18) * 2;
+      const isPowerup = POWERUP_COLORS && POWERUP_COLORS[b.type];
+      let ringR;
+      if (isPowerup) {
+        const rPulsed = b.radius * (0.95 + Math.sin(b.pulse) * 0.18);
+        ringR = rPulsed * 1.55 + 5 + Math.sin(frame * 0.18) * 2;
+      } else {
+        ringR = b.radius + 5 + Math.sin(frame * 0.18) * 2;
+      }
       const a = 0.55 + 0.25 * Math.sin(frame * 0.18);
       const [r8, g8, b8] = lineColor.split(',').map(n => parseInt(n, 10));
       const colorInt = (r8 << 16) | (g8 << 8) | b8;
@@ -4862,6 +4890,262 @@ function hslToHex(h, s, l) {
   const g8 = Math.round((g + m) * 255);
   const b8 = Math.round((b + m) * 255);
   return (r8 << 16) | (g8 << 8) | b8;
+}
+
+// Parse "r,g,b" string into a 24-bit hex int. Used by destroy-effect kinds
+// that carry their colour as a bare RGB triplet.
+function rgbStringToHex(rgb) {
+  const [r, g, b] = rgb.split(',').map(n => parseInt(n, 10) | 0);
+  return (r << 16) | (g << 8) | b;
+}
+
+// Step 5b: destroy effects — all 11 kinds rebuilt as native PIXI.Graphics.
+// shieldAfter's radial gradient is approximated as 3 concentric alpha rings
+// (same trick as crackFragments). Frags batch by (color, lifeBucket) so the
+// pixi Graphics tessellator gets a flat list; scanlines and compression
+// ellipses get similar bucket batching to stay close to the Canvas 2D path's
+// pipeline shape.
+function updatePixiDestroyEffectsLayer() {
+  if (!pixiActive || !pixiDestroyEffectsG) return;
+  const g = pixiDestroyEffectsG;
+  g.clear();
+  if (!destroyEffects.length) return;
+  const BUCKET_ALPHA = [0.125, 0.375, 0.625, 0.875];
+  // Batch accumulators keyed for fragment and scan kinds — grouping by
+  // lifeBucket lets us fill/stroke each group with one Graphics style block.
+  const fragBatches = {};  // "colorKey|bucket" -> { colorInt, polys: [] }
+  const scanBatches = {};  // bucket -> [ [x0,y0,x1,y1], ... ]
+  const compEllipses = []; // barrierComp
+  let compAlphaSum = 0, compCount = 0;
+  const CYAN_SCAN_COLOR = 0xB4F0FF;
+  const YELLOW_COMP_COLOR = 0xFFDC64;
+  const PURPLE_GHOST_RIP_COLOR = 0xD28CFF;
+  const PURPLE_GHOST_WISP_COLOR = 0xD2B4FF;
+  const BARRIER_STREAK_COLOR = 0xFFF0B4;
+
+  for (const e of destroyEffects) {
+    const t = e.age / e.maxLife;
+    if (e.kind === 'novaFlash') {
+      g.beginFill(rgbStringToHex(e.color), 1 - t);
+      g.drawCircle(e.x, e.y, e.r * (0.4 + t * 0.6));
+      g.endFill();
+    } else if (e.kind === 'novaShock') {
+      const r = e.maxR * t;
+      // e.color is a full rgba(...) string in the original; resolve rough
+      // hex by grabbing the raw digits. Fallback to orange if unparseable.
+      const m = String(e.color).match(/(\d+)[,\s]+(\d+)[,\s]+(\d+)/);
+      const colorInt = m ? (parseInt(m[1],10)<<16)|(parseInt(m[2],10)<<8)|parseInt(m[3],10) : 0xFFA040;
+      g.lineStyle({ width: 2.5, color: colorInt, alpha: (1 - t) * 0.9 });
+      g.drawCircle(e.x, e.y, r);
+      g.lineStyle();
+    } else if (e.kind === 'novaFrag' || e.kind === 'barrierFrag') {
+      const verts = e.verts;
+      if (verts && verts.length >= 2) {
+        const bi = Math.min(3, Math.floor((1 - t) * 4));
+        // Color field may be a raw "r,g,b" or a full CSS rgba/hsl. Keep as
+        // an opaque-ish key; we handle the full CSS case only for novaFrag.
+        const colorKey = e.color + '|' + bi;
+        let bucket = fragBatches[colorKey];
+        if (!bucket) {
+          // Try to resolve color to hex. If it's an rgba(...) or hsl(...),
+          // approximate by looking for ints; otherwise assume "r,g,b".
+          let colorInt;
+          if (e.color.indexOf('(') >= 0) {
+            const m = String(e.color).match(/(\d+)[,\s]+(\d+)[,\s]+(\d+)/);
+            colorInt = m ? (parseInt(m[1],10)<<16)|(parseInt(m[2],10)<<8)|parseInt(m[3],10) : 0xFFA040;
+          } else {
+            colorInt = rgbStringToHex(e.color);
+          }
+          bucket = fragBatches[colorKey] = { colorInt, bi, polys: [] };
+        }
+        const poly = [];
+        for (let k = 0; k < verts.length; k += 2) {
+          poly.push(e.x + verts[k]);
+          poly.push(e.y + verts[k + 1]);
+        }
+        bucket.polys.push(poly);
+      }
+    } else if (e.kind === 'shieldScan') {
+      const half = e.baseR * 1.2;
+      const lineX = e.x + e.dir * (-half + t * 2 * half);
+      const bi = Math.min(3, Math.floor((1 - t) * 4));
+      (scanBatches[bi] || (scanBatches[bi] = [])).push([
+        lineX - e.dir * 8, e.y, lineX, e.y,
+      ]);
+    } else if (e.kind === 'shieldSpark') {
+      g.beginFill(rgbStringToHex(e.color), 1 - t);
+      g.drawCircle(e.x, e.y, 1.4);
+      g.endFill();
+    } else if (e.kind === 'shieldAfter') {
+      // Radial gradient from rgba(180,240,255,alpha) at 0 to rgba(180,240,255,0)
+      // at e.r. Approximate with 3 concentric rings (same trick as crack
+      // fragment glow in Step 5).
+      const alpha = (1 - t) * 0.55;
+      if (alpha > 0) {
+        g.beginFill(0xB4F0FF, alpha * 0.55); g.drawCircle(e.x, e.y, e.r * 0.33); g.endFill();
+        g.beginFill(0xB4F0FF, alpha * 0.32); g.drawCircle(e.x, e.y, e.r * 0.66); g.endFill();
+        g.beginFill(0xB4F0FF, alpha * 0.14); g.drawCircle(e.x, e.y, e.r);          g.endFill();
+      }
+    } else if (e.kind === 'barrierStreak') {
+      const dx = Math.cos(e.angle) * e.len;
+      const dy = Math.sin(e.angle) * e.len;
+      g.lineStyle({ width: 4, color: BARRIER_STREAK_COLOR, alpha: 1 - t });
+      g.moveTo(e.x - dx * 0.2, e.y - dy * 0.2);
+      g.lineTo(e.x + dx, e.y + dy);
+      g.lineStyle();
+    } else if (e.kind === 'barrierComp') {
+      const r = e.maxR * t;
+      compEllipses.push({ x: e.x, y: e.y, rx: r * 0.55, ry: r, angle: e.angle });
+      compAlphaSum += (1 - t) * 0.75;
+      compCount++;
+    } else if (e.kind === 'ghostRipple') {
+      const r = e.maxR * t;
+      g.lineStyle({ width: 1.5, color: PURPLE_GHOST_RIP_COLOR, alpha: (1 - t) * 0.35 });
+      g.drawCircle(e.x, e.y, r);
+      g.lineStyle();
+    } else if (e.kind === 'ghostWisp') {
+      g.beginFill(PURPLE_GHOST_WISP_COLOR, (1 - t) * 0.55);
+      g.drawCircle(e.x, e.y, e.size);
+      g.endFill();
+    }
+  }
+  // Flush frag batches — one fill per (color, bucket).
+  for (const key in fragBatches) {
+    const bucket = fragBatches[key];
+    g.beginFill(bucket.colorInt, BUCKET_ALPHA[bucket.bi]);
+    for (const poly of bucket.polys) g.drawPolygon(poly);
+    g.endFill();
+  }
+  // Flush scan batches — one stroke per bucket. Alpha is the 85%-reduced
+  // bucket midpoint to match the #c Canvas 2D math.
+  for (const biKey in scanBatches) {
+    const bi = +biKey;
+    const lines = scanBatches[biKey];
+    g.lineStyle({ width: 1.8, color: CYAN_SCAN_COLOR, alpha: BUCKET_ALPHA[bi] * 0.85 });
+    for (const l of lines) {
+      g.moveTo(l[0], l[1]); g.lineTo(l[2], l[3]);
+    }
+    g.lineStyle();
+  }
+  // Flush comp ellipses — one stroke with averaged alpha. PIXI.Graphics has
+  // drawEllipse but not rotated-ellipse; approximate via matrix transform
+  // would complicate the batch. Accept slight visual deviation: draw as
+  // axis-aligned ellipses (the rotation was the scroll direction, ~PI/2, so
+  // the ry axis was effectively "up-down" — same as axis-aligned at e.angle
+  // ≈ PI/2). For non-vertical angles this would deviate; in practice
+  // barrierComp only spawns with e.angle = PI/2.
+  if (compCount > 0) {
+    g.lineStyle({ width: 2, color: YELLOW_COMP_COLOR, alpha: compAlphaSum / compCount });
+    for (const el of compEllipses) {
+      g.drawEllipse(el.x, el.y, el.rx, el.ry);
+    }
+    g.lineStyle();
+  }
+}
+
+// Step 5b: per-pickup offscreen canvas for the powerup halo + icon composite,
+// plus pair tethers as native Graphics. Canvas sized by halo extent (r*3.4).
+// Radius is driven by p.pulse so it varies per frame — canvas sizes are
+// bumped to the max-pulse radius to avoid per-frame canvas resizes.
+function updatePixiPowerupLayer() {
+  if (!pixiActive || !pixiPowerupLayer) return;
+
+  // --- Pair tethers ---
+  const tg = pixiPairTethersG;
+  tg.clear();
+  if (powerups.length >= 2) {
+    const drawn = new Set();
+    const pulse = Math.sin(frame * 0.18) * 0.3 + 0.7;
+    for (const p of powerups) {
+      if (!p.pairSibling || p.collected) continue;
+      const key = Math.min(p.pairId, p.pairSibling.pairId) + '_' + Math.max(p.pairId, p.pairSibling.pairId);
+      if (drawn.has(key)) continue;
+      drawn.add(key);
+      const q = p.pairSibling;
+      if (q.collected) continue;
+      const rgb1 = POWERUP_COLORS[p.type].rgb;
+      const rgb2 = POWERUP_COLORS[q.type].rgb;
+      const parts1 = rgb1.split(',').map(n => parseInt(n,10)|0);
+      const parts2 = rgb2.split(',').map(n => parseInt(n,10)|0);
+      const mix = (
+        (((parts1[0] + parts2[0]) >> 1) << 16) |
+        (((parts1[1] + parts2[1]) >> 1) << 8)  |
+         ((parts1[2] + parts2[2]) >> 1)
+      );
+      // Outer glow beam
+      tg.lineStyle({ width: 5, color: mix, alpha: 0.35 * pulse * 0.9 });
+      tg.moveTo(p.x, p.y); tg.lineTo(q.x, q.y);
+      tg.lineStyle();
+      // Inner bright beam
+      tg.lineStyle({ width: 1.6, color: mix, alpha: 0.85 * pulse });
+      tg.moveTo(p.x, p.y); tg.lineTo(q.x, q.y);
+      tg.lineStyle();
+      // Energy particles travelling along the beam
+      const segments = 6;
+      for (let i = 0; i < segments; i++) {
+        const t = ((frame * 0.02 + i / segments) % 1);
+        const ex = p.x + (q.x - p.x) * t;
+        const ey = p.y + (q.y - p.y) * t;
+        const alpha = (1 - Math.abs(t - 0.5) * 2) * 0.9;
+        tg.beginFill(mix, alpha);
+        tg.drawCircle(ex, ey, 2.2);
+        tg.endFill();
+      }
+    }
+  }
+
+  // --- Per-pickup sprites ---
+  const live = new Set();
+  for (const p of powerups) {
+    if (p.collected) continue;
+    live.add(p);
+    // Sizing: halo extends to r*3.4 where r = p.radius * (0.95 + sin*0.18).
+    // Max pulse factor is 1.13 → max halo radius = p.radius * 3.842. Round
+    // up to even and pad so the halo's soft edge fully fits.
+    const maxHaloR = Math.ceil(p.radius * 3.842);
+    const neededSize = maxHaloR * 2 + 8;
+    let entry = pixiPowerupEntries.get(p);
+    if (!entry || entry.canvasSize < neededSize) {
+      if (entry) {
+        try { pixiPowerupLayer.removeChild(entry.sprite); } catch {}
+        try { entry.sprite.destroy({ children: false, texture: true, baseTexture: true }); } catch {}
+      }
+      const size = (neededSize % 2 === 0) ? neededSize : neededSize + 1;
+      const c = document.createElement('canvas');
+      c.width = size; c.height = size;
+      const cctx = c.getContext('2d');
+      const sprite = new PIXI.Sprite(PIXI.Texture.from(c));
+      sprite.anchor.set(0.5);
+      pixiPowerupLayer.addChild(sprite);
+      entry = { sprite, canvas: c, ctx: cctx, canvasSize: size };
+      pixiPowerupEntries.set(p, entry);
+    }
+    const ofc = entry.canvas;
+    const ofx = entry.ctx;
+    const cx = ofc.width / 2, cy = ofc.height / 2;
+    ofx.save();
+    ofx.setTransform(1, 0, 0, 1, 0, 0);
+    ofx.clearRect(0, 0, ofc.width, ofc.height);
+    ofx.translate(cx - p.x, cy - p.y);
+    try { drawSinglePowerup(p, ofx); }
+    catch (err) { console.error('[pixi-powerup] drawSinglePowerup threw, skipping', err); }
+    ofx.restore();
+    entry.sprite.x = p.x;
+    entry.sprite.y = p.y;
+    entry.sprite.visible = true;
+    if (entry.sprite.texture && entry.sprite.texture.baseTexture) {
+      try { entry.sprite.texture.baseTexture.update(); } catch {}
+    }
+  }
+  // Cull sprites whose pickups are gone.
+  if (pixiPowerupEntries.size > live.size) {
+    for (const [p, entry] of pixiPowerupEntries) {
+      if (live.has(p)) continue;
+      try { pixiPowerupLayer.removeChild(entry.sprite); } catch {}
+      try { entry.sprite.destroy({ children: false, texture: true, baseTexture: true }); } catch {}
+      pixiPowerupEntries.delete(p);
+    }
+  }
 }
 
 // --- Bodies ---
@@ -5382,6 +5666,29 @@ function drawDestroyEffects() {
   }
   destroyEffects = destroyEffects.filter(e => e.age < e.maxLife);
 
+  // Physics pass — advance positions for kinds that move. Always runs so
+  // state stays consistent whether pixi owns rendering or #c does.
+  for (const e of destroyEffects) {
+    if (e.kind === 'novaFrag') {
+      e.x += e.vx; e.y += e.vy;
+      e.vx *= 0.96;
+      e.vy = e.vy * 0.96 + 0.1;
+    } else if (e.kind === 'barrierFrag') {
+      e.x += e.vx; e.y += e.vy;
+      e.vx *= 0.95;
+      e.vy = e.vy * 0.95 + 0.1;
+    } else if (e.kind === 'shieldSpark') {
+      e.x += e.vx; e.y += e.vy;
+      e.vx *= 0.95; e.vy *= 0.95;
+    } else if (e.kind === 'ghostWisp') {
+      e.x += e.vx; e.y += e.vy;
+      e.vx *= 0.97; e.vy *= 0.98;
+    }
+  }
+
+  // Step 5b: pixi reads the array directly via updatePixiDestroyEffectsLayer.
+  if (pixiActive) return;
+
   // Batch accumulators. Frags and scans collect into Path2Ds keyed by colour
   // and life bucket; barrierComp ellipses all share one yellow ring style so
   // they combine into a single Path2D with averaged alpha. Bucket midpoints
@@ -5408,14 +5715,7 @@ function drawDestroyEffects() {
       ctx.beginPath(); ctx.arc(e.x, e.y, r, 0, 6.28); ctx.stroke();
 
     } else if (e.kind === 'novaFrag' || e.kind === 'barrierFrag') {
-      e.x += e.vx; e.y += e.vy;
-      if (e.kind === 'novaFrag') {
-        e.vx *= 0.96;
-        e.vy = e.vy * 0.96 + 0.1;
-      } else {
-        e.vx *= 0.95;
-        e.vy = e.vy * 0.95 + 0.1;
-      }
+      // Physics moved above the pixiActive gate.
       const verts = e.verts;
       if (verts && verts.length >= 2) {
         const bi = Math.min(3, Math.floor((1 - t) * 4));
@@ -5439,8 +5739,7 @@ function drawDestroyEffects() {
       path.lineTo(lineX, e.y);
 
     } else if (e.kind === 'shieldSpark') {
-      e.x += e.vx; e.y += e.vy;
-      e.vx *= 0.95; e.vy *= 0.95;
+      // Physics moved above the pixiActive gate.
       ctx.globalAlpha = 1 - t;
       ctx.fillStyle = `rgba(${e.color},1)`;
       ctx.beginPath(); ctx.arc(e.x, e.y, 1.4, 0, 6.28); ctx.fill();
@@ -5481,8 +5780,7 @@ function drawDestroyEffects() {
       ctx.beginPath(); ctx.arc(e.x, e.y, r, 0, 6.28); ctx.stroke();
 
     } else if (e.kind === 'ghostWisp') {
-      e.x += e.vx; e.y += e.vy;
-      e.vx *= 0.97; e.vy *= 0.98;
+      // Physics moved above the pixiActive gate.
       ctx.globalAlpha = (1 - t) * 0.55;
       ctx.fillStyle = 'rgba(210,180,255,1)';
       ctx.beginPath(); ctx.arc(e.x, e.y, e.size, 0, 6.28); ctx.fill();
@@ -5949,7 +6247,11 @@ function activateHyperspeed(durationOverride, peakScale) {
 
 function activatePowerup(type, x, y) {
   if (typeof Sentry !== 'undefined') Sentry.addBreadcrumb({ category: 'powerup', message: 'picked up ' + type, level: 'info' });
-  emitPickupParticles(x, y, type);
+  // Burst originates at the player (pickup is consumed INTO the player).
+  // Previous behavior used pickup coords which drifted above the player by
+  // the collision overlap at the moment of collection, creating a visible
+  // offset between the particle burst and the nova ring / shield aura.
+  emitPickupParticles(player.x, player.y, type);
   // Hyperspeed pickup sound is played AFTER rawActivate so it can use the
   // new stack count for its pitch shift; everything else plays immediately.
   if (type !== 'hyperspeed') SFX.pickup(type);
@@ -7960,6 +8262,8 @@ function drawBg() {
     updatePixiBodyEffectsLayer();
     updatePixiPlayerLayer();
     updatePixiParticleLayer();
+    updatePixiDestroyEffectsLayer();
+    updatePixiPowerupLayer();
     updatePixiStars(); // renders the entire pixi stage
     return;
   }
@@ -9416,6 +9720,9 @@ function drawPlayer(tctx = ctx) {
 }
 
 function drawPairTethers() {
+  // Step 5b: pixi path renders pair tethers natively via pixiPairTethersG in
+  // updatePixiPowerupLayer. The #c fallback below still runs when !pixiActive.
+  if (pixiActive) return;
   const drawn = new Set();
   for (const p of powerups) {
     if (!p.pairSibling || p.collected) continue;
@@ -9455,78 +9762,86 @@ function drawPairTethers() {
   }
 }
 
+// Step 5b: extracted per-pickup rendering so the pixi pipeline can call it
+// against a per-pickup offscreen ctx via the (tctx) ctx-shadow pattern.
+// Scope: halo + inner ring + icon. Target ring + dashed line stay in the
+// drawPowerups outer loop (#c path) / updatePixiBodyEffectsLayer (pixi path).
+function drawSinglePowerup(p, tctx = ctx) {
+  const ctx = tctx;
+  const pulse = Math.sin(p.pulse) * 0.35 + 0.65;
+  const r = p.radius * (0.95 + Math.sin(p.pulse) * 0.18);
+  const rgb = POWERUP_COLORS[p.type].rgb;
+  // Outer pulsing halo
+  ctx.globalAlpha = 0.55 * pulse;
+  const grd = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, r * 3.4);
+  grd.addColorStop(0, `rgba(${rgb},0.65)`);
+  grd.addColorStop(0.5, `rgba(${rgb},0.22)`);
+  grd.addColorStop(1, `rgba(${rgb},0)`);
+  ctx.fillStyle = grd;
+  ctx.beginPath(); ctx.arc(p.x, p.y, r * 3.4, 0, 6.28); ctx.fill();
+  // Bright inner ring
+  ctx.globalAlpha = 0.85;
+  ctx.strokeStyle = `rgba(${rgb},0.9)`;
+  ctx.lineWidth = 1.6;
+  ctx.beginPath(); ctx.arc(p.x, p.y, r * 1.55, 0, 6.28); ctx.stroke();
+  // Icon
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = `rgba(${rgb},1)`;
+  ctx.strokeStyle = `rgba(${rgb},1)`;
+  ctx.lineWidth = 1.8;
+  if (p.type === 'shield') {
+    ctx.beginPath();
+    ctx.moveTo(p.x, p.y - r);
+    ctx.lineTo(p.x + r*0.78, p.y);
+    ctx.lineTo(p.x, p.y + r);
+    ctx.lineTo(p.x - r*0.78, p.y);
+    ctx.closePath(); ctx.fill();
+    ctx.globalAlpha = 0.85;
+    ctx.fillStyle = '#fff';
+    ctx.beginPath(); ctx.arc(p.x, p.y, r*0.28, 0, 6.28); ctx.fill();
+  } else if (p.type === 'nova') {
+    ctx.beginPath(); ctx.arc(p.x, p.y, r*0.42, 0, 6.28); ctx.fill();
+    ctx.lineWidth = 1.6;
+    ctx.beginPath(); ctx.arc(p.x, p.y, r*0.78, 0, 6.28); ctx.stroke();
+    ctx.lineWidth = 1.1;
+    ctx.beginPath(); ctx.arc(p.x, p.y, r*1.12, 0, 6.28); ctx.stroke();
+  } else if (p.type === 'hyperspeed') {
+    ctx.beginPath();
+    ctx.moveTo(p.x + r*0.15, p.y - r*0.95);
+    ctx.lineTo(p.x - r*0.45, p.y + r*0.1);
+    ctx.lineTo(p.x - r*0.05, p.y + r*0.1);
+    ctx.lineTo(p.x - r*0.15, p.y + r*0.95);
+    ctx.lineTo(p.x + r*0.45, p.y - r*0.1);
+    ctx.lineTo(p.x + r*0.05, p.y - r*0.1);
+    ctx.closePath(); ctx.fill();
+  } else { // ghost
+    ctx.beginPath();
+    ctx.arc(p.x, p.y - r*0.15, r*0.85, Math.PI, 0);
+    ctx.lineTo(p.x + r*0.85, p.y + r*0.65);
+    ctx.lineTo(p.x + r*0.5,  p.y + r*0.35);
+    ctx.lineTo(p.x + r*0.15, p.y + r*0.65);
+    ctx.lineTo(p.x - r*0.15, p.y + r*0.35);
+    ctx.lineTo(p.x - r*0.5,  p.y + r*0.65);
+    ctx.lineTo(p.x - r*0.85, p.y + r*0.35);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.beginPath(); ctx.arc(p.x - r*0.28, p.y - r*0.2, r*0.13, 0, 6.28); ctx.fill();
+    ctx.beginPath(); ctx.arc(p.x + r*0.28, p.y - r*0.2, r*0.13, 0, 6.28); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
 function drawPowerups() {
+  // Step 5b: pixi owns powerup rendering via updatePixiPowerupLayer. Drop
+  // the whole #c path when pixi is active — target ring + dashed line for a
+  // powerup-typed closestBody are handled by updatePixiBodyEffectsLayer.
+  if (pixiActive) return;
   drawPairTethers();
   for (const p of powerups) {
-    const pulse = Math.sin(p.pulse) * 0.35 + 0.65;
+    drawSinglePowerup(p);
+    // Powerup-specific target indicator uses r*1.55+5 (not b.radius+5 like
+    // bodies). Kept here on the #c fallback path so the math stays identical.
     const r = p.radius * (0.95 + Math.sin(p.pulse) * 0.18);
-    const rgb = POWERUP_COLORS[p.type].rgb;
-
-    // Outer pulsing halo
-    ctx.globalAlpha = 0.55 * pulse;
-    const grd = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, r * 3.4);
-    grd.addColorStop(0, `rgba(${rgb},0.65)`);
-    grd.addColorStop(0.5, `rgba(${rgb},0.22)`);
-    grd.addColorStop(1, `rgba(${rgb},0)`);
-    ctx.fillStyle = grd;
-    ctx.beginPath(); ctx.arc(p.x, p.y, r * 3.4, 0, 6.28); ctx.fill();
-
-    // Bright inner ring
-    ctx.globalAlpha = 0.85;
-    ctx.strokeStyle = `rgba(${rgb},0.9)`;
-    ctx.lineWidth = 1.6;
-    ctx.beginPath(); ctx.arc(p.x, p.y, r * 1.55, 0, 6.28); ctx.stroke();
-
-    // Icon
-    ctx.globalAlpha = 1;
-    ctx.fillStyle = `rgba(${rgb},1)`;
-    ctx.strokeStyle = `rgba(${rgb},1)`;
-    ctx.lineWidth = 1.8;
-
-    if (p.type === 'shield') {
-      // Diamond
-      ctx.beginPath();
-      ctx.moveTo(p.x, p.y - r);
-      ctx.lineTo(p.x + r*0.78, p.y);
-      ctx.lineTo(p.x, p.y + r);
-      ctx.lineTo(p.x - r*0.78, p.y);
-      ctx.closePath(); ctx.fill();
-      ctx.globalAlpha = 0.85;
-      ctx.fillStyle = '#fff';
-      ctx.beginPath(); ctx.arc(p.x, p.y, r*0.28, 0, 6.28); ctx.fill();
-    } else if (p.type === 'nova') {
-      // Concentric burst rings
-      ctx.beginPath(); ctx.arc(p.x, p.y, r*0.42, 0, 6.28); ctx.fill();
-      ctx.lineWidth = 1.6;
-      ctx.beginPath(); ctx.arc(p.x, p.y, r*0.78, 0, 6.28); ctx.stroke();
-      ctx.lineWidth = 1.1;
-      ctx.beginPath(); ctx.arc(p.x, p.y, r*1.12, 0, 6.28); ctx.stroke();
-    } else if (p.type === 'hyperspeed') {
-      // Lightning bolt / arrow pointing up
-      ctx.beginPath();
-      ctx.moveTo(p.x + r*0.15, p.y - r*0.95);
-      ctx.lineTo(p.x - r*0.45, p.y + r*0.1);
-      ctx.lineTo(p.x - r*0.05, p.y + r*0.1);
-      ctx.lineTo(p.x - r*0.15, p.y + r*0.95);
-      ctx.lineTo(p.x + r*0.45, p.y - r*0.1);
-      ctx.lineTo(p.x + r*0.05, p.y - r*0.1);
-      ctx.closePath(); ctx.fill();
-    } else { // ghost
-      // Wispy round head with three "feet" tails
-      ctx.beginPath();
-      ctx.arc(p.x, p.y - r*0.15, r*0.85, Math.PI, 0);
-      ctx.lineTo(p.x + r*0.85, p.y + r*0.65);
-      ctx.lineTo(p.x + r*0.5,  p.y + r*0.35);
-      ctx.lineTo(p.x + r*0.15, p.y + r*0.65);
-      ctx.lineTo(p.x - r*0.15, p.y + r*0.35);
-      ctx.lineTo(p.x - r*0.5,  p.y + r*0.65);
-      ctx.lineTo(p.x - r*0.85, p.y + r*0.35);
-      ctx.closePath(); ctx.fill();
-      // Eyes
-      ctx.fillStyle = '#fff';
-      ctx.beginPath(); ctx.arc(p.x - r*0.28, p.y - r*0.2, r*0.13, 0, 6.28); ctx.fill();
-      ctx.beginPath(); ctx.arc(p.x + r*0.28, p.y - r*0.2, r*0.13, 0, 6.28); ctx.fill();
-    }
 
     // Target indicator when powerup is closest body
     if (p === closestBody && state === 'playing') {
