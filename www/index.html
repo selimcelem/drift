@@ -5507,10 +5507,20 @@ function clearResumeState() {
   lastResumeSaveBucket = -1;
 }
 function loadResumeState() {
+  let raw;
+  try { raw = localStorage.getItem(RESUME_STATE_KEY); } catch { return null; }
+  if (!raw) return null;
+  // Parse in its own guard: a corrupt value must delete the key and return
+  // null, otherwise the same bad blob gets re-read every boot and a malformed
+  // snapshot can wedge the player in a permanent resume-crash loop.
+  let snap;
   try {
-    const raw = localStorage.getItem(RESUME_STATE_KEY);
-    if (!raw) return null;
-    const snap = JSON.parse(raw);
+    snap = JSON.parse(raw);
+  } catch (e) {
+    try { localStorage.removeItem(RESUME_STATE_KEY); } catch {}
+    return null;
+  }
+  try {
     if (!snap || typeof snap !== 'object') { clearResumeState(); return null; }
     if (!snap.savedAt || Date.now() - snap.savedAt > RESUME_MAX_AGE_MS) { clearResumeState(); return null; }
     if (!snap.timesurvived || snap.timesurvived < RESUME_MIN_SURVIVED_S) return null;
@@ -8861,6 +8871,15 @@ document.getElementById('startBtn').addEventListener('click', ()=>{
   if (state !== 'idle' && state !== 'dead') return;
   SFX.init();
   SFX.clickPrimary();
+  // Sentry fire-test cheat: pilot name "SENTRY" triggers a tagged test event
+  // on start so a tester can verify the crash-reporting pipeline end-to-end.
+  // flush() waits up to 2s for the beacon to actually leave the device.
+  if (getUsername() === 'SENTRY' && typeof Sentry !== 'undefined') {
+    try {
+      Sentry.captureException(new Error('sentry-test-' + GAME_VERSION + '-' + Date.now()));
+      if (typeof Sentry.flush === 'function') Sentry.flush(2000);
+    } catch {}
+  }
   // Starting a fresh run — wipe any resume snapshot so the old save can't
   // resurface if the player dies before the 5s save cadence fires.
   clearResumeState();
