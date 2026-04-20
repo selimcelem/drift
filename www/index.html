@@ -568,6 +568,28 @@
     margin-bottom: 44px;
   }
 
+  /* Tappable pilot-name display on the main menu — opens the existing
+     showUsernamePrompt() rename flow. Hidden everywhere else (death screen,
+     leaderboard, paused) via the .menu-mode scope rule below. Underline and
+     muted cyan tint signal interactivity without being a prominent button. */
+  .pilot-display {
+    display: none;
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 1px;
+    color: rgba(125,232,255,0.55);
+    text-align: center;
+    cursor: pointer;
+    padding: 2px 12px;
+    margin-top: -36px;
+    margin-bottom: 24px;
+    text-decoration: underline;
+    text-decoration-color: rgba(125,232,255,0.25);
+    text-underline-offset: 3px;
+  }
+  #overlay.menu-mode .pilot-display { display: block; }
+  .pilot-display:active { color: rgba(125,232,255,0.95); }
+
   .controls-hint {
     font-family: 'Space Mono', monospace;
     font-size: 11px;
@@ -1391,6 +1413,60 @@
     letter-spacing: 0.5px;
   }
   #fpsCounter.visible { display: block; }
+
+  /* Dev-only body preview page (pilot name BODYPREVIEW). Internal QA tool;
+     not linked from any user-facing menu. Pure overlay on top of #c so the
+     production drawBodies() / pixi pipeline renders normally underneath. */
+  #bodyPreviewOverlay {
+    position: fixed;
+    inset: 0;
+    display: none;
+    z-index: 100;
+    background: transparent;
+  }
+  #bodyPreviewOverlay.visible { display: block; }
+  #bodyPreviewScroll {
+    position: absolute;
+    inset: 0;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    pointer-events: auto;
+  }
+  #bodyPreviewSpacer {
+    position: relative;
+    width: 100%;
+    pointer-events: none;
+  }
+  .bp-label {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    font-family: 'Space Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 3px;
+    color: rgba(125,232,255,0.92);
+    pointer-events: none;
+    text-shadow: 0 0 6px rgba(0,0,0,0.95);
+    white-space: nowrap;
+  }
+  #bodyPreviewClose {
+    position: fixed;
+    top: calc(var(--safe-top) + 16px);
+    right: calc(var(--safe-right) + 16px);
+    width: 36px;
+    height: 36px;
+    background: rgba(0,0,10,0.55);
+    border: 1px solid rgba(100,200,255,0.4);
+    border-radius: 4px;
+    color: rgba(125,232,255,0.95);
+    font-family: 'Orbitron', monospace;
+    font-size: 14px;
+    cursor: pointer;
+    z-index: 101;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
 </style>
 </head>
 <body>
@@ -1428,6 +1504,7 @@
     <div class="title-word">DRIFT</div>
     <div class="subtitle">gravity surfing</div>
     <div class="version-label" id="versionLabel"></div>
+    <div class="pilot-display" id="pilotDisplay"></div>
     <div id="difficultySelect">
       <button class="diff-btn selected" data-diff="NORMAL">NORMAL</button>
       <button class="diff-btn" data-diff="HARD">HARD</button>
@@ -1507,6 +1584,11 @@
       <button class="pause-btn" id="quitBtn">QUIT GAME</button>
     </div>
     <div id="quitMsg">close the app to quit</div>
+  </div>
+  <!-- Dev-only QA page; populated + shown by enterBodyPreview(). -->
+  <div id="bodyPreviewOverlay">
+    <button id="bodyPreviewClose" aria-label="Close preview">✕</button>
+    <div id="bodyPreviewScroll"><div id="bodyPreviewSpacer"></div></div>
   </div>
   <div id="settingsOverlay">
     <div class="pause-title">SETTINGS</div>
@@ -1608,6 +1690,29 @@ let pixiActive = false;
 let pixiBgLayer = null;      // PIXI.Container holding per-bgObject sprites
 let pixiNebulaSprite = null; // PIXI.Sprite fed from the existing nebulaCanvas
 const pixiBgEntries = new Map(); // bgObject.seed → { imageSprite, vignetteSprite, vigBucket }
+// Phase 2 Step 3 (partial): bodies' glow + outer subtle rings move to pixi.
+// Body sprites, target highlight ring, dashed targeting line stay on #c for
+// this step — porting 12 procedural drawXxx() functions is Step 3b scope.
+// Stage order (bottom→top): bgLayer, nebula, stars, bodyLayer, bodySpriteLayer.
+let pixiBodyLayer = null;
+const pixiBodyEntries = new Map(); // body -> { glowSprite, ringsSprite }
+// Phase 2 Step 3b (partial): atlas-based body sprites move to pixi for the
+// types whose cached canvas is the WHOLE body content (blackhole, mirror).
+// Eye / skull / screaming / heart can't ship in this step — their cached
+// canvas is an overlay drawn ON TOP of per-frame procedural content (base
+// disc, glow, sphere shading), so a pixi sprite sitting BEHIND #c would be
+// occluded by that procedural content. Step 3c scope.
+// Step 3c (this step) extended to star + planet via per-body baked canvases
+// constructed lazily on first encounter, plus a new effects layer for the
+// target highlight ring, dashed targeting line, and preview cyan outlines.
+let pixiBodySpriteLayer = null;
+const pixiBodySpriteEntries = new Map(); // body -> { sprite, sourceCanvas, displaySize, ownsCanvas }
+// Step 3c: target ring, dashed targeting line, and preview collision outlines.
+// All three are PIXI.Graphics rebuilt each frame inside updatePixiBodyEffectsLayer.
+let pixiBodyEffectsLayer = null;
+let pixiTargetRingGraphics = null;
+let pixiTargetLineGraphics = null;
+let pixiPreviewOutlinesGraphics = null;
 
 // --- FPS counter ---
 // Rolling average of the last 60 frame intervals. DOM update throttled to
@@ -1674,8 +1779,17 @@ window.addEventListener('orientationchange', refreshSafeAreaInsets);
 // are composed by call site. Cleared on resize because position-based caches
 // would become wrong against a new canvas size.
 const gradientCache = {};
-function getCachedGradient(key, createFn) {
-  if (!gradientCache[key]) gradientCache[key] = createFn();
+function getCachedGradient(key, createFn, tctx) {
+  // Step 3d: when tctx is the per-body pixi offscreen ctx (not the global #c
+  // ctx), bypass the cache — gradients are tied to the ctx that created them
+  // per Canvas 2D spec, so a cached global-ctx gradient can't safely be used
+  // on a different ctx. Old 2-arg callsites still work: createFn closes over
+  // the global ctx and ignores its parameter; new callsites pass (c) =>
+  // c.createXxx(...) so the same closure works for both contexts.
+  if (tctx && tctx !== ctx) {
+    return createFn(tctx);
+  }
+  if (!gradientCache[key]) gradientCache[key] = createFn(ctx);
   return gradientCache[key];
 }
 function clearGradientCache() {
@@ -2149,6 +2263,19 @@ function releaseBodyCanvases(b) {
   b.mirrorCanvas = null;
   b.screamStaticCanvas = null;
   b.heartCanvas = null;
+  // Phase 2 Step 3: pixi-baked glow + rings canvases. The pixi sprite holds
+  // the texture reference; destroying the sprite (in updatePixiBodyLayer's
+  // cull pass) releases the GPU side. Nulling here releases the JS side.
+  b.glowCanvas = null;
+  b.ringsCanvas = null;
+  // Phase 2 Step 3c: per-body baked star/planet canvas. Same lifecycle as the
+  // glow/rings canvases above.
+  b.starPlanetCanvas = null;
+  // Phase 2 Step 3d: per-body offscreen render target for procedural pixi.
+  // The pixi entry's destroy pass releases the GPU side; nulling here
+  // releases the JS canvas + 2D context.
+  b._offscreenCanvas = null;
+  b._offscreenCtx = null;
 }
 
 // Desktop: size and center the wrapper when the browser window is wider/taller
@@ -2302,6 +2429,30 @@ const GAME_VERSION = '1.5.6';
 try {
   const vl = document.getElementById('versionLabel');
   if (vl) vl.textContent = 'v' + GAME_VERSION;
+} catch {}
+// Pilot-name display on the main menu — single tap opens the existing
+// rename overlay. Refreshed on every menu show + after rename completes so
+// the displayed name stays in sync with localStorage.
+function refreshPilotDisplay() {
+  try {
+    const el = document.getElementById('pilotDisplay');
+    if (!el) return;
+    const name = (typeof getUsername === 'function' && getUsername()) || '???';
+    el.textContent = 'pilot: ' + name + '  (tap to change)';
+  } catch {}
+}
+try {
+  const pd = document.getElementById('pilotDisplay');
+  if (pd) {
+    pd.addEventListener('click', () => {
+      try { SFX && SFX.clickSecondary && SFX.clickSecondary(); } catch {}
+      // Reuse the existing rename flow; refresh the label after confirm so
+      // the new name shows immediately without waiting for the next overlay
+      // class change.
+      showUsernamePrompt(refreshPilotDisplay);
+    });
+  }
+  refreshPilotDisplay();
 } catch {}
 let sessionId = null;
 try {
@@ -3943,7 +4094,10 @@ function initPixiStars() {
     //   1. pixiBgLayer       (bg imagery, SCREEN-blended image + vignette)
     //   2. pixiNebulaSprite  (nebula, NORMAL blend on top of bg)
     //   3. star sprites      (stars, NORMAL blend on top of nebula)
-    // This matches the original Canvas 2D paint order exactly.
+    //   4. pixiBodyLayer     (per-body glow + outer rings, NORMAL blend)
+    // Player and body sprites remain on #c (z-index 0), rendered above this
+    // entire pixi stage (at z-index -1). Order preserves the original Canvas
+    // 2D paint order: bg → nebula → stars → body-glow → body-sprite → player.
     pixiBgLayer = new PIXI.Container();
     pixiApp.stage.addChild(pixiBgLayer);
     pixiNebulaSprite = new PIXI.Sprite(PIXI.Texture.from(nebulaCanvas));
@@ -3960,6 +4114,21 @@ function initPixiStars() {
       pixiApp.stage.addChild(wrap);
       pixiStarBuckets.push({ tex, main, wrap });
     }
+    pixiBodyLayer = new PIXI.Container();
+    pixiApp.stage.addChild(pixiBodyLayer);
+    pixiBodySpriteLayer = new PIXI.Container();
+    pixiApp.stage.addChild(pixiBodySpriteLayer);
+    // Step 3c: effects layer sits on top of body sprites within pixi. Target
+    // ring + dashed line draw above their target body; preview outlines draw
+    // above all bodies. Three Graphics children — clear+redraw each frame.
+    pixiBodyEffectsLayer = new PIXI.Container();
+    pixiApp.stage.addChild(pixiBodyEffectsLayer);
+    pixiTargetRingGraphics = new PIXI.Graphics();
+    pixiTargetLineGraphics = new PIXI.Graphics();
+    pixiPreviewOutlinesGraphics = new PIXI.Graphics();
+    pixiBodyEffectsLayer.addChild(pixiTargetRingGraphics);
+    pixiBodyEffectsLayer.addChild(pixiTargetLineGraphics);
+    pixiBodyEffectsLayer.addChild(pixiPreviewOutlinesGraphics);
     pixiActive = true;
   } catch (err) {
     console.warn('[pixi] init failed, falling back to Canvas 2D stars:', err);
@@ -4069,6 +4238,345 @@ function updatePixiBgObjects() {
   }
 }
 
+// Build per-body auxiliary canvases (glow + outer rings) on first encounter.
+// These are baked once at the body's max reference dimensions, then scaled +
+// alpha-modulated each frame by pixi. Rebuilding them per frame would defeat
+// the purpose — the whole point of moving glow/rings to pixi is to drop the
+// per-frame Canvas 2D gradient + arc+fill calls.
+function buildBodyAuxCanvases(b) {
+  // Canvas size is forced even so size/2 is an integer pixel — this is the
+  // exact point where pixi's anchor(0.5) lands, and where every gradient /
+  // arc center is placed. If any of those three drift apart, the pixi sprite
+  // scales around a non-visible-center point and the glow slides off the
+  // body (the Step 3 regression users reported).
+  if (!b.glowCanvas) {
+    // 2px of padding past cachedMaxGlowR on every side, rounded up to even.
+    let size = Math.ceil(b.cachedMaxGlowR) * 2 + 4;
+    if (size % 2 !== 0) size += 1;
+    const gc = document.createElement('canvas');
+    gc.width = size; gc.height = size;
+    const gctx = gc.getContext('2d');
+    const cx = size / 2, cy = size / 2;
+    // Recreate the spawn-time glow gradient on this per-body canvas. Inner
+    // stop at 0.4*radius and outer at cachedMaxGlowR — matches spawnBody().
+    const grad = gctx.createRadialGradient(cx, cy, b.radius * 0.4, cx, cy, b.cachedMaxGlowR);
+    grad.addColorStop(0, b.glowColor);
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
+    gctx.fillStyle = grad;
+    gctx.beginPath();
+    gctx.arc(cx, cy, b.cachedMaxGlowR, 0, Math.PI * 2);
+    gctx.fill();
+    b.glowCanvas = gc;
+  }
+  if (!b.ringsCanvas) {
+    const rOuter = b.radius * 3.5;
+    // Pad past the outermost stroke by 2px then even-round. lineWidth=1 adds
+    // ±0.5px anti-aliased spread — the pad absorbs that without clipping.
+    let rsize = Math.ceil(rOuter) * 2 + 4;
+    if (rsize % 2 !== 0) rsize += 1;
+    const rc = document.createElement('canvas');
+    rc.width = rsize; rc.height = rsize;
+    const rctx = rc.getContext('2d');
+    const cx = rsize / 2, cy = rsize / 2;
+    rctx.strokeStyle = b.type === 'blackhole' ? 'rgba(160,70,255,1)' : b.glowColor;
+    rctx.lineWidth = 1;
+    rctx.beginPath(); rctx.arc(cx, cy, b.radius * 2,   0, Math.PI * 2); rctx.stroke();
+    rctx.beginPath(); rctx.arc(cx, cy, b.radius * 3.5, 0, Math.PI * 2); rctx.stroke();
+    b.ringsCanvas = rc;
+  }
+}
+
+// Per-frame sync for body glow + outer rings. Mirrors the original Canvas 2D
+// math: glow alpha = 0.32 * pulse, arc radius scales with 2.6..2.95 * radius;
+// rings alpha pulses at 0.05 + 0.03*sin(pulse*1.4). Map key is the body object
+// itself (GC-safe given we cull each frame).
+function updatePixiBodyLayer() {
+  if (!pixiActive || !pixiBodyLayer) return;
+  const live = new Set();
+  for (const b of bodies) {
+    live.add(b);
+    buildBodyAuxCanvases(b);
+    let entry = pixiBodyEntries.get(b);
+    if (!entry) {
+      const glowSprite = new PIXI.Sprite(PIXI.Texture.from(b.glowCanvas));
+      glowSprite.anchor.set(0.5);
+      const ringsSprite = new PIXI.Sprite(PIXI.Texture.from(b.ringsCanvas));
+      ringsSprite.anchor.set(0.5);
+      pixiBodyLayer.addChild(glowSprite);
+      pixiBodyLayer.addChild(ringsSprite);
+      entry = { glowSprite, ringsSprite };
+      pixiBodyEntries.set(b, entry);
+    }
+    const pulse = Math.sin(b.pulse) * 0.3 + 0.7;
+    const glowR = b.radius * (2.6 + Math.sin(b.pulse) * 0.35);
+    entry.glowSprite.x = b.x;
+    entry.glowSprite.y = b.y;
+    entry.glowSprite.alpha = 0.32 * pulse;
+    entry.glowSprite.scale.set(b.cachedMaxGlowR > 0 ? glowR / b.cachedMaxGlowR : 1);
+    entry.ringsSprite.x = b.x;
+    entry.ringsSprite.y = b.y;
+    entry.ringsSprite.alpha = Math.max(0, 0.05 + 0.03 * Math.sin(b.pulse * 1.4));
+  }
+  if (pixiBodyEntries.size > live.size) {
+    for (const [b, entry] of pixiBodyEntries) {
+      if (live.has(b)) continue;
+      try { pixiBodyLayer.removeChild(entry.glowSprite); } catch {}
+      try { pixiBodyLayer.removeChild(entry.ringsSprite); } catch {}
+      // Textures are unique per body (not shared via Texture.from cache —
+      // each body builds its own canvas), so it's safe to release them.
+      try { entry.glowSprite.destroy({ children: false, texture: true, baseTexture: true }); } catch {}
+      try { entry.ringsSprite.destroy({ children: false, texture: true, baseTexture: true }); } catch {}
+      pixiBodyEntries.delete(b);
+    }
+  }
+}
+
+// Step 3b: per-frame sync for body sprites whose cached canvas IS the entire
+// visible body (blackhole, mirror). Other atlas-using types (eye, skull,
+// screaming, heart) have procedural pre-content drawn on #c that would
+// occlude a behind-#c pixi sprite — they are intentionally NOT handled here
+// and continue rendering fully on #c. drawBlackhole() / drawMirror() skip
+// their drawImage call when pixiActive AND a sprite is present.
+//
+// Texture sharing: blackhole uses planetSpriteCache.blackhole.canvas (one
+// shared canvas for all blackholes). mirror uses per-body b.mirrorCanvas.
+// PIXI.Texture.from(canvas) caches by canvas reference, so blackhole sprites
+// share a single GPU texture; mirror sprites get their own.
+// Step 3d: per-type canvas-size factor for the procedural off-screen target.
+// Each body's draw extends to roughly factor*radius from center. Set per type
+// to fit the maximum visible feature (shockwaves, tentacle arms, void aura).
+const PROCEDURAL_BODY_FACTORS = {
+  toothed: 2.0, eye: 1.5, cracked: 1.5, tentacle: 2.5,
+  screaming: 4.0, void: 4.5, heart: 2.5, skull: 1.5,
+};
+const PROCEDURAL_BODY_DRAWERS = {
+  toothed: drawToothed, eye: drawEye, cracked: drawCracked,
+  tentacle: drawTentacle, screaming: drawScreaming, void: drawVoid,
+  heart: drawHeart, skull: drawSkull,
+};
+
+function updatePixiBodySpriteLayer() {
+  if (!pixiActive || !pixiBodySpriteLayer) return;
+  const live = new Set();
+  for (const b of bodies) {
+    let sourceCanvas = null;
+    let displaySize = 0;
+    let isProcedural = false;
+    if (b.type === 'blackhole') {
+      const sp = planetSpriteCache && planetSpriteCache.blackhole;
+      if (sp && sp.canvas) {
+        sourceCanvas = sp.canvas;
+        // Match drawBlackhole's existing scale math.
+        displaySize = PLANET_SPRITE_SIZE * (b.radius / sp.refRadius);
+      }
+    } else if (b.type === 'mirror') {
+      if (b.mirrorCanvas) {
+        sourceCanvas = b.mirrorCanvas;
+        displaySize = b.mirrorCanvas.width;
+      }
+    } else if (b.type === 'star' || b.type === 'planet') {
+      // Lazy per-body bake. b.cachedFill is bound to the global ctx and isn't
+      // safe to reuse on a different ctx, so we recreate the gradient on the
+      // body's own offscreen canvas. Static after spawn — built once.
+      if (!b.starPlanetCanvas) {
+        let size = Math.ceil(b.radius) * 2 + 4;
+        if (size % 2 !== 0) size += 1;
+        const c = document.createElement('canvas');
+        c.width = size; c.height = size;
+        const cctx = c.getContext('2d');
+        const cx = size / 2, cy = size / 2;
+        const grad = cctx.createRadialGradient(cx - b.radius * 0.28, cy - b.radius * 0.28, 0, cx, cy, b.radius);
+        grad.addColorStop(0, '#fff');
+        grad.addColorStop(0.3, b.color);
+        grad.addColorStop(1, 'rgba(0,0,0,0.5)');
+        cctx.fillStyle = grad;
+        cctx.beginPath();
+        cctx.arc(cx, cy, b.radius, 0, Math.PI * 2);
+        cctx.fill();
+        b.starPlanetCanvas = c;
+      }
+      sourceCanvas = b.starPlanetCanvas;
+      displaySize = b.starPlanetCanvas.width;
+    } else {
+      // Step 3d: procedural body types render every frame to a per-body
+      // offscreen canvas via the existing drawXxx functions (now ctx-aware
+      // through the (b, tctx) refactor). Pre-translate the offscreen ctx so
+      // absolute body-coord arc/moveTo calls land at the canvas center; the
+      // pixi sprite then places that center at b.x, b.y.
+      const factor = PROCEDURAL_BODY_FACTORS[b.type];
+      const drawer = PROCEDURAL_BODY_DRAWERS[b.type];
+      if (!factor || !drawer) continue;
+      if (!b._offscreenCanvas) {
+        let size = Math.ceil(b.radius * factor) * 2 + 8;
+        if (size % 2 !== 0) size += 1;
+        b._offscreenCanvas = document.createElement('canvas');
+        b._offscreenCanvas.width = size;
+        b._offscreenCanvas.height = size;
+        b._offscreenCtx = b._offscreenCanvas.getContext('2d');
+      }
+      const ofc = b._offscreenCanvas;
+      const ofx = b._offscreenCtx;
+      const cx = ofc.width / 2, cy = ofc.height / 2;
+      ofx.save();
+      ofx.setTransform(1, 0, 0, 1, 0, 0);
+      ofx.clearRect(0, 0, ofc.width, ofc.height);
+      // Bias so arc(b.x, b.y, ...) lands at canvas center.
+      ofx.translate(cx - b.x, cy - b.y);
+      try { drawer(b, ofx); }
+      catch (err) { console.error('[pixi-body] ' + b.type + ' threw, skipping frame', err); }
+      ofx.restore();
+      sourceCanvas = ofc;
+      displaySize = ofc.width;
+      isProcedural = true;
+    }
+    if (!sourceCanvas) continue;
+    live.add(b);
+    let entry = pixiBodySpriteEntries.get(b);
+    if (!entry || entry.sourceCanvas !== sourceCanvas) {
+      // Source canvas changed (or first time). Build a fresh sprite. For the
+      // shared blackhole canvas this only fires once; for per-body canvases
+      // (mirror / star / planet / procedural offscreen) it fires once on
+      // first render of the body.
+      if (entry) {
+        try { pixiBodySpriteLayer.removeChild(entry.sprite); } catch {}
+        const destroyTex = entry.sourceCanvas !== (planetSpriteCache && planetSpriteCache.blackhole && planetSpriteCache.blackhole.canvas);
+        try { entry.sprite.destroy({ children: false, texture: destroyTex, baseTexture: destroyTex }); } catch {}
+      }
+      const sprite = new PIXI.Sprite(PIXI.Texture.from(sourceCanvas));
+      sprite.anchor.set(0.5);
+      pixiBodySpriteLayer.addChild(sprite);
+      entry = { sprite, sourceCanvas, displaySize, isProcedural };
+      pixiBodySpriteEntries.set(b, entry);
+    }
+    entry.sprite.x = b.x;
+    entry.sprite.y = b.y;
+    entry.sprite.width = displaySize;
+    entry.sprite.height = displaySize;
+    // Procedural types repaint their canvas every frame; force GPU re-upload.
+    if (isProcedural && entry.sprite.texture && entry.sprite.texture.baseTexture) {
+      try { entry.sprite.texture.baseTexture.update(); } catch {}
+    }
+  }
+  if (pixiBodySpriteEntries.size > live.size) {
+    for (const [b, entry] of pixiBodySpriteEntries) {
+      if (live.has(b)) continue;
+      try { pixiBodySpriteLayer.removeChild(entry.sprite); } catch {}
+      const destroyTex = entry.sourceCanvas !== (planetSpriteCache && planetSpriteCache.blackhole && planetSpriteCache.blackhole.canvas);
+      try { entry.sprite.destroy({ children: false, texture: destroyTex, baseTexture: destroyTex }); } catch {}
+      pixiBodySpriteEntries.delete(b);
+    }
+  }
+}
+
+// Step 3c: target highlight ring + dashed targeting line + (dev-only) preview
+// cyan outlines. All three rebuilt each frame as PIXI.Graphics — the pulses
+// and player-relative endpoints animate every frame anyway, so per-frame
+// .clear()/.draw() is the simplest faithful port. Kept on a single layer so
+// they share z-order with the body sprites that triggered the move to pixi.
+function updatePixiBodyEffectsLayer() {
+  if (!pixiActive || !pixiBodyEffectsLayer) return;
+  // Target highlight ring (drawn around the closestBody during gameplay).
+  if (pixiTargetRingGraphics) {
+    pixiTargetRingGraphics.clear();
+    if (state === 'playing' && closestBody) {
+      const b = closestBody;
+      const orbRgb = getOrbBonus().color;
+      const lineColor = leftDown ? '80,200,255' : rightDown ? '255,120,80' : orbRgb;
+      const ringR = b.radius + 5 + Math.sin(frame * 0.18) * 2;
+      const a = 0.55 + 0.25 * Math.sin(frame * 0.18);
+      const [r8, g8, b8] = lineColor.split(',').map(n => parseInt(n, 10));
+      const colorInt = (r8 << 16) | (g8 << 8) | b8;
+      pixiTargetRingGraphics.lineStyle({ width: 1.5, color: colorInt, alpha: a * 0.7 });
+      pixiTargetRingGraphics.drawCircle(b.x, b.y, ringR);
+    }
+  }
+  // Dashed targeting line — only when input is active and there's a target.
+  if (pixiTargetLineGraphics) {
+    pixiTargetLineGraphics.clear();
+    if (state === 'playing' && closestBody && (leftDown || rightDown)) {
+      const b = closestBody;
+      const orbRgb = getOrbBonus().color;
+      const baseColor = leftDown ? '80,200,255' : rightDown ? '255,120,80' : orbRgb;
+      const dashColor = playerInVoidRange ? '140,60,200' : baseColor;
+      const [r8, g8, b8] = dashColor.split(',').map(n => parseInt(n, 10));
+      const colorInt = (r8 << 16) | (g8 << 8) | b8;
+      pixiTargetLineGraphics.lineStyle({ width: 1, color: colorInt, alpha: 0.3 * 0.8 });
+      // Manual dash because PIXI.Graphics doesn't support setLineDash.
+      // 5px dash, 5px gap — matches the original ctx.setLineDash([5,5]).
+      const dx = b.x - player.x, dy = b.y - player.y;
+      const len = Math.hypot(dx, dy);
+      if (len > 0.5) {
+        const ux = dx / len, uy = dy / len;
+        const seg = 5;
+        let cur = 0;
+        let drawing = true;
+        while (cur < len) {
+          const next = Math.min(cur + seg, len);
+          if (drawing) {
+            pixiTargetLineGraphics.moveTo(player.x + ux * cur, player.y + uy * cur);
+            pixiTargetLineGraphics.lineTo(player.x + ux * next, player.y + uy * next);
+          }
+          cur = next;
+          drawing = !drawing;
+        }
+      }
+    }
+  }
+  // Dev-only preview outlines. Glow-extent ring is static (visual reference,
+  // not a hitbox); collision outline mirrors the actual per-type hitbox math
+  // from bodyHits() so we can eyeball that geometry vs. visual fidelity.
+  if (pixiPreviewOutlinesGraphics) {
+    const g = pixiPreviewOutlinesGraphics;
+    g.clear();
+    if (state === 'bodypreview') {
+      for (const b of bodies) {
+        // Outer glow extent — static dim ring.
+        g.lineStyle({ width: 1, color: 0x7DE8FF, alpha: 0.28 });
+        g.drawCircle(b.x, b.y, b.cachedMaxGlowR || (b.radius * 2.95));
+        // Collision geometry.
+        if (b.type === 'heart') {
+          const dynR = b.radius * (b.heartScale || 1);
+          g.lineStyle({ width: 1, color: 0x7DE8FF, alpha: 0.85 });
+          g.drawCircle(b.x, b.y, dynR);
+        } else if (b.type === 'tentacle') {
+          g.lineStyle({ width: 1, color: 0x7DE8FF, alpha: 0.85 });
+          g.drawCircle(b.x, b.y, b.radius);
+          // 6 arm capsules — thick translucent strokes along each live arm.
+          g.lineStyle({ width: 8, color: 0x7DE8FF, alpha: 0.5, cap: 'round' });
+          const count = b.tentacleCount;
+          for (let i = 0; i < count; i++) {
+            const ext = tentacleExtension(b.tentaclePhases[i]);
+            if (ext < 0.1) continue;
+            const angle = (i / count) * Math.PI * 2;
+            const baseX = b.x + Math.cos(angle) * b.radius;
+            const baseY = b.y + Math.sin(angle) * b.radius;
+            const reach = b.radius + b.radius * 1.2 * ext;
+            const tipX = b.x + Math.cos(angle) * reach;
+            const tipY = b.y + Math.sin(angle) * reach;
+            g.moveTo(baseX, baseY); g.lineTo(tipX, tipY);
+          }
+        } else if (b.type === 'toothed') {
+          g.lineStyle({ width: 1, color: 0x7DE8FF, alpha: 0.85 });
+          g.drawCircle(b.x, b.y, b.radius);
+          // 8 spike-tip hit circles at PLAYER_R + 6 radius (matches bodyHits).
+          const tipR = PLAYER_R + 6;
+          for (let i = 0; i < 8; i++) {
+            const a = b.toothAngle + i * (Math.PI / 4);
+            const ext = b.spikeLen * Math.abs(Math.sin(a));
+            if (ext < 0.5) continue;
+            const tipX = b.x + Math.cos(a) * (b.radius + ext);
+            const tipY = b.y + Math.sin(a) * (b.radius + ext);
+            g.drawCircle(tipX, tipY, tipR);
+          }
+        } else {
+          g.lineStyle({ width: 1, color: 0x7DE8FF, alpha: 0.85 });
+          g.drawCircle(b.x, b.y, b.radius);
+        }
+      }
+    }
+  }
+}
+
 // --- Bodies ---
 // New planet types introduced from phase 2 onward. Shared between the spawn
 // pools, the 80% scroll multiplier, and future gameplay tuning.
@@ -4106,9 +4614,17 @@ function checkGameplayPhase() {
   try { SFX.crossfadeGameplayPhase(prev, phase); } catch {}
 }
 
-function spawnBody(yBase) {
-  const pool = PHASE_POOLS[phaseForElapsed(elapsedRunSeconds())];
-  const type = pool[Math.floor(Math.random() * pool.length)];
+function spawnBody(yBase, opts) {
+  // opts is dev-only: { type?, x?, radius? }. Used by the body-preview QA page
+  // to spawn a specific type at a fixed position. Production callers pass no
+  // opts and the random phase-pool path runs unchanged.
+  let type;
+  if (opts && opts.type) {
+    type = opts.type;
+  } else {
+    const pool = PHASE_POOLS[phaseForElapsed(elapsedRunSeconds())];
+    type = pool[Math.floor(Math.random() * pool.length)];
+  }
   let radius, color, glowColor;
 
   // Base sizing + palette per type. Custom-drawn types still carry color/glow
@@ -4157,10 +4673,17 @@ function spawnBody(yBase) {
     radius = 16; color = '#888'; glowColor = 'rgba(255,255,255,0.5)';
   }
 
+  // Dev-preview override: lock radius before type-specific state init so
+  // dependent fields (spikeLen, etc.) recompute from the override.
+  if (opts && typeof opts.radius === 'number') radius = opts.radius;
+
   // 70% chance to pick a horizontal zone different from the previous spawn
   // (spreads bodies across the screen). 30% chance to pick a fully random
   // x — keeps spawn variety so the player can't lock onto a strict pattern.
   let x;
+  if (opts && typeof opts.x === 'number') {
+    x = opts.x;
+  } else {
   const useZone = lastSpawnZone < 0 || Math.random() < 0.7;
   if (useZone) {
     let zone;
@@ -4183,6 +4706,7 @@ function spawnBody(yBase) {
     x = xMin + Math.random() * (xMax - xMin);
     lastSpawnZone = Math.min(2, Math.floor(x / (W / 3)));
   }
+  } // end opts.x else
   // Defensive: never let an invalid x leak into the world; centre as fallback.
   if (isNaN(x) || x < 0 || x > W) x = W / 2;
   // And the same for the caller-supplied yBase — never spawn at NaN.
@@ -7144,6 +7668,9 @@ function drawBg() {
       }
     }
     updatePixiBgObjects();
+    updatePixiBodyLayer();
+    updatePixiBodySpriteLayer();
+    updatePixiBodyEffectsLayer();
     updatePixiStars(); // renders the entire pixi stage
     return;
   }
@@ -7182,39 +7709,54 @@ function drawBg() {
 // Run a per-body custom drawer in a try/catch so a single bad frame from a
 // new planet type can't kill the render loop. Wraps in save/restore so the
 // canvas state stays balanced even if the drawer throws mid-stream.
-function safeDrawBody(b, drawer) {
-  ctx.save();
-  try { drawer(b); }
+function safeDrawBody(b, drawer, tctx) {
+  // tctx defaults to global ctx for backward compat (#c fallback path).
+  // Step 3d: pixi pipeline passes the per-body offscreen ctx so the drawer
+  // renders into that canvas instead of #c.
+  const t = tctx || ctx;
+  t.save();
+  try { drawer(b, t); }
   catch (err) { console.error('[draw] ' + b.type + ' threw, skipping body', err); }
-  finally { ctx.restore(); }
+  finally { t.restore(); }
 }
 
 function drawBodies() {
+  // Step 3d: every body type now renders on the pixi stage (sprite + glow +
+  // rings + target ring + dashed line + preview outlines). Nothing in this
+  // function needs to run on #c when pixi is active. Fallback path below
+  // still owns full Canvas 2D rendering when pixi failed to init.
+  if (pixiActive) return;
   for (const b of bodies) {
     const isTarget = b === closestBody && state === 'playing';
     const pulse = Math.sin(b.pulse)*0.3+0.7;
     const glowR = b.radius * (2.6+Math.sin(b.pulse)*0.35);
 
-    // Glow: use cached gradient built at local origin (0,0) with max glow
-    // radius. Arc radius still varies with pulse to preserve the breathing
-    // look — the gradient just caps at the outer stop.
-    ctx.save();
-    ctx.translate(b.x, b.y);
-    ctx.globalAlpha = 0.32 * pulse;
-    ctx.fillStyle = b.cachedGlow;
-    ctx.beginPath(); ctx.arc(0, 0, glowR, 0, 6.28); ctx.fill();
-    ctx.restore();
+    // Glow: when pixi is active, this is drawn on the pixi body-layer via
+    // updatePixiBodyLayer() — skip the Canvas 2D pass. Otherwise use the
+    // cached gradient built at local origin (0,0) with max glow radius; arc
+    // radius still varies with pulse to preserve the breathing look.
+    if (!pixiActive) {
+      ctx.save();
+      ctx.translate(b.x, b.y);
+      ctx.globalAlpha = 0.32 * pulse;
+      ctx.fillStyle = b.cachedGlow;
+      ctx.beginPath(); ctx.arc(0, 0, glowR, 0, 6.28); ctx.fill();
+      ctx.restore();
+    }
 
     // Body
     ctx.globalAlpha=1;
     if (b.type === 'blackhole') {
       drawBlackhole(b);
     } else if (b.type === 'star' || b.type === 'planet') {
-      ctx.save();
-      ctx.translate(b.x, b.y);
-      ctx.fillStyle = b.cachedFill;
-      ctx.beginPath(); ctx.arc(0, 0, b.radius, 0, 6.28); ctx.fill();
-      ctx.restore();
+      // Step 3c: pixi handles star/planet via updatePixiBodySpriteLayer.
+      if (!pixiActive) {
+        ctx.save();
+        ctx.translate(b.x, b.y);
+        ctx.fillStyle = b.cachedFill;
+        ctx.beginPath(); ctx.arc(0, 0, b.radius, 0, 6.28); ctx.fill();
+        ctx.restore();
+      }
     } else if (b.type === 'toothed')   safeDrawBody(b, drawToothed);
     else if (b.type === 'eye')         safeDrawBody(b, drawEye);
     else if (b.type === 'cracked')     safeDrawBody(b, drawCracked);
@@ -7225,8 +7767,9 @@ function drawBodies() {
     else if (b.type === 'mirror')      safeDrawBody(b, drawMirror);
     else if (b.type === 'skull')       safeDrawBody(b, drawSkull);
 
-    // Target indicator: bright ring + line to player when active
-    if (isTarget) {
+    // Target indicator: bright ring + line to player when active.
+    // Step 3c: pixi handles both via updatePixiBodyEffectsLayer.
+    if (isTarget && !pixiActive) {
       const orbRgb = getOrbBonus().color;
       const lineColor = leftDown ? 'rgba(80,200,255,' : rightDown ? 'rgba(255,120,80,' : `rgba(${orbRgb},`;
       ctx.globalAlpha = 0.55 + 0.25*Math.sin(frame*0.18);
@@ -7247,18 +7790,26 @@ function drawBodies() {
       }
     }
 
-    // Subtle rings always
-    ctx.globalAlpha = 0.05+0.03*Math.sin(b.pulse*1.4);
-    ctx.strokeStyle = b.type==='blackhole'?'rgba(160,70,255,1)':b.glowColor;
-    ctx.lineWidth=1;
-    [b.radius*2, b.radius*3.5].forEach(r=>{ ctx.beginPath(); ctx.arc(b.x,b.y,r,0,6.28); ctx.stroke(); });
-    ctx.globalAlpha=1;
+    // Subtle outer rings — also drawn by the pixi body-layer when active.
+    if (!pixiActive) {
+      ctx.globalAlpha = 0.05+0.03*Math.sin(b.pulse*1.4);
+      ctx.strokeStyle = b.type==='blackhole'?'rgba(160,70,255,1)':b.glowColor;
+      ctx.lineWidth=1;
+      [b.radius*2, b.radius*3.5].forEach(r=>{ ctx.beginPath(); ctx.arc(b.x,b.y,r,0,6.28); ctx.stroke(); });
+      ctx.globalAlpha=1;
+    }
   }
 }
 
-function drawBlackhole(b) {
+function drawBlackhole(b, tctx = ctx) {
+  const ctx = tctx;
   const sprite = planetSpriteCache.blackhole;
   if (sprite) {
+    // Step 3b: pixi handles the sprite via updatePixiBodySpriteLayer. Returning
+    // here also skips the procedural fallback below — that fallback only runs
+    // if the cached sprite is missing, which is the same condition under which
+    // pixi can't show the sprite either.
+    if (pixiActive) return;
     // Scale the 80x80 sprite to match this body's radius.
     const scale = b.radius / sprite.refRadius;
     const size = PLANET_SPRITE_SIZE * scale;
@@ -7276,7 +7827,8 @@ function drawBlackhole(b) {
   ctx.beginPath(); ctx.arc(b.x,b.y,b.radius+1.5,0,6.28); ctx.stroke();
 }
 
-function drawToothed(b) {
+function drawToothed(b, tctx = ctx) {
+  const ctx = tctx;
   ctx.save();
   // Slow pulsing red glow between spikes.
   const glowPulse = 0.45 + 0.35 * Math.abs(Math.sin(Date.now() * 0.002));
@@ -7367,7 +7919,8 @@ function drawToothed(b) {
   ctx.restore();
 }
 
-function drawEye(b) {
+function drawEye(b, tctx = ctx) {
+  const ctx = tctx;
   ctx.save();
   // Eyeball base.
   const pulseR = b.radius + Math.sin(b.eyePulse) * 3;
@@ -7433,7 +7986,8 @@ function drawEye(b) {
   ctx.restore();
 }
 
-function drawCracked(b) {
+function drawCracked(b, tctx = ctx) {
+  const ctx = tctx;
   ctx.save();
   // Base planet (darker).
   const grad = ctx.createRadialGradient(b.x - b.radius*0.28, b.y - b.radius*0.28, 0, b.x, b.y, b.radius);
@@ -7491,7 +8045,8 @@ function drawCracked(b) {
   ctx.restore();
 }
 
-function drawTentacle(b) {
+function drawTentacle(b, tctx = ctx) {
+  const ctx = tctx;
   ctx.save();
   const count = b.tentacleCount;
   const STEPS = 10; // segments per tentacle
@@ -7587,7 +8142,8 @@ function quadPt(x0, y0, x1, y1, x2, y2, u) {
   };
 }
 
-function drawScreaming(b) {
+function drawScreaming(b, tctx = ctx) {
+  const ctx = tctx;
   ctx.save();
   const p = b.screamPhase;
   // mouthT = 0 closed, 1 fully open.
@@ -7637,13 +8193,13 @@ function drawScreaming(b) {
   const hotTintBucket = Math.round(mouthT * 5); // 0..5
   const hotTint = (hotTintBucket / 5) * 40;
   const screamKey = 'scream_base_' + Math.round(b.radius) + '_' + hotTintBucket;
-  const baseGrad = getCachedGradient(screamKey, () => {
-    const g = ctx.createRadialGradient(-b.radius*0.3, -b.radius*0.3, 0, 0, 0, b.radius);
+  const baseGrad = getCachedGradient(screamKey, (c) => {
+    const g = c.createRadialGradient(-b.radius*0.3, -b.radius*0.3, 0, 0, 0, b.radius);
     g.addColorStop(0, `rgb(${96 + hotTint},78,70)`);
     g.addColorStop(0.6, `rgb(${74 + hotTint},64,58)`);
     g.addColorStop(1, '#3a2e28');
     return g;
-  });
+  }, ctx);
   ctx.save();
   ctx.translate(b.x, b.y);
   ctx.fillStyle = baseGrad;
@@ -7794,7 +8350,8 @@ function drawScreaming(b) {
   ctx.restore();
 }
 
-function drawVoid(b) {
+function drawVoid(b, tctx = ctx) {
+  const ctx = tctx;
   ctx.save();
   // Dashed boundary at the exact repel-zone edge (radius*4). Rotates slowly
   // so the edge reads as an active force field.
@@ -7818,12 +8375,12 @@ function drawVoid(b) {
   // Dark aura.
   const auraR = b.radius * 2;
   const voidAuraKey = 'void_aura_' + Math.round(b.radius);
-  const aura = getCachedGradient(voidAuraKey, () => {
-    const g = ctx.createRadialGradient(0, 0, b.radius, 0, 0, auraR);
+  const aura = getCachedGradient(voidAuraKey, (c) => {
+    const g = c.createRadialGradient(0, 0, b.radius, 0, 0, auraR);
     g.addColorStop(0, 'rgba(0,0,0,0.4)');
     g.addColorStop(1, 'rgba(0,0,0,0)');
     return g;
-  });
+  }, ctx);
   ctx.save();
   ctx.translate(b.x, b.y);
   ctx.fillStyle = aura;
@@ -7876,7 +8433,8 @@ function drawVoid(b) {
   ctx.restore();
 }
 
-function drawHeart(b) {
+function drawHeart(b, tctx = ctx) {
+  const ctx = tctx;
   ctx.save();
   const s = b.heartScale || 1;
   // Asymmetric squeeze: top contracts while bottom expands (systolic feel).
@@ -7926,13 +8484,13 @@ function drawHeart(b) {
     // Blob.
     const points = 16;
     const heartKey = 'heart_base_' + Math.round(w);
-    const fill = getCachedGradient(heartKey, () => {
-      const g = ctx.createRadialGradient(-w * 0.35, -w * 0.3, 0, 0, 0, w * 1.2);
+    const fill = getCachedGradient(heartKey, (c) => {
+      const g = c.createRadialGradient(-w * 0.35, -w * 0.3, 0, 0, 0, w * 1.2);
       g.addColorStop(0, '#cc0000');
       g.addColorStop(0.5, '#8b0000');
       g.addColorStop(1, '#3d0000');
       return g;
-    });
+    }, ctx);
     ctx.save();
     ctx.translate(b.x, b.y);
     ctx.fillStyle = fill;
@@ -8004,12 +8562,15 @@ function drawHeart(b) {
   ctx.restore();
 }
 
-function drawMirror(b) {
+function drawMirror(b, tctx = ctx) {
+  const ctx = tctx;
   ctx.save();
   // Entire mirror body (chrome sphere + reflected stars + crescent highlight
   // + dark rim) is baked into b.mirrorCanvas at spawn — everything is
   // seeded-static. Falls back to the original draw path if the builder failed.
   if (b.mirrorCanvas) {
+    // Step 3b: pixi handles the sprite via updatePixiBodySpriteLayer.
+    if (pixiActive) { ctx.restore(); return; }
     const ms = b.mirrorCanvas.width;
     ctx.drawImage(b.mirrorCanvas, b.x - ms / 2, b.y - ms / 2);
     ctx.restore();
@@ -8053,7 +8614,8 @@ function drawMirror(b) {
   ctx.restore();
 }
 
-function drawSkull(b) {
+function drawSkull(b, tctx = ctx) {
+  const ctx = tctx;
   const r = b.radius;
   const pal = b.skullPalette || { top: '#3a6b38', mid: '#5a8a3c', low: '#6d5a30' };
 
@@ -9136,6 +9698,9 @@ function render() {
   drawBg();
   drawBodies();
   drawCrackFragments();
+  // Step 3c: when pixi is active, preview outlines are drawn via the pixi
+  // effects layer so they share the body sprites' coordinate system.
+  if (state === 'bodypreview' && !pixiActive) drawPreviewOutlines();
 
   // Hyperspeed gold tint over the world
   if (activeEffects.hyperspeed > 0 && hyperspeedCurrentMult > 1.05) {
@@ -9211,6 +9776,12 @@ function loop() {
     } catch (err) {
       console.error('[loop] cleanupEffects() threw, skipping', err);
       recordError('cleanup', err);
+    }
+    // Dev body-preview animation tick. update() is gated to state==='playing'
+    // so without this the preview bodies would freeze after spawn.
+    if (state === 'bodypreview') {
+      try { tickPreviewAnimations(); }
+      catch (err) { console.error('[loop] tickPreviewAnimations threw, skipping', err); }
     }
     try {
       render();
@@ -9308,6 +9879,12 @@ document.getElementById('startBtn').addEventListener('click', ()=>{
   if (state !== 'idle' && state !== 'dead') return;
   SFX.init();
   SFX.clickPrimary();
+  // DEV cheat: pilot name "BODYPREVIEW" diverts to the internal QA page
+  // instead of starting a run. Removed/gated before v1.6.0.
+  if (getUsername() === 'BODYPREVIEW') {
+    enterBodyPreview();
+    return;
+  }
   // Sentry fire-test cheat: pilot name "SENTRY" triggers a tagged test event
   // on start so a tester can verify the crash-reporting pipeline end-to-end.
   // flush() waits up to 2s for the beacon to actually leave the device.
@@ -11130,6 +11707,195 @@ function preloadAll() {
     }
   }, 15000);
 }
+
+// ---------------------------------------------------------------------------
+// DEV: body-preview QA page. Pilot name "BODYPREVIEW" + ENTER THE VOID opens
+// a vertical scrollable list of all 12 body types at r=50, rendered through
+// the production drawBodies() / updatePixiBodyLayer() pipeline so we get a
+// faithful preview without surviving to phase-3/4. Internal tooling — do
+// NOT expose in user-facing menus. Remove or gate before v1.6.0 ships.
+// ---------------------------------------------------------------------------
+const PREVIEW_TYPES = [
+  'star', 'planet', 'blackhole', 'toothed', 'eye', 'cracked',
+  'tentacle', 'screaming', 'void', 'heart', 'mirror', 'skull',
+];
+const PREVIEW_RADIUS = 50;
+const PREVIEW_BASE_Y = 200;
+const PREVIEW_SPACING = 280;
+let previewScrollEl = null;
+let previewSavedBodies = null;
+
+function buildBodyPreviewLabels() {
+  const spacer = document.getElementById('bodyPreviewSpacer');
+  spacer.innerHTML = '';
+  const totalH = PREVIEW_BASE_Y + PREVIEW_TYPES.length * PREVIEW_SPACING;
+  spacer.style.height = totalH + 'px';
+  for (let i = 0; i < PREVIEW_TYPES.length; i++) {
+    const y = PREVIEW_BASE_Y + i * PREVIEW_SPACING + PREVIEW_RADIUS + 24;
+    const el = document.createElement('div');
+    el.className = 'bp-label';
+    el.style.top = y + 'px';
+    el.textContent = PREVIEW_TYPES[i].toUpperCase();
+    spacer.appendChild(el);
+  }
+}
+
+function enterBodyPreview() {
+  state = 'bodypreview';
+  // Stash the live bodies array so re-entering main menu later restores any
+  // edge-case state (in practice it should be empty in 'idle', but be safe).
+  previewSavedBodies = bodies;
+  bodies = [];
+  for (let i = 0; i < PREVIEW_TYPES.length; i++) {
+    const t = PREVIEW_TYPES[i];
+    const baseY = PREVIEW_BASE_Y + i * PREVIEW_SPACING;
+    const b = spawnBody(baseY, { type: t, x: W / 2, radius: PREVIEW_RADIUS });
+    b._previewBaseY = baseY;
+    bodies.push(b);
+  }
+  buildBodyPreviewLabels();
+  document.getElementById('overlay').classList.add('hidden');
+  const ov = document.getElementById('bodyPreviewOverlay');
+  ov.classList.add('visible');
+  previewScrollEl = document.getElementById('bodyPreviewScroll');
+  previewScrollEl.scrollTop = 0;
+  // FPS counter on this page — bypass the pauseBtn-mirrored toggle.
+  document.getElementById('fpsCounter').classList.add('visible');
+}
+
+function exitBodyPreview() {
+  document.getElementById('bodyPreviewOverlay').classList.remove('visible');
+  document.getElementById('overlay').classList.remove('hidden');
+  document.getElementById('fpsCounter').classList.remove('visible');
+  bodies = previewSavedBodies || [];
+  previewSavedBodies = null;
+  previewScrollEl = null;
+  state = 'idle';
+}
+
+// Per-frame ticks for preview-mode bodies. Mirrors only the visual-animation
+// fields touched in updateBodyTypes (no SFX, no fragment spawns, no physics,
+// no player.x reads — those would need a real game session).
+function tickPreviewAnimations() {
+  const scrollY = previewScrollEl ? previewScrollEl.scrollTop : 0;
+  for (const b of bodies) {
+    if (typeof b._previewBaseY === 'number') b.y = b._previewBaseY - scrollY;
+    b.pulse = (b.pulse || 0) + 0.038;
+    if      (b.type === 'toothed') b.toothAngle = (b.toothAngle || 0) + 0.02;
+    else if (b.type === 'eye') {
+      b.eyePulse = (b.eyePulse || 0) + 0.08;
+      // Pupil tracks center of viewport so it visibly moves.
+      const dx = (W / 2) - b.x, dy = (H / 2) - b.y;
+      const mag = Math.hypot(dx, dy) || 1;
+      const maxOff = b.radius * 0.3;
+      b.pupilDx = (dx / mag) * maxOff;
+      b.pupilDy = (dy / mag) * maxOff;
+    }
+    else if (b.type === 'tentacle') {
+      for (let i = 0; i < b.tentaclePhases.length; i++) {
+        b.tentaclePhases[i] += 1 / 60;
+        if (b.tentaclePhases[i] >= 3.5) b.tentaclePhases[i] -= 3.5;
+      }
+    }
+    else if (b.type === 'screaming') {
+      b.screamPhase = (b.screamPhase || 0) + 1 / 60;
+      if (b.screamPhase >= 6) b.screamPhase -= 6;
+      const p = b.screamPhase;
+      const wasScreaming = b.screamActive;
+      b.screamActive = (p >= 4.5 && p < 5.5);
+      if (b.screamActive && !wasScreaming) {
+        b.screamSurgeFrames = 48;
+        b.shockwaves.push({ age: 0, maxLife: 28 });
+        if (!b.contractRings) b.contractRings = [];
+        b.contractRings.push({ age:   0, maxLife: 48 });
+        b.contractRings.push({ age: -16, maxLife: 48 });
+        b.contractRings.push({ age: -32, maxLife: 48 });
+      }
+      if (b.screamSurgeFrames > 0) b.screamSurgeFrames--;
+      if (b.shockwaves.length) {
+        for (const sw of b.shockwaves) sw.age++;
+        b.shockwaves = b.shockwaves.filter(sw => sw.age < sw.maxLife);
+      }
+      if (b.contractRings && b.contractRings.length) {
+        for (const cr of b.contractRings) cr.age++;
+        b.contractRings = b.contractRings.filter(cr => cr.age < cr.maxLife);
+      }
+    }
+    else if (b.type === 'void')  b.voidPulse = (b.voidPulse || 0) + 0.03;
+    else if (b.type === 'heart') {
+      const hz = 0.6;
+      b.heartPhase = (b.heartPhase || 0) + hz * (1 / 60) * 2 * Math.PI;
+      b.heartScale = 1 + 0.225 * (1 + Math.sin(b.heartPhase));
+    }
+    else if (b.type === 'cracked') {
+      if (b.eruptFlash > 0) b.eruptFlash--;
+    }
+  }
+}
+
+// Outline reference rings for preview: thin cyan at collision radius, dimmer
+// cyan at cachedMaxGlowR. Drawn on #c after drawBodies() so they sit on top
+// of the body sprite (visual ruler, not part of production rendering).
+function drawPreviewOutlines() {
+  for (const b of bodies) {
+    ctx.save();
+    // Outer glow extent — static dim ring (visual reference, not a hitbox).
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = 'rgba(125,232,255,0.28)';
+    ctx.beginPath(); ctx.arc(b.x, b.y, b.cachedMaxGlowR || (b.radius * 2.95), 0, Math.PI * 2); ctx.stroke();
+    // Collision geometry — mirrors per-type bodyHits().
+    if (b.type === 'heart') {
+      const dynR = b.radius * (b.heartScale || 1);
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = 'rgba(125,232,255,0.85)';
+      ctx.beginPath(); ctx.arc(b.x, b.y, dynR, 0, Math.PI * 2); ctx.stroke();
+    } else if (b.type === 'tentacle') {
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = 'rgba(125,232,255,0.85)';
+      ctx.beginPath(); ctx.arc(b.x, b.y, b.radius, 0, Math.PI * 2); ctx.stroke();
+      // 6 arm capsules — thick translucent strokes along each live arm.
+      ctx.lineWidth = 8;
+      ctx.strokeStyle = 'rgba(125,232,255,0.5)';
+      ctx.lineCap = 'round';
+      const count = b.tentacleCount;
+      for (let i = 0; i < count; i++) {
+        const ext = tentacleExtension(b.tentaclePhases[i]);
+        if (ext < 0.1) continue;
+        const angle = (i / count) * Math.PI * 2;
+        const baseX = b.x + Math.cos(angle) * b.radius;
+        const baseY = b.y + Math.sin(angle) * b.radius;
+        const reach = b.radius + b.radius * 1.2 * ext;
+        const tipX = b.x + Math.cos(angle) * reach;
+        const tipY = b.y + Math.sin(angle) * reach;
+        ctx.beginPath(); ctx.moveTo(baseX, baseY); ctx.lineTo(tipX, tipY); ctx.stroke();
+      }
+    } else if (b.type === 'toothed') {
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = 'rgba(125,232,255,0.85)';
+      ctx.beginPath(); ctx.arc(b.x, b.y, b.radius, 0, Math.PI * 2); ctx.stroke();
+      // 8 spike-tip hit circles at PLAYER_R + 6 radius (matches bodyHits).
+      const tipR = PLAYER_R + 6;
+      for (let i = 0; i < 8; i++) {
+        const a = b.toothAngle + i * (Math.PI / 4);
+        const ext = b.spikeLen * Math.abs(Math.sin(a));
+        if (ext < 0.5) continue;
+        const tipX = b.x + Math.cos(a) * (b.radius + ext);
+        const tipY = b.y + Math.sin(a) * (b.radius + ext);
+        ctx.beginPath(); ctx.arc(tipX, tipY, tipR, 0, Math.PI * 2); ctx.stroke();
+      }
+    } else {
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = 'rgba(125,232,255,0.85)';
+      ctx.beginPath(); ctx.arc(b.x, b.y, b.radius, 0, Math.PI * 2); ctx.stroke();
+    }
+    ctx.restore();
+  }
+}
+
+document.getElementById('bodyPreviewClose').addEventListener('click', () => {
+  try { SFX.clickSecondary && SFX.clickSecondary(); } catch {}
+  exitBodyPreview();
+});
 
 initBgStars(); initBodies();
 initPixiStars();
