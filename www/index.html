@@ -10629,13 +10629,26 @@ function drawDeathShards() {
 
 function render() {
   ctx.save();
-  // Screen shake
+  // Screen shake. Step 7: route shake to the pixi stage when active so the
+  // entire rendered scene (bodies, player, particles, overlays) shakes in
+  // lockstep. #c shake kept for the non-pixi fallback path. Stage offset is
+  // reset to zero on frames without shake so the scene returns to origin.
   if (screenShake > 0) {
     const intensity = screenShake * 0.6;
     const sx = (Math.random() - 0.5) * intensity * 2;
     const sy = (Math.random() - 0.5) * intensity * 2;
-    ctx.translate(sx, sy);
+    if (pixiActive && pixiApp && pixiApp.stage) {
+      pixiApp.stage.x = sx;
+      pixiApp.stage.y = sy;
+    } else {
+      ctx.translate(sx, sy);
+    }
     screenShake--;
+  } else if (pixiActive && pixiApp && pixiApp.stage) {
+    if (pixiApp.stage.x !== 0 || pixiApp.stage.y !== 0) {
+      pixiApp.stage.x = 0;
+      pixiApp.stage.y = 0;
+    }
   }
   drawBg();
   drawBodies();
@@ -11203,47 +11216,14 @@ document.querySelectorAll('.diff-btn').forEach(btn => {
 // the action button is EQUIPPED / EQUIP / UNLOCK depending on state.
 let orbBrowserIndex = ORB_ORDER.indexOf(activeOrb);
 if (orbBrowserIndex < 0) orbBrowserIndex = 0;
-let orbPreviewCanvas = document.getElementById('orbPreviewCanvas');
-// Phase 1 prototype: if OffscreenCanvas is supported, hand the orb-preview
-// canvas to a worker and let it drive its own rAF loop. Gameplay canvas (#c)
-// is a separate element and stays main-thread. transferControlToOffscreen
-// must happen before any getContext('2d') on the same element.
-let orbPreviewWorker = null;
-let orbPreviewCtx = null;
-if (typeof OffscreenCanvas !== 'undefined' &&
-    typeof orbPreviewCanvas.transferControlToOffscreen === 'function') {
-  try {
-    const off = orbPreviewCanvas.transferControlToOffscreen();
-    orbPreviewWorker = new Worker('menu-renderer.worker.js');
-    orbPreviewWorker.postMessage(
-      { type: 'init', canvas: off, orbBrowserIndex },
-      [off]
-    );
-    // Async failures (missing worker script, parse error, etc.) surface via
-    // onerror after transferControlToOffscreen has already succeeded — so the
-    // original canvas is unusable. Swap in a fresh element and resume the
-    // main-thread loop. Guard against repeat firings.
-    orbPreviewWorker.onerror = function(e) {
-      console.warn('[menu-worker] failed, falling back to main thread:', e);
-      if (!orbPreviewWorker) return;
-      orbPreviewWorker = null;
-      const fresh = document.createElement('canvas');
-      fresh.id = 'orbPreviewCanvas';
-      fresh.width = 240;
-      fresh.height = 240;
-      if (orbPreviewCanvas.parentNode) {
-        orbPreviewCanvas.parentNode.replaceChild(fresh, orbPreviewCanvas);
-      }
-      orbPreviewCanvas = fresh;
-      orbPreviewCtx = fresh.getContext('2d');
-      orbPreviewLoop();
-    };
-  } catch (_) {
-    orbPreviewWorker = null;
-  }
-}
-if (!orbPreviewWorker) orbPreviewCtx = orbPreviewCanvas.getContext('2d');
-const orbPreviewParticles = {}; // key: orbId → array of trail particles (main-thread fallback)
+const orbPreviewCanvas = document.getElementById('orbPreviewCanvas');
+// Step 7: the Phase-1 OffscreenCanvas Worker was consolidated away — now that
+// everything else renders via the main pixi stage, the menu orb preview's
+// modest per-frame Canvas 2D work doesn't justify its own worker. Renders on
+// main thread to its own 240×240 DOM canvas (separate from pixi + from #c).
+// menu-renderer.worker.js has been deleted.
+const orbPreviewCtx = orbPreviewCanvas.getContext('2d');
+const orbPreviewParticles = {}; // key: orbId → array of trail particles
 
 function ensureOrbParticles(key) {
   if (!orbPreviewParticles[key]) orbPreviewParticles[key] = [];
@@ -11397,19 +11377,17 @@ function orbPreviewLoop() {
   try { drawOrbPreview(); } catch {}
   requestAnimationFrame(orbPreviewLoop);
 }
-if (!orbPreviewWorker) orbPreviewLoop();
+orbPreviewLoop();
 
 document.getElementById('orbPrev').addEventListener('click', () => {
   SFX.clickSecondary();
   orbBrowserIndex = (orbBrowserIndex - 1 + ORB_ORDER.length) % ORB_ORDER.length;
   refreshOrbBrowser();
-  if (orbPreviewWorker) orbPreviewWorker.postMessage({ type: 'updateState', orbBrowserIndex });
 });
 document.getElementById('orbNext').addEventListener('click', () => {
   SFX.clickSecondary();
   orbBrowserIndex = (orbBrowserIndex + 1) % ORB_ORDER.length;
   refreshOrbBrowser();
-  if (orbPreviewWorker) orbPreviewWorker.postMessage({ type: 'updateState', orbBrowserIndex });
 });
 refreshOrbBrowser();
 // Initial load: #overlay starts visible as the main menu, so arm the
@@ -12357,7 +12335,83 @@ function startJITWarmupPhase() {
   if (label) label.textContent = 'WARMING UP';
   runJITWarmup(() => updateLoadingProgress())
     .catch(err => console.error('[warmup] failed', err))
-    .then(() => { warmupDone = true; updateLoadingProgress(); });
+    .then(() => {
+      // Step 7: after Canvas 2D JIT warmup, warm the pixi pipeline so the
+      // first-frame texture upload + offscreen-ctx compile happens during
+      // the loading screen, not the first gameplay frame.
+      try { warmPixiTextures(); }
+      catch (err) { console.error('[warmup] pixi texture warming failed', err); }
+      warmupDone = true; updateLoadingProgress();
+    });
+}
+
+// Step 7: exercise the pixi pipeline once per body + powerup + bg image so
+// GPU texture uploads, per-body offscreen-canvas allocations, and the JIT
+// paths inside updatePixiBodySpriteLayer/updatePixiBodyLayer/updatePixiPowerupLayer
+// all happen before the first real gameplay frame. Placeholder bodies and
+// powerups are injected into bodies[] / powerups[] just long enough for one
+// pixi-updater pass; the cull pass inside each updater then destroys them
+// and their per-body textures so no stale sprites leak into gameplay.
+// The real per-body textures (mirror/eye/skull/heart/etc. sprite canvases
+// baked at spawn) are per-instance and can't be pre-warmed — only the code
+// paths that build them are. Shared textures (blackhole atlas, bg images)
+// get uploaded here and stay cached.
+function warmPixiTextures() {
+  if (!pixiActive || !pixiApp) return;
+  // 1) Body types: build a placeholder per type via spawnBody so all
+  // type-specific fields + gradient caches are initialized correctly.
+  const types = ['star','planet','blackhole','toothed','eye','cracked','tentacle','screaming','void','heart','mirror','skull'];
+  const placeholderBodies = [];
+  for (let i = 0; i < types.length; i++) {
+    try {
+      const b = spawnBody(-500 - i * 120, { type: types[i], x: -500 - i * 120, radius: 20 });
+      if (b) placeholderBodies.push(b);
+    } catch (err) { /* skip any type that fails */ }
+  }
+  const origBodies = bodies;
+  bodies = placeholderBodies;
+  try { updatePixiBodyLayer(); } catch (err) { console.warn('[warmup] body-layer pass', err); }
+  try { updatePixiBodySpriteLayer(); } catch (err) { console.warn('[warmup] body-sprite-layer pass', err); }
+  bodies = origBodies;
+  // Second pass with the real (possibly empty) bodies list — triggers the
+  // cull branch that destroys the placeholder sprites and their textures.
+  try { updatePixiBodyLayer(); } catch {}
+  try { updatePixiBodySpriteLayer(); } catch {}
+  for (const b of placeholderBodies) { try { releaseBodyCanvases(b); } catch {} }
+
+  // 2) Powerup types.
+  const puTypes = ['shield', 'nova', 'hyperspeed', 'ghost'];
+  const placeholderPowerups = [];
+  for (let i = 0; i < puTypes.length; i++) {
+    placeholderPowerups.push({
+      type: puTypes[i],
+      x: -500 - i * 120,
+      y: -500,
+      radius: 15,
+      pulse: Math.random() * 6.28,
+      collected: false,
+    });
+  }
+  const origPowerups = powerups;
+  powerups = placeholderPowerups;
+  try { updatePixiPowerupLayer(); } catch (err) { console.warn('[warmup] powerup-layer pass', err); }
+  powerups = origPowerups;
+  try { updatePixiPowerupLayer(); } catch {}
+
+  // 3) Bg images: wrap each loaded one in a PIXI.Texture so pixi's internal
+  // cache has an entry. Actual GPU upload still happens on first render, but
+  // the cache pre-population avoids a cache-miss path during gameplay.
+  if (typeof bgImages === 'object') {
+    for (const k in bgImages) {
+      const img = bgImages[k];
+      if (img && img.complete && img.naturalWidth > 0) {
+        try { PIXI.Texture.from(img); } catch {}
+      }
+    }
+  }
+
+  // 4) Force one render of the stage so all queued textures upload to GPU.
+  try { pixiApp.renderer.render(pixiApp.stage); } catch {}
 }
 
 // Build one fixture body per custom planet type with all the fields the draw
