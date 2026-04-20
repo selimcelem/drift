@@ -1725,6 +1725,18 @@ let pixiPlayerCanvas = null;
 let pixiPlayerCtx = null;
 let pixiTrailGraphics = null;
 const PIXI_PLAYER_CANVAS_SIZE = 256;
+// Step 5: particle systems. All 4 ported this step use native PIXI.Graphics
+// rebuilt each frame — particles are scattered across the screen so a single
+// canvas would be viewport-sized with heavy upload. Radial gradients (crack
+// fragment glow) are approximated with 3 concentric alpha rings.
+// Not ported this step: drawPowerups (per-pickup offscreen canvas for halo
+// gradient + icon) and drawDestroyEffects (8 kinds inc. gradient). Step 5b.
+let pixiParticleLayer = null;
+let pixiPickupParticlesG = null;
+let pixiDeathParticlesG = null;
+let pixiDeathShardsG = null;
+let pixiCrackFragmentsG = null;
+let pixiDeathFlashG = null;
 
 // --- FPS counter ---
 // Rolling average of the last 60 frame intervals. DOM update throttled to
@@ -4150,6 +4162,20 @@ function initPixiStars() {
     pixiPlayerLayer.addChild(pixiTrailGraphics);
     // pixiPlayerSprite is created lazily on first updatePixiPlayerLayer call
     // because PIXI.Texture.from(canvas) needs the canvas to exist first.
+    // Step 5: particle layer above player. Crack fragments draw below other
+    // particles (they're body-surface debris, semantically closer to bodies).
+    pixiParticleLayer = new PIXI.Container();
+    pixiApp.stage.addChild(pixiParticleLayer);
+    pixiCrackFragmentsG = new PIXI.Graphics();
+    pixiDeathShardsG    = new PIXI.Graphics();
+    pixiDeathFlashG     = new PIXI.Graphics();
+    pixiDeathParticlesG = new PIXI.Graphics();
+    pixiPickupParticlesG = new PIXI.Graphics();
+    pixiParticleLayer.addChild(pixiCrackFragmentsG);
+    pixiParticleLayer.addChild(pixiDeathShardsG);
+    pixiParticleLayer.addChild(pixiDeathFlashG);
+    pixiParticleLayer.addChild(pixiDeathParticlesG);
+    pixiParticleLayer.addChild(pixiPickupParticlesG);
     pixiActive = true;
   } catch (err) {
     console.warn('[pixi] init failed, falling back to Canvas 2D stars:', err);
@@ -4697,6 +4723,145 @@ function updatePixiPlayerLayer() {
       }
     }
   }
+}
+
+// Step 5: particle systems rebuilt each frame as native PIXI.Graphics.
+// Pickup particles: bucketed by (rgb, life-bucket) to match the Canvas 2D
+// code's Path2D batching — pixi-side also batches into one fill per bucket.
+// Death particles: per-particle color (HSL mapped to hex), one fill each.
+// Death shards: trail strokes + rotated polygon fills per shard.
+// Crack fragments: radial-gradient glow approximated as 3 concentric alpha
+// rings (pixi v7 Graphics has no radial-gradient fill).
+function updatePixiParticleLayer() {
+  if (!pixiActive || !pixiParticleLayer) return;
+
+  // --- Pickup particles (bucketed) ---
+  const pg = pixiPickupParticlesG;
+  pg.clear();
+  if (pickupParticles.length) {
+    const bucketMidAlpha = [0.125, 0.375, 0.625, 0.875];
+    const buckets = {}; // "rgb|bi" -> particle[]
+    for (const p of pickupParticles) {
+      const bi = Math.min(3, Math.floor(p.life * 4));
+      const key = p.rgb + '|' + bi;
+      (buckets[key] || (buckets[key] = [])).push(p);
+    }
+    for (const key in buckets) {
+      const arr = buckets[key];
+      const pipe = key.lastIndexOf('|');
+      const rgb = key.slice(0, pipe);
+      const bi = +key.slice(pipe + 1);
+      const [r8, g8, b8] = rgb.split(',').map(n => parseInt(n, 10) | 0);
+      const colorInt = (r8 << 16) | (g8 << 8) | b8;
+      pg.beginFill(colorInt, bucketMidAlpha[bi]);
+      for (const p of arr) {
+        const r = Math.max(0.4, p.size * p.life);
+        pg.drawCircle(p.x, p.y, r);
+      }
+      pg.endFill();
+    }
+  }
+
+  // --- Death particles (per-particle HSL) ---
+  const dpg = pixiDeathParticlesG;
+  dpg.clear();
+  if (deathParticles.length) {
+    for (const p of deathParticles) {
+      const hue = 185 + (1 - p.life) * 80;
+      const colorInt = hslToHex(hue, 100, 72);
+      dpg.beginFill(colorInt, p.life);
+      dpg.drawCircle(p.x, p.y, p.size * p.life);
+      dpg.endFill();
+    }
+  }
+
+  // --- Death shards (trail + polygon per shard) ---
+  const dsg = pixiDeathShardsG;
+  dsg.clear();
+  if (deathShards.length) {
+    for (const s of deathShards) {
+      // Trail
+      if (s.trail.length > 1) {
+        dsg.lineStyle({ width: 1.6, color: 0x8CE6FF, alpha: s.life * 0.4, cap: 'round' });
+        dsg.moveTo(s.trail[0].x, s.trail[0].y);
+        for (let i = 1; i < s.trail.length; i++) dsg.lineTo(s.trail[i].x, s.trail[i].y);
+        dsg.lineStyle();
+      }
+      // Rotated polygon — manually rotate vertices since Graphics has no
+      // per-call rotation.
+      const cosR = Math.cos(s.rot), sinR = Math.sin(s.rot);
+      const poly = [];
+      for (const v of s.verts) {
+        poly.push(s.x + v.x * cosR - v.y * sinR);
+        poly.push(s.y + v.x * sinR + v.y * cosR);
+      }
+      dsg.lineStyle({ width: 1.4, color: 0x78DCFF, alpha: s.life });
+      dsg.beginFill(0xDCFAFF, s.life);
+      dsg.drawPolygon(poly);
+      dsg.endFill();
+      dsg.lineStyle();
+    }
+  }
+
+  // --- Death flash (1-frame white pulse at player position) ---
+  const dfg = pixiDeathFlashG;
+  dfg.clear();
+  if (deathFlashFrames > 0) {
+    dfg.beginFill(0xFFFFFF, 0.9);
+    dfg.drawCircle(player.x, player.y, PLAYER_R * 2.4);
+    dfg.endFill();
+    // Decrement happens here in pixi path (in #c path drawDeathShards does it).
+    deathFlashFrames--;
+  }
+
+  // --- Crack fragments (dot + 3-ring gradient approx) ---
+  const cfg = pixiCrackFragmentsG;
+  cfg.clear();
+  if (crackFragments.length) {
+    for (const f of crackFragments) {
+      const life = Math.max(0, f.life / f.maxLife);
+      const glowR = f.radius * 3.5;
+      const glowA = life * 0.65;
+      // 3 concentric rings approximating the radial gradient from
+      // rgba(255,150,60,0.6) at r=0 to rgba(255,100,40,0) at r=glowR.
+      if (glowA > 0) {
+        cfg.beginFill(0xFF9640, glowA * 0.55);
+        cfg.drawCircle(f.x, f.y, glowR * 0.35);
+        cfg.endFill();
+        cfg.beginFill(0xFF8C40, glowA * 0.32);
+        cfg.drawCircle(f.x, f.y, glowR * 0.66);
+        cfg.endFill();
+        cfg.beginFill(0xFF8040, glowA * 0.16);
+        cfg.drawCircle(f.x, f.y, glowR);
+        cfg.endFill();
+      }
+      // Solid dot on top
+      cfg.beginFill(0xFF8040, life);
+      cfg.drawCircle(f.x, f.y, f.radius * (0.7 + 0.3 * life));
+      cfg.endFill();
+    }
+  }
+}
+
+// Tiny HSL→hex helper for death-particle color. h in degrees, s/l in [0,100].
+// Only used by the pixi particle pipeline.
+function hslToHex(h, s, l) {
+  h = ((h % 360) + 360) % 360;
+  const sn = s / 100, ln = l / 100;
+  const c = (1 - Math.abs(2 * ln - 1)) * sn;
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+  const m = ln - c / 2;
+  let r, g, b;
+  if (h < 60)       { r = c; g = x; b = 0; }
+  else if (h < 120) { r = x; g = c; b = 0; }
+  else if (h < 180) { r = 0; g = c; b = x; }
+  else if (h < 240) { r = 0; g = x; b = c; }
+  else if (h < 300) { r = x; g = 0; b = c; }
+  else              { r = c; g = 0; b = x; }
+  const r8 = Math.round((r + m) * 255);
+  const g8 = Math.round((g + m) * 255);
+  const b8 = Math.round((b + m) * 255);
+  return (r8 << 16) | (g8 << 8) | b8;
 }
 
 // --- Bodies ---
@@ -7794,6 +7959,7 @@ function drawBg() {
     updatePixiBodySpriteLayer();
     updatePixiBodyEffectsLayer();
     updatePixiPlayerLayer();
+    updatePixiParticleLayer();
     updatePixiStars(); // renders the entire pixi stage
     return;
   }
@@ -8896,6 +9062,9 @@ function mulberry32(seed) {
 
 // Crack fragments drawn as small glowing discs.
 function drawCrackFragments() {
+  // Step 5: pixi handles crack fragments via updatePixiParticleLayer (using
+  // a multi-ring approximation for the radial-gradient glow).
+  if (pixiActive) return;
   for (const f of crackFragments) {
     const life = Math.max(0, f.life / f.maxLife);
     ctx.save();
@@ -9492,15 +9661,20 @@ function drawPickupParticles() {
     }
   }
   pickupParticles = pickupParticles.filter(p => p.life > 0.05);
-  // Physics pass: advance every particle, then group by (rgb, lifeBucket) and
-  // draw one Path2D fill per bucket. With up to 4 powerup colours × 4 life
-  // buckets we're bounded at 16 fills/frame instead of one per particle.
-  // Alpha is the bucket midpoint, so particles within the same bucket fade in
-  // lockstep — invisible at 40-particle density.
-  const buckets = {}; // key = rgb + '|' + bucketIdx
+  // Physics pass (always runs so state stays consistent whether pixi owns
+  // rendering or #c does).
   for (const p of pickupParticles) {
     p.x += p.vx; p.y += p.vy;
     p.vx *= 0.92; p.vy *= 0.92;
+  }
+  // Step 5: pixi reads from the array directly via updatePixiParticleLayer.
+  if (pixiActive) return;
+  // --- Canvas 2D fallback ---
+  // Bucket by (rgb, lifeBucket) and draw one Path2D fill per bucket. With
+  // up to 4 powerup colours × 4 life buckets we're bounded at 16 fills/frame
+  // instead of one per particle. Alpha is the bucket midpoint.
+  const buckets = {}; // key = rgb + '|' + bucketIdx
+  for (const p of pickupParticles) {
     const bi = Math.min(3, Math.floor(p.life * 4));
     const key = p.rgb + '|' + bi;
     (buckets[key] || (buckets[key] = [])).push(p);
@@ -9678,8 +9852,12 @@ function drawDeathParticles() {
     }
   }
   deathParticles=deathParticles.filter(p=>p.life>0.01);
+  // Physics always runs; draw only when #c owns rendering.
   for (const p of deathParticles) {
     p.x+=p.vx; p.y+=p.vy; p.vx*=0.95; p.vy*=0.95;
+  }
+  if (pixiActive) return;
+  for (const p of deathParticles) {
     ctx.globalAlpha=p.life; ctx.fillStyle=`hsl(${185+(1-p.life)*80},100%,72%)`;
     ctx.beginPath(); ctx.arc(p.x,p.y,p.size*p.life,0,6.28); ctx.fill();
   }
@@ -9754,10 +9932,12 @@ function spawnDeathShards(x, y) {
 }
 
 function drawDeathShards() {
-  // Render the 1-frame white player flash on top of the shards. deathFlashFrames
-  // stays frame-counted: it's a 1-frame flash, treating it as real-time would
-  // either invisibly short-circuit or show for multiple frames at 144hz.
-  if (deathFlashFrames > 0) {
+  // Flash is frame-counted (1-frame pulse). Decrement happens ONCE per frame
+  // here regardless of pixi vs. #c rendering — pixi reads deathFlashFrames in
+  // updatePixiParticleLayer, we decrement ourselves, so skip the decrement
+  // in the #c draw below when pixi owns it.
+  const flashPending = deathFlashFrames > 0;
+  if (!pixiActive && flashPending) {
     ctx.globalAlpha = 0.9;
     ctx.fillStyle = '#fff';
     ctx.beginPath(); ctx.arc(player.x, player.y, PLAYER_R * 2.4, 0, 6.28); ctx.fill();
@@ -9765,21 +9945,28 @@ function drawDeathShards() {
     deathFlashFrames--;
   }
 
-  if (!deathShards.length) return;
+  if (!deathShards.length) {
+    // If pixi is active and the flash still pends (nothing triggered the
+    // decrement above), let pixi's updater consume it.
+    return;
+  }
   const nowDs = Date.now();
   for (const s of deathShards) {
     if (s.startTime !== undefined) s.age = nowDs - s.startTime;
   }
   deathShards = deathShards.filter(s => s.age < s.maxLifeMs);
+  // Physics + trail update (always runs).
   for (const s of deathShards) {
     s.x += s.vx; s.y += s.vy;
     s.vx *= 0.985; s.vy = s.vy * 0.985 + 0.04; // very slight drag + soft gravity
     s.rot += s.rotSpeed;
     s.life = 1 - (s.age / s.maxLifeMs);
-    // Track last few positions for the trail.
     s.trail.push({ x: s.x, y: s.y });
     if (s.trail.length > 6) s.trail.shift();
-
+  }
+  if (pixiActive) return;
+  // --- Canvas 2D fallback ---
+  for (const s of deathShards) {
     // Cyan trail behind the shard.
     if (s.trail.length > 1) {
       ctx.globalAlpha = s.life * 0.4;
@@ -9790,7 +9977,6 @@ function drawDeathShards() {
       for (let i = 1; i < s.trail.length; i++) ctx.lineTo(s.trail[i].x, s.trail[i].y);
       ctx.stroke();
     }
-
     // Polygon shard in cyan/white with a glow stroke.
     ctx.save();
     ctx.translate(s.x, s.y);
