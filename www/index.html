@@ -442,8 +442,16 @@
     font-size: 10px;
     letter-spacing: 4px;
     color: rgba(255,255,255,0.4);
-    margin-bottom: 48px;
+    margin-bottom: 4px;
     text-transform: uppercase;
+  }
+
+  .version-label {
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    color: rgba(255,255,255,0.3);
+    text-align: center;
+    margin-bottom: 44px;
   }
 
   .controls-hint {
@@ -471,6 +479,61 @@
     cursor: pointer;
     text-transform: uppercase;
     transition: all 0.3s;
+  }
+
+  #resumeRunBtn {
+    background: transparent;
+    border: 1px solid rgba(255,180,80,0.6);
+    color: rgba(255,200,120,0.95);
+    font-family: 'Orbitron', monospace;
+    font-size: 12px;
+    letter-spacing: 4px;
+    padding: 14px 36px;
+    cursor: pointer;
+    text-transform: uppercase;
+    transition: all 0.3s;
+    margin-bottom: 8px;
+  }
+  #resumeRunBtn:hover {
+    background: rgba(255,180,80,0.12);
+    border-color: rgba(255,200,120,0.95);
+    box-shadow: 0 0 30px rgba(255,180,80,0.3);
+  }
+  #resumeRunInfo {
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 2px;
+    color: rgba(255,200,120,0.55);
+    text-align: center;
+    margin-bottom: 12px;
+  }
+
+  #resumeCountdownOverlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(5,8,18,0.92);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    z-index: 50;
+  }
+  #resumeCountdownOverlay.visible { display: flex; }
+  #resumeCountdownNumber {
+    font-family: 'Orbitron', monospace;
+    font-size: 180px;
+    font-weight: 900;
+    color: rgba(255,210,140,0.95);
+    text-shadow: 0 0 40px rgba(255,180,80,0.6), 0 0 80px rgba(255,120,40,0.3);
+    letter-spacing: 8px;
+  }
+  #resumeCountdownLabel {
+    font-family: 'Space Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 6px;
+    color: rgba(255,200,120,0.6);
+    margin-top: 16px;
+    text-transform: uppercase;
   }
   #startBtn:hover {
     background: rgba(100,200,255,0.1);
@@ -1212,6 +1275,7 @@
   <div id="overlay">
     <div class="title-word">DRIFT</div>
     <div class="subtitle">gravity surfing</div>
+    <div class="version-label" id="versionLabel"></div>
     <div id="difficultySelect">
       <button class="diff-btn selected" data-diff="NORMAL">NORMAL</button>
       <button class="diff-btn" data-diff="HARD">HARD</button>
@@ -1249,6 +1313,8 @@
       <span>RIGHT</span> — push away from nearest body<br>
       thread the cosmos. don't get absorbed.
     </div>
+    <button id="resumeRunBtn" style="display:none"></button>
+    <div id="resumeRunInfo" style="display:none"></div>
     <button id="startBtn">ENTER THE VOID</button>
     <button id="guideBtn">GUIDE</button>
     <button id="leaderboardBtn">LEADERBOARD</button>
@@ -1270,6 +1336,10 @@
       </div>
       <button id="guideReturnBtn">RETURN</button>
     </div>
+  </div>
+  <div id="resumeCountdownOverlay">
+    <div id="resumeCountdownNumber">3</div>
+    <div id="resumeCountdownLabel">RESUMING</div>
   </div>
   <button id="settingsBtn" aria-label="Settings">⚙</button>
   <button id="pauseBtn" aria-label="Pause">❚❚</button>
@@ -1357,7 +1427,18 @@ function getCachedGradient(key, createFn) {
 function clearGradientCache() {
   for (const k in gradientCache) delete gradientCache[k];
 }
-window.addEventListener('resize', clearGradientCache);
+// Resize handler — debounced 150ms so a stream of orientation/size events
+// coalesces into a single rebuild. Drops the gradient cache and reseeds the
+// star atlases together; atlas rebuild is the expensive half and would thrash
+// otherwise.
+let resizeTimer = null;
+window.addEventListener('resize', () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => {
+    clearGradientCache();
+    if (typeof initBgStars === 'function' && bgStars.length) initBgStars();
+  }, 150);
+});
 
 // Background vignette canvas cache: the radial-gradient fillRect per bg object
 // every frame is a measurable cost on Android WebView. Pre-rendering the
@@ -1876,9 +1957,9 @@ const FORCE = 0.18;
 
 // --- Difficulty ---
 const DIFFICULTIES = {
-  NORMAL:  { startSpeed: 1.2, maxSpeed: 2.5, speedCapScore: 180, maxBodies: 3, maxBodiesCap: 5, bodySpacing: 180, powerupFrequency: 0.8,  crystalMult: 0.75 },
-  HARD:    { startSpeed: 1.6, maxSpeed: 3.5, speedCapScore: 180, maxBodies: 4, maxBodiesCap: 6, bodySpacing: 180, powerupFrequency: 1.04, crystalMult: 1.0 },
-  EXTREME: { startSpeed: 2.0, maxSpeed: 4.0, speedCapScore: 180, maxBodies: 4, maxBodiesCap: 7, bodySpacing: 180, powerupFrequency: 1.44, crystalMult: 1.25 },
+  NORMAL:  { startSpeed: 1.2, maxSpeed: 2.5, speedCapScore: 180, maxBodies: 3, maxBodiesCap: 5, bodySpacing: 180, powerupFrequency: 2.0,  pairSpawnChance: 0.16, crystalMult: 0.75 },
+  HARD:    { startSpeed: 1.6, maxSpeed: 3.5, speedCapScore: 180, maxBodies: 4, maxBodiesCap: 6, bodySpacing: 180, powerupFrequency: 1.7,  pairSpawnChance: 0.13, crystalMult: 1.0 },
+  EXTREME: { startSpeed: 2.0, maxSpeed: 4.0, speedCapScore: 180, maxBodies: 4, maxBodiesCap: 7, bodySpacing: 180, powerupFrequency: 1.44, pairSpawnChance: 0.10, crystalMult: 1.25 },
 };
 let difficulty = 'NORMAL';
 if (typeof Sentry !== 'undefined') Sentry.setTag('difficulty', difficulty);
@@ -1961,7 +2042,11 @@ let runStats = { totalPassed: 0, totalDestroyed: 0, pointsFromPassing: 0, points
 // condition is first detected; triggerDeath() reads it when posting to the
 // analytics endpoint. streakHistory records every destroyStreak peak so the
 // longest streak of a run can be derived at death time.
-const GAME_VERSION = '1.5.0';
+const GAME_VERSION = '1.5.3';
+try {
+  const vl = document.getElementById('versionLabel');
+  if (vl) vl.textContent = 'v' + GAME_VERSION;
+} catch {}
 let sessionId = null;
 try {
   sessionId = localStorage.getItem('drift_sessionId');
@@ -3378,6 +3463,23 @@ const SFX = (function() {
     safeSfx(t => { chipNote(392.00, t, 0.03, 0.15, 'square'); });  // G4
   }
 
+  // Release decoded music buffers for everything except the currently-playing
+  // track and the next gameplay phase. Called from deepCleanup() — lets the GC
+  // reclaim several MB of PCM per track mid-run.
+  function releaseInactiveMusicBuffers(currentPhase) {
+    const keep = new Set();
+    if (currentTrackName) keep.add(currentTrackName);
+    const curName  = GAMEPLAY_PHASE_TRACKS[currentPhase];
+    const nextName = GAMEPLAY_PHASE_TRACKS[Math.min(4, (currentPhase | 0) + 1)];
+    if (curName)  keep.add(curName);
+    if (nextName) keep.add(nextName);
+    for (const k of MUSIC_TRACKS) {
+      if (keep.has(k)) continue;
+      musicBuffers[k] = null;
+      musicLoading[k] = null;
+    }
+  }
+
   return {
     init, attract, repel, pickup, planetDestroyed, death,
     comboActivate, comboDestroySound, startHyperspeedWhoosh,
@@ -3388,6 +3490,7 @@ const SFX = (function() {
     clickPrimary, clickSecondary,
     setMusicEnabled, setSfxEnabled, isMusicEnabled, isSfxEnabled,
     suspendCtx, resumeCtx,
+    releaseInactiveMusicBuffers,
     // Exposed for the loading screen preloader. Both return Promises that
     // resolve with the decoded AudioBuffer or reject on fetch/decode error.
     loadMusicBuffer, loadSfxBuffer,
@@ -3556,11 +3659,8 @@ function rebuildStarAtlases() {
     starAtlases.push(c);
   }
 }
-window.addEventListener('resize', () => {
-  // Canvas size could have changed; reseed positions and rebuild atlases so
-  // the starfield refills the new viewport.
-  if (bgStars.length) initBgStars();
-});
+// Star re-seed on resize is handled by the debounced resize listener above
+// (paired with the gradient-cache clear so a single 150ms timer covers both).
 
 // --- Bodies ---
 // New planet types introduced from phase 2 onward. Shared between the spawn
@@ -3808,9 +3908,10 @@ let nextPairId = 1;
 function spawnPowerup() {
   const topBodyY = bodies.length ? Math.min(...bodies.map(b => b.y)) : -100;
   const y = Math.min(-30, topBodyY - 60 - Math.random() * 80);
-  // 1 in 10 spawns is a tethered pair (halved from the previous 1 in 5 rate
-  // to reduce combo-chain pressure on the player).
-  if (Math.random() < 0.1) {
+  // Tethered pair spawn chance is per-difficulty: NORMAL 16%, HARD 13%,
+  // EXTREME 10%. Easier difficulties get more combo chains to compensate
+  // for the lower baseline powerup frequency pressure.
+  if (Math.random() < diff().pairSpawnChance) {
     // Pair-combo selection weighted by active orb's specialty: combos that
     // include the orb's bias type get 2x weight so they spawn more often.
     const bias = getOrbBonus().bias;
@@ -5369,6 +5470,103 @@ function updateCrackFragments(spd) {
   }
 }
 
+// --- Resume after crash ---
+// Persist a minimal run snapshot every ~5s so a backgrounded/OOM-killed app
+// can offer a Resume button on next boot. Same key is always overwritten — no
+// history accumulation. Age + survived guards live on the read side.
+const RESUME_STATE_KEY = 'drift_resume_state';
+const RESUME_MAX_AGE_MS = 30 * 60 * 1000;
+const RESUME_MIN_SURVIVED_S = 30;
+let lastResumeSaveBucket = -1;
+function maybeSaveResumeState() {
+  if (state !== 'playing') return;
+  const s = elapsedRunSeconds();
+  // Bucket on 5s boundaries; re-save only when we cross into a new bucket.
+  // Checks s % 5 < 0.1 per spec, but dedupe via bucket id so we don't write
+  // multiple times inside the same <0.1s window at 60fps.
+  if (s % 5 >= 0.1) return;
+  const bucket = Math.floor(s / 5);
+  if (bucket === lastResumeSaveBucket) return;
+  lastResumeSaveBucket = bucket;
+  try {
+    const mult = (DIFFICULTIES[difficulty] && DIFFICULTIES[difficulty].crystalMult) || 1;
+    const snap = {
+      score,
+      difficulty,
+      orb: activeOrb,
+      timesurvived: Math.floor(s),
+      phase: phaseForElapsed(s),
+      crystalsEarned: Math.floor(score * mult),
+      savedAt: Date.now(),
+    };
+    localStorage.setItem(RESUME_STATE_KEY, JSON.stringify(snap));
+  } catch {}
+}
+function clearResumeState() {
+  try { localStorage.removeItem(RESUME_STATE_KEY); } catch {}
+  lastResumeSaveBucket = -1;
+}
+function loadResumeState() {
+  try {
+    const raw = localStorage.getItem(RESUME_STATE_KEY);
+    if (!raw) return null;
+    const snap = JSON.parse(raw);
+    if (!snap || typeof snap !== 'object') { clearResumeState(); return null; }
+    if (!snap.savedAt || Date.now() - snap.savedAt > RESUME_MAX_AGE_MS) { clearResumeState(); return null; }
+    if (!snap.timesurvived || snap.timesurvived < RESUME_MIN_SURVIVED_S) return null;
+    return snap;
+  } catch { clearResumeState(); return null; }
+}
+
+// --- Deep cleanup (60s cadence) ---
+// Aggressive mid-game memory pressure release. Runs during gameplay only.
+let lastDeepCleanupBucket = -1;
+function maybeDeepCleanup() {
+  if (state !== 'playing') return;
+  const s = elapsedRunSeconds();
+  if (s % 60 >= 0.1) return;
+  const bucket = Math.floor(s / 60);
+  if (bucket <= 0 || bucket === lastDeepCleanupBucket) return;
+  lastDeepCleanupBucket = bucket;
+  try { deepCleanup(); } catch (err) { console.error('[deepCleanup] threw', err); recordError('deepCleanup', err); }
+}
+function deepCleanup() {
+  // 1. Sprite canvases on bodies that have fully scrolled past the bottom.
+  //    Bodies about to enter the screen get their sprite rebuilt if it was
+  //    previously released. releaseBodyCanvases() nulls all five sprite fields
+  //    at once so we only need to check one.
+  for (const b of bodies) {
+    if (b.y > H + 200) {
+      if (b.veinCanvas || b.faceCanvas || b.mirrorCanvas || b.screamStaticCanvas || b.heartCanvas) {
+        releaseBodyCanvases(b);
+      }
+    } else if (b.y > -H && b.y < -50) {
+      // About to come on screen — rebuild sprite if it was released earlier.
+      const needsSprite =
+        (b.type === 'eye'       && !b.veinCanvas) ||
+        (b.type === 'skull'     && !b.faceCanvas) ||
+        (b.type === 'mirror'    && !b.mirrorCanvas) ||
+        (b.type === 'screaming' && !b.screamStaticCanvas) ||
+        (b.type === 'heart'     && !b.heartCanvas);
+      if (needsSprite) {
+        if      (b.type === 'eye')       b.veinCanvas         = buildEyeVeinSprite(b);
+        else if (b.type === 'skull')     b.faceCanvas         = buildSkullFaceSprite(b);
+        else if (b.type === 'mirror')    b.mirrorCanvas       = buildMirrorBodySprite(b);
+        else if (b.type === 'screaming') b.screamStaticCanvas = buildScreamingStaticSprite(b);
+        else if (b.type === 'heart')     b.heartCanvas        = buildHeartStaticSprite(b);
+      }
+    }
+  }
+  // 2. Drop the whole gradient cache — small cost to rebuild per-size gradients.
+  clearGradientCache();
+  // 3. Vignette cache: rebuilt on demand in the bg pipeline.
+  for (const k in bgVignetteCache) delete bgVignetteCache[k];
+  // 4. Music buffers: keep current and next phase, null the rest so GC can
+  //    reclaim the decoded PCM. Star atlases intentionally preserved — they
+  //    save thousands of fills per frame and shouldn't be rebuilt mid-run.
+  try { SFX.releaseInactiveMusicBuffers(currentGameplayTrack); } catch {}
+}
+
 // --- Update ---
 function update() {
   if (state === 'apocalypse') { frame++; updateApocalypse(); return; }
@@ -5394,6 +5592,15 @@ function update() {
   // Run timer: wall-clock driven. Normally refresh ~8x/sec; past 3 min the
   // danger-zone shake/blink/glitch needs per-frame updates.
   if (elapsedRunSeconds() >= 180 || (frame & 7) === 0) updateRunTimerDisplay();
+
+  // Resume-after-crash: write a snapshot to localStorage every 5s so a
+  // backgrounded/OOM-killed app can offer the player a continue on next boot.
+  maybeSaveResumeState();
+
+  // Aggressive mid-game memory cleanup every 60s. Releases off-screen sprite
+  // canvases, clears gradient + vignette caches, and nulls out music buffers
+  // that aren't the current or next phase.
+  maybeDeepCleanup();
 
   // Streak timeout: if no destroy in 5 seconds, drop the streak. Replaces
   // the old "passed-planet resets streak" rule so any aggressive playstyle
@@ -6136,6 +6343,8 @@ function resetApocalypse() {
 
 function triggerDeath() {
   if (typeof Sentry !== 'undefined') Sentry.addBreadcrumb({ category: 'death', message: 'died at score ' + score, level: 'info' });
+  // The run ended — no more resume offering for this snapshot.
+  clearResumeState();
   state = 'dead';
   if (typeof syncUpdateBanner === 'function') syncUpdateBanner();
   pauseBtn.classList.remove('visible');
@@ -6278,6 +6487,9 @@ function triggerDeath() {
     document.getElementById('guideBtn').style.display = 'none';
     document.getElementById('leaderboardBtn').style.display = 'none';
     document.getElementById('leaderboardReturnBtn').style.display = 'none';
+    // Resume snapshot was already cleared in triggerDeath; sync the DOM.
+    document.getElementById('resumeRunBtn').style.display = 'none';
+    document.getElementById('resumeRunInfo').style.display = 'none';
     leaderboardFromMenu = false;
 
     // Render local scores filtered by difficulty
@@ -8527,10 +8739,21 @@ function render() {
 // failures fall back to the main menu (the game state is suspect after
 // a partial update); render() failures just skip the frame.
 let loopFrameCounter = 0;
+// Delta-time gate. Null on first frame and after every backgrounding —
+// forces the next frame to skip physics (render-only) so a huge stale
+// elapsed interval can't spike physics on resume. When non-null, the clamp
+// caps dt at 32ms (2× 60fps frame) so even a missed visibilitychange can't
+// feed a giant step into the simulation.
+let lastFrameTime = null;
+let frameDt = 0;
 function loop() {
   try {
+    const nowTs = performance.now();
+    const skipPhysics = (lastFrameTime === null);
+    frameDt = skipPhysics ? 0 : Math.min(nowTs - lastFrameTime, 32);
+    lastFrameTime = nowTs;
     try {
-      update();
+      if (!skipPhysics) update();
     } catch (err) {
       console.error('[loop] update() threw, recovering to main menu', err);
       recordError('update', err);
@@ -8570,15 +8793,15 @@ function loop() {
         crackFragments = [];
       }
     }
-    // Heap watchdog: every 300 frames (~5s @60fps) read performance.memory on
-    // Android WebView / Chromium. Over 150MB of JS heap, pre-emptively wipe
+    // Heap watchdog: every 180 frames (~3s @60fps) read performance.memory on
+    // Android WebView / Chromium. Over 100MB of JS heap, pre-emptively wipe
     // transient effect arrays and the gradient cache before the WebView hits
     // its own pressure limit and freezes the UI thread. performance.memory is
     // a non-standard extension — feature-detect and no-op everywhere else.
-    if (loopFrameCounter % 300 === 0) {
+    if (loopFrameCounter % 180 === 0) {
       try {
         const mem = performance && performance.memory;
-        if (mem && mem.usedJSHeapSize > 150 * 1024 * 1024) {
+        if (mem && mem.usedJSHeapSize > 100 * 1024 * 1024) {
           console.warn('[loop] heap pressure:', Math.round(mem.usedJSHeapSize / 1024 / 1024) + 'MB — emergency cleanup');
           orbTrailParticles.length = 0;
           destroyEffects.length = 0;
@@ -8638,6 +8861,9 @@ document.getElementById('startBtn').addEventListener('click', ()=>{
   if (state !== 'idle' && state !== 'dead') return;
   SFX.init();
   SFX.clickPrimary();
+  // Starting a fresh run — wipe any resume snapshot so the old save can't
+  // resurface if the player dies before the 5s save cadence fires.
+  clearResumeState();
   // Death→play uses the shorter results→gameplay 0.3s crossfade per spec;
   // menu→play uses the 0.5s menu→gameplay crossfade.
   const fade = state === 'dead' ? 0.3 : 0.5;
@@ -8646,6 +8872,54 @@ document.getElementById('startBtn').addEventListener('click', ()=>{
   document.getElementById('overlay').classList.add('hidden');
   pauseBtn.classList.add('visible');
 });
+
+let resumeCountdownTimers = [];
+function cancelResumeCountdown() {
+  for (const id of resumeCountdownTimers) clearTimeout(id);
+  resumeCountdownTimers = [];
+}
+document.getElementById('resumeRunBtn').addEventListener('click', () => {
+  if (state !== 'idle' && state !== 'dead') return;
+  const snap = loadResumeState();
+  if (!snap) { refreshResumeButton(); return; }
+  SFX.init();
+  SFX.clickPrimary();
+  // Hide menu + resume chrome immediately — countdown owns the screen.
+  document.getElementById('resumeRunBtn').style.display = 'none';
+  document.getElementById('resumeRunInfo').style.display = 'none';
+  document.getElementById('overlay').classList.add('hidden');
+  const overlay = document.getElementById('resumeCountdownOverlay');
+  const num     = document.getElementById('resumeCountdownNumber');
+  overlay.classList.add('visible');
+  cancelResumeCountdown();
+  const show = (n) => { num.textContent = String(n); };
+  show(3);
+  resumeCountdownTimers.push(setTimeout(() => show(2), 1000));
+  resumeCountdownTimers.push(setTimeout(() => show(1), 2000));
+  resumeCountdownTimers.push(setTimeout(() => {
+    overlay.classList.remove('visible');
+    resumeCountdownTimers = [];
+    beginResumedRun(snap);
+  }, 3000));
+});
+
+function beginResumedRun(snap) {
+  // Clear immediately so a mid-resume crash can't replay the same snapshot.
+  clearResumeState();
+  // Fresh gameplay state, then overwrite the fields the snapshot restores.
+  resetGame();
+  if (snap.difficulty && DIFFICULTIES[snap.difficulty]) difficulty = snap.difficulty;
+  if (snap.orb && ORB_DEFS && ORB_DEFS[snap.orb]) activeOrb = snap.orb;
+  score = snap.score | 0;
+  document.getElementById('score').textContent = String(score);
+  runStartTime = Date.now() - (snap.timesurvived * 1000);
+  // Grace period starts fresh so the player isn't insta-killed on resume.
+  graceEndTime = Date.now() + GRACE_DURATION_MS;
+  state = 'playing';
+  SFX.playTrack('gameplay', 0.3);
+  pauseBtn.classList.add('visible');
+  updateRunTimerDisplay();
+}
 
 let runPauseStart = 0;
 function pauseGame() {
@@ -8714,6 +8988,7 @@ function resumeGame() {
 }
 
 function restartFromPause() {
+  clearResumeState();
   resetGame();
   state = 'playing';
   SFX.resumeMusic();
@@ -8799,8 +9074,28 @@ function goToMainMenu() {
   leaderboardFromMenu = false;
   runStartTime = 0; updateRunTimerDisplay();
   refreshOrbBrowser();
+  refreshResumeButton();
   document.getElementById('overlay').classList.remove('hidden');
   if (typeof syncUpdateBanner === 'function') syncUpdateBanner();
+}
+
+function refreshResumeButton() {
+  const btn  = document.getElementById('resumeRunBtn');
+  const info = document.getElementById('resumeRunInfo');
+  if (!btn || !info) return;
+  const snap = loadResumeState();
+  if (!snap) {
+    btn.style.display = 'none';
+    info.style.display = 'none';
+    return;
+  }
+  const mm = Math.floor(snap.timesurvived / 60);
+  const ss = snap.timesurvived % 60;
+  const mmss = (mm < 10 ? '0' : '') + mm + ':' + (ss < 10 ? '0' : '') + ss;
+  btn.textContent = 'RESUME RUN';
+  info.textContent = snap.difficulty + ' • ' + mmss + ' survived • ' + snap.score + ' pts';
+  btn.style.display = '';
+  info.style.display = '';
 }
 
 function quitGame() {
@@ -8813,7 +9108,7 @@ pauseBtn.addEventListener('click', () => { SFX.clickSecondary(); pauseGame(); })
 document.getElementById('resumeBtn').addEventListener('click', () => { SFX.clickPrimary(); resumeGame(); });
 document.getElementById('restartBtn').addEventListener('click', () => { SFX.clickPrimary(); restartFromPause(); });
 document.getElementById('changeNameBtn').addEventListener('click', () => { SFX.clickSecondary(); showUsernamePrompt(); });
-document.getElementById('menuBtn').addEventListener('click', () => { SFX.clickSecondary(); goToMainMenu(); });
+document.getElementById('menuBtn').addEventListener('click', () => { SFX.clickSecondary(); clearResumeState(); goToMainMenu(); });
 document.getElementById('quitBtn').addEventListener('click', () => { SFX.clickSecondary(); quitGame(); });
 
 document.addEventListener('keydown', e => {
@@ -8869,8 +9164,12 @@ document.addEventListener('visibilitychange', () => {
     if (document.hidden) {
       if (state === 'playing') pauseGame();
       SFX.suspendCtx();
+      // Invalidate the frame-time baseline so the first frame after resume
+      // is render-only — prevents a huge elapsed interval from spiking dt.
+      lastFrameTime = null;
     } else {
       SFX.resumeCtx();
+      lastFrameTime = performance.now();
     }
   } catch (err) {
     console.error('[visibilitychange] handler threw', err);
@@ -9085,6 +9384,7 @@ document.getElementById('orbNext').addEventListener('click', () => {
   refreshOrbBrowser();
 });
 refreshOrbBrowser();
+refreshResumeButton();
 
 document.getElementById('shopBtn').addEventListener('click', () => {
   SFX.clickSecondary();
@@ -9236,6 +9536,8 @@ function openLeaderboardFromMenu() {
   document.getElementById('leaderboardBtn').style.display = 'none';
   document.getElementById('difficultySelect').style.display = 'none';
   document.getElementById('deathActions').style.display = 'none';
+  document.getElementById('resumeRunBtn').style.display = 'none';
+  document.getElementById('resumeRunInfo').style.display = 'none';
   // Show the leaderboard pieces.
   const lbTabs = document.getElementById('lbTabs');
   const diffTabs = document.getElementById('lbDiffTabs');
