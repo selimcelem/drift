@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>DRIFT</title>
 <script src="https://browser.sentry-cdn.com/7.99.0/bundle.min.js" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/7.4.2/pixi.min.js"></script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Space+Mono&display=swap');
 
@@ -1350,6 +1351,39 @@
     border-radius: 50%;
     animation: driftStar linear infinite;
   }
+
+  /* PixiJS star-field layer: sits behind #c via negative z-index so gameplay
+     (bodies, player, nebula, effects) still renders to the Canvas 2D on top.
+     Using z-index: -1 keeps #c non-positioned (stacking level 3), which is
+     essential: if #c gets a positive z-index it stacks above #overlay (which
+     has z-index: auto) and starts intercepting every menu button click. */
+  #pixiCanvas {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: -1;
+    pointer-events: none;
+  }
+
+  /* Gameplay-only FPS readout. Toggled via .visible, mirrored from #pauseBtn
+     state by a MutationObserver so every existing pauseBtn toggle site keeps
+     the FPS counter in sync without extra touch points. Offset 48px below the
+     pause button so it never overlaps the 36px-tall button at the same edge. */
+  #fpsCounter {
+    position: absolute;
+    top: calc(var(--safe-top) + 64px);
+    right: calc(var(--safe-right) + 16px);
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    color: rgba(255,255,255,0.5);
+    pointer-events: none;
+    z-index: 10;
+    display: none;
+    letter-spacing: 0.5px;
+  }
+  #fpsCounter.visible { display: block; }
 </style>
 </head>
 <body>
@@ -1365,6 +1399,7 @@
   </div>
 </div>
 <div id="gameWrapper">
+  <canvas id="pixiCanvas"></canvas>
   <canvas id="c"></canvas>
   <div id="ui">
     <div id="score">0</div>
@@ -1453,6 +1488,7 @@
   </div>
   <button id="settingsBtn" aria-label="Settings">⚙</button>
   <button id="pauseBtn" aria-label="Pause">❚❚</button>
+  <div id="fpsCounter">60 FPS</div>
   <div id="pauseOverlay">
     <div class="pause-title">PAUSED</div>
     <div class="pause-menu">
@@ -1546,6 +1582,59 @@ const H = isCapacitor ? window.innerHeight : Math.min(window.innerHeight, 932);
 canvas.width = W;
 canvas.height = H;
 
+// PixiJS background star-field layer (Phase 2 Step 1). A separate <canvas> sits
+// behind #c so the existing Canvas 2D render stack (nebula, bodies, player,
+// effects) stays unchanged — only the star field migrates here. Initialized
+// later in initPixiStars() once the atlases are built; if PIXI failed to load
+// (CDN blocked, WebGL disabled), pixiActive stays false and drawBg() keeps
+// drawing the stars to #c via the original atlas path.
+const pixiCanvas = document.getElementById('pixiCanvas');
+pixiCanvas.width = W;
+pixiCanvas.height = H;
+let pixiApp = null;
+let pixiStarBuckets = [];   // per-bucket: { sprites: [main, wrap] }
+let pixiActive = false;
+
+// --- FPS counter ---
+// Rolling average of the last 60 frame intervals. DOM update throttled to
+// once per second so style/layout cost is bounded. Visibility is mirrored
+// from #pauseBtn.visible via a MutationObserver so every existing gameplay
+// state transition that toggles the pause button automatically keeps the
+// FPS counter in lockstep — no per-callsite edits needed.
+const fpsCounter = document.getElementById('fpsCounter');
+const fpsDeltas = new Array(60).fill(16.67);
+let fpsDeltaIdx = 0;
+let fpsLastTs = 0;
+let fpsLastDomUpdate = 0;
+function updateFps() {
+  const now = performance.now();
+  if (fpsLastTs > 0) {
+    const dt = now - fpsLastTs;
+    // Reject obvious outliers (paused tab, first frame after resume).
+    if (dt > 0 && dt < 500) {
+      fpsDeltas[fpsDeltaIdx] = dt;
+      fpsDeltaIdx = (fpsDeltaIdx + 1) % fpsDeltas.length;
+    }
+  }
+  fpsLastTs = now;
+  if (now - fpsLastDomUpdate >= 1000) {
+    let sum = 0;
+    for (let i = 0; i < fpsDeltas.length; i++) sum += fpsDeltas[i];
+    const avg = sum / fpsDeltas.length;
+    const fps = avg > 0 ? Math.round(1000 / avg) : 0;
+    fpsCounter.textContent = fps + ' FPS';
+    fpsLastDomUpdate = now;
+  }
+}
+try {
+  const _pb = document.getElementById('pauseBtn');
+  const _mirror = () => fpsCounter.classList.toggle('visible', _pb.classList.contains('visible'));
+  new MutationObserver(_mirror).observe(_pb, { attributes: true, attributeFilter: ['class'] });
+  _mirror();
+} catch (err) {
+  console.warn('[fps] observer setup failed', err);
+}
+
 // Safe-area insets read from the :root CSS vars. viewport-fit=cover makes the
 // canvas fully bleed under the status bar / gesture nav, so any HUD drawn in
 // canvas coordinates (hyperspeed stack label, etc.) must shift down by this
@@ -1588,6 +1677,8 @@ window.addEventListener('resize', () => {
   resizeTimer = setTimeout(() => {
     clearGradientCache();
     if (typeof initBgStars === 'function' && bgStars.length) initBgStars();
+    // New atlases mean stale PIXI textures; rebind.
+    if (typeof syncPixiStarTextures === 'function') syncPixiStarTextures();
   }, 150);
 });
 
@@ -3812,6 +3903,93 @@ function rebuildStarAtlases() {
 }
 // Star re-seed on resize is handled by the debounced resize listener above
 // (paired with the gradient-cache clear so a single 150ms timer covers both).
+
+// PixiJS star-field integration. The pre-baked atlas canvases (one per bucket)
+// become PIXI.Textures; each bucket gets two sprites (main + wrap) that move
+// together to produce the same seamless downward scroll as the old drawImage
+// loop. Per-bucket alpha and y come from starBucketOffsets/frame, preserving
+// the Canvas 2D visual 1:1. If PIXI is undefined or construction throws, we
+// leave pixiActive = false and the Canvas 2D star path keeps running.
+function initPixiStars() {
+  if (typeof PIXI === 'undefined') {
+    console.warn('[pixi] PIXI global missing — star field stays on Canvas 2D.');
+    return;
+  }
+  try {
+    pixiApp = new PIXI.Application({
+      view: pixiCanvas,
+      width: W,
+      height: H,
+      backgroundColor: 0x00000a,
+      backgroundAlpha: 1,
+      antialias: false,
+      autoStart: false, // we drive renders from render()
+    });
+    pixiStarBuckets = [];
+    for (let i = 0; i < STAR_BUCKETS; i++) {
+      const atlas = starAtlases[i];
+      if (!atlas) continue;
+      const tex = PIXI.Texture.from(atlas);
+      const main = new PIXI.Sprite(tex);
+      const wrap = new PIXI.Sprite(tex);
+      wrap.visible = false;
+      pixiApp.stage.addChild(main);
+      pixiApp.stage.addChild(wrap);
+      pixiStarBuckets.push({ tex, main, wrap });
+    }
+    pixiActive = true;
+  } catch (err) {
+    console.warn('[pixi] init failed, falling back to Canvas 2D stars:', err);
+    pixiApp = null;
+    pixiStarBuckets = [];
+    pixiActive = false;
+  }
+}
+
+// After a star re-seed + atlas rebuild (resize), the old PIXI.Textures still
+// point at the previous canvas bitmaps. Rebind fresh textures from the new
+// atlas canvases. Sprites are reused; only their .texture is swapped.
+function syncPixiStarTextures() {
+  if (!pixiActive || !pixiApp) return;
+  for (let i = 0; i < pixiStarBuckets.length; i++) {
+    const b = pixiStarBuckets[i];
+    const atlas = starAtlases[i];
+    if (!atlas) continue;
+    const oldTex = b.tex;
+    const newTex = PIXI.Texture.from(atlas);
+    b.tex = newTex;
+    b.main.texture = newTex;
+    b.wrap.texture = newTex;
+    try { if (oldTex && oldTex !== newTex) oldTex.destroy(true); } catch {}
+  }
+}
+
+// Per-frame star update. Mirrors the old drawImage-based twinkle+scroll math
+// exactly (alpha = max(0, 0.35 + 0.5 * sin(frame*0.05 + midPhase))), then
+// manually renders the pixi stage. autoStart was disabled so this is the only
+// render path for the pixi layer.
+function updatePixiStars() {
+  if (!pixiActive || !pixiApp) return;
+  for (let i = 0; i < pixiStarBuckets.length; i++) {
+    const b = pixiStarBuckets[i];
+    const midPhase = (i + 0.5) * (Math.PI * 2 / STAR_BUCKETS);
+    const a = Math.max(0, 0.35 + 0.5 * Math.sin(frame * 0.05 + midPhase));
+    const y = starBucketOffsets[i];
+    b.main.alpha = a;
+    b.main.y = y;
+    if (y > 0) {
+      b.wrap.visible = true;
+      b.wrap.alpha = a;
+      b.wrap.y = y - H;
+    } else {
+      b.wrap.visible = false;
+    }
+  }
+  try { pixiApp.renderer.render(pixiApp.stage); } catch (err) {
+    console.warn('[pixi] render threw, disabling:', err);
+    pixiActive = false;
+  }
+}
 
 // --- Bodies ---
 // New planet types introduced from phase 2 onward. Shared between the spawn
@@ -6870,9 +7048,16 @@ function seededRand(seed) {
 }
 
 function drawBg() {
-  // Solid background (simplified from createLinearGradient)
-  ctx.fillStyle = '#00000a';
-  ctx.fillRect(0, 0, W, H);
+  if (pixiActive) {
+    // Stars live on #pixiCanvas (behind #c). Clear #c so the pixi layer shows
+    // through the areas nothing else covers. Body `background: #00000a` and
+    // the pixi app's own #00000a clear color keep the void color consistent.
+    ctx.clearRect(0, 0, W, H);
+  } else {
+    // Solid background (simplified from createLinearGradient)
+    ctx.fillStyle = '#00000a';
+    ctx.fillRect(0, 0, W, H);
+  }
   // Background space imagery drifts down behind everything.
   updateBgObjects();
   drawBgObjects();
@@ -6884,21 +7069,25 @@ function drawBg() {
     nebulaRenderedFrame = frame;
   }
   ctx.drawImage(nebulaCanvas, 0, 0);
-  // Star atlases: 4 drawImage calls (8 at most if any bucket has a non-zero
-  // wrap offset) instead of 160 individual arc+fill calls. Each bucket's
-  // alpha is its mid-phase twinkle value so the whole bucket fades in/out
-  // together. Scroll is done via the offset — the atlas is drawn once at y,
-  // then again at y-H to cover the wrap band above the canvas.
-  for (let i = 0; i < STAR_BUCKETS; i++) {
-    const atlas = starAtlases[i];
-    if (!atlas) continue;
-    const midPhase = (i + 0.5) * (Math.PI * 2 / STAR_BUCKETS);
-    ctx.globalAlpha = Math.max(0, 0.35 + 0.5 * Math.sin(frame * 0.05 + midPhase));
-    const y = starBucketOffsets[i];
-    ctx.drawImage(atlas, 0, y);
-    if (y > 0) ctx.drawImage(atlas, 0, y - H);
+  if (pixiActive) {
+    updatePixiStars();
+  } else {
+    // Star atlases: 4 drawImage calls (8 at most if any bucket has a non-zero
+    // wrap offset) instead of 160 individual arc+fill calls. Each bucket's
+    // alpha is its mid-phase twinkle value so the whole bucket fades in/out
+    // together. Scroll is done via the offset — the atlas is drawn once at y,
+    // then again at y-H to cover the wrap band above the canvas.
+    for (let i = 0; i < STAR_BUCKETS; i++) {
+      const atlas = starAtlases[i];
+      if (!atlas) continue;
+      const midPhase = (i + 0.5) * (Math.PI * 2 / STAR_BUCKETS);
+      ctx.globalAlpha = Math.max(0, 0.35 + 0.5 * Math.sin(frame * 0.05 + midPhase));
+      const y = starBucketOffsets[i];
+      ctx.drawImage(atlas, 0, y);
+      if (y > 0) ctx.drawImage(atlas, 0, y - H);
+    }
+    ctx.globalAlpha = 1;
   }
-  ctx.globalAlpha = 1;
 }
 
 // Run a per-body custom drawer in a try/catch so a single bad frame from a
@@ -8899,6 +9088,7 @@ function render() {
 
   updatePowerupTimer();
   updateBurstBar();
+  updateFps();
   ctx.restore();
 }
 
@@ -10853,6 +11043,7 @@ function preloadAll() {
 }
 
 initBgStars(); initBodies();
+initPixiStars();
 preloadAll();
 updateLoadingProgress();
 loop();
