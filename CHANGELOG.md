@@ -4,6 +4,39 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## v1.5.5 — 2026-04-20
+
+### Features
+- Resume Run: pause or force-close the game at any point, reopen later, and RESUME RUN restores
+  your exact state (score, difficulty, orb, time survived, phase). Persists indefinitely until
+  death or a new run. No minimum survival time required.
+
+### Fixes
+- Fixed main menu overflow when RESUME RUN is present on mid-height devices (~760-820px viewports);
+  LEADERBOARD and action buttons now fit cleanly
+- Fixed layout shifts caused by safe-area handling on notched and gesture-nav devices;
+  all HUD elements (score, timer, burst meter, hints, settings, pause) now respect safe-area insets
+- Fixed crystal counter position — moved from awkward center-right to proper top-right anchor,
+  mirroring the settings gear
+- Fixed resume-state corruption crash loop: if the saved state blob ever becomes malformed,
+  the key is evicted cleanly instead of crashing the app on every launch
+- Fixed version label drift between GAME_VERSION and gradle versionName (now both 1.5.5)
+
+### Infrastructure
+- Analytics dashboard authentication moved from query-string password to Authorization header
+  with inline login page (password no longer logged in URL bars, browser history, proxy logs)
+
+### Developer
+- Added on-screen debug overlay (DEBUG_RESUME flag, currently off) for on-device resume-state
+  diagnostics without chrome://inspect tethering
+- Added Sentry fire-test cheat (pilot name "SENTRY") to verify error reporting wiring on any build
+
+### Known issues
+- Qualcomm Adreno GPU driver crashes on a small number of devices still being monitored;
+  configChanges fix from v1.5.4 is the current mitigation
+- Progression state (crystals, orbs) remains localStorage-only; cloud save via Google Play Games
+  planned before production release
+
 ## [Unreleased]
 
 ### Added
