@@ -202,8 +202,12 @@
     display: none;
     margin-bottom: 16px;
     width: 220px;
-    max-height: 180px;
+    /* ~5 rows visible (row ≈ 18px: 10px font + ~1.2 line-height + 4px padding
+       + 1px border). 100px leaves a sliver of row 6 as a scroll affordance.
+       Full list stays accessible via overflow-y scrolling on touch + desktop. */
+    max-height: 100px;
     overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
   }
   .hs-row {
     display: flex;
@@ -1213,8 +1217,11 @@
     width: 220px;
     display: none;
     margin-bottom: 16px;
-    max-height: 180px;
+    /* Matches #highscores: ~5 rows visible, rest scrollable. Keeps the DRIFT
+       title on-screen on mid-height devices in both death and menu views. */
+    max-height: 100px;
     overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
   }
   .gs-row {
     display: flex;
