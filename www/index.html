@@ -9402,9 +9402,47 @@ document.querySelectorAll('.diff-btn').forEach(btn => {
 // the action button is EQUIPPED / EQUIP / UNLOCK depending on state.
 let orbBrowserIndex = ORB_ORDER.indexOf(activeOrb);
 if (orbBrowserIndex < 0) orbBrowserIndex = 0;
-const orbPreviewCanvas = document.getElementById('orbPreviewCanvas');
-const orbPreviewCtx = orbPreviewCanvas.getContext('2d');
-const orbPreviewParticles = {}; // key: orbId → array of trail particles
+let orbPreviewCanvas = document.getElementById('orbPreviewCanvas');
+// Phase 1 prototype: if OffscreenCanvas is supported, hand the orb-preview
+// canvas to a worker and let it drive its own rAF loop. Gameplay canvas (#c)
+// is a separate element and stays main-thread. transferControlToOffscreen
+// must happen before any getContext('2d') on the same element.
+let orbPreviewWorker = null;
+let orbPreviewCtx = null;
+if (typeof OffscreenCanvas !== 'undefined' &&
+    typeof orbPreviewCanvas.transferControlToOffscreen === 'function') {
+  try {
+    const off = orbPreviewCanvas.transferControlToOffscreen();
+    orbPreviewWorker = new Worker('menu-renderer.worker.js');
+    orbPreviewWorker.postMessage(
+      { type: 'init', canvas: off, orbBrowserIndex },
+      [off]
+    );
+    // Async failures (missing worker script, parse error, etc.) surface via
+    // onerror after transferControlToOffscreen has already succeeded — so the
+    // original canvas is unusable. Swap in a fresh element and resume the
+    // main-thread loop. Guard against repeat firings.
+    orbPreviewWorker.onerror = function(e) {
+      console.warn('[menu-worker] failed, falling back to main thread:', e);
+      if (!orbPreviewWorker) return;
+      orbPreviewWorker = null;
+      const fresh = document.createElement('canvas');
+      fresh.id = 'orbPreviewCanvas';
+      fresh.width = 240;
+      fresh.height = 240;
+      if (orbPreviewCanvas.parentNode) {
+        orbPreviewCanvas.parentNode.replaceChild(fresh, orbPreviewCanvas);
+      }
+      orbPreviewCanvas = fresh;
+      orbPreviewCtx = fresh.getContext('2d');
+      orbPreviewLoop();
+    };
+  } catch (_) {
+    orbPreviewWorker = null;
+  }
+}
+if (!orbPreviewWorker) orbPreviewCtx = orbPreviewCanvas.getContext('2d');
+const orbPreviewParticles = {}; // key: orbId → array of trail particles (main-thread fallback)
 
 function ensureOrbParticles(key) {
   if (!orbPreviewParticles[key]) orbPreviewParticles[key] = [];
@@ -9558,17 +9596,19 @@ function orbPreviewLoop() {
   try { drawOrbPreview(); } catch {}
   requestAnimationFrame(orbPreviewLoop);
 }
-orbPreviewLoop();
+if (!orbPreviewWorker) orbPreviewLoop();
 
 document.getElementById('orbPrev').addEventListener('click', () => {
   SFX.clickSecondary();
   orbBrowserIndex = (orbBrowserIndex - 1 + ORB_ORDER.length) % ORB_ORDER.length;
   refreshOrbBrowser();
+  if (orbPreviewWorker) orbPreviewWorker.postMessage({ type: 'updateState', orbBrowserIndex });
 });
 document.getElementById('orbNext').addEventListener('click', () => {
   SFX.clickSecondary();
   orbBrowserIndex = (orbBrowserIndex + 1) % ORB_ORDER.length;
   refreshOrbBrowser();
+  if (orbPreviewWorker) orbPreviewWorker.postMessage({ type: 'updateState', orbBrowserIndex });
 });
 refreshOrbBrowser();
 // Initial load: #overlay starts visible as the main menu, so arm the
