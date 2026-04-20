@@ -1713,6 +1713,18 @@ let pixiBodyEffectsLayer = null;
 let pixiTargetRingGraphics = null;
 let pixiTargetLineGraphics = null;
 let pixiPreviewOutlinesGraphics = null;
+// Step 4: player + trail. Player is one composite sprite re-rendered every
+// frame to a per-player offscreen canvas (drawPlayer is one chunky function
+// with many concentric layers — the offscreen-canvas pattern reuses it as-is
+// via the (tctx) ctx-shadow refactor). Trail is a PIXI.Graphics rebuilt each
+// frame iterating orbTrailParticles directly — particles are scattered across
+// the screen so a per-frame canvas would be screen-sized + heavy upload.
+let pixiPlayerLayer = null;
+let pixiPlayerSprite = null;
+let pixiPlayerCanvas = null;
+let pixiPlayerCtx = null;
+let pixiTrailGraphics = null;
+const PIXI_PLAYER_CANVAS_SIZE = 256;
 
 // --- FPS counter ---
 // Rolling average of the last 60 frame intervals. DOM update throttled to
@@ -4129,6 +4141,15 @@ function initPixiStars() {
     pixiBodyEffectsLayer.addChild(pixiTargetRingGraphics);
     pixiBodyEffectsLayer.addChild(pixiTargetLineGraphics);
     pixiBodyEffectsLayer.addChild(pixiPreviewOutlinesGraphics);
+    // Step 4: player layer above body effects. Trail Graphics goes BELOW the
+    // player sprite in this layer (added first), so the player orb renders
+    // on top of its own trail — matches the original Canvas 2D paint order.
+    pixiPlayerLayer = new PIXI.Container();
+    pixiApp.stage.addChild(pixiPlayerLayer);
+    pixiTrailGraphics = new PIXI.Graphics();
+    pixiPlayerLayer.addChild(pixiTrailGraphics);
+    // pixiPlayerSprite is created lazily on first updatePixiPlayerLayer call
+    // because PIXI.Texture.from(canvas) needs the canvas to exist first.
     pixiActive = true;
   } catch (err) {
     console.warn('[pixi] init failed, falling back to Canvas 2D stars:', err);
@@ -4572,6 +4593,107 @@ function updatePixiBodyEffectsLayer() {
           g.lineStyle({ width: 1, color: 0x7DE8FF, alpha: 0.85 });
           g.drawCircle(b.x, b.y, b.radius);
         }
+      }
+    }
+  }
+}
+
+// Step 4: per-frame sync for the player composite + orb trail.
+// Player: re-renders the entire drawPlayer() composite to a fixed-size offscreen
+// canvas, then uploads to a single pixi sprite anchored at player.x/player.y.
+// drawPlayer's many concentric layers (orb core, aura, ghost rings, hyperspeed
+// glow, shield aura, phantom blast) all stay inside one function — porting via
+// the offscreen-canvas pattern is much smaller than rewriting each layer as a
+// separate pixi primitive, and since drawPlayer is only ever 1 entity per
+// frame the upload cost is bounded (~270 KB/frame for a 256x256 RGBA canvas).
+//
+// Trail: orbTrailParticles[] are scattered across the screen, so a single
+// shared offscreen canvas would be screen-sized + a heavy upload. Instead the
+// trail uses a PIXI.Graphics rebuilt each frame, iterating particles and
+// emitting native pixi primitives (drawCircle / moveTo+lineTo / drawPolygon).
+function updatePixiPlayerLayer() {
+  if (!pixiActive || !pixiPlayerLayer) return;
+  // --- Player composite ---
+  const playerVisible = (state === 'playing' || state === 'paused' || state === 'apocalypse');
+  if (playerVisible) {
+    if (!pixiPlayerCanvas) {
+      pixiPlayerCanvas = document.createElement('canvas');
+      pixiPlayerCanvas.width = PIXI_PLAYER_CANVAS_SIZE;
+      pixiPlayerCanvas.height = PIXI_PLAYER_CANVAS_SIZE;
+      pixiPlayerCtx = pixiPlayerCanvas.getContext('2d');
+    }
+    if (!pixiPlayerSprite) {
+      pixiPlayerSprite = new PIXI.Sprite(PIXI.Texture.from(pixiPlayerCanvas));
+      pixiPlayerSprite.anchor.set(0.5);
+      pixiPlayerLayer.addChild(pixiPlayerSprite);
+    }
+    const ofx = pixiPlayerCtx;
+    const cx = PIXI_PLAYER_CANVAS_SIZE / 2;
+    const cy = PIXI_PLAYER_CANVAS_SIZE / 2;
+    ofx.save();
+    ofx.setTransform(1, 0, 0, 1, 0, 0);
+    ofx.clearRect(0, 0, PIXI_PLAYER_CANVAS_SIZE, PIXI_PLAYER_CANVAS_SIZE);
+    // Bias so drawPlayer's internal ctx.translate(player.x, player.y) lands
+    // at canvas center.
+    ofx.translate(cx - player.x, cy - player.y);
+    try { drawPlayer(ofx); }
+    catch (err) { console.error('[pixi-player] drawPlayer threw, skipping frame', err); }
+    ofx.restore();
+    pixiPlayerSprite.x = player.x;
+    pixiPlayerSprite.y = player.y;
+    pixiPlayerSprite.visible = true;
+    if (pixiPlayerSprite.texture && pixiPlayerSprite.texture.baseTexture) {
+      try { pixiPlayerSprite.texture.baseTexture.update(); } catch {}
+    }
+  } else if (pixiPlayerSprite) {
+    pixiPlayerSprite.visible = false;
+  }
+
+  // --- Trail ---
+  const trailVisible = (state === 'playing' || state === 'paused' || state === 'apocalypse' || state === 'dead');
+  pixiTrailGraphics.clear();
+  if (trailVisible && orbTrailParticles.length) {
+    const orbRgb = activeOrbColor();
+    const [or, og, ob] = orbRgb.split(',').map(n => parseInt(n, 10) | 0);
+    const orbColorInt = (or << 16) | (og << 8) | ob;
+    for (const p of orbTrailParticles) {
+      const a = Math.max(0, p.life) * (p.alphaMul || 0.8) * 0.6;
+      if (a <= 0) continue;
+      if (p.kind === 'cyan' || p.kind === 'wisp') {
+        pixiTrailGraphics.beginFill(orbColorInt, a);
+        pixiTrailGraphics.drawCircle(p.x, p.y, p.size * (0.5 + 0.5 * p.life));
+        pixiTrailGraphics.endFill();
+      } else if (p.kind === 'fire') {
+        const [fr, fg, fb] = p.hue.split(',').map(n => parseInt(n, 10) | 0);
+        const fireInt = (fr << 16) | (fg << 8) | fb;
+        const flick = 0.85 + Math.sin(p.flicker || 0) * 0.25;
+        pixiTrailGraphics.beginFill(fireInt, a);
+        pixiTrailGraphics.drawCircle(p.x, p.y, p.size * (0.45 + 0.6 * p.life) * flick);
+        pixiTrailGraphics.endFill();
+      } else if (p.kind === 'line') {
+        pixiTrailGraphics.lineStyle({ width: 2, color: orbColorInt, alpha: a, cap: 'round' });
+        pixiTrailGraphics.moveTo(p.x, p.y);
+        pixiTrailGraphics.lineTo(p.x - p.dx * p.len, p.y - p.dy * p.len);
+        pixiTrailGraphics.lineStyle(); // reset so next iter doesn't accidentally stroke a fill
+      } else if (p.kind === 'rock') {
+        const s = p.size;
+        const cosA = Math.cos(p.angle), sinA = Math.sin(p.angle);
+        // Rotate the polygon vertices manually since PIXI.Graphics.drawPolygon
+        // doesn't have a per-call rotation parameter.
+        const verts = [
+          { x: -s,       y: -s * 0.4 },
+          { x:  s * 0.6, y: -s       },
+          { x:  s,       y:  s * 0.3 },
+          { x: -s * 0.3, y:  s       },
+        ];
+        const poly = [];
+        for (const v of verts) {
+          poly.push(p.x + v.x * cosA - v.y * sinA);
+          poly.push(p.y + v.x * sinA + v.y * cosA);
+        }
+        pixiTrailGraphics.beginFill(orbColorInt, a);
+        pixiTrailGraphics.drawPolygon(poly);
+        pixiTrailGraphics.endFill();
       }
     }
   }
@@ -7671,6 +7793,7 @@ function drawBg() {
     updatePixiBodyLayer();
     updatePixiBodySpriteLayer();
     updatePixiBodyEffectsLayer();
+    updatePixiPlayerLayer();
     updatePixiStars(); // renders the entire pixi stage
     return;
   }
@@ -8923,7 +9046,8 @@ function updateOrbTrailParticles() {
   }
 }
 
-function drawOrbTrailParticles() {
+function drawOrbTrailParticles(tctx = ctx) {
+  const ctx = tctx;
   if (!orbTrailParticles.length) return;
   const orbRgb = activeOrbColor();
   ctx.save();
@@ -8977,7 +9101,8 @@ function drawTrail() {
   drawOrbTrailParticles();
 }
 
-function drawPlayer() {
+function drawPlayer(tctx = ctx) {
+  const ctx = tctx;
   const inGrace = Date.now() < graceEndTime;
   const gf = inGrace ? Math.sin(frame*0.26)*0.5+0.5 : 1;
   const shielded = activeEffects.shield > 0;
@@ -9032,13 +9157,13 @@ function drawPlayer() {
 
     // Soft purple gradient halo
     ctx.globalAlpha = 0.35;
-    const gg = getCachedGradient('ghost_halo', () => {
-      const g = ctx.createRadialGradient(0, 0, PLAYER_R, 0, 0, PLAYER_R * 4.4);
+    const gg = getCachedGradient('ghost_halo', (c) => {
+      const g = c.createRadialGradient(0, 0, PLAYER_R, 0, 0, PLAYER_R * 4.4);
       g.addColorStop(0,   'rgba(190,110,240,0.5)');
       g.addColorStop(0.5, 'rgba(170,90,220,0.22)');
       g.addColorStop(1,   'rgba(170,90,220,0)');
       return g;
-    });
+    }, ctx);
     ctx.fillStyle = gg;
     ctx.beginPath(); ctx.arc(0, 0, PLAYER_R * 4.4, 0, 6.28); ctx.fill();
 
@@ -9093,22 +9218,22 @@ function drawPlayer() {
 
   const orbColor = getOrbBonus().color;
   ctx.globalAlpha = (inGrace?gf:1) * ghostAlpha;
-  const aura = getCachedGradient('orb_aura_' + orbColor, () => {
-    const g = ctx.createRadialGradient(0,0,0,0,0,PLAYER_R*2.8);
+  const aura = getCachedGradient('orb_aura_' + orbColor, (c) => {
+    const g = c.createRadialGradient(0,0,0,0,0,PLAYER_R*2.8);
     g.addColorStop(0,`rgba(${orbColor},0.38)`);
     g.addColorStop(1,'rgba(0,0,0,0)');
     return g;
-  });
+  }, ctx);
   ctx.fillStyle = aura; ctx.beginPath(); ctx.arc(0,0,PLAYER_R*2.8,0,6.28); ctx.fill();
 
   ctx.globalAlpha = ghostAlpha;
-  const core = getCachedGradient('orb_core_' + orbColor, () => {
-    const g = ctx.createRadialGradient(-1.5,-1.5,0,0,0,PLAYER_R);
+  const core = getCachedGradient('orb_core_' + orbColor, (c) => {
+    const g = c.createRadialGradient(-1.5,-1.5,0,0,0,PLAYER_R);
     g.addColorStop(0,'#fff');
     g.addColorStop(0.4,`rgba(${orbColor},1)`);
     g.addColorStop(1,`rgba(${orbColor},0.45)`);
     return g;
-  });
+  }, ctx);
   ctx.fillStyle = core; ctx.beginPath(); ctx.arc(0,0,PLAYER_R,0,6.28); ctx.fill();
 
   const spd = Math.hypot(player.vx, player.vy);
@@ -9716,10 +9841,11 @@ function render() {
     drawNovaRings();
     drawEmpRings();
     drawPlanetRipples();
-    drawTrail();
+    // Step 4: trail + player live on pixi when active.
+    if (!pixiActive) drawTrail();
     if (state==='playing'||state==='paused'||state==='apocalypse') {
       drawHyperspeedBarrier();
-      drawPlayer();
+      if (!pixiActive) drawPlayer();
     }
     drawPickupParticles();
     drawDestroyEffects();
