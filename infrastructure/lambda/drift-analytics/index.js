@@ -82,12 +82,12 @@ async function handlePost(event) {
 }
 
 async function handleGet(event) {
-  const supplied =
-    event.queryStringParameters?.password ||
-    (event.headers?.authorization || event.headers?.Authorization || "").replace(
-      /^Bearer\s+/i,
-      ""
-    );
+  // Auth is header-only now. The login form (served as the 401 body) fetches
+  // this same endpoint with an Authorization header and swaps the document on
+  // success — no query-string secret ever hits the URL bar or access logs.
+  const authHeader =
+    event.headers?.authorization || event.headers?.Authorization || "";
+  const supplied = authHeader.replace(/^Bearer\s+/i, "");
 
   if (supplied !== PASSWORD) {
     return {
@@ -135,25 +135,68 @@ function json(statusCode, body) {
 }
 
 function passwordFormHtml() {
+  // Login form: no query-string submit, no external assets. The inline script
+  // sends the password as an Authorization: Bearer header; on 200 the response
+  // body is swapped into the current document so the dashboard renders in
+  // place. On 401 we show an inline error and clear the input.
   return `<!doctype html>
 <html><head><meta charset="utf-8"><title>Drift Analytics</title>
 <style>
   body { background:#00000a; color:#cfefff; font-family:-apple-system,system-ui,sans-serif;
     display:flex; align-items:center; justify-content:center; min-height:100vh; margin:0; }
-  form { background:#0a0a1a; padding:32px; border:1px solid #0ff3; border-radius:10px;
-    box-shadow:0 0 24px #0ff2; }
+  .card { background:#0a0a1a; padding:32px; border:1px solid #0ff3; border-radius:10px;
+    box-shadow:0 0 24px #0ff2; min-width:320px; }
   h1 { color:#6ff; margin:0 0 16px; font-size:20px; letter-spacing:2px; }
+  .row { display:flex; gap:8px; align-items:center; }
   input { background:#000; color:#cfefff; border:1px solid #0ff5; padding:10px;
-    border-radius:6px; font-size:14px; width:240px; }
+    border-radius:6px; font-size:14px; flex:1; min-width:0; }
   button { background:#0ff; color:#001; border:0; padding:10px 20px; border-radius:6px;
-    font-weight:600; margin-left:8px; cursor:pointer; }
+    font-weight:600; cursor:pointer; }
+  button:disabled { opacity:0.5; cursor:wait; }
+  .err { color:#f68; margin-top:12px; font-size:12px; min-height:16px; letter-spacing:1px; }
 </style></head>
 <body>
-<form method="GET">
+<div class="card">
   <h1>DRIFT ANALYTICS</h1>
-  <input type="password" name="password" placeholder="password" autofocus />
-  <button type="submit">Enter</button>
-</form>
+  <div class="row">
+    <input id="pw" type="password" placeholder="password" autofocus autocomplete="current-password" />
+    <button id="go" type="button">Enter</button>
+  </div>
+  <div class="err" id="err"></div>
+</div>
+<script>
+(function () {
+  var pw  = document.getElementById('pw');
+  var go  = document.getElementById('go');
+  var err = document.getElementById('err');
+  function submit() {
+    var val = pw.value || '';
+    if (!val) { err.textContent = 'enter a password'; return; }
+    go.disabled = true; err.textContent = '';
+    fetch('/analytics', { headers: { 'Authorization': 'Bearer ' + val } })
+      .then(function (r) {
+        if (r.status === 200) {
+          return r.text().then(function (html) {
+            document.open();
+            document.write(html);
+            document.close();
+          });
+        }
+        if (r.status === 401) {
+          err.textContent = 'wrong password';
+          pw.value = '';
+          pw.focus();
+          return;
+        }
+        err.textContent = 'error: ' + r.status;
+      })
+      .catch(function () { err.textContent = 'network error'; })
+      .then(function () { go.disabled = false; });
+  }
+  go.addEventListener('click', submit);
+  pw.addEventListener('keydown', function (e) { if (e.key === 'Enter') submit(); });
+})();
+</script>
 </body></html>`;
 }
 
