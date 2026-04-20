@@ -1601,6 +1601,13 @@ pixiCanvas.height = H;
 let pixiApp = null;
 let pixiStarBuckets = [];   // per-bucket: { sprites: [main, wrap] }
 let pixiActive = false;
+// Phase 2 Step 2: nebula and background-image objects also migrate to pixi
+// so the original paint order (bgObjects → nebula → stars) is restored.
+// Stage child order (bottom → top): pixiBgLayer, pixiNebulaSprite, then the
+// star-bucket sprites added in initPixiStars().
+let pixiBgLayer = null;      // PIXI.Container holding per-bgObject sprites
+let pixiNebulaSprite = null; // PIXI.Sprite fed from the existing nebulaCanvas
+const pixiBgEntries = new Map(); // bgObject.seed → { imageSprite, vignetteSprite, vigBucket }
 
 // --- FPS counter ---
 // Rolling average of the last 60 frame intervals. DOM update throttled to
@@ -3932,6 +3939,15 @@ function initPixiStars() {
       antialias: false,
       autoStart: false, // we drive renders from render()
     });
+    // Stage child order is paint order. addChild calls happen bottom → top:
+    //   1. pixiBgLayer       (bg imagery, SCREEN-blended image + vignette)
+    //   2. pixiNebulaSprite  (nebula, NORMAL blend on top of bg)
+    //   3. star sprites      (stars, NORMAL blend on top of nebula)
+    // This matches the original Canvas 2D paint order exactly.
+    pixiBgLayer = new PIXI.Container();
+    pixiApp.stage.addChild(pixiBgLayer);
+    pixiNebulaSprite = new PIXI.Sprite(PIXI.Texture.from(nebulaCanvas));
+    pixiApp.stage.addChild(pixiNebulaSprite);
     pixiStarBuckets = [];
     for (let i = 0; i < STAR_BUCKETS; i++) {
       const atlas = starAtlases[i];
@@ -3995,6 +4011,61 @@ function updatePixiStars() {
   try { pixiApp.renderer.render(pixiApp.stage); } catch (err) {
     console.warn('[pixi] render threw, disabling:', err);
     pixiActive = false;
+  }
+}
+
+// Per-frame sync between bgObjects[] (state) and pixi sprites in pixiBgLayer.
+// Each bgObject gets two sprites: the image (SCREEN blend, alpha = o.opacity)
+// and a vignette on top (NORMAL blend, full alpha) — matches drawBgObjects()
+// exactly. Sprites are keyed by bgObject.seed so that the filter-cull in
+// updateBgObjects() (which drops objects past H+300) is mirrored here by
+// destroying pixi entries whose seeds are no longer live.
+function updatePixiBgObjects() {
+  if (!pixiActive || !pixiBgLayer) return;
+  const liveSeeds = new Set();
+  for (const o of bgObjects) {
+    const img = bgImages[o.key];
+    if (!img || !img.complete || img.naturalWidth === 0) continue;
+    liveSeeds.add(o.seed);
+    const style = o.key === 'galaxy' ? 'galaxy' : 'dim';
+    const bucket = Math.max(20, Math.round(o.size / 10) * 10);
+    const vignetteCanvas = getBgVignetteCanvas(style, bucket);
+    let entry = pixiBgEntries.get(o.seed);
+    if (!entry) {
+      const imageSprite = new PIXI.Sprite(PIXI.Texture.from(img));
+      imageSprite.anchor.set(0.5);
+      imageSprite.blendMode = PIXI.BLEND_MODES.SCREEN;
+      const vignetteSprite = new PIXI.Sprite(PIXI.Texture.from(vignetteCanvas));
+      vignetteSprite.anchor.set(0.5);
+      pixiBgLayer.addChild(imageSprite);
+      pixiBgLayer.addChild(vignetteSprite);
+      entry = { imageSprite, vignetteSprite, vigBucket: bucket };
+      pixiBgEntries.set(o.seed, entry);
+    } else if (entry.vigBucket !== bucket) {
+      // o.size is immutable after spawn, so bucket normally doesn't change —
+      // guard anyway in case a future tweak starts mutating size.
+      entry.vignetteSprite.texture = PIXI.Texture.from(vignetteCanvas);
+      entry.vigBucket = bucket;
+    }
+    entry.imageSprite.x = o.x;
+    entry.imageSprite.y = o.y;
+    entry.imageSprite.width = o.size;
+    entry.imageSprite.height = o.size;
+    entry.imageSprite.alpha = o.opacity;
+    entry.vignetteSprite.x = o.x;
+    entry.vignetteSprite.y = o.y;
+    entry.vignetteSprite.width = o.size;
+    entry.vignetteSprite.height = o.size;
+  }
+  if (pixiBgEntries.size > liveSeeds.size) {
+    for (const [seed, entry] of pixiBgEntries) {
+      if (liveSeeds.has(seed)) continue;
+      try { pixiBgLayer.removeChild(entry.imageSprite); } catch {}
+      try { pixiBgLayer.removeChild(entry.vignetteSprite); } catch {}
+      try { entry.imageSprite.destroy(); } catch {}
+      try { entry.vignetteSprite.destroy(); } catch {}
+      pixiBgEntries.delete(seed);
+    }
   }
 }
 
@@ -7056,15 +7127,30 @@ function seededRand(seed) {
 
 function drawBg() {
   if (pixiActive) {
-    // Stars live on #pixiCanvas (behind #c). Clear #c so the pixi layer shows
-    // through the areas nothing else covers. Body `background: #00000a` and
-    // the pixi app's own #00000a clear color keep the void color consistent.
+    // Phase 2 Step 2: bgObjects + nebula + stars all live on #pixiCanvas now.
+    // #c is cleared every frame so the pixi layer shows through where #c has
+    // nothing drawn. State still updates on the main thread — only the draw
+    // calls move.
     ctx.clearRect(0, 0, W, H);
-  } else {
-    // Solid background (simplified from createLinearGradient)
-    ctx.fillStyle = '#00000a';
-    ctx.fillRect(0, 0, W, H);
+    updateBgObjects();
+    const nebDelta = frame - nebulaRenderedFrame;
+    if (nebulaRenderedFrame < 0 || nebDelta < 0 || nebDelta >= NEBULA_UPDATE_INTERVAL) {
+      renderNebulaOffscreen();
+      nebulaRenderedFrame = frame;
+      // Push the refreshed nebulaCanvas bitmap to the GPU-side texture so
+      // pixi's next render picks up the new gradient positions.
+      if (pixiNebulaSprite && pixiNebulaSprite.texture && pixiNebulaSprite.texture.baseTexture) {
+        try { pixiNebulaSprite.texture.baseTexture.update(); } catch {}
+      }
+    }
+    updatePixiBgObjects();
+    updatePixiStars(); // renders the entire pixi stage
+    return;
   }
+  // --- Canvas 2D fallback (unchanged from pre-pixi behavior) ---
+  // Solid background (simplified from createLinearGradient)
+  ctx.fillStyle = '#00000a';
+  ctx.fillRect(0, 0, W, H);
   // Background space imagery drifts down behind everything.
   updateBgObjects();
   drawBgObjects();
@@ -7076,25 +7162,21 @@ function drawBg() {
     nebulaRenderedFrame = frame;
   }
   ctx.drawImage(nebulaCanvas, 0, 0);
-  if (pixiActive) {
-    updatePixiStars();
-  } else {
-    // Star atlases: 4 drawImage calls (8 at most if any bucket has a non-zero
-    // wrap offset) instead of 160 individual arc+fill calls. Each bucket's
-    // alpha is its mid-phase twinkle value so the whole bucket fades in/out
-    // together. Scroll is done via the offset — the atlas is drawn once at y,
-    // then again at y-H to cover the wrap band above the canvas.
-    for (let i = 0; i < STAR_BUCKETS; i++) {
-      const atlas = starAtlases[i];
-      if (!atlas) continue;
-      const midPhase = (i + 0.5) * (Math.PI * 2 / STAR_BUCKETS);
-      ctx.globalAlpha = Math.max(0, 0.35 + 0.5 * Math.sin(frame * 0.05 + midPhase));
-      const y = starBucketOffsets[i];
-      ctx.drawImage(atlas, 0, y);
-      if (y > 0) ctx.drawImage(atlas, 0, y - H);
-    }
-    ctx.globalAlpha = 1;
+  // Star atlases: 4 drawImage calls (8 at most if any bucket has a non-zero
+  // wrap offset) instead of 160 individual arc+fill calls. Each bucket's
+  // alpha is its mid-phase twinkle value so the whole bucket fades in/out
+  // together. Scroll is done via the offset — the atlas is drawn once at y,
+  // then again at y-H to cover the wrap band above the canvas.
+  for (let i = 0; i < STAR_BUCKETS; i++) {
+    const atlas = starAtlases[i];
+    if (!atlas) continue;
+    const midPhase = (i + 0.5) * (Math.PI * 2 / STAR_BUCKETS);
+    ctx.globalAlpha = Math.max(0, 0.35 + 0.5 * Math.sin(frame * 0.05 + midPhase));
+    const y = starBucketOffsets[i];
+    ctx.drawImage(atlas, 0, y);
+    if (y > 0) ctx.drawImage(atlas, 0, y - H);
   }
+  ctx.globalAlpha = 1;
 }
 
 // Run a per-body custom drawer in a try/catch so a single bad frame from a
