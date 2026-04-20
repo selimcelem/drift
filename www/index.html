@@ -1385,9 +1385,14 @@
      (bodies, player, nebula, effects) still renders to the Canvas 2D on top.
      Using z-index: -1 keeps #c non-positioned (stacking level 3), which is
      essential: if #c gets a positive z-index it stacks above #overlay (which
-     has z-index: auto) and starts intercepting every menu button click. */
+     has z-index: auto) and starts intercepting every menu button click.
+     position: absolute (not fixed) so it scales to #gameWrapper, which JS
+     shrinks to a phone-shaped box + centers on desktop browsers. With
+     position: fixed this canvas escaped the wrapper and its 430x932 backing
+     buffer got CSS-stretched across the full viewport. On Capacitor the
+     wrapper fills 100vw/100vh so absolute == fixed visually. */
   #pixiCanvas {
-    position: fixed;
+    position: absolute;
     top: 0;
     left: 0;
     width: 100%;
