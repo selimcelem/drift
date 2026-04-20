@@ -2,7 +2,7 @@
 
 A gravity surfing endless runner. You're a speck of light falling through the cosmos. Stars, planets and black holes scroll past — and instead of dodging them with thrusters like every other space game, you *use their gravity*. Pull yourself toward the nearest body. Push yourself away. Thread the needle. Don't get absorbed.
 
-One canvas. One HTML file. No frameworks. It ships as an Android app via Capacitor.
+One HTML file, two canvases (PixiJS/WebGL for rendering, Canvas 2D as the preserved fallback). No bundler, no build step. It ships as an Android app via Capacitor.
 
 ## How to play
 
@@ -49,11 +49,13 @@ Top 5 scores are kept locally in `localStorage` and shown on the death screen.
 
 ## Tech stack
 
-- **Vanilla HTML5 Canvas + JS** — the entire game is one `www/index.html`. No build step, no bundler, no framework. Just a `requestAnimationFrame` loop and some trig.
+- **PixiJS 7 (WebGL)** — primary renderer for every game layer (star field, nebula, background imagery, bodies, player + trail, particles, powerups, destroy effects, screen overlays). Loaded via CDN (`pixi.min.js`); no bundler involved. Migrated from Canvas 2D in v1.6.0 to get GPU-accelerated sprite batching and eliminate Adreno driver mutex crashes on certain Qualcomm devices
+- **HTML5 Canvas 2D** — preserved fallback path. If PIXI is unavailable (CDN blocked, WebGL disabled) the render loop falls back to the original Canvas 2D pipeline on `#c`
+- **Vanilla JS, one file** — the entire game is still one `www/index.html`. No build step, no bundler, no app framework, no TypeScript, no asset pipeline. Just a `requestAnimationFrame` loop, some trig, and PixiJS as the draw backend
 - **Capacitor 8** — wraps the web app into a native Android shell
 - **Gradle / Android SDK** — for producing the APK/AAB
 
-No React. No TypeScript. No asset pipeline. If you want to tweak the game, open `www/index.html` in a browser and hit refresh.
+If you want to tweak the game, open `www/index.html` in a browser and hit refresh.
 
 ## Running it
 
@@ -136,13 +138,18 @@ Pipeline: `terraform init` → `plan` → `apply -auto-approve`
 
 ## Screenshots
 
-_coming soon_
+![Main menu](store-assets/screenshots/menu.png)
+![Gameplay](store-assets/screenshots/gameplay.png)
+![Powerup active](store-assets/screenshots/powerup.png)
+![Leaderboard](store-assets/screenshots/leaderboard.png)
 
-<!--
-![Title screen](docs/screenshot-title.png)
-![In game](docs/screenshot-play.png)
-![Death screen](docs/screenshot-death.png)
--->
+## Roadmap
+
+Post-v1.6.0 plans:
+
+- **Codex** — body types unlock on first destruction with a lore entry attached to each; progression state (crystals + unlocked orbs + codex) synced to the cloud via Google Play Games so it carries across installs
+- **Visual upgrades** — now that the pipeline is on WebGL, adding fragment shaders for body auras, smoother tentacle animation via per-segment interpolation, and denser particle effects
+- **Mobile audio bass fix** — low-frequency SFX (hyperspeed sustain, apocalypse rumble) currently clip on some Android speakers; re-EQ pass planned
 
 ## License
 

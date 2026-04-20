@@ -4,7 +4,51 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## v1.5.5 — 2026-04-20
+## [1.6.0] - 2026-04-21
+
+### Added
+- Full PixiJS (WebGL) renderer migration: all 12 body types, player + trail, pickup/death/shard/crack/destroy particles,
+  powerups, pair tethers, nebula, background imagery, star field, and screen overlays now draw via GPU-accelerated
+  sprite batching on a dedicated `#pixiCanvas`. `#c` is empty in the normal render path; the Canvas 2D pipeline stays
+  in the source as a fallback for WebViews where WebGL or the PIXI CDN load fails
+- Screen shake is now applied as a single transform on the PixiJS stage root instead of per-layer shifts, so shakes
+  stay pixel-perfect across every element that used to have its own offset
+- Loading screen warms the PixiJS texture cache during preload: the atlases, per-body sprites, powerup halos, and
+  overlay canvases are uploaded to the GPU before the first real frame so there's no first-spawn hitch
+- Body preview developer tool — type pilot name `BODYPREVIEW` on the main menu to open a scrollable page rendering
+  every body type at rest with labels for rapid visual QA over the PixiJS sprite outputs
+- Tappable pilot name on the main menu for quick name changes without going through the pause menu
+- `TIME_DILATION` dev cheat constant for rapidly exercising late-phase gameplay and the apocalypse sequence during testing
+- Gameplay FPS counter (top-right, mirrored from pause-button visibility via `MutationObserver`)
+
+### Changed
+- Powerup pickup burst now centres on the player instead of the pickup position
+- Menu rendering worker removed — orb preview rendering consolidated back to the main thread now that PixiJS handles
+  the heavy per-frame work; the `OffscreenCanvas` worker prototype from the v1.5.6 series is no longer needed
+
+### Fixed
+- Desktop browser (GitHub Pages) layout: `#pixiCanvas` was styled `position: fixed` with `width/height: 100%`, which
+  made it fill the full viewport even though its backing buffer was capped at the phone-shaped `430×932` desktop
+  playfield — the whole render stack got CSS-stretched across widescreen monitors. Changed to `position: absolute`
+  so it's contained by `#gameWrapper` (itself `position: fixed`, so Capacitor/full-viewport behaviour is unchanged)
+- Adreno GPU mutex crashes on certain Qualcomm devices eliminated: the Canvas 2D workload was exercising a driver
+  path that deadlocked under sustained load; the WebGL renderer routes all draws through a single GL command stream
+  that the driver handles cleanly
+- Late-phase / apocalypse-phase gameplay now sustains 110–120 FPS on the test device, up from ~50–60 FPS on the
+  Canvas 2D path
+
+### Removed
+- `OffscreenCanvas` menu worker prototype (superseded by the main-thread PixiJS renderer)
+- Per-frame procedural Canvas 2D draw calls for bodies, player, particles, powerups, overlays — `#c` is empty in
+  normal rendering; retained as the fallback surface only
+
+## [1.5.6] - 2026-04-20
+
+### Changed
+- Android: WebView offscreen pre-rasterization enabled and `largeHeap` declared on the manifest so sustained runs
+  have more JS-heap headroom before the pressure watchdog starts evicting caches
+
+## [1.5.5] - 2026-04-20
 
 ### Features
 - Resume Run: pause or force-close the game at any point, reopen later, and RESUME RUN restores
@@ -37,7 +81,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Progression state (crystals, orbs) remains localStorage-only; cloud save via Google Play Games
   planned before production release
 
-## [Unreleased]
+## [1.5.4] - 2026-04-20
+
+_Collects the changes that shipped across the rapid-iteration v1.5.1 → v1.5.4 series (loading screen, analytics
+dashboard, draw-call optimizations, powerup rebalancing, stability hardening) in a single entry._
 
 ### Added
 - Loading screen with animated drifting star field, progress bar, percentage readout, and TAP TO START gesture gate before the AudioContext is resumed
