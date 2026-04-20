@@ -1746,6 +1746,28 @@ let pixiDestroyEffectsG = null;
 let pixiPowerupLayer = null;
 let pixiPairTethersG = null;
 const pixiPowerupEntries = new Map(); // powerup -> { sprite, canvas, ctx, canvasSize }
+// Step 6: screen-effect overlay layer on top of everything inside pixi.
+// Simple shapes (nova/emp/ripples, hyperspeed tint, black curtain, impact
+// flashes) via native PIXI.Graphics. Complex composite overlays (hyperspeed
+// barrier, apocalypse sun, hyperspeed stack text) via per-element offscreen
+// canvases + ctx-shadow refactor of the existing drawXxx functions.
+let pixiOverlayLayer = null;
+let pixiNovaRingsG = null;
+let pixiEmpRingsG = null;
+let pixiPlanetRipplesG = null;
+let pixiScreenFillG = null;       // hyperspeed gold tint + apocalypse curtain + tint + impact flashes
+let pixiHyperBarrierSprite = null;
+let pixiHyperBarrierCanvas = null;
+let pixiHyperBarrierCtx = null;
+let pixiHyperStackSprite = null;
+let pixiHyperStackCanvas = null;
+let pixiHyperStackCtx = null;
+let pixiApocalypseSunSprite = null;
+let pixiApocalypseSunCanvas = null;
+let pixiApocalypseSunCtx = null;
+const PIXI_HYPER_BARRIER_SIZE = 200;
+const PIXI_HYPER_STACK_W = 320;
+const PIXI_HYPER_STACK_H = 60;
 
 // --- FPS counter ---
 // Rolling average of the last 60 frame intervals. DOM update throttled to
@@ -2458,6 +2480,15 @@ let runStats = { totalPassed: 0, totalDestroyed: 0, pointsFromPassing: 0, points
 // condition is first detected; triggerDeath() reads it when posting to the
 // analytics endpoint. streakHistory records every destroyStreak peak so the
 // longest streak of a run can be derived at death time.
+// DEV cheat: fast-forward in-game elapsed time used for phase progression,
+// body type unlocks, run-timer display, powerup-spawn escalation, and the
+// 10-minute apocalypse trigger. DOES NOT affect physics (scroll speed ramp,
+// body movement, player movement, particle decay) or animation phases —
+// those stay on real wall-clock. Set TIME_DILATION = 1 to disable, or
+// remove this constant + the multiplication sites (search elapsedProgressionSeconds).
+// Example: TIME_DILATION = 60 → 1 real second = 60 in-game seconds for
+// progression, apocalypse triggers in ~10 real seconds.
+const TIME_DILATION = 1;
 const GAME_VERSION = '1.5.6';
 try {
   const vl = document.getElementById('versionLabel');
@@ -4195,6 +4226,21 @@ function initPixiStars() {
     pixiApp.stage.addChild(pixiPowerupLayer);
     pixiPairTethersG = new PIXI.Graphics();
     pixiPowerupLayer.addChild(pixiPairTethersG);
+    // Step 6: overlay layer — screen-effect rings + fills + text + barrier +
+    // apocalypse sun. Top of pixi stage so these render above bodies/player.
+    pixiOverlayLayer = new PIXI.Container();
+    pixiApp.stage.addChild(pixiOverlayLayer);
+    pixiScreenFillG = new PIXI.Graphics();
+    pixiNovaRingsG = new PIXI.Graphics();
+    pixiEmpRingsG = new PIXI.Graphics();
+    pixiPlanetRipplesG = new PIXI.Graphics();
+    // Paint order inside overlay: screen fills behind (hyperspeed tint), then
+    // the screen-space rings, then the per-element sprites (barrier/stack
+    // text/apocalypse sun) added lazily at first use.
+    pixiOverlayLayer.addChild(pixiScreenFillG);
+    pixiOverlayLayer.addChild(pixiNovaRingsG);
+    pixiOverlayLayer.addChild(pixiEmpRingsG);
+    pixiOverlayLayer.addChild(pixiPlanetRipplesG);
     pixiActive = true;
   } catch (err) {
     console.warn('[pixi] init failed, falling back to Canvas 2D stars:', err);
@@ -5148,6 +5194,259 @@ function updatePixiPowerupLayer() {
   }
 }
 
+// Step 6: overlays — nova rings, emp rings, planet ripples, hyperspeed gold
+// tint, hyperspeed barrier, apocalypse overlay, hyperspeed stack text, and
+// post-apocalypse black curtain. Simple ring/fill kinds via native Graphics;
+// complex composites (barrier, sun, hyperspeed text with shadow blur) via
+// per-element offscreen canvases reusing their existing drawXxx functions
+// through the (tctx) ctx-shadow pattern.
+function updatePixiOverlayLayer() {
+  if (!pixiActive || !pixiOverlayLayer) return;
+  const fg = pixiScreenFillG;
+  fg.clear();
+
+  // Hyperspeed gold tint (fullscreen alpha wash).
+  if (activeEffects.hyperspeed > 0 && hyperspeedCurrentMult > 1.05) {
+    const fade = Math.min(activeEffects.hyperspeed / 500, 1);
+    const a = 0.12 * fade * ((hyperspeedCurrentMult - 1) / 2);
+    if (a > 0) {
+      fg.beginFill(0xFFDC3C, a);
+      fg.drawRect(0, 0, W, H);
+      fg.endFill();
+    }
+  }
+
+  // Apocalypse tint + impact flashes as native rects/circles. The complex
+  // sun goes to its own offscreen canvas below.
+  if (state === 'apocalypse') {
+    const t = apocalypseElapsed();
+    let tintAlpha = 0;
+    if (t >= 3 && t < 8) tintAlpha = 0.15 * ((t - 3) / 5);
+    else if (t >= 8) tintAlpha = 0.15 + 0.25 * Math.min(1, (t - 8) / 20);
+    if (tintAlpha > 0) {
+      fg.beginFill(0x820000, tintAlpha);
+      fg.drawRect(0, 0, W, H);
+      fg.endFill();
+    }
+    if (apocalypseImpactTriggered) {
+      const impactT = (Date.now() - apocalypseImpactStart) / 1000;
+      // Small expanding white ring at player position.
+      if (impactT <= 0.2) {
+        const k = Math.min(1, impactT / 0.1);
+        const rr = 30 + 70 * k;
+        fg.beginFill(0xFFFFFF, Math.max(0, (1 - k)) * 0.95);
+        fg.drawCircle(player.x, player.y, rr);
+        fg.endFill();
+      }
+      if (impactT > 0.2 && impactT <= 0.5) {
+        const k = (impactT - 0.2) / 0.3;
+        fg.beginFill(0xFFFFFF, k);
+        fg.drawRect(0, 0, W, H);
+        fg.endFill();
+      }
+      if (impactT > 0.5 && impactT <= 0.7) {
+        fg.beginFill(0xFFFFFF, 1);
+        fg.drawRect(0, 0, W, H);
+        fg.endFill();
+      }
+      if (impactT > 0.7 && impactT <= 1.2) {
+        const k = (impactT - 0.7) / 0.5;
+        fg.beginFill(0xFFFFFF, 1 - k);
+        fg.drawRect(0, 0, W, H);
+        fg.endFill();
+        fg.beginFill(0x000000, k);
+        fg.drawRect(0, 0, W, H);
+        fg.endFill();
+      }
+    }
+  } else if (state === 'dead' && apocalypseDeathFlag) {
+    // Post-apocalypse black curtain until the death-screen DOM overlay fades in.
+    fg.beginFill(0x000000, 1);
+    fg.drawRect(0, 0, W, H);
+    fg.endFill();
+  }
+
+  // Nova rings: inner + outer stroked circles per ring.
+  const ng = pixiNovaRingsG;
+  ng.clear();
+  for (const r of novaRings) {
+    const rm = r.radiusMult || 1;
+    const drawR = r.radius * rm;
+    const innerR = Math.max(0, drawR - 20);
+    const sn = r.supernova;
+    const innerCol = sn ? 0xFF5050 : 0xFFA03C;
+    const outerCol = sn ? 0xFF3C3C : 0xFFC85A;
+    ng.lineStyle({ width: 10, color: innerCol, alpha: r.life * 0.5 * (r.life * 0.7) });
+    ng.drawCircle(r.x, r.y, innerR);
+    ng.lineStyle({ width: 6, color: outerCol, alpha: r.life * 0.85 * r.life });
+    ng.drawCircle(r.x, r.y, drawR);
+  }
+  ng.lineStyle();
+
+  // Planet ripples: two stroked rings per entry.
+  const rg = pixiPlanetRipplesG;
+  rg.clear();
+  for (const r of planetRipples) {
+    rg.lineStyle({ width: 1.6, color: 0xDC96FF, alpha: r.life * 0.7 * r.life });
+    rg.drawCircle(r.x, r.y, r.baseR + r.expand);
+    rg.lineStyle({ width: 1, color: 0xDC96FF, alpha: r.life * 0.35 * r.life });
+    rg.drawCircle(r.x, r.y, r.baseR + r.expand * 1.6);
+  }
+  rg.lineStyle();
+
+  // EMP rings: outer ring + lightning bolts + center flash (approx gradient
+  // via 2 concentric alpha rings for the flash).
+  const eg = pixiEmpRingsG;
+  eg.clear();
+  if (empRings.length) {
+    const now = Date.now();
+    const maxLifeMs = 400;
+    for (const r of empRings) {
+      const age = now - r.startTime;
+      const life = Math.max(0, Math.min(1, age / maxLifeMs));
+      const fade = (1 - life) * (r.opacity != null ? r.opacity : 1);
+      const ringMax = r.maxRadius != null ? r.maxRadius : EMP_MAX_RADIUS;
+      const outerR = 20 + life * (ringMax - 20);
+      eg.lineStyle({ width: 2, color: 0x64DCFF, alpha: fade * 0.9 });
+      eg.drawCircle(r.x, r.y, outerR);
+      const boltT = Math.min(1, age / 300);
+      const boltFade = 1 - boltT;
+      if (boltFade > 0 && r.bolts) {
+        const flickerTick = Math.floor(frame / 3);
+        const rng = mulberry32((r.startTime & 0xffff) ^ flickerTick);
+        eg.lineStyle({ width: 1.6, color: 0xFFFFFF, alpha: boltFade * (0.9 * boltFade + 0.1) });
+        for (const b of r.bolts) {
+          const tipR = outerR - 4;
+          const dx = Math.cos(b.angle);
+          const dy = Math.sin(b.angle);
+          const perpX = -dy, perpY = dx;
+          eg.moveTo(r.x, r.y);
+          for (let i = 1; i < b.segs; i++) {
+            const u = i / b.segs;
+            const bx = dx * tipR * u;
+            const by = dy * tipR * u;
+            const off = (rng() - 0.5) * 30;
+            eg.lineTo(r.x + bx + perpX * off, r.y + by + perpY * off);
+          }
+          eg.lineTo(r.x + dx * tipR, r.y + dy * tipR);
+        }
+      }
+      const flashT = Math.min(1, age / 200);
+      if (flashT < 1) {
+        const fk = 1 - flashT;
+        const fr = Math.max(0.5, 20 * fk);
+        // Gradient approx: two concentric white alpha discs.
+        eg.beginFill(0xFFFFFF, fk * 0.85);
+        eg.drawCircle(r.x, r.y, fr * 0.4);
+        eg.endFill();
+        eg.beginFill(0xFFFFFF, fk * 0.35);
+        eg.drawCircle(r.x, r.y, fr);
+        eg.endFill();
+      }
+    }
+  }
+  eg.lineStyle();
+
+  // Hyperspeed barrier composite (offscreen canvas per frame when active).
+  if (activeEffects.hyperspeed > 0 && hyperspeedCurrentMult > 1.05) {
+    if (!pixiHyperBarrierCanvas) {
+      pixiHyperBarrierCanvas = document.createElement('canvas');
+      pixiHyperBarrierCanvas.width = PIXI_HYPER_BARRIER_SIZE;
+      pixiHyperBarrierCanvas.height = PIXI_HYPER_BARRIER_SIZE;
+      pixiHyperBarrierCtx = pixiHyperBarrierCanvas.getContext('2d');
+    }
+    if (!pixiHyperBarrierSprite) {
+      pixiHyperBarrierSprite = new PIXI.Sprite(PIXI.Texture.from(pixiHyperBarrierCanvas));
+      pixiHyperBarrierSprite.anchor.set(0.5);
+      pixiOverlayLayer.addChild(pixiHyperBarrierSprite);
+    }
+    const ofx = pixiHyperBarrierCtx;
+    const cx = PIXI_HYPER_BARRIER_SIZE / 2, cy = PIXI_HYPER_BARRIER_SIZE / 2;
+    ofx.save();
+    ofx.setTransform(1, 0, 0, 1, 0, 0);
+    ofx.clearRect(0, 0, PIXI_HYPER_BARRIER_SIZE, PIXI_HYPER_BARRIER_SIZE);
+    // Bias so drawHyperspeedBarrier's absolute player.x/y lands at canvas
+    // center. Barrier draws at player.y - 60 so bias the y extra by 30 to
+    // keep the barrier inside the canvas (canvas center sits halfway between
+    // player and barrier top).
+    ofx.translate(cx - player.x, cy - player.y + 30);
+    try { drawHyperspeedBarrier(ofx); } catch (err) { console.error('[pixi-overlay] barrier threw', err); }
+    ofx.restore();
+    pixiHyperBarrierSprite.x = player.x;
+    pixiHyperBarrierSprite.y = player.y - 30;
+    pixiHyperBarrierSprite.visible = true;
+    if (pixiHyperBarrierSprite.texture && pixiHyperBarrierSprite.texture.baseTexture) {
+      try { pixiHyperBarrierSprite.texture.baseTexture.update(); } catch {}
+    }
+  } else if (pixiHyperBarrierSprite) {
+    pixiHyperBarrierSprite.visible = false;
+  }
+
+  // Hyperspeed stack text (2× / 3× / 4× banner above player).
+  if (state === 'playing' && hyperSpeedStacks >= 2) {
+    if (!pixiHyperStackCanvas) {
+      pixiHyperStackCanvas = document.createElement('canvas');
+      pixiHyperStackCanvas.width = PIXI_HYPER_STACK_W;
+      pixiHyperStackCanvas.height = PIXI_HYPER_STACK_H;
+      pixiHyperStackCtx = pixiHyperStackCanvas.getContext('2d');
+    }
+    if (!pixiHyperStackSprite) {
+      pixiHyperStackSprite = new PIXI.Sprite(PIXI.Texture.from(pixiHyperStackCanvas));
+      pixiHyperStackSprite.anchor.set(0.5, 0);
+      pixiOverlayLayer.addChild(pixiHyperStackSprite);
+    }
+    const ofx = pixiHyperStackCtx;
+    ofx.save();
+    ofx.setTransform(1, 0, 0, 1, 0, 0);
+    ofx.clearRect(0, 0, PIXI_HYPER_STACK_W, PIXI_HYPER_STACK_H);
+    // drawHyperStackText draws at (W/2, 50 + safeAreaTop) absolute — bias so
+    // it lands at canvas (W/2, 0) inside the stack canvas.
+    ofx.translate(PIXI_HYPER_STACK_W / 2 - W / 2, -(50 + safeAreaTop));
+    try { drawHyperStackText(ofx); } catch (err) { console.error('[pixi-overlay] stack text threw', err); }
+    ofx.restore();
+    pixiHyperStackSprite.x = W / 2;
+    pixiHyperStackSprite.y = 50 + safeAreaTop;
+    pixiHyperStackSprite.visible = true;
+    if (pixiHyperStackSprite.texture && pixiHyperStackSprite.texture.baseTexture) {
+      try { pixiHyperStackSprite.texture.baseTexture.update(); } catch {}
+    }
+  } else if (pixiHyperStackSprite) {
+    pixiHyperStackSprite.visible = false;
+  }
+
+  // Apocalypse sun — complex radial gradients + 'lighter' composite + clip
+  // + bezier flares. Full-screen offscreen canvas while active. The other
+  // apocalypse visuals (tint + impact flashes) went to pixiScreenFillG above.
+  if (state === 'apocalypse' && apocalypseSun) {
+    if (!pixiApocalypseSunCanvas) {
+      pixiApocalypseSunCanvas = document.createElement('canvas');
+      pixiApocalypseSunCanvas.width = W;
+      pixiApocalypseSunCanvas.height = H;
+      pixiApocalypseSunCtx = pixiApocalypseSunCanvas.getContext('2d');
+    }
+    if (!pixiApocalypseSunSprite) {
+      pixiApocalypseSunSprite = new PIXI.Sprite(PIXI.Texture.from(pixiApocalypseSunCanvas));
+      pixiApocalypseSunSprite.anchor.set(0, 0);
+      pixiOverlayLayer.addChild(pixiApocalypseSunSprite);
+    }
+    const ofx = pixiApocalypseSunCtx;
+    ofx.save();
+    ofx.setTransform(1, 0, 0, 1, 0, 0);
+    ofx.clearRect(0, 0, W, H);
+    // No translate — drawApocalypseSun uses absolute screen coords (W/2 etc).
+    try { drawApocalypseSun(ofx); } catch (err) { console.error('[pixi-overlay] sun threw', err); }
+    ofx.restore();
+    pixiApocalypseSunSprite.x = 0;
+    pixiApocalypseSunSprite.y = 0;
+    pixiApocalypseSunSprite.visible = true;
+    if (pixiApocalypseSunSprite.texture && pixiApocalypseSunSprite.texture.baseTexture) {
+      try { pixiApocalypseSunSprite.texture.baseTexture.update(); } catch {}
+    }
+  } else if (pixiApocalypseSunSprite) {
+    pixiApocalypseSunSprite.visible = false;
+  }
+}
+
 // --- Bodies ---
 // New planet types introduced from phase 2 onward. Shared between the spawn
 // pools, the 80% scroll multiplier, and future gameplay tuning.
@@ -5178,7 +5477,7 @@ function phaseForElapsed(es) {
 // one, we fire a 3-second crossfade on the SFX module.
 let currentGameplayTrack = 1;
 function checkGameplayPhase() {
-  const phase = phaseForElapsed(elapsedRunSeconds());
+  const phase = phaseForElapsed(elapsedProgressionSeconds());
   if (phase === currentGameplayTrack) return;
   const prev = currentGameplayTrack;
   currentGameplayTrack = phase;
@@ -5193,7 +5492,7 @@ function spawnBody(yBase, opts) {
   if (opts && opts.type) {
     type = opts.type;
   } else {
-    const pool = PHASE_POOLS[phaseForElapsed(elapsedRunSeconds())];
+    const pool = PHASE_POOLS[phaseForElapsed(elapsedProgressionSeconds())];
     type = pool[Math.floor(Math.random() * pool.length)];
   }
   let radius, color, glowColor;
@@ -5380,7 +5679,7 @@ function spawnBody(yBase, opts) {
 // rather than runaway counts.
 function effectiveMaxBodies() {
   const d = diff();
-  const ramped = d.maxBodies + Math.max(0, Math.floor((elapsedRunSeconds() - 120) / 60));
+  const ramped = d.maxBodies + Math.max(0, Math.floor((elapsedProgressionSeconds() - 120) / 60));
   return Math.min(ramped, d.maxBodiesCap);
 }
 
@@ -6281,6 +6580,13 @@ let runStartTime = 0;
 function elapsedRunSeconds() {
   return runStartTime ? (Date.now() - runStartTime) / 1000 : 0;
 }
+// Progression clock — wall-clock × TIME_DILATION. Used for phase selection,
+// body type unlocks, the run-timer display, powerup-spawn escalation, and
+// the apocalypse trigger. Physics (scroll speed), animation, analytics, and
+// real-time cadence checks keep using elapsedRunSeconds() directly.
+function elapsedProgressionSeconds() {
+  return elapsedRunSeconds() * TIME_DILATION;
+}
 function formatRunTime(seconds) {
   const mm = Math.floor(seconds / 60);
   const ss = Math.floor(seconds % 60);
@@ -6318,7 +6624,7 @@ function glitchText(text, level) {
 function updateRunTimerDisplay() {
   const el = document.getElementById('runTimer');
   if (!el) return;
-  const s = elapsedRunSeconds();
+  const s = elapsedProgressionSeconds();
   const stage = runTimerStage(s);
   const showBang = stage.tier >= 2;
   el.textContent = glitchText(formatRunTime(s) + (showBang ? ' !' : ''), stage.glitch);
@@ -7110,8 +7416,9 @@ function update() {
   const spd = scrollSpeed();
   const d = diff();
 
-  // 10-minute mark: kick off the apocalypse sequence.
-  if (elapsedRunSeconds() >= 600) { startApocalypse(); return; }
+  // 10-minute mark: kick off the apocalypse sequence. Progression clock so
+  // TIME_DILATION fast-forwards the trigger proportionally.
+  if (elapsedProgressionSeconds() >= 600) { startApocalypse(); return; }
 
   // Burst trigger: also catches keyboard-held combos each frame.
   if (leftDown && rightDown) burstTriggered = true;
@@ -7314,7 +7621,7 @@ function update() {
   // Powerup spawning: cooldown scales with frequency, max 2 visible at once.
   // After 2 minutes, frequency scales +5% per extra minute survived, capped at
   // a +50% total boost above the base difficulty rate.
-  const minutesOver = Math.max(0, Math.floor((elapsedRunSeconds() - 120) / 60));
+  const minutesOver = Math.max(0, Math.floor((elapsedProgressionSeconds() - 120) / 60));
   const effectivePowerupFrequency = d.powerupFrequency * Math.min(1.5, 1 + 0.05 * minutesOver);
   const spawnInterval = 220 / effectivePowerupFrequency;
   // Vertical spacing guard: if a powerup spawned in the last 3 seconds, add
@@ -7668,7 +7975,8 @@ function updateApocalypse() {
 }
 
 // The sun object itself: layered radial gradient core + corona rays + flares.
-function drawApocalypseSun() {
+function drawApocalypseSun(tctx = ctx) {
+  const ctx = tctx;
   if (!apocalypseSun) return;
   const sun = apocalypseSun;
   const x = W / 2, y = sun.y, r = sun.radius;
@@ -7811,7 +8119,8 @@ function bezierPoint(x0, y0, x1, y1, x2, y2, x3, y3, u) {
   };
 }
 
-function drawApocalypseOverlay() {
+function drawApocalypseOverlay(tctx = ctx) {
+  const ctx = tctx;
   if (state !== 'apocalypse') return;
   const t = apocalypseElapsed();
 
@@ -7825,7 +8134,7 @@ function drawApocalypseOverlay() {
   }
 
   // Sun.
-  drawApocalypseSun();
+  drawApocalypseSun(ctx);
 
   // Impact flashes and fade.
   if (apocalypseImpactTriggered) {
@@ -8264,6 +8573,7 @@ function drawBg() {
     updatePixiParticleLayer();
     updatePixiDestroyEffectsLayer();
     updatePixiPowerupLayer();
+    updatePixiOverlayLayer();
     updatePixiStars(); // renders the entire pixi stage
     return;
   }
@@ -9865,6 +10175,8 @@ function drawPowerups() {
 }
 
 function drawNovaRings() {
+  // Step 6: pixi pipeline handles rendering via pixiNovaRingsG.
+  if (pixiActive) return;
   // 2 strokes/ring (inner + outer) — the 18px glow stroke was dropped in the
   // draw-call reduction pass. At 12 rings cap, saves 12 strokes/frame.
   for (const r of novaRings) {
@@ -9887,6 +10199,7 @@ function drawNovaRings() {
 }
 
 function drawPlanetRipples() {
+  if (pixiActive) return;
   for (const r of planetRipples) {
     ctx.globalAlpha = r.life * 0.7;
     ctx.strokeStyle = `rgba(220,150,255,${r.life})`;
@@ -9900,6 +10213,7 @@ function drawPlanetRipples() {
 }
 
 function drawEmpRings() {
+  if (pixiActive) return;
   if (!empRings.length) return;
   const now = Date.now();
   const maxLifeMs = 400; // dome expansion window — everything keyed off this
@@ -10104,7 +10418,8 @@ function hyperStackTint(stacks) {
   return                  { r: 255, g: 220, b: 60,  edgeR: 255, edgeG: 240, edgeB: 120 };
 }
 
-function drawHyperspeedBarrier() {
+function drawHyperspeedBarrier(tctx = ctx) {
+  const ctx = tctx;
   if (activeEffects.hyperspeed <= 0 || hyperspeedCurrentMult <= 1.05) return;
   const intensity = (hyperspeedCurrentMult - 1) / 2; // 0..1
   const barrierY = player.y - 60;
@@ -10183,7 +10498,8 @@ function drawDeathParticles() {
 // space so we don't have to retrofit DOM layout. Sits between the score
 // (top ~24px) and the streak counter (top ~58px). Blink rate gets faster
 // as stacks climb so 4× feels noticeably more frantic than 2×.
-function drawHyperStackText() {
+function drawHyperStackText(tctx = ctx) {
+  const ctx = tctx;
   if (hyperSpeedStacks < 2) return;
   const tint = hyperStackTint(hyperSpeedStacks);
   let blinkPeriod = 20;
@@ -10328,8 +10644,9 @@ function render() {
   // effects layer so they share the body sprites' coordinate system.
   if (state === 'bodypreview' && !pixiActive) drawPreviewOutlines();
 
-  // Hyperspeed gold tint over the world
-  if (activeEffects.hyperspeed > 0 && hyperspeedCurrentMult > 1.05) {
+  // Hyperspeed gold tint over the world. Step 6: pixi owns this via
+  // pixiScreenFillG in updatePixiOverlayLayer when active.
+  if (!pixiActive && activeEffects.hyperspeed > 0 && hyperspeedCurrentMult > 1.05) {
     const fade = Math.min(activeEffects.hyperspeed / 500, 1);
     ctx.globalAlpha = 0.12 * fade * ((hyperspeedCurrentMult - 1) / 2);
     ctx.fillStyle = 'rgba(255,220,60,1)';
@@ -10345,24 +10662,25 @@ function render() {
     // Step 4: trail + player live on pixi when active.
     if (!pixiActive) drawTrail();
     if (state==='playing'||state==='paused'||state==='apocalypse') {
-      drawHyperspeedBarrier();
+      // Step 6: hyperspeed barrier on pixi overlay when active.
+      if (!pixiActive) drawHyperspeedBarrier();
       if (!pixiActive) drawPlayer();
     }
     drawPickupParticles();
     drawDestroyEffects();
     drawDeathShards();
     drawDeathParticles();
-    if (state==='playing') drawHyperStackText();
+    // Step 6: hyperspeed stack text on pixi overlay when active.
+    if (state==='playing' && !pixiActive) drawHyperStackText();
   }
 
-  // Apocalypse visuals sit on top of the world (red tint, descending sun,
-  // impact flashes). Drawn last so they layer over everything else.
-  if (state === 'apocalypse') drawApocalypseOverlay();
+  // Apocalypse visuals sit on top of the world. Step 6: pixi owns these.
+  if (!pixiActive && state === 'apocalypse') drawApocalypseOverlay();
   // After impact, triggerDeath flips state to 'dead'. Keep the post-impact
   // black curtain up until the death screen overlay covers the canvas — this
   // avoids the world suddenly re-appearing between fade-to-black and the DOM
-  // overlay fading in.
-  else if (state === 'dead' && apocalypseDeathFlag) {
+  // overlay fading in. Step 6: pixi owns this via pixiScreenFillG.
+  else if (!pixiActive && state === 'dead' && apocalypseDeathFlag) {
     ctx.fillStyle = 'rgba(0,0,0,1)';
     ctx.fillRect(0, 0, W, H);
   }
