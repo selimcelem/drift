@@ -565,7 +565,11 @@
     font-size: 10px;
     color: rgba(255,255,255,0.3);
     text-align: center;
-    margin-bottom: 44px;
+    /* v1.7.1: positioned just above difficulty selector in DOM. The flex gap
+       supplies its spacing — no margin override needed here. The old
+       margin-bottom:44px existed to push difficultySelect further down when
+       version-label sat above the pilot-display; irrelevant in the new order. */
+    margin-bottom: 0;
   }
 
   /* Tappable pilot-name display on the main menu — opens the existing
@@ -581,8 +585,11 @@
     text-align: center;
     cursor: pointer;
     padding: 2px 12px;
-    margin-top: -36px;
-    margin-bottom: 24px;
+    /* v1.7.1: sits naturally below the subtitle now (DOM-reordered above the
+       version label). The prior -36px/24px combo was a hack to pull it up
+       past the version label when both lived in the same slot — overlap. */
+    margin-top: 0;
+    margin-bottom: 0;
     text-decoration: underline;
     text-decoration-color: rgba(125,232,255,0.25);
     text-underline-offset: 3px;
@@ -1454,6 +1461,18 @@
     text-shadow: 0 0 6px rgba(0,0,0,0.95);
     white-space: nowrap;
   }
+  /* v1.7: one-line phase + description subtitle below the type name. */
+  .bp-label-sub {
+    font-size: 9px;
+    letter-spacing: 1.5px;
+    color: rgba(125,232,255,0.55);
+  }
+  /* v1.7: column headers above the first row (STATIC / IN-GAME). */
+  .bp-label-col {
+    font-size: 9px;
+    letter-spacing: 2px;
+    color: rgba(125,232,255,0.65);
+  }
   #bodyPreviewClose {
     position: fixed;
     top: calc(var(--safe-top) + 16px);
@@ -1508,8 +1527,8 @@
   <div id="overlay">
     <div class="title-word">DRIFT</div>
     <div class="subtitle">gravity surfing</div>
-    <div class="version-label" id="versionLabel"></div>
     <div class="pilot-display" id="pilotDisplay"></div>
+    <div class="version-label" id="versionLabel"></div>
     <div id="difficultySelect">
       <button class="diff-btn selected" data-diff="NORMAL">NORMAL</button>
       <button class="diff-btn" data-diff="HARD">HARD</button>
@@ -1952,6 +1971,19 @@ function getShieldRingCanvas(orb, hits) {
 // Offscreen planet sprites — static bases pre-rendered to offscreen canvases.
 // drawBodies() uses drawImage instead of rebuilding paths for the static parts.
 // Populated once by preloadPlanetSprites().
+// v1.7: glowColor is either rgba(r,g,b,a) or hsl(h,s%,l%). The quadratic
+// falloff gradient needs to re-emit it at several alphas — this helper rebuilds
+// the string in the matching color-space so alpha lands correctly. Returns
+// 'rgba(255,255,255,alpha)' as a safe fallback for unrecognised formats.
+function glowColorWithAlpha(colorStr, alpha) {
+  if (!colorStr) return `rgba(255,255,255,${alpha})`;
+  const rgb = /rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/.exec(colorStr);
+  if (rgb) return `rgba(${rgb[1]},${rgb[2]},${rgb[3]},${alpha})`;
+  const hsl = /hsla?\(\s*([-\d.]+)\s*,\s*([-\d.]+%?)\s*,\s*([-\d.]+%?)/.exec(colorStr);
+  if (hsl) return `hsla(${hsl[1]},${hsl[2]},${hsl[3]},${alpha})`;
+  return `rgba(255,255,255,${alpha})`;
+}
+
 const planetSpriteCache = {};
 const PLANET_SPRITE_SIZE = 80;
 function preloadPlanetSprites() {
@@ -2045,87 +2077,382 @@ function buildSkullFaceSprite(b) {
     const cctx = c.getContext('2d');
     const cx = size / 2, cy = size / 2;
     const r = b.radius;
-    // Seeded cloud patches on the upper half — drawn first so face parts
-    // layer on top exactly like the original.
+    // v1.7.1: cranium silhouette — an actual skull shape (upper cranium
+    // only, no jaw, no teeth) drawn onto a transparent canvas. The shape
+    // itself is a closed Path2D built from two lobes: the rounded
+    // forehead/parietal dome + a narrower under-skull section with
+    // zygomatic bumps. The drawSkull function NO LONGER paints a base
+    // disc behind this canvas — empty regions stay transparent so the
+    // body reads as a floating skull, not a planet with a face.
+    // v1.7.2: silhouette now extends through the MAXILLA (upper jaw) down
+    // to the bottom of the upper dental arch. No mandible. The lower
+    // boundary runs along the base of the teeth, so the skull "ends" at
+    // an open dental arc — matching an anatomical no-jaw skull. This
+    // brings the visible shape close to the hitbox circle and resolves
+    // the "damage from empty space" report from v1.7.1.
+    const skullPath = new Path2D();
+    // Top of the dome (12 o'clock).
+    skullPath.moveTo(cx, cy - r * 0.95);
+    // Right frontal bone / temple curve down the side.
+    skullPath.bezierCurveTo(
+      cx + r * 0.65, cy - r * 0.98,
+      cx + r * 0.95, cy - r * 0.65,
+      cx + r * 0.95, cy - r * 0.15
+    );
+    // Temporal concavity — slight inward dip above the zygomatic arch.
+    skullPath.bezierCurveTo(
+      cx + r * 0.92, cy + r * 0.02,
+      cx + r * 0.8,  cy + r * 0.1,
+      cx + r * 0.75, cy + r * 0.2
+    );
+    // Zygomatic arch (cheekbone) bump.
+    skullPath.bezierCurveTo(
+      cx + r * 0.85, cy + r * 0.3,
+      cx + r * 0.7,  cy + r * 0.5,
+      cx + r * 0.55, cy + r * 0.58
+    );
+    // Maxilla outer wall — transitions from cheekbone down to the upper
+    // edge of the dental arch. Narrower than the zygomatic bump.
+    skullPath.bezierCurveTo(
+      cx + r * 0.52, cy + r * 0.68,
+      cx + r * 0.5,  cy + r * 0.78,
+      cx + r * 0.45, cy + r * 0.86
+    );
+    // Bottom of the upper dental arch — smooth parabolic sweep from right
+    // molar row, across the incisors at the midline, to the left molar
+    // row. Teeth will render as individual bumps ON TOP of this arc.
+    skullPath.bezierCurveTo(
+      cx + r * 0.35, cy + r * 0.97,
+      cx + r * 0.12, cy + r * 0.98,
+      cx, cy + r * 0.98
+    );
+    skullPath.bezierCurveTo(
+      cx - r * 0.12, cy + r * 0.98,
+      cx - r * 0.35, cy + r * 0.97,
+      cx - r * 0.45, cy + r * 0.86
+    );
+    // Left maxilla wall — mirror of the right.
+    skullPath.bezierCurveTo(
+      cx - r * 0.5,  cy + r * 0.78,
+      cx - r * 0.52, cy + r * 0.68,
+      cx - r * 0.55, cy + r * 0.58
+    );
+    // Left zygomatic arch bump.
+    skullPath.bezierCurveTo(
+      cx - r * 0.7,  cy + r * 0.5,
+      cx - r * 0.85, cy + r * 0.3,
+      cx - r * 0.75, cy + r * 0.2
+    );
+    // Left temporal concavity.
+    skullPath.bezierCurveTo(
+      cx - r * 0.8,  cy + r * 0.1,
+      cx - r * 0.92, cy + r * 0.02,
+      cx - r * 0.95, cy - r * 0.15
+    );
+    // Close back to the top of the dome.
+    skullPath.bezierCurveTo(
+      cx - r * 0.95, cy - r * 0.65,
+      cx - r * 0.65, cy - r * 0.98,
+      cx, cy - r * 0.95
+    );
+    skullPath.closePath();
+    b._skullSilhouette = skullPath;
+    // Bone base fill — palette biased toward old/yellowed ivory with
+    // variation so different skulls don't all look identical. Directional
+    // gradient (top-left lit, bottom-right shaded) gives a 3D bulge read.
+    const boneGrad = cctx.createRadialGradient(cx - r * 0.35, cy - r * 0.45, 0, cx, cy, r * 1.3);
+    boneGrad.addColorStop(0,    '#f0e3c8'); // lit forehead bulge
+    boneGrad.addColorStop(0.4,  '#d4c2a0');
+    boneGrad.addColorStop(0.75, '#8a7a5c'); // bone shadow
+    boneGrad.addColorStop(1,    '#3a3020'); // deep bottom shadow
+    cctx.fillStyle = boneGrad;
+    cctx.fill(skullPath);
+    // Forehead specular highlight — tight bright spot in the upper-left of
+    // the dome. Reads as a round skull surface under directional light.
+    const foreheadHL = cctx.createRadialGradient(cx - r * 0.25, cy - r * 0.55, 0, cx - r * 0.25, cy - r * 0.5, r * 0.45);
+    foreheadHL.addColorStop(0,    'rgba(255,248,230,0.45)');
+    foreheadHL.addColorStop(0.6,  'rgba(255,248,230,0.1)');
+    foreheadHL.addColorStop(1,    'rgba(255,248,230,0)');
+    cctx.fillStyle = foreheadHL;
+    cctx.save();
+    cctx.clip(skullPath);
+    cctx.beginPath(); cctx.arc(cx - r * 0.25, cy - r * 0.5, r * 0.45, 0, 6.28); cctx.fill();
+    cctx.restore();
+    // All subsequent details (pits, cracks, sockets, nasal cavity) are
+    // clipped to the skull silhouette so they don't paint into the empty
+    // space outside the cranium outline. clip is inside a save/restore pair
+    // to keep the fill-rule isolated from callers.
+    cctx.save();
+    cctx.clip(skullPath);
+    // v1.7.2: discoloration/pit/crack distributions now span the FULL
+    // silhouette (including the new maxilla region) rather than clustering
+    // in the upper cranium. yFrac widened from [-0.5..+0.5] to [-0.6..+0.9]
+    // so the maxilla gets its share of weathering. The clip ensures they
+    // stay inside the silhouette even when the sampled coordinate lands
+    // below the old cranium boundary.
     const rng = mulberry32(b.skullSeed);
-    cctx.fillStyle = 'rgba(240,240,230,0.35)';
-    for (let i = 0; i < 7; i++) {
-      const yFrac = -0.55 + rng() * 0.6;
-      const cr = r * (0.1 + rng() * 0.22);
-      const ddx = (rng() - 0.5) * r * 1.6;
-      const ddy = yFrac * r;
-      const d = Math.hypot(ddx, ddy);
-      const cap = Math.max(0.1, r - cr);
-      const k = d > cap ? cap / d : 1;
-      cctx.beginPath(); cctx.arc(cx + ddx * k, cy + ddy * k, cr, 0, 6.28); cctx.fill();
+    for (let i = 0; i < 14; i++) {
+      const yFrac = -0.6 + rng() * 1.5; // now reaches into maxilla region
+      const xFrac = (rng() - 0.5) * 1.7;
+      const cr = r * (0.09 + rng() * 0.22);
+      const alpha = 0.15 + rng() * 0.2;
+      const tint = rng() < 0.5 ? 'rgba(80,60,40,' : 'rgba(230,215,185,';
+      cctx.fillStyle = tint + alpha + ')';
+      cctx.beginPath();
+      cctx.arc(cx + xFrac * r, cy + yFrac * r, cr, 0, 6.28);
+      cctx.fill();
     }
-    // Eye sockets (black cavities — flash glow stays live).
-    const eyeOffX = r * 0.32;
-    const eyeOffY = r * 0.05;
+    // Weathered pits — redistributed. Bias a few extra pits into the
+    // maxilla region (y > 0.5r) so the new area doesn't look suspiciously
+    // clean compared to the cranium.
+    const pitRng = mulberry32(b.skullSeed ^ 0xbee);
+    for (let i = 0; i < 28; i++) {
+      // Sample yFrac with a slight downward bias (sqrt of uniform squeezes
+      // more samples toward the bottom of the skull).
+      const uy = pitRng();
+      const yFrac = -0.7 + Math.sqrt(uy) * 1.7;
+      const xFrac = (pitRng() - 0.5) * 1.7;
+      const px = cx + xFrac * r;
+      const py = cy + yFrac * r;
+      cctx.fillStyle = `rgba(30,22,14,${0.35 + pitRng() * 0.45})`;
+      cctx.beginPath(); cctx.arc(px, py, 0.5 + pitRng() * 1.6, 0, 6.28); cctx.fill();
+    }
+    // Hairline cracks — 5 paths seeded to start anywhere in the skull,
+    // including the new maxilla. Some cracks may descend along the bone
+    // between nasal cavity and teeth, giving that "weathered in space"
+    // feel exactly where the spec asked.
+    const crackRng = mulberry32(b.skullSeed ^ 0x7777);
+    cctx.strokeStyle = 'rgba(20,15,8,0.7)';
+    cctx.lineCap = 'round';
+    cctx.lineWidth = 0.8;
+    for (let i = 0; i < 5; i++) {
+      const startA = crackRng() * Math.PI * 2;
+      const startR = (0.3 + crackRng() * 0.55) * r;
+      let x = cx + Math.cos(startA) * startR;
+      let y = cy + Math.sin(startA) * startR;
+      cctx.beginPath();
+      cctx.moveTo(x, y);
+      let ang = crackRng() * Math.PI * 2;
+      for (let s = 0; s < 3 + Math.floor(crackRng() * 2); s++) {
+        ang += (crackRng() - 0.5) * 1.5;
+        const step = r * (0.14 + crackRng() * 0.18);
+        x += Math.cos(ang) * step;
+        y += Math.sin(ang) * step;
+        cctx.lineTo(x, y);
+      }
+      cctx.stroke();
+    }
+    // Brow ridge — prominent bone-colored horizontal arch above the eye
+    // sockets + matching dark underside shadow so the ridge reads as a
+    // protruding 3D bump.
+    cctx.strokeStyle = 'rgba(240,230,210,0.65)';
+    cctx.lineWidth = r * 0.1;
+    cctx.lineCap = 'round';
+    cctx.beginPath();
+    cctx.moveTo(cx - r * 0.5, cy - r * 0.18);
+    cctx.quadraticCurveTo(cx, cy - r * 0.32, cx + r * 0.5, cy - r * 0.18);
+    cctx.stroke();
+    cctx.strokeStyle = 'rgba(0,0,0,0.55)';
+    cctx.lineWidth = r * 0.05;
+    cctx.beginPath();
+    cctx.moveTo(cx - r * 0.45, cy - r * 0.08);
+    cctx.quadraticCurveTo(cx, cy - r * 0.18, cx + r * 0.45, cy - r * 0.08);
+    cctx.stroke();
+    // Temple hollows — soft darkening at the temples (temporal bone
+    // concavity behind the zygomatic arch).
+    for (const side of [-1, 1]) {
+      const tx = cx + side * r * 0.8;
+      const ty = cy - r * 0.05;
+      const tGrad = cctx.createRadialGradient(tx, ty, 0, tx, ty, r * 0.5);
+      tGrad.addColorStop(0, 'rgba(0,0,0,0.55)');
+      tGrad.addColorStop(1, 'rgba(0,0,0,0)');
+      cctx.fillStyle = tGrad;
+      cctx.beginPath(); cctx.arc(tx, ty, r * 0.5, 0, 6.28); cctx.fill();
+    }
+    // Deep eye sockets — multi-stop gradient: pure black at the center
+    // (deep cavity), dark red-brown at the edge (shadowed bone rim), fade
+    // to transparent. The gradient simulates looking into a recessed hole.
+    const eyeOffX = r * 0.3;
+    const eyeOffY = r * 0.1;
     for (const side of [-1, 1]) {
       const ex = cx + side * eyeOffX;
       const ey = cy + eyeOffY;
       cctx.save();
       cctx.translate(ex, ey);
-      cctx.rotate(side * 0.22);
+      cctx.rotate(side * 0.18);
+      // Outer shadow rim — fades into surrounding bone.
+      const rim = cctx.createRadialGradient(0, 0, r * 0.14, 0, 0, r * 0.34);
+      rim.addColorStop(0, 'rgba(0,0,0,0.95)');
+      rim.addColorStop(0.6, 'rgba(25,12,8,0.8)');
+      rim.addColorStop(1, 'rgba(25,12,8,0)');
+      cctx.fillStyle = rim;
+      cctx.beginPath();
+      cctx.ellipse(0, 0, r * 0.34, r * 0.38, 0, 0, 6.28);
+      cctx.fill();
+      // Pure black interior — the cavity itself.
       cctx.fillStyle = '#000';
       cctx.beginPath();
-      cctx.ellipse(0, 0, r * 0.19, r * 0.22, 0, 0, 6.28);
+      cctx.ellipse(0, 0, r * 0.22, r * 0.26, 0, 0, 6.28);
       cctx.fill();
       cctx.restore();
     }
-    // Cheekbone highlights.
-    cctx.strokeStyle = 'rgba(230,220,200,0.5)';
-    cctx.lineWidth = 2;
+    // v1.7.2: nasal cavity shifted UP now that the maxilla sits below it.
+    // Bottom tip moved from +0.46r to +0.32r so it reads as "between and
+    // below the eyes" but above the tooth row rather than touching it.
+    cctx.fillStyle = '#000';
+    cctx.beginPath();
+    cctx.moveTo(cx, cy + r * 0.32);                                          // bottom tip
+    cctx.quadraticCurveTo(cx - r * 0.13, cy + r * 0.22, cx - r * 0.1,  cy + r * 0.03); // left wall
+    cctx.quadraticCurveTo(cx - r * 0.08, cy - r * 0.06, cx - r * 0.02, cy + r * 0.01); // inner left
+    cctx.lineTo(cx, cy - r * 0.01);                                          // top ridge
+    cctx.lineTo(cx + r * 0.02, cy + r * 0.01);                               // inner right
+    cctx.quadraticCurveTo(cx + r * 0.08, cy - r * 0.06, cx + r * 0.1,  cy + r * 0.03); // inner right
+    cctx.quadraticCurveTo(cx + r * 0.13, cy + r * 0.22, cx, cy + r * 0.32);  // right wall
+    cctx.closePath();
+    cctx.fill();
+    // Dark gradient around the nasal cavity — centered on its new higher
+    // position. Reads as inset against the surrounding bone.
+    const nasalShadow = cctx.createRadialGradient(cx, cy + r * 0.17, 0, cx, cy + r * 0.17, r * 0.23);
+    nasalShadow.addColorStop(0, 'rgba(0,0,0,0.5)');
+    nasalShadow.addColorStop(1, 'rgba(0,0,0,0)');
+    cctx.fillStyle = nasalShadow;
+    cctx.beginPath();
+    cctx.arc(cx, cy + r * 0.17, r * 0.23, 0, 6.28);
+    cctx.fill();
+    // Cheekbone / zygomatic arch highlights — repositioned to track the
+    // new zygomatic bump (+0.3r vs old +0.2r) and maxilla transition.
+    cctx.strokeStyle = 'rgba(240,230,210,0.5)';
+    cctx.lineWidth = 1.8;
     cctx.lineCap = 'round';
     for (const side of [-1, 1]) {
       cctx.beginPath();
-      cctx.moveTo(cx + side * r * 0.5, cy + r * 0.18);
+      cctx.moveTo(cx + side * r * 0.68, cy + r * 0.25);
       cctx.quadraticCurveTo(
-        cx + side * r * 0.45, cy + r * 0.35,
-        cx + side * r * 0.2,  cy + r * 0.5
+        cx + side * r * 0.58, cy + r * 0.5,
+        cx + side * r * 0.3, cy + r * 0.6
       );
       cctx.stroke();
     }
-    // Nasal cavity.
-    cctx.fillStyle = '#000';
+    // v1.7.2: UPPER TEETH — 10 teeth (2 incisors, 2 canines, 6 premolars/
+    // molars) arranged along a parabolic dental arch at the bottom of
+    // the maxilla. Each tooth is an individually-pathed chisel shape with
+    // seeded width/height/tilt variation; occasional missing-tooth gaps
+    // leave exposed maxilla bone visible. Per-tooth shading: brighter at
+    // the front (incisors/canines), darker at the molars (back, in
+    // shadow). A dark gum-line shadow paints across the top of the row
+    // so teeth read as emerging from the maxilla.
+    const toothRng = mulberry32(b.skullSeed ^ 0xf00d);
+    const TOOTH_COUNT = 10;
+    const archCX = cx;
+    const archCY = cy + r * 0.82; // dental arch baseline (where side molars sit)
+    const archRX = r * 0.48;      // horizontal half-extent
+    const archRY = r * 0.12;      // vertical rise at the midline
+    // Gum-line shadow — arc tracing the top of the dental row. Sits
+    // slightly above the highest tooth anchor so teeth visibly attach to
+    // the gumline.
+    cctx.strokeStyle = 'rgba(20,12,5,0.75)';
+    cctx.lineWidth = Math.max(2, r * 0.055);
+    cctx.lineCap = 'round';
     cctx.beginPath();
-    cctx.moveTo(cx, cy + r * 0.55);
-    cctx.quadraticCurveTo(cx - r * 0.12, cy + r * 0.45, cx - r * 0.1, cy + r * 0.3);
-    cctx.quadraticCurveTo(cx - r * 0.06, cy + r * 0.22, cx, cy + r * 0.32);
-    cctx.quadraticCurveTo(cx + r * 0.06, cy + r * 0.22, cx + r * 0.1, cy + r * 0.3);
-    cctx.quadraticCurveTo(cx + r * 0.12, cy + r * 0.45, cx, cy + r * 0.55);
-    cctx.closePath();
-    cctx.fill();
-    // Teeth.
-    const toothRng = mulberry32(b.skullSeed ^ 0x7e5);
-    const toothCount = 7;
-    const toothBaseY = cy + r * 0.72;
-    const toothLen = r * 0.18;
-    const toothStartX = cx - r * 0.45;
-    const toothSpan = r * 0.9;
-    cctx.fillStyle = 'rgba(220,215,200,0.92)';
-    for (let i = 0; i < toothCount; i++) {
-      const tu = (i + 0.5) / toothCount;
-      const tx = toothStartX + tu * toothSpan;
-      const baseW = r * 0.085 * (0.85 + toothRng() * 0.3);
-      const tlen = toothLen * (0.75 + toothRng() * 0.4);
+    cctx.moveTo(archCX - archRX * 0.96, archCY - r * 0.01);
+    cctx.quadraticCurveTo(archCX, archCY - archRY - r * 0.02, archCX + archRX * 0.96, archCY - r * 0.01);
+    cctx.stroke();
+    // Draw each tooth.
+    for (let i = 0; i < TOOTH_COUNT; i++) {
+      // Occasional missing tooth (~10% each slot, but avoid both incisors
+      // missing — the front looks off without at least one front tooth).
+      const isFront = Math.abs(i - (TOOTH_COUNT - 1) / 2) < 1.1;
+      const missing = !isFront && toothRng() < 0.12;
+      if (missing) { toothRng(); toothRng(); toothRng(); continue; } // burn entropy so remaining teeth stay stable
+      // Parametric position along arch. u = 0..1 sweeps left → right.
+      const u = (i + 0.5) / TOOTH_COUNT;
+      const s = u * 2 - 1;                        // -1 (leftmost) .. +1 (rightmost)
+      const tAnchorX = archCX + s * archRX;
+      // Parabolic arch: highest (lowest y in image coords) at the midline
+      // incisor, lowest at the molar ends. Keeps tooth tips inside the
+      // silhouette's +0.98r lower boundary for all tooth heights below.
+      const tAnchorY = archCY - archRY * (1 - s * s);
+      // Tooth type from position.
+      const centreDist = Math.abs(u - 0.5); // 0 at incisor, 0.5 at molar
+      const isIncisor = centreDist < 0.12;
+      const isCanine  = !isIncisor && centreDist < 0.22;
+      // Size + shape per tooth type, seeded variation on top.
+      let width, height, tipChisel;
+      if (isIncisor) {
+        width = r * (0.07 + toothRng() * 0.02);
+        height = r * (0.16 + toothRng() * 0.04);
+        tipChisel = 0.1;
+      } else if (isCanine) {
+        width = r * (0.055 + toothRng() * 0.02);
+        height = r * (0.2 + toothRng() * 0.04); // longest
+        tipChisel = 0.35;
+      } else {
+        width = r * (0.06 + toothRng() * 0.025);
+        height = r * (0.11 + toothRng() * 0.03);
+        tipChisel = 0.0; // flat-bottom molars
+      }
+      const tilt = (toothRng() - 0.5) * 0.25; // small crooked lean
+      const yellowShift = Math.floor(toothRng() * 30);
+      // Front-to-back lighting: incisors/canines brighter, molars darker.
+      const brightness = 1.0 - centreDist * 0.8;
+      const baseR = Math.round((230 - yellowShift) * brightness + 80);
+      const baseG = Math.round((220 - yellowShift) * brightness + 70);
+      const baseB = Math.round((195 - yellowShift * 1.5) * brightness + 60);
+      cctx.save();
+      cctx.translate(tAnchorX, tAnchorY);
+      cctx.rotate(tilt);
+      // Chisel-shaped tooth: trapezoid top (gum attachment) tapering to
+      // either a rounded flat (molar) or a pointed tip (canine/incisor).
+      const toothPath = new Path2D();
+      toothPath.moveTo(-width * 0.5, 0);
+      toothPath.lineTo(width * 0.5, 0);
+      toothPath.lineTo(width * 0.42, height * (1 - tipChisel));
+      if (tipChisel > 0.05) {
+        toothPath.lineTo(0, height);
+        toothPath.lineTo(-width * 0.42, height * (1 - tipChisel));
+      } else {
+        toothPath.lineTo(width * 0.38, height);
+        toothPath.lineTo(-width * 0.38, height);
+        toothPath.lineTo(-width * 0.42, height * (1 - tipChisel));
+      }
+      toothPath.closePath();
+      // Base fill — slight vertical gradient: brighter at the top (lit
+      // from above), darker at the tip.
+      const toothGrad = cctx.createLinearGradient(0, 0, 0, height);
+      toothGrad.addColorStop(0,   `rgba(${baseR},${baseG},${baseB},0.98)`);
+      toothGrad.addColorStop(0.6, `rgba(${Math.max(100, baseR - 30)},${Math.max(95, baseG - 30)},${Math.max(80, baseB - 25)},0.95)`);
+      toothGrad.addColorStop(1,   `rgba(${Math.max(80, baseR - 50)},${Math.max(75, baseG - 50)},${Math.max(60, baseB - 40)},0.92)`);
+      cctx.fillStyle = toothGrad;
+      cctx.fill(toothPath);
+      // Highlight on the upper edge (catches directional light).
+      cctx.strokeStyle = `rgba(255,245,220,${0.45 * brightness})`;
+      cctx.lineWidth = 0.7;
       cctx.beginPath();
-      cctx.moveTo(tx - baseW, toothBaseY);
-      cctx.lineTo(tx + baseW, toothBaseY);
-      cctx.lineTo(tx, toothBaseY + tlen);
-      cctx.closePath();
-      cctx.fill();
+      cctx.moveTo(-width * 0.45, 0.6);
+      cctx.lineTo(width * 0.45, 0.6);
+      cctx.stroke();
+      // Dark outline — separates each tooth from neighbours and from the
+      // gum-line shadow.
+      cctx.strokeStyle = 'rgba(30,20,10,0.6)';
+      cctx.lineWidth = 0.6;
+      cctx.stroke(toothPath);
+      // Occasional stain/crack on a tooth (30%). Dark vertical hairline.
+      if (toothRng() < 0.3) {
+        const stainX = (toothRng() - 0.5) * width * 0.6;
+        cctx.strokeStyle = 'rgba(60,35,15,0.55)';
+        cctx.lineWidth = 0.5;
+        cctx.beginPath();
+        cctx.moveTo(stainX, height * 0.15);
+        cctx.lineTo(stainX + (toothRng() - 0.5) * 1.2, height * 0.85);
+        cctx.stroke();
+      }
+      cctx.restore();
     }
-    // Jaw shadow.
-    cctx.fillStyle = 'rgba(0,0,0,0.55)';
-    cctx.beginPath();
-    cctx.ellipse(cx, toothBaseY, r * 0.5, r * 0.06, 0, 0, 6.28);
-    cctx.fill();
-    // Outer rim.
-    cctx.strokeStyle = 'rgba(0,0,0,0.6)';
+    cctx.restore();
+    // Outline — thin dark stroke around the silhouette for crispness.
+    cctx.strokeStyle = 'rgba(0,0,0,0.55)';
     cctx.lineWidth = 1;
-    cctx.beginPath(); cctx.arc(cx, cy, r, 0, 6.28); cctx.stroke();
+    cctx.stroke(skullPath);
     return c;
   } catch { return null; }
 }
@@ -2186,29 +2513,58 @@ function buildScreamingStaticSprite(b) {
     const cctx = c.getContext('2d');
     const cx = size / 2, cy = size / 2;
     const r = b.radius;
-    // Craters — seeded, 9 dark circles clipped within 0.75*r.
     const rng = mulberry32(b.screamSeed);
-    for (let i = 0; i < 9; i++) {
-      const cr = r * (0.08 + rng() * 0.2);
+    // v1.7.1: emaciated/skeletal face — darken the lower cheek regions so
+    // the face looks gaunt rather than round. Two soft radial gradients on
+    // the lower-outer sides give hollowed cheeks; another one at the
+    // forehead-temple crease adds skull-like concavity.
+    const cheekGrad = (cxPos, cyPos) => {
+      const g = cctx.createRadialGradient(cxPos, cyPos, 0, cxPos, cyPos, r * 0.5);
+      g.addColorStop(0, 'rgba(0,0,0,0.55)');
+      g.addColorStop(0.6, 'rgba(0,0,0,0.22)');
+      g.addColorStop(1, 'rgba(0,0,0,0)');
+      cctx.fillStyle = g;
+      cctx.beginPath(); cctx.arc(cxPos, cyPos, r * 0.5, 0, 6.28); cctx.fill();
+    };
+    cheekGrad(cx - r * 0.55, cy + r * 0.1);   // left cheek hollow
+    cheekGrad(cx + r * 0.55, cy + r * 0.1);   // right cheek hollow
+    cheekGrad(cx - r * 0.65, cy - r * 0.35);  // left temple
+    cheekGrad(cx + r * 0.65, cy - r * 0.35);  // right temple
+    // Craters + pores — more, smaller, scattered across the face for that
+    // "pitted skin" read. Bigger irregular pits read as skin pores + pores.
+    for (let i = 0; i < 14; i++) {
+      const cr = r * (0.04 + rng() * 0.18);
       const ang = rng() * Math.PI * 2;
-      const dist = rng() * r * 0.75;
+      const dist = rng() * r * 0.78;
       const px = cx + Math.cos(ang) * dist;
       const py = cy + Math.sin(ang) * dist;
-      cctx.fillStyle = `rgba(20,12,8,${0.3 + rng() * 0.4})`;
+      cctx.fillStyle = `rgba(12,6,4,${0.35 + rng() * 0.4})`;
       cctx.beginPath(); cctx.arc(px, py, cr, 0, 6.28); cctx.fill();
     }
-    // Brow ridge.
+    // Brow ridge — now with a subtle bone-highlight above the dark ridge
+    // (raised bone edge) so it reads as skeletal rather than a painted line.
     const browY = cy - r * 0.45;
     cctx.strokeStyle = '#0a0604';
-    cctx.lineWidth = r * 0.12;
+    cctx.lineWidth = r * 0.14;
     cctx.lineCap = 'round';
     for (const side of [-1, 1]) {
       cctx.beginPath();
-      cctx.moveTo(cx + side * r * 0.1,  browY + r * 0.12);
-      cctx.lineTo(cx + side * r * 0.55, browY - r * 0.05);
+      cctx.moveTo(cx + side * r * 0.1,  browY + r * 0.14);
+      cctx.lineTo(cx + side * r * 0.6,  browY - r * 0.08);
       cctx.stroke();
     }
-    // Eye socket base (black oval). Inner red glow stays live during scream.
+    // Bone highlight above the ridge.
+    cctx.strokeStyle = 'rgba(190,175,160,0.5)';
+    cctx.lineWidth = r * 0.05;
+    for (const side of [-1, 1]) {
+      cctx.beginPath();
+      cctx.moveTo(cx + side * r * 0.12, browY + r * 0.06);
+      cctx.lineTo(cx + side * r * 0.58, browY - r * 0.14);
+      cctx.stroke();
+    }
+    // Deep sunken eye sockets — radial gradient socket floor, pure black
+    // interior, faint single glint deep inside so eyes read as recessed
+    // cavities with something still watching from within.
     const eyeOffX = r * 0.32;
     const eyeOffY = -r * 0.18;
     for (const side of [-1, 1]) {
@@ -2217,9 +2573,24 @@ function buildScreamingStaticSprite(b) {
       cctx.save();
       cctx.translate(ex, ey);
       cctx.rotate(side * 0.22);
+      // Outer recess shadow — blends the socket edge into the face.
+      const recess = cctx.createRadialGradient(0, 0, r * 0.1, 0, 0, r * 0.32);
+      recess.addColorStop(0, '#000');
+      recess.addColorStop(0.7, 'rgba(0,0,0,0.85)');
+      recess.addColorStop(1, 'rgba(0,0,0,0)');
+      cctx.fillStyle = recess;
+      cctx.beginPath();
+      cctx.ellipse(0, 0, r * 0.32, r * 0.28, 0, 0, 6.28);
+      cctx.fill();
+      // Inner pure-black core.
       cctx.fillStyle = '#000';
       cctx.beginPath();
-      cctx.ellipse(0, 0, r * 0.24, r * 0.2, 0, 0, 6.28);
+      cctx.ellipse(0, 0, r * 0.22, r * 0.18, 0, 0, 6.28);
+      cctx.fill();
+      // Faint interior glint (deep-back catchlight).
+      cctx.fillStyle = 'rgba(60,15,15,0.6)';
+      cctx.beginPath();
+      cctx.arc(r * 0.04, -r * 0.03, r * 0.025, 0, 6.28);
       cctx.fill();
       cctx.restore();
     }
@@ -2235,83 +2606,155 @@ function buildHeartStaticSprite(b) {
     const cctx = c.getContext('2d');
     const cx = size / 2, cy = size / 2;
     const w = b.radius;
-    // Baked at heartScale = 1 (no pulse). Live drawHeart applies ctx.scale
-    // to approximate the pulse. Asymmetric top/bot squeeze from the old code
-    // can't be captured by a uniform scale — minor visual simplification.
-    // Arteries.
-    cctx.strokeStyle = '#6b0000';
-    cctx.lineCap = 'round';
-    const arteries = [
-      { offX: -w * 0.35, tipX: -w * 0.55, tipY: -w * 1.25, width: 6 },
-      { offX:  0,        tipX:  w * 0.05, tipY: -w * 1.45, width: 8 },
-      { offX:  w * 0.4,  tipX:  w * 0.6,  tipY: -w * 1.2,  width: 5 },
+    // v1.7.1: anatomically accurate asymmetric heart. Reference is a real
+    // human heart, not a valentine symbol. Key points:
+    //   - Overall axis tilted ~18° counter-clockwise (apex points down-left)
+    //   - Left ventricle (viewer-right due to mirror) larger than right
+    //   - Two atrial bulges visible at the top (right atrium smaller & more
+    //     right-side, left atrium tucked behind)
+    //   - Aortas/arteries exit from the top with distinct shapes:
+    //       - Aorta: thick, curves right then arches back left (the arch)
+    //       - Pulmonary trunk: slightly smaller, exits left-front
+    //       - Vena cava (superior): straight thick tube from right atrium
+    //   - Ventricle groove ("anterior interventricular sulcus") runs
+    //     diagonally down the front
+    const axialTilt = -0.32; // radians, tilts the whole shape
+    const sa = Math.sin(axialTilt), ca = Math.cos(axialTilt);
+    const tilt = (x, y) => ({ x: cx + x * ca - y * sa, y: cy + x * sa + y * ca });
+    // Aortas/arteries — 3 distinct vessels with anatomically plausible
+    // shapes. Draw in reverse z-order so the aortic arch overlaps correctly.
+    // Aorta arch (large vessel that curves right then loops back — the
+    // distinctive S-curve).
+    const vessels = [
+      // Superior vena cava — thick, nearly straight from right atrium.
+      { from: {x: -w * 0.4, y: -w * 0.7}, cp: {x: -w * 0.5, y: -w * 1.05},  tip: {x: -w * 0.55, y: -w * 1.3},  width: 7 },
+      // Aorta — large, arches right and curves up then back.
+      { from: {x: 0.05 * w, y: -w * 0.75}, cp: {x: w * 0.45, y: -w * 1.05}, tip: {x: w * 0.25, y: -w * 1.4}, width: 11 },
+      // Pulmonary trunk — medium, exits forward-left.
+      { from: {x: w * 0.45, y: -w * 0.65}, cp: {x: w * 0.55, y: -w * 0.95}, tip: {x: w * 0.7, y: -w * 1.25}, width: 7 },
     ];
-    for (const a of arteries) {
-      cctx.lineWidth = a.width;
+    for (const v of vessels) {
+      const from = tilt(v.from.x, v.from.y);
+      const cp   = tilt(v.cp.x,   v.cp.y);
+      const tip  = tilt(v.tip.x,  v.tip.y);
+      // Outer wall.
+      cctx.strokeStyle = '#6b0a0a';
+      cctx.lineCap = 'round';
+      cctx.lineWidth = v.width;
       cctx.beginPath();
-      cctx.moveTo(cx + a.offX, cy - w * 0.7);
-      cctx.quadraticCurveTo(
-        cx + a.offX * 0.5, cy - w,
-        cx + a.tipX, cy + a.tipY
-      );
+      cctx.moveTo(from.x, from.y);
+      cctx.quadraticCurveTo(cp.x, cp.y, tip.x, tip.y);
+      cctx.stroke();
+      // Inner lumen.
+      cctx.strokeStyle = 'rgba(20,0,0,0.6)';
+      cctx.lineWidth = Math.max(1, v.width * 0.35);
+      cctx.beginPath();
+      cctx.moveTo(from.x, from.y);
+      cctx.quadraticCurveTo(cp.x, cp.y, tip.x, tip.y);
       cctx.stroke();
     }
-    // Blob fill.
-    const points = 16;
-    const fill = cctx.createRadialGradient(cx - w * 0.35, cy - w * 0.3, 0, cx, cy, w * 1.2);
-    fill.addColorStop(0,   '#cc0000');
-    fill.addColorStop(0.5, '#8b0000');
-    fill.addColorStop(1,   '#3d0000');
+    // Remember the aorta + pulmonary tip positions for drip origins.
+    const aortaTip = tilt(vessels[1].tip.x, vessels[1].tip.y);
+    const pulmTip  = tilt(vessels[2].tip.x, vessels[2].tip.y);
+    const vcTip    = tilt(vessels[0].tip.x, vessels[0].tip.y);
+    b._heartAortaTips = [aortaTip, pulmTip, vcTip];
+    // Main heart body — asymmetric silhouette. Built from two overlapping
+    // ventricle lobes (left bigger than right) + two atrial bulges on top.
+    // Instead of the symmetric parametric heart curve, we draw a
+    // hand-tuned path that approximates an anatomical outline.
+    const bodyPath = new Path2D();
+    // Start at upper-right atrium.
+    let p0 = tilt(w * 0.55, -w * 0.75);
+    bodyPath.moveTo(p0.x, p0.y);
+    // Right atrium bulge.
+    let c1 = tilt(w * 0.95, -w * 0.55), p1 = tilt(w * 0.9, -w * 0.15);
+    bodyPath.quadraticCurveTo(c1.x, c1.y, p1.x, p1.y);
+    // Down right side of right ventricle.
+    c1 = tilt(w * 1.05, w * 0.2); p1 = tilt(w * 0.75, w * 0.55);
+    bodyPath.quadraticCurveTo(c1.x, c1.y, p1.x, p1.y);
+    // Down to apex (tilt pulls apex down-left).
+    c1 = tilt(w * 0.35, w * 1.05); p1 = tilt(-w * 0.1, w * 1.15);
+    bodyPath.quadraticCurveTo(c1.x, c1.y, p1.x, p1.y);
+    // Apex curves up-left side of left ventricle (the bigger lobe).
+    c1 = tilt(-w * 0.8, w * 0.8); p1 = tilt(-w * 1.05, w * 0.1);
+    bodyPath.quadraticCurveTo(c1.x, c1.y, p1.x, p1.y);
+    // Up left side to left atrium.
+    c1 = tilt(-w * 1.05, -w * 0.35); p1 = tilt(-w * 0.75, -w * 0.65);
+    bodyPath.quadraticCurveTo(c1.x, c1.y, p1.x, p1.y);
+    // Left atrium bulge — smaller than right atrium bulge.
+    c1 = tilt(-w * 0.5, -w * 0.95); p1 = tilt(-w * 0.1, -w * 0.72);
+    bodyPath.quadraticCurveTo(c1.x, c1.y, p1.x, p1.y);
+    // Atrial cleft (small dip between atria).
+    c1 = tilt(w * 0.05, -w * 0.55); p1 = tilt(w * 0.2, -w * 0.72);
+    bodyPath.quadraticCurveTo(c1.x, c1.y, p1.x, p1.y);
+    // Close back to right atrium start.
+    c1 = tilt(w * 0.4, -w * 0.88); p1 = p0;
+    bodyPath.quadraticCurveTo(c1.x, c1.y, p1.x, p1.y);
+    bodyPath.closePath();
+    // Fill with radial gradient offset for top-left directional highlight.
+    const fill = cctx.createRadialGradient(cx - w * 0.4, cy - w * 0.4, 0, cx, cy, w * 1.4);
+    fill.addColorStop(0,   '#e02530');
+    fill.addColorStop(0.4, '#9a0a0a');
+    fill.addColorStop(0.85,'#4a0005');
+    fill.addColorStop(1,   '#1a0000');
     cctx.fillStyle = fill;
+    cctx.fill(bodyPath);
+    // v1.7.1: chamber divisions — darker grooves visible on the surface that
+    // mark the internal chamber walls.
+    //   - Anterior interventricular sulcus (diagonal groove down the front
+    //     between the two ventricles).
+    //   - Atrioventricular groove (horizontal band separating atria from
+    //     ventricles).
+    cctx.strokeStyle = 'rgba(20,0,0,0.75)';
+    cctx.lineCap = 'round';
+    cctx.lineWidth = Math.max(2, w * 0.06);
+    // Interventricular sulcus — diagonal, from mid-upper to apex.
+    const ivs_start = tilt(w * 0.18, -w * 0.35);
+    const ivs_mid   = tilt(w * 0.0,  w * 0.2);
+    const ivs_end   = tilt(-w * 0.1, w * 1.05);
     cctx.beginPath();
-    for (let i = 0; i < points; i++) {
-      const u = i / points;
-      const a = u * Math.PI * 2 - Math.PI / 2;
-      const rng2 = mulberry32(b.heartSeed + i * 31);
-      const lump = 0.88 + rng2() * 0.25;
-      const rr = w * 1.05 * lump;
-      const px = cx + Math.cos(a) * rr;
-      const py = cy + Math.sin(a) * rr;
-      if (i === 0) cctx.moveTo(px, py);
-      else cctx.lineTo(px, py);
-    }
-    cctx.closePath();
-    cctx.fill();
-    // Surface veins.
-    cctx.strokeStyle = 'rgba(60,0,0,0.85)';
-    cctx.lineWidth = 1.3;
+    cctx.moveTo(ivs_start.x, ivs_start.y);
+    cctx.quadraticCurveTo(ivs_mid.x, ivs_mid.y, ivs_end.x, ivs_end.y);
+    cctx.stroke();
+    // Atrioventricular groove — horizontal band at the top.
+    cctx.lineWidth = Math.max(1.5, w * 0.05);
+    const avg_left  = tilt(-w * 0.95, -w * 0.25);
+    const avg_mid   = tilt(0,         -w * 0.45);
+    const avg_right = tilt(w * 0.85,  -w * 0.15);
+    cctx.beginPath();
+    cctx.moveTo(avg_left.x, avg_left.y);
+    cctx.quadraticCurveTo(avg_mid.x, avg_mid.y, avg_right.x, avg_right.y);
+    cctx.stroke();
+    // Branching coronary arteries (surface veins/arteries spreading across).
+    cctx.strokeStyle = 'rgba(80,5,5,0.88)';
     const veinRng = mulberry32(b.heartSeed ^ 0xbeef);
-    for (let i = 0; i < 7; i++) {
-      const startA = veinRng() * Math.PI * 2;
-      let x = cx + Math.cos(startA) * w * 0.9;
-      let y = cy + Math.sin(startA) * w * 0.9;
-      cctx.beginPath();
-      cctx.moveTo(x, y);
-      const segs = 3 + Math.floor(veinRng() * 3);
-      let ang = startA + Math.PI + (veinRng() - 0.5) * 1.2;
-      for (let s2 = 0; s2 < segs; s2++) {
-        ang += (veinRng() - 0.5) * 1.4;
-        const step = w * (0.2 + veinRng() * 0.25);
-        x += Math.cos(ang) * step;
-        y += Math.sin(ang) * step;
-        cctx.lineTo(x, y);
+    const branchPoints = [
+      tilt(w * 0.3,  -w * 0.1),
+      tilt(-w * 0.15, -w * 0.2),
+      tilt(w * 0.1,   w * 0.3),
+      tilt(-w * 0.4,  w * 0.1),
+      tilt(w * 0.5,   w * 0.2),
+    ];
+    for (const bp of branchPoints) {
+      const branches = 2 + Math.floor(veinRng() * 2);
+      for (let j = 0; j < branches; j++) {
+        let ax = bp.x, ay = bp.y;
+        let ang = veinRng() * Math.PI * 2;
+        const segs = 3 + Math.floor(veinRng() * 2);
+        cctx.lineWidth = 1.6;
+        cctx.beginPath();
+        cctx.moveTo(ax, ay);
+        for (let s = 0; s < segs; s++) {
+          ang += (veinRng() - 0.5) * 1.4;
+          const step = w * (0.12 + veinRng() * 0.18);
+          ax += Math.cos(ang) * step;
+          ay += Math.sin(ang) * step;
+          cctx.lineTo(ax, ay);
+          cctx.lineWidth *= 0.65; // taper each segment
+        }
+        cctx.stroke();
       }
-      cctx.stroke();
-      cctx.beginPath();
-      cctx.moveTo(x, y);
-      const brAng = ang + (veinRng() - 0.5) * 1.8;
-      cctx.lineTo(x + Math.cos(brAng) * w * 0.2, y + Math.sin(brAng) * w * 0.2);
-      cctx.stroke();
     }
-    // Glossy sheen on the upper-left.
-    cctx.globalAlpha = 0.45;
-    const sheen = cctx.createRadialGradient(cx - w * 0.3, cy - w * 0.5, 0, cx - w * 0.3, cy - w * 0.5, w * 0.55);
-    sheen.addColorStop(0,   'rgba(255,150,150,0.8)');
-    sheen.addColorStop(0.6, 'rgba(255,120,120,0.25)');
-    sheen.addColorStop(1,   'rgba(255,120,120,0)');
-    cctx.fillStyle = sheen;
-    cctx.beginPath(); cctx.arc(cx - w * 0.3, cy - w * 0.5, w * 0.55, 0, 6.28); cctx.fill();
-    cctx.globalAlpha = 1;
     return c;
   } catch { return null; }
 }
@@ -2336,6 +2779,9 @@ function releaseBodyCanvases(b) {
   // releases the JS canvas + 2D context.
   b._offscreenCanvas = null;
   b._offscreenCtx = null;
+  // v1.7.1: non-canvas state bags used by the newer draw code.
+  b._heartAortaTips = null;
+  b._skullSilhouette = null;
 }
 
 // Desktop: size and center the wrapper when the browser window is wider/taller
@@ -4150,6 +4596,15 @@ function initPixiStars() {
     return;
   }
   try {
+    // v1.7: resolution = devicePixelRatio (capped at 2.0) + autoDensity keeps
+    // vector primitives — target ring, outer body rings, dashed targeting line
+    // — crisp on high-DPR phones (Pixel 7 Pro @ 2.625, S20 FE @ 2.75) that
+    // were previously scaling a resolution-1 framebuffer up ~3× and looked
+    // pixelated. Cap at 2.0 so a 3× DPR display doesn't shade 9× more
+    // fragments than baseline (perf wall on low-end GPUs). autoDensity:true
+    // keeps the canvas CSS size logical (W×H) so layout / hit-testing is
+    // unaffected.
+    const pixiResolution = Math.min(window.devicePixelRatio || 1, 2.0);
     pixiApp = new PIXI.Application({
       view: pixiCanvas,
       width: W,
@@ -4158,6 +4613,8 @@ function initPixiStars() {
       backgroundAlpha: 1,
       antialias: false,
       autoStart: false, // we drive renders from render()
+      resolution: pixiResolution,
+      autoDensity: true,
     });
     // Stage child order is paint order. addChild calls happen bottom → top:
     //   1. pixiBgLayer       (bg imagery, SCREEN-blended image + vignette)
@@ -4374,11 +4831,21 @@ function buildBodyAuxCanvases(b) {
     gc.width = size; gc.height = size;
     const gctx = gc.getContext('2d');
     const cx = size / 2, cy = size / 2;
-    // Recreate the spawn-time glow gradient on this per-body canvas. Inner
-    // stop at 0.4*radius and outer at cachedMaxGlowR — matches spawnBody().
+    // v1.7: quadratic-ish falloff (1/r² approximation) instead of linear
+    // gradient stops — light drops off steeply near the body then trails
+    // gently, which reads as physically correct volumetric glow. 5
+    // interpolated stops are enough for a visually smooth curve; adding
+    // more doesn't help at this size. glowColor arrives as either
+    // rgba(r,g,b,a) or hsl(h,s%,l%); we rebuild as the matching hsla/rgba
+    // per stop so alpha modulates cleanly in either color space.
     const grad = gctx.createRadialGradient(cx, cy, b.radius * 0.4, cx, cy, b.cachedMaxGlowR);
-    grad.addColorStop(0, b.glowColor);
-    grad.addColorStop(1, 'rgba(0,0,0,0)');
+    const withAlpha = glowColorWithAlpha;
+    grad.addColorStop(0.00, withAlpha(b.glowColor, 1.0));
+    grad.addColorStop(0.15, withAlpha(b.glowColor, 0.68));
+    grad.addColorStop(0.35, withAlpha(b.glowColor, 0.32));
+    grad.addColorStop(0.60, withAlpha(b.glowColor, 0.11));
+    grad.addColorStop(0.82, withAlpha(b.glowColor, 0.03));
+    grad.addColorStop(1.00, withAlpha(b.glowColor, 0));
     gctx.fillStyle = grad;
     gctx.beginPath();
     gctx.arc(cx, cy, b.cachedMaxGlowR, 0, Math.PI * 2);
@@ -4463,13 +4930,18 @@ function updatePixiBodyLayer() {
 // Each body's draw extends to roughly factor*radius from center. Set per type
 // to fit the maximum visible feature (shockwaves, tentacle arms, void aura).
 const PROCEDURAL_BODY_FACTORS = {
+  // v1.7: star has corona rays at ~1.8r + lens flare cross at 2.6r,
+  // blackhole has a 2.6r accretion disk, planet has an atmospheric rim at
+  // 1.18r + polar glow reaching ~1.55r. Factor * r is the canvas half-width.
+  star: 2.8, planet: 1.8, blackhole: 2.8,
   toothed: 2.0, eye: 1.5, cracked: 1.5, tentacle: 2.5,
-  screaming: 4.0, void: 4.5, heart: 2.5, skull: 1.5,
+  screaming: 4.0, void: 4.5, heart: 2.5, mirror: 1.5, skull: 1.5,
 };
 const PROCEDURAL_BODY_DRAWERS = {
+  star: drawStar, planet: drawPlanet, blackhole: drawBlackhole,
   toothed: drawToothed, eye: drawEye, cracked: drawCracked,
   tentacle: drawTentacle, screaming: drawScreaming, void: drawVoid,
-  heart: drawHeart, skull: drawSkull,
+  heart: drawHeart, mirror: drawMirror, skull: drawSkull,
 };
 
 function updatePixiBodySpriteLayer() {
@@ -4479,47 +4951,16 @@ function updatePixiBodySpriteLayer() {
     let sourceCanvas = null;
     let displaySize = 0;
     let isProcedural = false;
-    if (b.type === 'blackhole') {
-      const sp = planetSpriteCache && planetSpriteCache.blackhole;
-      if (sp && sp.canvas) {
-        sourceCanvas = sp.canvas;
-        // Match drawBlackhole's existing scale math.
-        displaySize = PLANET_SPRITE_SIZE * (b.radius / sp.refRadius);
-      }
-    } else if (b.type === 'mirror') {
-      if (b.mirrorCanvas) {
-        sourceCanvas = b.mirrorCanvas;
-        displaySize = b.mirrorCanvas.width;
-      }
-    } else if (b.type === 'star' || b.type === 'planet') {
-      // Lazy per-body bake. b.cachedFill is bound to the global ctx and isn't
-      // safe to reuse on a different ctx, so we recreate the gradient on the
-      // body's own offscreen canvas. Static after spawn — built once.
-      if (!b.starPlanetCanvas) {
-        let size = Math.ceil(b.radius) * 2 + 4;
-        if (size % 2 !== 0) size += 1;
-        const c = document.createElement('canvas');
-        c.width = size; c.height = size;
-        const cctx = c.getContext('2d');
-        const cx = size / 2, cy = size / 2;
-        const grad = cctx.createRadialGradient(cx - b.radius * 0.28, cy - b.radius * 0.28, 0, cx, cy, b.radius);
-        grad.addColorStop(0, '#fff');
-        grad.addColorStop(0.3, b.color);
-        grad.addColorStop(1, 'rgba(0,0,0,0.5)');
-        cctx.fillStyle = grad;
-        cctx.beginPath();
-        cctx.arc(cx, cy, b.radius, 0, Math.PI * 2);
-        cctx.fill();
-        b.starPlanetCanvas = c;
-      }
-      sourceCanvas = b.starPlanetCanvas;
-      displaySize = b.starPlanetCanvas.width;
-    } else {
-      // Step 3d: procedural body types render every frame to a per-body
-      // offscreen canvas via the existing drawXxx functions (now ctx-aware
-      // through the (b, tctx) refactor). Pre-translate the offscreen ctx so
-      // absolute body-coord arc/moveTo calls land at the canvas center; the
-      // pixi sprite then places that center at b.x, b.y.
+    // v1.7: every body type now renders through the procedural pipeline so
+    // animated features (accretion disk, corona rays, cloud bands, live
+    // mirror reflection) update every frame. Types that still use a baked
+    // canvas (mirror → mirrorCanvas, heart → heartCanvas, eye → veinCanvas,
+    // etc.) composite that as an image inside their drawXxx function.
+    {
+      // Pre-translate the offscreen ctx so absolute body-coord arc/moveTo
+      // calls land at the canvas center; the pixi sprite then places that
+      // center at b.x, b.y. Per-type factor sets canvas size to fit the
+      // maximum visible extent (shockwaves, tentacle arms, void aura).
       const factor = PROCEDURAL_BODY_FACTORS[b.type];
       const drawer = PROCEDURAL_BODY_DRAWERS[b.type];
       if (!factor || !drawer) continue;
@@ -4550,14 +4991,12 @@ function updatePixiBodySpriteLayer() {
     live.add(b);
     let entry = pixiBodySpriteEntries.get(b);
     if (!entry || entry.sourceCanvas !== sourceCanvas) {
-      // Source canvas changed (or first time). Build a fresh sprite. For the
-      // shared blackhole canvas this only fires once; for per-body canvases
-      // (mirror / star / planet / procedural offscreen) it fires once on
-      // first render of the body.
+      // Source canvas changed (or first time). Build a fresh sprite. Per-body
+      // canvases (mirror + procedural offscreen for all other types) each
+      // fire this once on first render.
       if (entry) {
         try { pixiBodySpriteLayer.removeChild(entry.sprite); } catch {}
-        const destroyTex = entry.sourceCanvas !== (planetSpriteCache && planetSpriteCache.blackhole && planetSpriteCache.blackhole.canvas);
-        try { entry.sprite.destroy({ children: false, texture: destroyTex, baseTexture: destroyTex }); } catch {}
+        try { entry.sprite.destroy({ children: false, texture: true, baseTexture: true }); } catch {}
       }
       const sprite = new PIXI.Sprite(PIXI.Texture.from(sourceCanvas));
       sprite.anchor.set(0.5);
@@ -4648,18 +5087,56 @@ function updatePixiBodyEffectsLayer() {
       }
     }
   }
-  // Dev-only preview outlines. Glow-extent ring is static (visual reference,
-  // not a hitbox); collision outline mirrors the actual per-type hitbox math
-  // from bodyHits() so we can eyeball that geometry vs. visual fidelity.
+  // Dev-only preview outlines. Static-role bodies show cyan hitbox geometry;
+  // context-role bodies show an in-game target ring + dashed attract line to
+  // a faux player (offset to the right of the body). This makes the preview
+  // page a mini-encyclopedia rather than a geometry inspector.
   if (pixiPreviewOutlinesGraphics) {
     const g = pixiPreviewOutlinesGraphics;
     g.clear();
     if (state === 'bodypreview') {
       for (const b of bodies) {
-        // Outer glow extent — static dim ring.
+        if (b._previewRole === 'context') {
+          // Target ring (pulsing, cyan — matches gameplay target indicator).
+          const ringR = b.radius + 6 + Math.sin(frame * 0.18) * 2;
+          const alpha = 0.55 + 0.25 * Math.sin(frame * 0.18);
+          g.lineStyle({ width: 1.5, color: 0x50C8FF, alpha: alpha * 0.75 });
+          g.drawCircle(b.x, b.y, ringR);
+          // Faux player position — below the body by 70px; moves slightly so
+          // the dashed line has life.
+          const fpx = b.x + Math.sin(frame * 0.025) * 10;
+          const fpy = b.y + 72 + Math.cos(frame * 0.02) * 8;
+          // Dashed attract line from faux player to body.
+          g.lineStyle({ width: 1, color: 0x50C8FF, alpha: 0.45 });
+          const dx = b.x - fpx, dy = b.y - fpy;
+          const len = Math.hypot(dx, dy);
+          if (len > 0.5) {
+            const ux = dx / len, uy = dy / len;
+            const seg = 5;
+            let cur = 0;
+            let drawing = true;
+            while (cur < len) {
+              const next = Math.min(cur + seg, len);
+              if (drawing) {
+                g.moveTo(fpx + ux * cur, fpy + uy * cur);
+                g.lineTo(fpx + ux * next, fpy + uy * next);
+              }
+              cur = next;
+              drawing = !drawing;
+            }
+          }
+          // Faux player orb — small bright cyan dot with a glow ring.
+          g.lineStyle(0);
+          g.beginFill(0xFFFFFF, 0.85);
+          g.drawCircle(fpx, fpy, 3);
+          g.endFill();
+          g.lineStyle({ width: 1, color: 0x7DE8FF, alpha: 0.6 });
+          g.drawCircle(fpx, fpy, 6);
+          continue;
+        }
+        // Static-role body: outer glow extent ring + collision geometry.
         g.lineStyle({ width: 1, color: 0x7DE8FF, alpha: 0.28 });
         g.drawCircle(b.x, b.y, b.cachedMaxGlowR || (b.radius * 2.95));
-        // Collision geometry.
         if (b.type === 'heart') {
           const dynR = b.radius * (b.heartScale || 1);
           g.lineStyle({ width: 1, color: 0x7DE8FF, alpha: 0.85 });
@@ -4667,7 +5144,6 @@ function updatePixiBodyEffectsLayer() {
         } else if (b.type === 'tentacle') {
           g.lineStyle({ width: 1, color: 0x7DE8FF, alpha: 0.85 });
           g.drawCircle(b.x, b.y, b.radius);
-          // 6 arm capsules — thick translucent strokes along each live arm.
           g.lineStyle({ width: 8, color: 0x7DE8FF, alpha: 0.5, cap: 'round' });
           const count = b.tentacleCount;
           for (let i = 0; i < count; i++) {
@@ -4684,7 +5160,6 @@ function updatePixiBodyEffectsLayer() {
         } else if (b.type === 'toothed') {
           g.lineStyle({ width: 1, color: 0x7DE8FF, alpha: 0.85 });
           g.drawCircle(b.x, b.y, b.radius);
-          // 8 spike-tip hit circles at PLAYER_R + 6 radius (matches bodyHits).
           const tipR = PLAYER_R + 6;
           for (let i = 0; i < 8; i++) {
             const a = b.toothAngle + i * (Math.PI / 4);
@@ -5590,10 +6065,17 @@ function spawnBody(yBase, opts) {
   // Pre-build gradients at local origin (0,0). drawBodies translates by
   // (b.x, b.y). Cached gradients avoid per-frame createRadialGradient calls,
   // which are expensive on mobile GPUs.
+  // v1.7: quadratic-ish falloff to match buildBodyAuxCanvases — volumetric
+  // glow look instead of the old linear gradient. Canvas 2D fallback only;
+  // pixi path has its own identical-curve gradient in buildBodyAuxCanvases.
   const maxGlowR = radius * 2.95;
   const cachedGlow = ctx.createRadialGradient(0, 0, radius * 0.4, 0, 0, maxGlowR);
-  cachedGlow.addColorStop(0, glowColor);
-  cachedGlow.addColorStop(1, 'rgba(0,0,0,0)');
+  cachedGlow.addColorStop(0.00, glowColorWithAlpha(glowColor, 1.0));
+  cachedGlow.addColorStop(0.15, glowColorWithAlpha(glowColor, 0.68));
+  cachedGlow.addColorStop(0.35, glowColorWithAlpha(glowColor, 0.32));
+  cachedGlow.addColorStop(0.60, glowColorWithAlpha(glowColor, 0.11));
+  cachedGlow.addColorStop(0.82, glowColorWithAlpha(glowColor, 0.03));
+  cachedGlow.addColorStop(1.00, glowColorWithAlpha(glowColor, 0));
 
   // Only the "classic" star/planet types use the cached radial fill — custom
   // drawers build their own look.
@@ -7210,6 +7692,20 @@ function updateBodyTypes(spd) {
           offX: (Math.random() - 0.5) * b.radius * 0.6,
           age: 0, maxAge: 60 + Math.floor(Math.random() * 30),
           size: 1.8 + Math.random() * 1.6,
+          source: 'apex',
+        });
+      }
+      // v1.7.1: continuous slow drip from each aorta tip. Chance per frame
+      // per aorta is low (~2%) so each tube "bleeds" occasionally rather
+      // than constantly, like a real wound oozing. Drop starts at the
+      // aorta tip and falls under gravity.
+      if (b._heartAortaTips && Math.random() < 0.06 && b.bloodDrops.length < 10) {
+        const tipIdx = Math.floor(Math.random() * b._heartAortaTips.length);
+        b.bloodDrops.push({
+          sourceIdx: tipIdx,
+          age: 0, maxAge: 75 + Math.floor(Math.random() * 30),
+          size: 1.4 + Math.random() * 1.0,
+          source: 'aorta',
         });
       }
       for (const d of b.bloodDrops) d.age++;
@@ -8654,18 +9150,10 @@ function drawBodies() {
 
     // Body
     ctx.globalAlpha=1;
-    if (b.type === 'blackhole') {
-      drawBlackhole(b);
-    } else if (b.type === 'star' || b.type === 'planet') {
-      // Step 3c: pixi handles star/planet via updatePixiBodySpriteLayer.
-      if (!pixiActive) {
-        ctx.save();
-        ctx.translate(b.x, b.y);
-        ctx.fillStyle = b.cachedFill;
-        ctx.beginPath(); ctx.arc(0, 0, b.radius, 0, 6.28); ctx.fill();
-        ctx.restore();
-      }
-    } else if (b.type === 'toothed')   safeDrawBody(b, drawToothed);
+    if (b.type === 'blackhole')        safeDrawBody(b, drawBlackhole);
+    else if (b.type === 'star')        safeDrawBody(b, drawStar);
+    else if (b.type === 'planet')      safeDrawBody(b, drawPlanet);
+    else if (b.type === 'toothed')     safeDrawBody(b, drawToothed);
     else if (b.type === 'eye')         safeDrawBody(b, drawEye);
     else if (b.type === 'cracked')     safeDrawBody(b, drawCracked);
     else if (b.type === 'tentacle')    safeDrawBody(b, drawTentacle);
@@ -8709,30 +9197,243 @@ function drawBodies() {
   }
 }
 
+// v1.7: animated star — solar corona with visible rays, boiling-plasma surface
+// turbulence, directional lens highlight from top-left. Reads at-a-glance as an
+// active sun rather than the old flat color-graded disc. Called via the pixi
+// procedural pipeline (per-frame bake) and the Canvas 2D fallback.
+function drawStar(b, tctx = ctx) {
+  const ctx = tctx;
+  ctx.save();
+  const t = (frame || 0) * 0.01;
+  const r = b.radius;
+  // Lens-flare halo: two spokes crossing the disc at the directional light
+  // angle. Very faint (alpha 0.14) so it reads as an optical artefact rather
+  // than a separate object.
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.globalAlpha = 0.14;
+  ctx.strokeStyle = b.color;
+  ctx.lineWidth = 1.2;
+  ctx.beginPath(); ctx.moveTo(b.x - r * 2.6, b.y - r * 2.6); ctx.lineTo(b.x + r * 2.6, b.y + r * 2.6); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(b.x - r * 2.6, b.y + r * 2.6); ctx.lineTo(b.x + r * 2.6, b.y - r * 2.6); ctx.stroke();
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.globalAlpha = 1;
+  // Corona rays — 12 soft triangular lobes rotating around the star, length
+  // modulated by a fast noise-ish sine so rays visibly pulse in/out.
+  const rays = 12;
+  ctx.globalCompositeOperation = 'lighter';
+  for (let i = 0; i < rays; i++) {
+    const a = (i / rays) * Math.PI * 2 + t * 0.6;
+    const wob = 0.55 + 0.45 * Math.sin(t * 2.1 + i * 1.7);
+    const rayLen = r * (1.25 + 0.55 * wob);
+    const baseW = r * 0.22;
+    const tipX = b.x + Math.cos(a) * rayLen;
+    const tipY = b.y + Math.sin(a) * rayLen;
+    const tangX = -Math.sin(a), tangY = Math.cos(a);
+    ctx.globalAlpha = 0.18 + 0.18 * wob;
+    ctx.fillStyle = b.color;
+    ctx.beginPath();
+    ctx.moveTo(b.x + tangX * baseW * 0.5, b.y + tangY * baseW * 0.5);
+    ctx.lineTo(tipX, tipY);
+    ctx.lineTo(b.x - tangX * baseW * 0.5, b.y - tangY * baseW * 0.5);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.globalAlpha = 1;
+  // Disc base with top-left directional highlight.
+  const discGrad = ctx.createRadialGradient(b.x - r * 0.35, b.y - r * 0.35, 0, b.x, b.y, r);
+  discGrad.addColorStop(0,   '#fff5d8');
+  discGrad.addColorStop(0.3, b.color);
+  discGrad.addColorStop(0.85, b.color);
+  discGrad.addColorStop(1,   'rgba(0,0,0,0.55)');
+  ctx.fillStyle = discGrad;
+  ctx.beginPath(); ctx.arc(b.x, b.y, r, 0, 6.28); ctx.fill();
+  // Boiling plasma — 5 seeded convection cells drifting across the disc, drawn
+  // as additive soft blobs so they read as bright hot spots. Cheap: one
+  // radial per cell, no per-pixel noise.
+  if (!b.starCellSeeds) {
+    const seeds = [];
+    for (let i = 0; i < 5; i++) {
+      seeds.push({ ang: Math.random() * Math.PI * 2, radFrac: 0.35 + Math.random() * 0.45, phase: Math.random() * 6.28, size: 0.25 + Math.random() * 0.25 });
+    }
+    b.starCellSeeds = seeds;
+  }
+  ctx.globalCompositeOperation = 'lighter';
+  for (const s of b.starCellSeeds) {
+    const drift = s.ang + t * 0.4 + Math.sin(s.phase + t) * 0.3;
+    const rad = r * s.radFrac;
+    const cx = b.x + Math.cos(drift) * rad;
+    const cy = b.y + Math.sin(drift) * rad;
+    const cellR = r * s.size;
+    const hot = ctx.createRadialGradient(cx, cy, 0, cx, cy, cellR);
+    const pulse = 0.4 + 0.35 * (0.5 + 0.5 * Math.sin(t * 2 + s.phase));
+    hot.addColorStop(0, `rgba(255,240,200,${pulse})`);
+    hot.addColorStop(1, 'rgba(255,120,40,0)');
+    ctx.fillStyle = hot;
+    ctx.beginPath(); ctx.arc(cx, cy, cellR, 0, 6.28); ctx.fill();
+  }
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.globalAlpha = 1;
+  // Central sphere highlight — top-left light source.
+  const hlG = ctx.createRadialGradient(b.x - r * 0.45, b.y - r * 0.45, 0, b.x - r * 0.2, b.y - r * 0.2, r * 0.7);
+  hlG.addColorStop(0, 'rgba(255,255,240,0.65)');
+  hlG.addColorStop(0.6, 'rgba(255,255,240,0.1)');
+  hlG.addColorStop(1, 'rgba(255,255,240,0)');
+  ctx.fillStyle = hlG;
+  ctx.beginPath(); ctx.arc(b.x - r * 0.25, b.y - r * 0.25, r * 0.7, 0, 6.28); ctx.fill();
+  ctx.restore();
+}
+
+// v1.7: animated planet — atmospheric rim, rotating cloud band, polar shading.
+// Cloud band rotates independently of the base disc (shifted seed offset) so
+// the planet visibly spins. Polar caps darken at top/bottom to suggest axial
+// tilt and 3D curvature.
+function drawPlanet(b, tctx = ctx) {
+  const ctx = tctx;
+  const r = b.radius;
+  const t = (frame || 0) * 0.01;
+  ctx.save();
+  // Seeded cloud phase so each planet has a unique pattern.
+  if (typeof b.planetSeed !== 'number') b.planetSeed = Math.floor(Math.random() * 1e6);
+  // Base disc + directional light (top-left).
+  const baseGrad = ctx.createRadialGradient(b.x - r * 0.38, b.y - r * 0.38, 0, b.x, b.y, r);
+  baseGrad.addColorStop(0,   '#fff');
+  baseGrad.addColorStop(0.32, b.color);
+  baseGrad.addColorStop(0.85, b.color);
+  baseGrad.addColorStop(1,   'rgba(0,0,0,0.55)');
+  ctx.fillStyle = baseGrad;
+  ctx.beginPath(); ctx.arc(b.x, b.y, r, 0, 6.28); ctx.fill();
+  // v1.7.1: organic swirling cloud patches — Jupiter-like banding but
+  // blobby + soft-edged rather than parallel straight lines. Each patch is
+  // a radial-gradient circle (soft gaussian-ish falloff), drifting along
+  // its latitude at its own speed. source-atop + a planet-disc cap means
+  // the patches auto-clip to the sphere silhouette without a save/clip
+  // pair (still unsafe on Android WebView in some paths). Seeded per
+  // planet so each body has a unique pattern but is stable across frames.
+  ctx.globalCompositeOperation = 'source-atop';
+  const cloudRng = mulberry32(b.planetSeed);
+  const patchCount = 9;
+  for (let i = 0; i < patchCount; i++) {
+    // Latitude band bucket: -0.6..+0.55 (stay off the poles so the polar
+    // darkening pass below reads cleanly).
+    const latFrac = -0.6 + cloudRng() * 1.15;
+    const cy = b.y + latFrac * r;
+    const bandWidth = Math.sqrt(Math.max(0, 1 - latFrac * latFrac)); // disc cross-section
+    // Drift speed + direction per patch. Different latitudes drift at
+    // different speeds (gas giants shear by latitude).
+    const driftSpeed = (0.08 + cloudRng() * 0.22) * (latFrac < 0 ? -1 : 1);
+    const phase = cloudRng() * 6.28 + t * driftSpeed;
+    // Wrap drift horizontally across the planet disc. Use sin for gentle
+    // back-and-forth so patches don't rubber-band.
+    const maxDrift = r * bandWidth * 0.85;
+    const cx = b.x + Math.sin(phase) * maxDrift;
+    // Patch size — larger blobs near equator, smaller near poles.
+    const patchR = r * (0.18 + cloudRng() * 0.22) * (0.65 + bandWidth * 0.5);
+    // Soft gaussian-ish edge via 3-stop radial gradient.
+    const alpha = 0.18 + cloudRng() * 0.18;
+    const patch = ctx.createRadialGradient(cx, cy, 0, cx, cy, patchR);
+    patch.addColorStop(0,    `rgba(255,255,255,${alpha})`);
+    patch.addColorStop(0.55, `rgba(255,255,255,${alpha * 0.35})`);
+    patch.addColorStop(1,    'rgba(255,255,255,0)');
+    ctx.fillStyle = patch;
+    // Ellipse, flatter vertically than horizontally — reads as cloud band
+    // stretching along latitude rather than a puffball.
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, patchR, patchR * 0.55, 0, 0, 6.28);
+    ctx.fill();
+  }
+  // Polar darkening — top and bottom poles get a faint dark cap for axial
+  // tilt cue.
+  for (const poleY of [-r * 0.85, r * 0.85]) {
+    const polarG = ctx.createRadialGradient(b.x, b.y + poleY, 0, b.x, b.y + poleY, r * 0.7);
+    polarG.addColorStop(0, 'rgba(0,0,0,0.35)');
+    polarG.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = polarG;
+    ctx.beginPath(); ctx.arc(b.x, b.y + poleY, r * 0.7, 0, 6.28); ctx.fill();
+  }
+  ctx.globalCompositeOperation = 'source-over';
+  // Atmospheric rim: bright halo just outside the planet in its own color,
+  // drawn with additive blend so it reads as air glow rather than a stroke.
+  ctx.globalCompositeOperation = 'lighter';
+  const rimG = ctx.createRadialGradient(b.x, b.y, r * 0.95, b.x, b.y, r * 1.18);
+  rimG.addColorStop(0, 'rgba(0,0,0,0)');
+  rimG.addColorStop(0.5, b.color);
+  rimG.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = rimG;
+  ctx.globalAlpha = 0.55;
+  ctx.beginPath(); ctx.arc(b.x, b.y, r * 1.18, 0, 6.28); ctx.fill();
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.globalAlpha = 1;
+  // Specular highlight.
+  const hlG = ctx.createRadialGradient(b.x - r * 0.45, b.y - r * 0.45, 0, b.x - r * 0.25, b.y - r * 0.25, r * 0.6);
+  hlG.addColorStop(0, 'rgba(255,255,255,0.55)');
+  hlG.addColorStop(0.7, 'rgba(255,255,255,0.05)');
+  hlG.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = hlG;
+  ctx.beginPath(); ctx.arc(b.x - r * 0.3, b.y - r * 0.3, r * 0.6, 0, 6.28); ctx.fill();
+  ctx.restore();
+}
+
 function drawBlackhole(b, tctx = ctx) {
   const ctx = tctx;
-  const sprite = planetSpriteCache.blackhole;
-  if (sprite) {
-    // Step 3b: pixi handles the sprite via updatePixiBodySpriteLayer. Returning
-    // here also skips the procedural fallback below — that fallback only runs
-    // if the cached sprite is missing, which is the same condition under which
-    // pixi can't show the sprite either.
-    if (pixiActive) return;
-    // Scale the 80x80 sprite to match this body's radius.
-    const scale = b.radius / sprite.refRadius;
-    const size = PLANET_SPRITE_SIZE * scale;
-    ctx.drawImage(sprite.canvas, b.x - size / 2, b.y - size / 2, size, size);
-    return;
-  }
+  const t = (frame || 0) * 0.01;
+  const r = b.radius;
   ctx.save();
-  ctx.globalAlpha = 0.35;
-  ctx.fillStyle = 'rgba(170,70,255,1)';
-  ctx.scale(1, 0.3);
-  ctx.beginPath(); ctx.arc(b.x, b.y/0.3, b.radius*2.2, 0, 6.28); ctx.fill();
+  // v1.7: procedural accretion disk. Doppler brightening — the "leading" side
+  // of the disk (approaching viewer) is bright white-blue, the "trailing"
+  // side dims into deep violet. Disk rotates, subtle warp of the disk plane
+  // (cos/sin on the ellipse) makes it feel volumetric. Photon ring is a
+  // thin bright annulus just outside the event horizon.
+  if (typeof b.bhSpin !== 'number') b.bhSpin = Math.random() * 6.28;
+  const spinAng = b.bhSpin + t * 0.8;
+  const diskRXOuter = r * 2.6;
+  const diskRYOuter = r * 0.55;
+  const diskRXInner = r * 1.15;
+  const diskRYInner = r * 0.24;
+  // Doppler: draw disk as short arcs around the ellipse, alpha + color
+  // scaling with cos(angle - spinAng) so the leading half glows bright.
+  ctx.translate(b.x, b.y);
+  // Slight vertical wobble so the disk isn't perfectly flat (fake precession).
+  const wobble = Math.sin(t * 0.9) * 0.08;
+  ctx.rotate(wobble);
+  const segs = 28;
+  for (let i = 0; i < segs; i++) {
+    const a0 = (i / segs) * Math.PI * 2;
+    const a1 = ((i + 1) / segs) * Math.PI * 2;
+    const aMid = (a0 + a1) * 0.5;
+    const dopp = 0.5 + 0.5 * Math.cos(aMid - spinAng); // 0..1 leading side
+    // Sample 4 points: outer a0, outer a1, inner a1, inner a0.
+    const ox0 = Math.cos(a0) * diskRXOuter, oy0 = Math.sin(a0) * diskRYOuter;
+    const ox1 = Math.cos(a1) * diskRXOuter, oy1 = Math.sin(a1) * diskRYOuter;
+    const ix1 = Math.cos(a1) * diskRXInner, iy1 = Math.sin(a1) * diskRYInner;
+    const ix0 = Math.cos(a0) * diskRXInner, iy0 = Math.sin(a0) * diskRYInner;
+    // Color: bright white-cyan on leading edge, purple on trailing.
+    const red   = Math.round(90 + 165 * dopp);
+    const green = Math.round(50 + 180 * dopp);
+    const blue  = Math.round(200 + 55 * dopp);
+    ctx.fillStyle = `rgba(${red},${green},${blue},${0.35 + dopp * 0.55})`;
+    ctx.beginPath();
+    ctx.moveTo(ox0, oy0);
+    ctx.lineTo(ox1, oy1);
+    ctx.lineTo(ix1, iy1);
+    ctx.lineTo(ix0, iy0);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.rotate(-wobble);
+  // Event horizon — pure black disc.
+  ctx.fillStyle = '#000';
+  ctx.beginPath(); ctx.arc(0, 0, r, 0, 6.28); ctx.fill();
+  // Photon ring — very thin bright ring just outside the horizon. This is
+  // the light-bending feature of a real black hole, feels physical.
+  ctx.strokeStyle = 'rgba(220,180,255,0.85)';
+  ctx.lineWidth = 1.8;
+  ctx.beginPath(); ctx.arc(0, 0, r + 1.2, 0, 6.28); ctx.stroke();
+  // Secondary dim ring (light that looped around twice).
+  ctx.strokeStyle = 'rgba(180,100,220,0.35)';
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.arc(0, 0, r + 3.2, 0, 6.28); ctx.stroke();
   ctx.restore();
-  ctx.fillStyle='#000'; ctx.beginPath(); ctx.arc(b.x,b.y,b.radius,0,6.28); ctx.fill();
-  ctx.strokeStyle='rgba(160,70,255,0.65)'; ctx.lineWidth=1.5;
-  ctx.beginPath(); ctx.arc(b.x,b.y,b.radius+1.5,0,6.28); ctx.stroke();
 }
 
 function drawToothed(b, tctx = ctx) {
@@ -8766,34 +9467,73 @@ function drawToothed(b, tctx = ctx) {
     ctx.fill();
   }
 
-  // 8 main rotating spikes: sharp triangles, wide base → 0px tip.
+  // 8 main rotating blades: sharp triangles with a metallic steel core,
+  // blood-red edge (rust stains), and a bright sheen line running down the
+  // leading edge. Reads as a buzzsaw rather than a soft protrusion.
+  // v1.7.1: instead of skipping spikes when ext < 0.5 (which made the
+  // silhouette visibly narrow on horizontal rotations), draw a small solid-
+  // color stub triangle. The stub skips createLinearGradient entirely
+  // (that was the original crash reason for the skip on Android WebView at
+  // zero-length) — it uses a flat fillStyle. Silhouette stays 8-bladed at
+  // every angle.
+  const STUB_THRESHOLD = 0.5;
+  const MIN_STUB_EXT = 2.2; // visual stub length floor for horizontal-angle blades
   for (let i = 0; i < 8; i++) {
     const a = b.toothAngle + i * (Math.PI / 4);
-    const ext = b.spikeLen * Math.abs(Math.sin(a));
-    // Skip degenerate zero-extension spikes — their base/tip coincide which
-    // would create a zero-length linear gradient (WebView crash risk on Android).
-    if (ext < 0.5) continue;
+    const rawExt = b.spikeLen * Math.abs(Math.sin(a));
+    const isStub = rawExt < STUB_THRESHOLD;
+    // For stubs, substitute a tiny fixed extension so baseX/baseY and
+    // tipX/tipY don't coincide (still a valid triangle, just short).
+    const ext = isStub ? MIN_STUB_EXT : rawExt;
     const baseX = b.x + Math.cos(a) * b.radius;
     const baseY = b.y + Math.sin(a) * b.radius;
     const tipX = b.x + Math.cos(a) * (b.radius + ext);
     const tipY = b.y + Math.sin(a) * (b.radius + ext);
     const tangX = -Math.sin(a), tangY = Math.cos(a);
     const baseW = 6; // half-width at base → total 12px
-    // Dark shadow pass (slightly offset inward — base darkening).
     const shadeX0 = baseX + tangX * baseW;
     const shadeY0 = baseY + tangY * baseW;
     const shadeX1 = baseX - tangX * baseW;
     const shadeY1 = baseY - tangY * baseW;
+    if (isStub) {
+      // Flat-filled stub — no gradient. Dark rust tone so it reads as an
+      // occluded/foreshortened blade rather than a protruding one.
+      ctx.fillStyle = '#4a1a14';
+      ctx.beginPath();
+      ctx.moveTo(shadeX0, shadeY0);
+      ctx.lineTo(tipX, tipY);
+      ctx.lineTo(shadeX1, shadeY1);
+      ctx.closePath();
+      ctx.fill();
+      continue;
+    }
+    // Base blood/rust-stained steel: dark at base, brighter toward tip.
     const spikeGrad = ctx.createLinearGradient(baseX, baseY, tipX, tipY);
-    spikeGrad.addColorStop(0, '#3a0000');
-    spikeGrad.addColorStop(0.35, '#8b0000');
-    spikeGrad.addColorStop(1, '#cc0000');
+    spikeGrad.addColorStop(0,   '#2a0505');
+    spikeGrad.addColorStop(0.25,'#5a1a1a');
+    spikeGrad.addColorStop(0.55,'#8a3a28'); // rust tone
+    spikeGrad.addColorStop(0.85,'#c0c0b8'); // steel near tip
+    spikeGrad.addColorStop(1,   '#ffffff'); // razor edge
     ctx.fillStyle = spikeGrad;
     ctx.beginPath();
     ctx.moveTo(shadeX0, shadeY0);
     ctx.lineTo(tipX, tipY);
     ctx.lineTo(shadeX1, shadeY1);
     ctx.closePath();
+    ctx.fill();
+    // Metallic sheen — thin bright line along one edge (leading side).
+    ctx.strokeStyle = 'rgba(255,255,255,0.55)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(shadeX0, shadeY0);
+    ctx.lineTo(tipX, tipY);
+    ctx.stroke();
+    // Blood stain: small irregular dark splotch near the base.
+    ctx.fillStyle = 'rgba(90,0,0,0.55)';
+    const stainX = baseX + (tipX - baseX) * 0.18 + tangX * (baseW * 0.25);
+    const stainY = baseY + (tipY - baseY) * 0.18 + tangY * (baseW * 0.25);
+    ctx.beginPath();
+    ctx.ellipse(stainX, stainY, 1.6, 1.1, a, 0, 6.28);
     ctx.fill();
   }
 
@@ -8838,48 +9578,88 @@ function drawEye(b, tctx = ctx) {
   grad.addColorStop(1, '#c4b78a');
   ctx.fillStyle = grad;
   ctx.beginPath(); ctx.arc(b.x, b.y, pulseR, 0, 6.28); ctx.fill();
-  // Veins: pre-baked into b.veinCanvas at spawn (33 strokes → 1 drawImage).
-  // Falls back to the original 33-stroke path if the sprite builder failed.
-  if (b.veinCanvas) {
-    const vs = b.veinCanvas.width;
-    ctx.drawImage(b.veinCanvas, b.x - vs / 2, b.y - vs / 2);
-  } else {
-    const rng = mulberry32(b.veinSeed);
-    const veinCount = 11;
-    for (let i = 0; i < veinCount; i++) {
-      const a = rng() * Math.PI * 2;
-      const curveAmt = (rng() - 0.5) * 0.7;
-      const startX = b.x + Math.cos(a) * pulseR * 0.96;
-      const startY = b.y + Math.sin(a) * pulseR * 0.96;
-      const midA = a + curveAmt;
-      const midX = b.x + Math.cos(midA) * (pulseR * 0.55);
-      const midY = b.y + Math.sin(midA) * (pulseR * 0.55);
-      const endA = a + curveAmt * 2;
-      const endX = b.x + Math.cos(endA) * (pulseR * 0.25);
-      const endY = b.y + Math.sin(endA) * (pulseR * 0.25);
-      ctx.strokeStyle = 'rgba(200,30,30,0.85)';
-      ctx.lineWidth = 2;
+  // v1.7.1: capillary-like veins, drawn live so they scale with the pulseR
+  // rather than a baked static sprite. Each vein is a main quadratic curve
+  // with 2-3 thin branch offshoots at the midpoint; per-segment strokes use
+  // a red → dark-red gradient so the vessel fades toward the iris (where
+  // vessels of a real eye thin into the cornea). Tension (target-lock)
+  // multiplies the overall alpha: when the player is targeting this body
+  // the bloodshot look intensifies visibly, as a gameplay feedback cue.
+  const isTarget = (typeof closestBody !== 'undefined') && closestBody === b;
+  const tensionAlpha = isTarget ? 1.0 : 0.55;
+  const rng = mulberry32(b.veinSeed);
+  const veinCount = 11;
+  // The main vein path lives from r ≈ 0.96*pulseR (edge) down to ≈ 0.22*pulseR
+  // (just outside the iris). Tiny extra wobble on frame makes vessels look
+  // alive (subtle blood-flow shimmer).
+  const flow = Math.sin((frame || 0) * 0.07) * 0.04;
+  for (let i = 0; i < veinCount; i++) {
+    const a = rng() * Math.PI * 2;
+    const curveAmt = (rng() - 0.5) * 0.9;
+    const startX = b.x + Math.cos(a) * pulseR * (0.97 + flow);
+    const startY = b.y + Math.sin(a) * pulseR * (0.97 + flow);
+    const midA = a + curveAmt;
+    const midR = pulseR * (0.55 + rng() * 0.1);
+    const midX = b.x + Math.cos(midA) * midR;
+    const midY = b.y + Math.sin(midA) * midR;
+    const endA = a + curveAmt * 1.8;
+    const endR = pulseR * (0.24 + rng() * 0.08);
+    const endX = b.x + Math.cos(endA) * endR;
+    const endY = b.y + Math.sin(endA) * endR;
+    // Segment 1: edge → mid — thicker (small arterial feed).
+    const g1 = ctx.createLinearGradient(startX, startY, midX, midY);
+    g1.addColorStop(0, `rgba(170,25,25,${0.92 * tensionAlpha})`);
+    g1.addColorStop(1, `rgba(110,10,15,${0.78 * tensionAlpha})`);
+    ctx.strokeStyle = g1;
+    ctx.lineCap = 'round';
+    ctx.lineWidth = 1.35;
+    ctx.beginPath();
+    ctx.moveTo(startX, startY);
+    ctx.quadraticCurveTo(
+      startX + (midX - startX) * 0.5 + Math.cos(a + Math.PI * 0.5) * 2,
+      startY + (midY - startY) * 0.5 + Math.sin(a + Math.PI * 0.5) * 2,
+      midX, midY
+    );
+    ctx.stroke();
+    // Segment 2: mid → end — thinner (capillary tail).
+    const g2 = ctx.createLinearGradient(midX, midY, endX, endY);
+    g2.addColorStop(0, `rgba(110,10,15,${0.72 * tensionAlpha})`);
+    g2.addColorStop(1, `rgba(60,0,5,${0.4 * tensionAlpha})`);
+    ctx.strokeStyle = g2;
+    ctx.lineWidth = 0.85;
+    ctx.beginPath();
+    ctx.moveTo(midX, midY);
+    ctx.quadraticCurveTo(
+      midX + (endX - midX) * 0.5 + Math.cos(endA + Math.PI * 0.5) * 1.3,
+      midY + (endY - midY) * 0.5 + Math.sin(endA + Math.PI * 0.5) * 1.3,
+      endX, endY
+    );
+    ctx.stroke();
+    // Branches off the midpoint — thinner still, short capillary spurs.
+    ctx.strokeStyle = `rgba(140,20,20,${0.55 * tensionAlpha})`;
+    ctx.lineWidth = 0.6;
+    const branchCount = 2 + (rng() < 0.5 ? 1 : 0);
+    for (let j = 0; j < branchCount; j++) {
+      const branchA = midA + (rng() - 0.5) * 1.6;
+      const branchLen = pulseR * (0.12 + rng() * 0.18);
+      const cx1 = midX + Math.cos(branchA) * branchLen * 0.5 + Math.cos(branchA + 0.7) * 1.5;
+      const cy1 = midY + Math.sin(branchA) * branchLen * 0.5 + Math.sin(branchA + 0.7) * 1.5;
+      const bxt = midX + Math.cos(branchA) * branchLen;
+      const byt = midY + Math.sin(branchA) * branchLen;
       ctx.beginPath();
-      ctx.moveTo(startX, startY);
-      ctx.quadraticCurveTo(midX, midY, endX, endY);
+      ctx.moveTo(midX, midY);
+      ctx.quadraticCurveTo(cx1, cy1, bxt, byt);
       ctx.stroke();
-      ctx.strokeStyle = 'rgba(200,30,30,0.55)';
-      ctx.lineWidth = 1;
-      for (let j = 0; j < 2; j++) {
-        const branchA = midA + (rng() - 0.5) * 1.4;
-        const branchLen = pulseR * (0.15 + rng() * 0.2);
-        const bx = midX + Math.cos(branchA) * branchLen;
-        const by = midY + Math.sin(branchA) * branchLen;
-        ctx.beginPath();
-        ctx.moveTo(midX, midY); ctx.lineTo(bx, by);
-        ctx.stroke();
-      }
     }
   }
   // Iris: hue cycles through blue→green→red over 10s. Slightly larger now.
   const hueT = (Date.now() % 10000) / 10000;
   const hue = Math.floor(hueT * 360);
-  const irisR = pulseR * 0.62;
+  // v1.7: tension-driven iris dilation — eye "dilates" (iris shrinks relative
+  // to eyeball) in sync with pulse, like a scared pupil. Use the cos phase so
+  // dilation reads as a real reaction rather than a jitter.
+  const dilate = 0.55 + 0.12 * Math.cos(b.eyePulse * 1.3);
+  const irisR = pulseR * dilate;
   const irisX = b.x + b.pupilDx;
   const irisY = b.y + b.pupilDy;
   const irisGrad = ctx.createRadialGradient(irisX, irisY, 0, irisX, irisY, irisR);
@@ -8888,34 +9668,94 @@ function drawEye(b, tctx = ctx) {
   irisGrad.addColorStop(1, `hsl(${hue},60%,20%)`);
   ctx.fillStyle = irisGrad;
   ctx.beginPath(); ctx.arc(irisX, irisY, irisR, 0, 6.28); ctx.fill();
-  // Pupil.
+  // Pupil — slight constriction during the dilation phase.
   ctx.fillStyle = '#000';
-  ctx.beginPath(); ctx.arc(irisX, irisY, pulseR * 0.25, 0, 6.28); ctx.fill();
+  ctx.beginPath(); ctx.arc(irisX, irisY, pulseR * 0.22 * (1.05 - (dilate - 0.55) * 0.6), 0, 6.28); ctx.fill();
+  // v1.7: wet reflective highlight — two bright crescents on the iris read as
+  // a glossy convex lens under a top-left light. Makes the eyeball feel wet
+  // rather than matte.
+  ctx.globalAlpha = 0.9;
+  ctx.fillStyle = 'rgba(255,255,255,1)';
+  ctx.beginPath(); ctx.arc(irisX - irisR * 0.32, irisY - irisR * 0.32, irisR * 0.18, 0, 6.28); ctx.fill();
+  ctx.globalAlpha = 0.5;
+  ctx.beginPath(); ctx.arc(irisX + irisR * 0.1, irisY + irisR * 0.25, irisR * 0.07, 0, 6.28); ctx.fill();
+  ctx.globalAlpha = 1;
+  // Bloodshot rim — fine red vignette at the outer eyeball edge, heavier on
+  // the inputs side. Approximated with one stroke at r-1.
+  ctx.strokeStyle = 'rgba(200,50,50,0.35)';
+  ctx.lineWidth = 2.5;
+  ctx.beginPath(); ctx.arc(b.x, b.y, pulseR - 1.2, 0, 6.28); ctx.stroke();
+  // v1.7: occasional tear drip — spawns a slow-falling droplet every ~8-12s,
+  // lives until it falls off the eyeball. Keeps a single tear slot per body so
+  // we don't leak arrays. Timer is independent of eyePulse so adjusting the
+  // pulse rate upstream doesn't affect drip cadence.
+  if (typeof b.eyeNextTearFrame !== 'number') b.eyeNextTearFrame = (frame || 0) + 480 + Math.floor(Math.random() * 240);
+  if (!b.eyeTear && (frame || 0) >= b.eyeNextTearFrame) {
+    b.eyeTear = { age: 0, life: 60, offX: (Math.random() - 0.5) * pulseR * 0.3 };
+    b.eyeNextTearFrame = (frame || 0) + 480 + Math.floor(Math.random() * 240);
+  }
+  if (b.eyeTear) {
+    const k = b.eyeTear.age / b.eyeTear.life;
+    const tx = b.x + b.eyeTear.offX;
+    const ty = b.y + pulseR + k * pulseR * 1.4;
+    ctx.globalAlpha = 1 - k * 0.6;
+    ctx.fillStyle = 'rgba(220,240,255,0.95)';
+    ctx.beginPath();
+    ctx.ellipse(tx, ty, 1.6, 2.4, 0, 0, 6.28);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    b.eyeTear.age++;
+    if (b.eyeTear.age >= b.eyeTear.life) b.eyeTear = null;
+  }
   ctx.restore();
 }
 
 function drawCracked(b, tctx = ctx) {
   const ctx = tctx;
   ctx.save();
-  // Base planet (darker).
-  const grad = ctx.createRadialGradient(b.x - b.radius*0.28, b.y - b.radius*0.28, 0, b.x, b.y, b.radius);
-  grad.addColorStop(0, '#b85c30');
-  grad.addColorStop(0.4, '#5a2b16');
-  grad.addColorStop(1, '#2a1000');
+  // v1.7.1: charge-up ramp — in the last ~1 second before eruption the whole
+  // body (base darkening, heat haze, crack glow) brightens noticeably so the
+  // player gets a visual tell before fragments spawn. Ramp rises steeply as
+  // the timer approaches 0, eases back down after the eruption fires.
+  const framesToErupt = typeof b.nextEruptFrame === 'number' ? b.nextEruptFrame : 120;
+  const CHARGE_WINDOW = 60;
+  const chargeT = framesToErupt <= CHARGE_WINDOW && framesToErupt >= 0
+    ? 1 - (framesToErupt / CHARGE_WINDOW)
+    : 0;
+  const charge = chargeT * chargeT; // ease-in quadratic
+  // Base planet (darker) with directional shading. Brighten under charge.
+  const baseTop = charge > 0 ? `rgb(${216 + Math.round(charge * 30)},${117 + Math.round(charge * 50)},${69 + Math.round(charge * 40)})` : '#d87545';
+  const grad = ctx.createRadialGradient(b.x - b.radius*0.35, b.y - b.radius*0.35, 0, b.x, b.y, b.radius);
+  grad.addColorStop(0,   baseTop);
+  grad.addColorStop(0.3, '#8a3a1e');
+  grad.addColorStop(0.75,'#3e1808');
+  grad.addColorStop(1,   '#1a0800');
   ctx.fillStyle = grad;
   ctx.beginPath(); ctx.arc(b.x, b.y, b.radius, 0, 6.28); ctx.fill();
 
-  // Crack glow pulse. (No clip — Android WebView crash risk.) Every endpoint
-  // is clamped to within b.radius * 0.9 of the body center so cracks can't
-  // draw outside the visible planet.
+  // Heat haze — outward warm amber. Intensity ramps with charge so the body
+  // feels like it's "warming up" visibly in the last second before eruption.
+  const heatPulse = 0.5 + 0.5 * Math.sin(Date.now() * 0.0018 + b.crackSeed);
+  const heatAlpha = 0.15 + heatPulse * 0.12 + charge * 0.35;
+  const heatR = b.radius * (1.35 + charge * 0.3);
+  const heat = ctx.createRadialGradient(b.x, b.y, b.radius * 0.8, b.x, b.y, heatR);
+  heat.addColorStop(0, `rgba(255,${120 + Math.round(charge * 80)},40,${heatAlpha})`);
+  heat.addColorStop(1, 'rgba(255,60,0,0)');
+  ctx.fillStyle = heat;
+  ctx.beginPath(); ctx.arc(b.x, b.y, heatR, 0, 6.28); ctx.fill();
+
+  // v1.7.1: organic jagged cracks — multi-segment rock fractures with
+  // tapering width (thick arterial trunk at disc edge, thin whisker at the
+  // centre), jittered kinks and a 40% chance of spawning a branch at the
+  // midpoint of each segment. Pre-sampled to vertices/widths so we can
+  // stroke each segment independently for the taper effect.
   const pulseAlpha = 0.6 + 0.4 * Math.abs(Math.sin(Date.now() * 0.0012 + b.crackSeed));
+  const crackGlowA = pulseAlpha * (0.85 + charge * 0.7);
   ctx.save();
-  ctx.shadowBlur = 8;
-  ctx.shadowColor = 'rgba(255,120,40,0.9)';
-  ctx.strokeStyle = `rgba(255,140,40,${pulseAlpha})`;
-  ctx.lineWidth = 1.6;
+  ctx.shadowBlur = 8 + charge * 8;
+  ctx.shadowColor = `rgba(255,${140 + Math.round(charge * 60)},40,${0.9 + charge * 0.1})`;
+  ctx.lineCap = 'round';
   const rng = mulberry32(b.crackSeed);
-  const crackCount = 4;
   const rMax = b.radius * 0.9;
   const clampToDisc = (x, y) => {
     const ddx = x - b.x, ddy = y - b.y;
@@ -8924,23 +9764,62 @@ function drawCracked(b, tctx = ctx) {
     const k = rMax / d;
     return [b.x + ddx * k, b.y + ddy * k];
   };
+  const drawFracture = (sx, sy, trunkW, stepScale, recursion) => {
+    let x = sx, y = sy;
+    let curA = Math.atan2(b.y - y, b.x - x) + (rng() - 0.5) * 0.9;
+    const segs = 5 + Math.floor(rng() * 3);
+    for (let s = 0; s < segs; s++) {
+      // Jitter direction more aggressively for organic look.
+      curA += (rng() - 0.5) * 1.4;
+      const step = b.radius * stepScale * (0.3 + rng() * 0.45);
+      let [nx, ny] = clampToDisc(x + Math.cos(curA) * step, y + Math.sin(curA) * step);
+      // Taper width from trunk → tip.
+      const u = s / segs;
+      const segW = trunkW * (1 - u * 0.85);
+      const grad = ctx.createLinearGradient(x, y, nx, ny);
+      grad.addColorStop(0, `rgba(255,230,140,${crackGlowA})`);
+      grad.addColorStop(0.5, `rgba(255,170,60,${crackGlowA * 0.9})`);
+      grad.addColorStop(1, `rgba(220,80,20,${crackGlowA * 0.75})`);
+      ctx.strokeStyle = grad;
+      ctx.lineWidth = Math.max(0.5, segW);
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(nx, ny);
+      ctx.stroke();
+      // Branching — occasional offshoot with its own recursion (one level only
+      // to keep draw count bounded).
+      if (recursion > 0 && rng() < 0.35 && s > 0) {
+        const branchW = segW * 0.6;
+        const bSteps = 2 + Math.floor(rng() * 2);
+        let bx = nx, by = ny;
+        let bA = curA + (rng() < 0.5 ? 1 : -1) * (0.8 + rng() * 0.9);
+        for (let bs = 0; bs < bSteps; bs++) {
+          bA += (rng() - 0.5) * 1.2;
+          const bStep = b.radius * 0.18 * (0.7 + rng() * 0.6);
+          const [nbx, nby] = clampToDisc(bx + Math.cos(bA) * bStep, by + Math.sin(bA) * bStep);
+          const bu = bs / bSteps;
+          const bSegW = branchW * (1 - bu * 0.8);
+          ctx.lineWidth = Math.max(0.4, bSegW);
+          ctx.beginPath();
+          ctx.moveTo(bx, by);
+          ctx.lineTo(nbx, nby);
+          ctx.stroke();
+          bx = nbx; by = nby;
+        }
+      }
+      x = nx; y = ny;
+    }
+  };
+  const crackCount = 4;
   for (let c = 0; c < crackCount; c++) {
     const startA = rng() * Math.PI * 2;
-    ctx.beginPath();
-    let [x, y] = clampToDisc(b.x + Math.cos(startA) * rMax, b.y + Math.sin(startA) * rMax);
-    ctx.moveTo(x, y);
-    const segs = 4 + Math.floor(rng() * 3);
-    for (let s = 0; s < segs; s++) {
-      const ta = startA + Math.PI + (rng() - 0.5) * 1.5;
-      const step = b.radius * (0.3 + rng() * 0.4);
-      [x, y] = clampToDisc(x + Math.cos(ta) * step, y + Math.sin(ta) * step);
-      ctx.lineTo(x, y);
-    }
-    ctx.stroke();
+    const [sx, sy] = clampToDisc(b.x + Math.cos(startA) * rMax, b.y + Math.sin(startA) * rMax);
+    // Trunk width 2.2 at disc edge, tapers to ~0.3 by the interior tip.
+    drawFracture(sx, sy, 2.2 + charge * 0.8, 1.0, 1);
   }
   ctx.restore();
 
-  // Eruption flash.
+  // Eruption flash — unchanged, still fires at eruptFlash > 0.
   if (b.eruptFlash > 0) {
     const k = b.eruptFlash / 10;
     ctx.globalAlpha = k * 0.75;
@@ -8959,17 +9838,19 @@ function drawTentacle(b, tctx = ctx) {
   const count = b.tentacleCount;
   const STEPS = 10; // segments per tentacle
 
-  // Tentacles (draw first, behind body). Each tentacle's segments accumulate
-  // into a single Path2D and stroke once with midpoint width/colour instead
-  // of 10 per-segment strokes. Taper and per-segment colour ramp are
-  // sacrificed; save ~50 strokes/planet. Sucker dots removed entirely —
-  // barely visible at this zoom and they were 30 additional fills/planet.
+  // v1.7.1: organic tapering tentacles with per-segment stroke widths, S-curve
+  // undulation along full length (two sine waves at different wavelengths so
+  // arms never look like straight rods), suckers alternating down each arm,
+  // and a bioluminescent base-glow where they meet the body. Draws under the
+  // body so the base connection is hidden by the jelly silhouette.
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
+  // Cache sampled tentacles so we can reuse them for the sucker pass.
+  const samples = []; // {pts:[{x,y,u}], angle, baseX, baseY, phase, tipX, tipY}
   for (let i = 0; i < count; i++) {
     const phase = b.tentaclePhases[i];
     const ext = tentacleExtension(phase);
-    if (ext < 0.05) continue;
+    if (ext < 0.05) { samples.push(null); continue; }
     const retract = phase > 2.5 ? (phase - 2.5) / 1 : 0;
     const ampBoost = 1 + retract * 1.5;
     const angle = (i / count) * Math.PI * 2;
@@ -8978,38 +9859,115 @@ function drawTentacle(b, tctx = ctx) {
     const baseY = b.y + Math.sin(angle) * b.radius;
     const outX  = Math.cos(angle), outY  = Math.sin(angle);
     const tangX = -outY, tangY = outX;
-
-    const path = new Path2D();
-    path.moveTo(baseX, baseY);
+    // Sample STEPS+1 points along the tentacle with dual-frequency S-curve
+    // wobble — one slow long wave + one faster short wave. The slow wave
+    // does the organic S-curve, the fast wave gives micro-undulation.
+    const pts = [{ x: baseX, y: baseY, u: 0 }];
     let tipX = baseX, tipY = baseY;
     for (let s = 1; s <= STEPS; s++) {
       const u = s / STEPS;
-      const wig = (
-        Math.sin(frame * 0.05 + s * 0.3 + i * 1.2) * 8 +
-        Math.sin(frame * 0.09 + s * 0.7 + i * 0.4) * 4
-      ) * u * ampBoost;
+      // Long S-curve: sin over [0, π] along length → full swing side-to-side.
+      const slow = Math.sin(u * Math.PI + frame * 0.04 + i * 1.2) * 10 * u * ampBoost;
+      // Fast ripple: small amplitude, higher frequency.
+      const fast = Math.sin(u * Math.PI * 3.3 + frame * 0.09 + i * 0.4) * 3 * u * ampBoost;
+      const wig = slow + fast;
       const cx = baseX + outX * (maxLen - b.radius) * u + tangX * wig;
       const cy = baseY + outY * (maxLen - b.radius) * u + tangY * wig;
-      path.lineTo(cx, cy);
+      pts.push({ x: cx, y: cy, u });
       tipX = cx; tipY = cy;
     }
-    // Midpoint colour/width — closest single value to the old per-segment ramp.
-    ctx.strokeStyle = 'rgba(66,17,108,0.92)'; // u=0.5 of the original ramp
-    ctx.lineWidth = 6;                         // midpoint of the 8→4 taper
-    ctx.stroke(path);
-    // Bulbous tip — one extra fill per tentacle, matches the old lighter-than-
-    // shaft tip colour.
-    ctx.fillStyle = 'rgba(86,37,128,0.95)';
-    ctx.beginPath(); ctx.arc(tipX, tipY, 4.5, 0, 6.28); ctx.fill();
+    samples.push({ pts, angle, baseX, baseY, phase, tipX, tipY, outX, outY });
+    // Bioluminescent base glow — soft radial at the body-tentacle junction,
+    // drawn before the tentacle strokes so the arm appears to emerge from a
+    // lit socket.
+    const baseGlowR = 8;
+    const baseG = ctx.createRadialGradient(baseX, baseY, 0, baseX, baseY, baseGlowR);
+    baseG.addColorStop(0, 'rgba(180,240,255,0.75)');
+    baseG.addColorStop(1, 'rgba(180,240,255,0)');
+    ctx.fillStyle = baseG;
+    ctx.beginPath(); ctx.arc(baseX, baseY, baseGlowR, 0, 6.28); ctx.fill();
+    // Stroke per segment with a taper: thick at the base (10px), thin at the
+    // tip (2.5px). Two strokes per segment — outline + muscle highlight.
+    for (let s = 1; s < pts.length; s++) {
+      const u0 = pts[s - 1].u;
+      const u1 = pts[s].u;
+      const uMid = (u0 + u1) * 0.5;
+      const trunk = 10;
+      const tip = 2.4;
+      const widthOutline = trunk + (tip - trunk) * uMid;
+      const widthHighlight = widthOutline * 0.5;
+      // Outline (dark shadow edge).
+      ctx.strokeStyle = `rgba(26,8,48,${0.92 - uMid * 0.1})`;
+      ctx.lineWidth = widthOutline;
+      ctx.beginPath();
+      ctx.moveTo(pts[s - 1].x, pts[s - 1].y);
+      ctx.lineTo(pts[s].x, pts[s].y);
+      ctx.stroke();
+      // Muscle highlight (lit belly). Hue shifts slightly toward magenta
+      // mid-length so the arm reads as having internal structure.
+      const hueMix = Math.round(70 + uMid * 60);
+      ctx.strokeStyle = `rgba(${hueMix + 50},${70 - uMid * 20},${180 - uMid * 30},0.78)`;
+      ctx.lineWidth = widthHighlight;
+      ctx.beginPath();
+      ctx.moveTo(pts[s - 1].x, pts[s - 1].y);
+      ctx.lineTo(pts[s].x, pts[s].y);
+      ctx.stroke();
+    }
+    // Bulbous tip — unchanged look, still reads as a heavy club-end.
+    ctx.fillStyle = 'rgba(160,110,220,0.98)';
+    ctx.beginPath(); ctx.arc(tipX, tipY, 5.2, 0, 6.28); ctx.fill();
+    ctx.strokeStyle = 'rgba(200,170,255,0.55)';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(tipX, tipY, 5.2, 0, 6.28); ctx.stroke();
+  }
+  // Sucker pass — alternating small dark circles along each tentacle, offset
+  // to alternating sides of the arm centreline. Drawn AFTER all tentacles so
+  // suckers layer cleanly on top of the muscle highlights. Skipped if the
+  // tentacle is too short (ext<0.25 → still retracting).
+  for (let i = 0; i < count; i++) {
+    const tent = samples[i];
+    if (!tent) continue;
+    const ext = tentacleExtension(tent.phase);
+    if (ext < 0.25) continue;
+    const suckerCount = 5;
+    for (let k = 1; k <= suckerCount; k++) {
+      const uTarget = (k / (suckerCount + 1));
+      // Find the two adjacent sample points.
+      const idx = Math.min(tent.pts.length - 1, Math.max(1, Math.round(uTarget * STEPS)));
+      const p = tent.pts[idx];
+      const prev = tent.pts[idx - 1];
+      // Local tangent from prev→p, perpendicular gives the sucker offset.
+      const dx = p.x - prev.x, dy = p.y - prev.y;
+      const dlen = Math.hypot(dx, dy) || 1;
+      const perpX = -dy / dlen, perpY = dx / dlen;
+      // Alternate sides so suckers zigzag down the arm.
+      const side = (k % 2 === 0) ? 1 : -1;
+      const armW = 10 + (2.4 - 10) * p.u; // matches outline taper
+      const suckerOff = (armW * 0.5) * 0.55 * side;
+      const sx = p.x + perpX * suckerOff;
+      const sy = p.y + perpY * suckerOff;
+      const sr = Math.max(0.8, 1.9 - p.u * 0.9); // bigger near base
+      // Outer dark ring.
+      ctx.fillStyle = 'rgba(10,4,20,0.9)';
+      ctx.beginPath(); ctx.arc(sx, sy, sr, 0, 6.28); ctx.fill();
+      // Inner pale dot — catchlight on the sucker rim.
+      ctx.fillStyle = 'rgba(220,180,255,0.75)';
+      ctx.beginPath(); ctx.arc(sx - sr * 0.25, sy - sr * 0.25, sr * 0.35, 0, 6.28); ctx.fill();
+    }
   }
 
-  // Slightly irregular body silhouette — darker navy/black. Use 10-vertex path
-  // with jittered radii for an organic blob. Fills the path directly (replaces
-  // former clip + fillRect, which crashed Android WebView).
+  // v1.7: cosmic-jellyfish body — translucent bulbous head with visible
+  // internal organ patches, not a solid navy disc. Three rendering layers:
+  //   1. Organic silhouette (10-vertex wobbly blob) filled with a deep
+  //      violet-to-black radial.
+  //   2. Translucent outer membrane (lighter tint, additive) for the
+  //      "see-through" feel.
+  //   3. 3 internal organ blobs pulsing at different phases — the
+  //      bioluminescent pulse patches called for in the spec.
   const rng = mulberry32(b.tentacleSeed);
   const grad = ctx.createRadialGradient(b.x - b.radius*0.3, b.y - b.radius*0.3, 0, b.x, b.y, b.radius);
-  grad.addColorStop(0, '#1a0030');
-  grad.addColorStop(0.6, '#0d0018');
+  grad.addColorStop(0, '#2a1050');
+  grad.addColorStop(0.45, '#10052a');
   grad.addColorStop(1, '#000');
   ctx.fillStyle = grad;
   ctx.beginPath();
@@ -9025,8 +9983,41 @@ function drawTentacle(b, tctx = ctx) {
   ctx.closePath();
   ctx.fill();
 
-  // Bioluminescent dots scattered on body surface (cyan/blue glow). Placed
-  // within 0.95*r so they stay inside the blob without needing a clip.
+  // Translucent membrane — additive tint so the silhouette reads as
+  // semi-transparent jelly rather than opaque.
+  ctx.globalCompositeOperation = 'lighter';
+  const memb = ctx.createRadialGradient(b.x - b.radius * 0.35, b.y - b.radius * 0.45, 0, b.x, b.y, b.radius);
+  memb.addColorStop(0, 'rgba(140,90,200,0.45)');
+  memb.addColorStop(0.6, 'rgba(60,30,120,0.12)');
+  memb.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = memb;
+  ctx.beginPath(); ctx.arc(b.x, b.y, b.radius * 0.95, 0, 6.28); ctx.fill();
+  ctx.globalCompositeOperation = 'source-over';
+
+  // Internal organs — 3 seeded ellipse blobs at fixed positions inside the
+  // head, pulsing at different phases. These read as visible guts through the
+  // translucent membrane.
+  const organRng = mulberry32(b.tentacleSeed ^ 0xc3c3);
+  for (let i = 0; i < 3; i++) {
+    const ang = organRng() * Math.PI * 2;
+    const dist = b.radius * (0.15 + organRng() * 0.35);
+    const ox = b.x + Math.cos(ang) * dist;
+    const oy = b.y + Math.sin(ang) * dist;
+    const orw = b.radius * (0.2 + organRng() * 0.2);
+    const orh = orw * (0.6 + organRng() * 0.5);
+    const orPhase = organRng() * 6.28;
+    const pulsePct = 0.5 + 0.5 * Math.sin(frame * 0.06 + orPhase);
+    const organG = ctx.createRadialGradient(ox, oy, 0, ox, oy, orw);
+    organG.addColorStop(0, `rgba(180,240,255,${0.55 * pulsePct + 0.2})`);
+    organG.addColorStop(0.6, `rgba(90,160,220,${0.3 * pulsePct})`);
+    organG.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = organG;
+    ctx.beginPath();
+    ctx.ellipse(ox, oy, orw, orh, organRng() * 6.28, 0, 6.28);
+    ctx.fill();
+  }
+
+  // Bioluminescent surface dots — retain as tiny pinpricks on top of organs.
   const dotRng = mulberry32(b.tentacleSeed ^ 0xa5a5);
   const biolumPulse = 0.5 + 0.5 * Math.sin(frame * 0.04);
   for (let i = 0; i < 9; i++) {
@@ -9036,9 +10027,10 @@ function drawTentacle(b, tctx = ctx) {
     const py = b.y + Math.sin(a) * r;
     const dotR = 1.2 + dotRng() * 1.4;
     ctx.globalAlpha = 0.5 + 0.4 * biolumPulse;
-    ctx.fillStyle = 'rgba(120,220,255,1)';
+    ctx.fillStyle = 'rgba(180,240,255,1)';
     ctx.beginPath(); ctx.arc(px, py, dotR, 0, 6.28); ctx.fill();
   }
+  ctx.globalAlpha = 1;
   ctx.restore();
 }
 
@@ -9219,40 +10211,148 @@ function drawScreaming(b, tctx = ctx) {
   ctx.beginPath();
   ctx.ellipse(b.x, mouthCY, mouthRX, mouthRY, 0, 0, 6.28);
   ctx.fill();
-  // Red glow deep in the throat during scream.
+  // v1.7.1: deeper throat — double-gradient so the back of the throat fades
+  // to near-black but the mid-depth lit-red glow is clearly visible. Creates
+  // a sense of receding depth into the skull.
   if (mouthT > 0.3) {
-    const throat = ctx.createRadialGradient(b.x, mouthCY, 0, b.x, mouthCY, mouthRX * 0.8);
-    throat.addColorStop(0, `rgba(160,20,20,${mouthT * 0.55})`);
-    throat.addColorStop(1, 'rgba(60,0,0,0)');
+    // Deep throat shadow (further back, darker).
+    const backShadow = ctx.createRadialGradient(b.x, mouthCY + mouthRY * 0.1, 0, b.x, mouthCY + mouthRY * 0.1, mouthRX * 0.55);
+    backShadow.addColorStop(0, `rgba(30,0,0,${mouthT * 0.95})`);
+    backShadow.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = backShadow;
+    ctx.beginPath();
+    ctx.ellipse(b.x, mouthCY + mouthRY * 0.1, mouthRX * 0.55, mouthRY * 0.5, 0, 0, 6.28);
+    ctx.fill();
+    // Lit-red mid-throat glow (volumetric, the "lit throat" effect).
+    const throat = ctx.createRadialGradient(b.x, mouthCY, 0, b.x, mouthCY, mouthRX * 0.85);
+    throat.addColorStop(0, `rgba(180,30,30,${mouthT * 0.6})`);
+    throat.addColorStop(0.7, `rgba(110,15,15,${mouthT * 0.25})`);
+    throat.addColorStop(1, 'rgba(40,0,0,0)');
     ctx.fillStyle = throat;
     ctx.beginPath();
-    ctx.ellipse(b.x, mouthCY, mouthRX * 0.8, mouthRY * 0.6, 0, 0, 6.28);
+    ctx.ellipse(b.x, mouthCY, mouthRX * 0.85, mouthRY * 0.6, 0, 0, 6.28);
     ctx.fill();
+    // v1.7.1: tongue — dark-red curved shape in the lower middle of the mouth.
+    // Only when mouth is fully open (mouthT > 0.55). Slight per-frame wobble
+    // makes it feel like the scream is actively vibrating it.
+    if (mouthT > 0.55) {
+      const tongueWobble = Math.sin((frame || 0) * 0.2) * mouthRY * 0.05;
+      const tw = mouthRX * 0.5;
+      const th = mouthRY * 0.55;
+      const tcx = b.x;
+      const tcy = mouthCY + mouthRY * 0.35 + tongueWobble;
+      const tongueGrad = ctx.createRadialGradient(tcx, tcy - th * 0.2, 0, tcx, tcy, tw);
+      tongueGrad.addColorStop(0, `rgba(200,40,50,${(mouthT - 0.55) * 2})`);
+      tongueGrad.addColorStop(0.6, `rgba(120,10,15,${(mouthT - 0.55) * 2})`);
+      tongueGrad.addColorStop(1, `rgba(50,0,5,${(mouthT - 0.55) * 1.6})`);
+      ctx.fillStyle = tongueGrad;
+      ctx.beginPath();
+      ctx.ellipse(tcx, tcy, tw, th, 0, 0, Math.PI);
+      ctx.closePath();
+      ctx.fill();
+      // Central saliva glisten on tongue.
+      ctx.fillStyle = `rgba(255,230,200,${(mouthT - 0.55) * 0.8})`;
+      ctx.beginPath();
+      ctx.ellipse(tcx, tcy - th * 0.15, tw * 0.15, th * 0.1, 0, 0, 6.28);
+      ctx.fill();
+    }
   }
-  // Jagged teeth — triangles top and bottom, irregular sizes.
+  // v1.7.1: individually irregular teeth — varied widths, heights, slight
+  // left/right tilts, and a handful are missing (gap) for a decayed/skeletal
+  // feel. Seeded per-body so the pattern is stable. Teeth still alternate
+  // between upper and lower rows.
   if (mouthT > 0.25) {
     const toothAlpha = Math.min(1, (mouthT - 0.25) / 0.35);
-    ctx.fillStyle = `rgba(220,215,200,${toothAlpha})`;
     const toothRng = mulberry32(b.screamSeed ^ 0xface);
-    const toothCount = 8;
+    const toothCount = 9;
     for (let i = 0; i < toothCount; i++) {
       const tu = (i + 0.5) / toothCount;
       const tx = b.x - mouthRX + tu * mouthRX * 2;
-      const baseW = mouthRX / toothCount * (0.9 + toothRng() * 0.4);
+      const skip = toothRng() < 0.12; // occasional missing tooth
+      if (skip) continue;
+      const baseW = mouthRX / toothCount * (0.7 + toothRng() * 0.7);
+      const tilt = (toothRng() - 0.5) * 0.4; // radians of sideways lean
+      const yellowShift = Math.floor(toothRng() * 30); // stained teeth vary
+      const fillR = 220 - yellowShift;
+      const fillG = 215 - yellowShift;
+      const fillB = 200 - yellowShift * 1.2;
+      ctx.fillStyle = `rgba(${Math.max(150, fillR)},${Math.max(140, fillG)},${Math.max(110, fillB)},${toothAlpha})`;
       // Top row (points down).
-      const topLen = mouthRY * (0.55 + toothRng() * 0.5);
+      const topLen = mouthRY * (0.45 + toothRng() * 0.65);
+      const topShift = Math.sin(tilt) * topLen * 0.5;
       ctx.beginPath();
       ctx.moveTo(tx - baseW * 0.5, mouthCY - mouthRY);
       ctx.lineTo(tx + baseW * 0.5, mouthCY - mouthRY);
-      ctx.lineTo(tx, mouthCY - mouthRY + topLen);
+      ctx.lineTo(tx + topShift, mouthCY - mouthRY + topLen);
       ctx.closePath(); ctx.fill();
-      // Bottom row (points up).
-      const botLen = mouthRY * (0.5 + toothRng() * 0.5);
+      // Bottom row — different tilt + length so rows don't look mirror-symmetric.
+      const botLen = mouthRY * (0.4 + toothRng() * 0.6);
+      const botShift = Math.sin(tilt * -0.6) * botLen * 0.5;
       ctx.beginPath();
       ctx.moveTo(tx - baseW * 0.5, mouthCY + mouthRY);
       ctx.lineTo(tx + baseW * 0.5, mouthCY + mouthRY);
-      ctx.lineTo(tx, mouthCY + mouthRY - botLen);
+      ctx.lineTo(tx + botShift, mouthCY + mouthRY - botLen);
       ctx.closePath(); ctx.fill();
+      // Faint shadow edge under each tooth — gives depth, reads as 3D.
+      ctx.fillStyle = `rgba(40,30,20,${toothAlpha * 0.4})`;
+      ctx.beginPath();
+      ctx.moveTo(tx - baseW * 0.5, mouthCY - mouthRY);
+      ctx.lineTo(tx + baseW * 0.5, mouthCY - mouthRY);
+      ctx.lineTo(tx + topShift, mouthCY - mouthRY + topLen);
+      ctx.closePath();
+      // just the outline, not a fill this time — re-use as a dark stroke.
+      ctx.strokeStyle = `rgba(40,25,15,${toothAlpha * 0.5})`;
+      ctx.lineWidth = 0.5;
+      ctx.stroke();
+    }
+  }
+  // v1.7: spit/mist particles during scream — tiny bright droplets arc out of
+  // the open mouth. Seeded per (frame bucket + body) so they look like actual
+  // spray rather than static dots. Only during the peak of the scream.
+  if (mouthT > 0.6) {
+    const spitRng = mulberry32(b.screamSeed ^ ((frame >> 2) & 0xffff));
+    const count = 6;
+    for (let i = 0; i < count; i++) {
+      const arcA = -Math.PI * 0.5 + (spitRng() - 0.5) * 1.1; // downward +/- 60°
+      const rd = mouthRY * (1 + spitRng() * 3.5);
+      const sx = b.x + Math.cos(arcA) * rd * 0.4;
+      const sy = mouthCY + Math.abs(Math.sin(arcA)) * rd * 0.55;
+      ctx.globalAlpha = 0.7 * mouthT * (1 - spitRng() * 0.5);
+      ctx.fillStyle = 'rgba(240,230,220,1)';
+      ctx.beginPath();
+      ctx.arc(sx, sy, 0.8 + spitRng() * 0.9, 0, 6.28);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+  // v1.7: porcelain crack overlay — fine pale hairlines radiating from the
+  // mouth on the cheeks during full scream. Seeded so pattern is stable, but
+  // only visible while mouthT > 0.5 so they don't clutter the idle planet.
+  if (mouthT > 0.5) {
+    const pcRng = mulberry32(b.screamSeed ^ 0x7b7b);
+    ctx.strokeStyle = `rgba(240,230,215,${(mouthT - 0.5) * 0.6})`;
+    ctx.lineWidth = 0.9;
+    for (let i = 0; i < 6; i++) {
+      const a = -Math.PI * 0.5 + Math.PI + pcRng() * Math.PI; // lower hemisphere
+      const sx = b.x + Math.cos(a) * b.radius * 0.4;
+      const sy = b.y + Math.sin(a) * b.radius * 0.4;
+      ctx.beginPath();
+      ctx.moveTo(sx, sy);
+      let x = sx, y = sy, ang = a;
+      for (let s = 0; s < 3; s++) {
+        ang += (pcRng() - 0.5) * 1.2;
+        const step = b.radius * (0.12 + pcRng() * 0.15);
+        x += Math.cos(ang) * step;
+        y += Math.sin(ang) * step;
+        const dd = Math.hypot(x - b.x, y - b.y);
+        if (dd > b.radius * 0.92) {
+          const k = (b.radius * 0.92) / dd;
+          x = b.x + (x - b.x) * k;
+          y = b.y + (y - b.y) * k;
+        }
+        ctx.lineTo(x, y);
+      }
+      ctx.stroke();
     }
   }
   ctx.restore();
@@ -9297,6 +10397,42 @@ function drawVoid(b, tctx = ctx) {
   // Pure black disc.
   ctx.fillStyle = '#000';
   ctx.beginPath(); ctx.arc(b.x, b.y, b.radius, 0, 6.28); ctx.fill();
+  // v1.7: faint event-horizon shimmer — thin annular ring of moving
+  // chromatic-ish specks just outside the disc, rotating slowly. Reads as
+  // photons skimming the horizon / a tear in reality. Uses the live voidPulse
+  // as the rotation seed so it always drifts.
+  const shimmerCount = 18;
+  for (let i = 0; i < shimmerCount; i++) {
+    const a = (i / shimmerCount) * Math.PI * 2 + b.voidPulse * 0.35;
+    const rr = b.radius + 2 + Math.sin(a * 3 + b.voidPulse * 2) * 1.5;
+    const px = b.x + Math.cos(a) * rr;
+    const py = b.y + Math.sin(a) * rr;
+    const hue = (i * 13 + Math.floor(b.voidPulse * 40)) % 360;
+    ctx.globalAlpha = 0.45 + 0.3 * Math.sin(a * 2 + b.voidPulse);
+    ctx.fillStyle = `hsl(${hue},85%,75%)`;
+    ctx.beginPath(); ctx.arc(px, py, 0.9, 0, 6.28); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  // v1.7: gravitational lensing — a subtle "rip" in the background rendered
+  // as a thin warped arc around the horizon. PIXI DisplacementFilter on the
+  // pixi stage would be the physically correct implementation but that
+  // requires a displacement map texture (pixi-filters package not loaded);
+  // a seeded 5-vertex wobbly circle per-frame gives a read of "reality is
+  // bending" at effectively zero cost.
+  ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+  ctx.lineWidth = 0.8;
+  ctx.beginPath();
+  const lensSteps = 32;
+  for (let i = 0; i <= lensSteps; i++) {
+    const a = (i / lensSteps) * Math.PI * 2;
+    const wob = Math.sin(a * 4 + b.voidPulse * 1.3) * 0.04 + Math.sin(a * 7 + b.voidPulse * 2) * 0.025;
+    const rr = b.radius * (1.22 + wob);
+    const px = b.x + Math.cos(a) * rr;
+    const py = b.y + Math.sin(a) * rr;
+    if (i === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  }
+  ctx.stroke();
   // Cyan/white ring.
   ctx.strokeStyle = 'rgba(180,240,255,0.85)';
   ctx.lineWidth = 1.5;
@@ -9370,6 +10506,30 @@ function drawHeart(b, tctx = ctx) {
     ctx.scale(s, s);
     ctx.drawImage(b.heartCanvas, -hs / 2, -hs / 2);
     ctx.restore();
+    // v1.7.1: live wet glisten — shifts with the beat. Two highlight spots
+    // whose size/alpha scale with systolic phase (bigger glisten on
+    // contraction, smaller between beats — like sweaty muscle tensing).
+    // Positions are slightly off-center to match the tilted asymmetric shape.
+    const glistenA = 0.45 + squeeze * 0.45;
+    const glistenR1 = w * (0.5 + squeeze * 0.08);
+    const g1cx = b.x - w * 0.28 - squeeze * w * 0.05;
+    const g1cy = b.y - w * 0.45 - squeeze * w * 0.04;
+    const gGrad1 = ctx.createRadialGradient(g1cx, g1cy, 0, g1cx, g1cy, glistenR1);
+    gGrad1.addColorStop(0,   `rgba(255,220,220,${0.85 * glistenA})`);
+    gGrad1.addColorStop(0.4, `rgba(255,150,160,${0.25 * glistenA})`);
+    gGrad1.addColorStop(1,   'rgba(255,120,120,0)');
+    ctx.fillStyle = gGrad1;
+    ctx.beginPath(); ctx.arc(g1cx, g1cy, glistenR1, 0, 6.28); ctx.fill();
+    // Second smaller highlight lower-right (catches the light across the
+    // ventricle bulge).
+    const glistenR2 = w * (0.22 + squeeze * 0.05);
+    const g2cx = b.x + w * 0.42;
+    const g2cy = b.y + w * 0.1;
+    const gGrad2 = ctx.createRadialGradient(g2cx, g2cy, 0, g2cx, g2cy, glistenR2);
+    gGrad2.addColorStop(0, `rgba(255,180,180,${0.55 * glistenA})`);
+    gGrad2.addColorStop(1, 'rgba(255,120,120,0)');
+    ctx.fillStyle = gGrad2;
+    ctx.beginPath(); ctx.arc(g2cx, g2cy, glistenR2, 0, 6.28); ctx.fill();
   } else {
     // Arteries.
     ctx.strokeStyle = '#6b0000';
@@ -9456,15 +10616,39 @@ function drawHeart(b, tctx = ctx) {
     ctx.globalAlpha = 1;
   }
 
-  // Blood drops falling.
+  // Blood drops falling — apex drops from the bottom, aorta drops from each
+  // tube tip. Aorta drops accelerate downward under gravity for a realistic
+  // drip arc; apex drops fall straight and fade.
   for (const d of b.bloodDrops) {
     const t = d.age / d.maxAge;
-    const dropY = b.y + w * 1.1 + t * w * 2.2;
+    let dropX, dropY;
+    if (d.source === 'aorta' && b._heartAortaTips && b._heartAortaTips[d.sourceIdx]) {
+      // Aorta tip position is stored in bake-canvas local coords (offset
+      // from the canvas center cx, cy). Translate to world space — the
+      // tip is at (tip.x - cx, tip.y - cy) relative to body center.
+      const tip = b._heartAortaTips[d.sourceIdx];
+      const hs = b.heartCanvas ? b.heartCanvas.width : w * 3;
+      const originX = b.x + (tip.x - hs / 2);
+      const originY = b.y + (tip.y - hs / 2);
+      dropX = originX + Math.sin(t * 3) * 0.8; // slight wiggle as it falls
+      dropY = originY + t * w * 2.2 + t * t * w * 0.6; // gravity accel
+    } else {
+      const offX = d.offX || 0;
+      dropX = b.x + offX;
+      dropY = b.y + w * 1.1 + t * w * 2.2;
+    }
     ctx.globalAlpha = 1 - t * 0.7;
     ctx.fillStyle = '#5a0000';
     ctx.beginPath();
-    ctx.ellipse(b.x + d.offX, dropY, d.size, d.size * 1.6, 0, 0, 6.28);
+    ctx.ellipse(dropX, dropY, d.size, d.size * 1.6, 0, 0, 6.28);
     ctx.fill();
+    // Small highlight catchlight on the drop.
+    if (t < 0.7) {
+      ctx.fillStyle = `rgba(255,140,140,${(0.7 - t) * 0.9})`;
+      ctx.beginPath();
+      ctx.arc(dropX - d.size * 0.3, dropY - d.size * 0.4, d.size * 0.3, 0, 6.28);
+      ctx.fill();
+    }
   }
   ctx.globalAlpha = 1;
   ctx.restore();
@@ -9473,14 +10657,41 @@ function drawHeart(b, tctx = ctx) {
 function drawMirror(b, tctx = ctx) {
   const ctx = tctx;
   ctx.save();
-  // Entire mirror body (chrome sphere + reflected stars + crescent highlight
-  // + dark rim) is baked into b.mirrorCanvas at spawn — everything is
-  // seeded-static. Falls back to the original draw path if the builder failed.
+  // v1.7: in addition to the baked chrome sphere, overlay a live reflection
+  // pass — the player's orb is projected onto the mirror surface as a
+  // small ghostly dot, positioned by the angle from the mirror to the
+  // player. Mirror also reflects the closest body as a dim tint so the
+  // surface reads as actually reflective rather than a chrome sphere with
+  // painted stars.
   if (b.mirrorCanvas) {
-    // Step 3b: pixi handles the sprite via updatePixiBodySpriteLayer.
-    if (pixiActive) { ctx.restore(); return; }
+    // Composite the baked chrome sphere (static: reflected stars, crescent
+    // highlight, dark rim) first, then overlay the live reflection pass.
+    // Works identically for the pixi offscreen ctx and the Canvas 2D ctx.
     const ms = b.mirrorCanvas.width;
     ctx.drawImage(b.mirrorCanvas, b.x - ms / 2, b.y - ms / 2);
+    // Reflection overlay: place a soft dot inside the sphere at the direction
+    // of the player. Magnitude pulled inward from the surface so it reads as
+    // reflected on the curved mirror rather than floating in front of it.
+    try {
+      const pdx = (typeof player !== 'undefined' ? player.x : b.x) - b.x;
+      const pdy = (typeof player !== 'undefined' ? player.y : b.y) - b.y;
+      const pd = Math.hypot(pdx, pdy) || 1;
+      const px = b.x + (pdx / pd) * b.radius * 0.6;
+      const py = b.y + (pdy / pd) * b.radius * 0.6;
+      const g = ctx.createRadialGradient(px, py, 0, px, py, b.radius * 0.25);
+      g.addColorStop(0, 'rgba(125,232,255,0.85)');
+      g.addColorStop(1, 'rgba(125,232,255,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(px, py, b.radius * 0.25, 0, 6.28); ctx.fill();
+      // Secondary highlight trail from the reflected dot — short streak
+      // pointing toward the mirror center, as if light streak on curved glass.
+      ctx.strokeStyle = 'rgba(125,232,255,0.35)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(px, py);
+      ctx.lineTo(px - (pdx / pd) * b.radius * 0.2, py - (pdy / pd) * b.radius * 0.2);
+      ctx.stroke();
+    } catch {}
     ctx.restore();
     return;
   }
@@ -9525,38 +10736,20 @@ function drawMirror(b, tctx = ctx) {
 function drawSkull(b, tctx = ctx) {
   const ctx = tctx;
   const r = b.radius;
-  const pal = b.skullPalette || { top: '#3a6b38', mid: '#5a8a3c', low: '#6d5a30' };
 
   ctx.save();
-  // No clip — Android WebView crash risk. Both base gradients fill the body
-  // disc directly via arc+fill instead of clip+fillRect. Downstream features
-  // (clouds, skull face) are constrained to stay within the body.
+  // v1.7.1: NO circular base disc anymore. The skull is a non-circular
+  // cranium silhouette baked into b.faceCanvas (or drawn inline in the
+  // fallback path). The body reads as a floating skull rather than a
+  // planet with a skull painted on top. Areas outside the silhouette are
+  // intentionally transparent. Collision hitbox (b.radius circle) is
+  // unchanged — the visible shape may be slightly smaller than the
+  // hitbox in the lower region (where the jaw would be), which is a
+  // conscious tradeoff for visual clarity of the phase-4 threat.
 
-  // Vertical gradient: planet colors at top transition to bone/dark at bottom.
-  const vert = ctx.createLinearGradient(b.x, b.y - r, b.x, b.y + r);
-  vert.addColorStop(0,    pal.top);
-  vert.addColorStop(0.4,  pal.mid);
-  vert.addColorStop(0.55, pal.low);
-  vert.addColorStop(0.75, '#8a7d68');
-  vert.addColorStop(1,    '#2a2218');
-  ctx.fillStyle = vert;
-  ctx.beginPath(); ctx.arc(b.x, b.y, r, 0, 6.28); ctx.fill();
-
-  // Subtle sphere shading — darken lower-right, brighten upper-left.
-  const sphereShade = ctx.createRadialGradient(
-    b.x - r * 0.3, b.y - r * 0.3, 0,
-    b.x, b.y, r
-  );
-  sphereShade.addColorStop(0, 'rgba(255,255,255,0.22)');
-  sphereShade.addColorStop(0.6, 'rgba(255,255,255,0)');
-  sphereShade.addColorStop(1, 'rgba(0,0,0,0.4)');
-  ctx.fillStyle = sphereShade;
-  ctx.beginPath(); ctx.arc(b.x, b.y, r, 0, 6.28); ctx.fill();
-
-  // Static face parts (clouds + eye sockets + cheekbones + nasal + teeth +
-  // jaw shadow + rim) are baked into b.faceCanvas at spawn. Eye glow flash
-  // draws live on top so random timing still reads. Falls back to the full
-  // path rendering if the builder failed.
+  // Static skull parts (silhouette + bone texture + sockets + nasal cavity
+  // + brow ridge + cheekbone arches) are baked into b.faceCanvas at spawn.
+  // Eye glow flash draws live on top so random timing still reads.
   const flash = b.skullEyeFlash > 0;
   if (b.faceCanvas) {
     const fs = b.faceCanvas.width;
@@ -9632,38 +10825,30 @@ function drawSkull(b, tctx = ctx) {
     ctx.fill();
   }
 
-  // Eye glow flash — live overlay, positioned to match the socket ellipses
-  // inside the baked face. Only the red-glow gradient is dynamic.
+  // Eye glow flash — live overlay, positioned to match the socket centers
+  // in the new baked cranium (eyeOffX r*0.3, eyeOffY r*0.1, tilt 0.18).
   if (flash) {
-    const eyeOffX = r * 0.32;
-    const eyeOffY = r * 0.05;
+    const eyeOffX = r * 0.3;
+    const eyeOffY = r * 0.1;
     for (const side of [-1, 1]) {
       const ex = b.x + side * eyeOffX;
       const ey = b.y + eyeOffY;
       ctx.save();
       ctx.translate(ex, ey);
-      ctx.rotate(side * 0.22);
-      const glow = ctx.createRadialGradient(0, 0, 0, 0, 0, r * 0.22);
-      glow.addColorStop(0,   'rgba(220,30,30,0.95)');
-      glow.addColorStop(0.6, 'rgba(160,10,10,0.45)');
+      ctx.rotate(side * 0.18);
+      const glow = ctx.createRadialGradient(0, 0, 0, 0, 0, r * 0.28);
+      glow.addColorStop(0,   'rgba(240,40,40,0.98)');
+      glow.addColorStop(0.5, 'rgba(180,15,15,0.5)');
       glow.addColorStop(1,   'rgba(80,0,0,0)');
       ctx.fillStyle = glow;
       ctx.beginPath();
-      ctx.ellipse(0, 0, r * 0.22, r * 0.24, 0, 0, 6.28);
+      ctx.ellipse(0, 0, r * 0.28, r * 0.3, 0, 0, 6.28);
       ctx.fill();
       ctx.restore();
     }
   }
 
   ctx.restore();
-
-  // Outer rim — only drawn here on the fallback path; when the sprite is
-  // present the rim is baked in, so we avoid a duplicate stroke.
-  if (!b.faceCanvas) {
-    ctx.strokeStyle = 'rgba(0,0,0,0.6)';
-    ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.arc(b.x, b.y, r, 0, 6.28); ctx.stroke();
-  }
 }
 
 // Tiny deterministic PRNG used for stable per-body random details (veins,
@@ -10743,6 +11928,10 @@ function loop() {
     // Dev body-preview animation tick. update() is gated to state==='playing'
     // so without this the preview bodies would freeze after spawn.
     if (state === 'bodypreview') {
+      // v1.7: advance global `frame` so context-role target rings + dashed
+      // lines animate. update() normally owns this increment but it returns
+      // early in bodypreview state.
+      frame++;
       try { tickPreviewAnimations(); }
       catch (err) { console.error('[loop] tickPreviewAnimations threw, skipping', err); }
     }
@@ -12719,28 +13908,68 @@ function preloadAll() {
 // faithful preview without surviving to phase-3/4. Internal tooling — do
 // NOT expose in user-facing menus. Remove or gate before v1.6.0 ships.
 // ---------------------------------------------------------------------------
+// v1.7: each body type now renders TWICE per slot — left is the static
+// preview (with cyan collision outline rings), right is a gameplay-context
+// preview with a simulated attracted player, target ring, and dashed line.
+// Phase + one-line description shown underneath. Acts as a mini-encyclopedia
+// for QA and the future Codex feature.
 const PREVIEW_TYPES = [
-  'star', 'planet', 'blackhole', 'toothed', 'eye', 'cracked',
-  'tentacle', 'screaming', 'void', 'heart', 'mirror', 'skull',
+  { type: 'star',      phase: 1, desc: 'phase 1 — solar corona, boiling plasma' },
+  { type: 'planet',    phase: 1, desc: 'phase 1 — atmosphere + rotating clouds' },
+  { type: 'blackhole', phase: 1, desc: 'phase 1 — accretion disk + photon ring' },
+  { type: 'toothed',   phase: 2, desc: 'phase 2 — metallic buzzsaw rotating' },
+  { type: 'eye',       phase: 2, desc: 'phase 2 — wet iris, bloodshot, tears' },
+  { type: 'cracked',   phase: 2, desc: 'phase 2 — molten cracks, heat haze, erupts' },
+  { type: 'tentacle',  phase: 3, desc: 'phase 3 — cosmic jellyfish, 6 grasping arms' },
+  { type: 'screaming', phase: 3, desc: 'phase 3 — screams, porcelain cracks, spit' },
+  { type: 'void',      phase: 3, desc: 'phase 3 — event-horizon shimmer, bends reality' },
+  { type: 'heart',     phase: 4, desc: 'phase 4 — anatomical, pulses, bleeds' },
+  { type: 'mirror',    phase: 4, desc: 'phase 4 — chrome, reflects the player' },
+  { type: 'skull',     phase: 4, desc: 'phase 4 — weathered bone, depth-inset sockets' },
 ];
-const PREVIEW_RADIUS = 50;
-const PREVIEW_BASE_Y = 200;
-const PREVIEW_SPACING = 280;
+const PREVIEW_RADIUS = 38;
+const PREVIEW_BASE_Y = 180;
+const PREVIEW_SPACING = 260;
+const PREVIEW_STATIC_X_FRAC  = 0.28;
+const PREVIEW_CONTEXT_X_FRAC = 0.72;
 let previewScrollEl = null;
 let previewSavedBodies = null;
 
 function buildBodyPreviewLabels() {
   const spacer = document.getElementById('bodyPreviewSpacer');
   spacer.innerHTML = '';
-  const totalH = PREVIEW_BASE_Y + PREVIEW_TYPES.length * PREVIEW_SPACING;
+  const totalH = PREVIEW_BASE_Y + PREVIEW_TYPES.length * PREVIEW_SPACING + 60;
   spacer.style.height = totalH + 'px';
   for (let i = 0; i < PREVIEW_TYPES.length; i++) {
-    const y = PREVIEW_BASE_Y + i * PREVIEW_SPACING + PREVIEW_RADIUS + 24;
-    const el = document.createElement('div');
-    el.className = 'bp-label';
-    el.style.top = y + 'px';
-    el.textContent = PREVIEW_TYPES[i].toUpperCase();
-    spacer.appendChild(el);
+    const entry = PREVIEW_TYPES[i];
+    const y = PREVIEW_BASE_Y + i * PREVIEW_SPACING + PREVIEW_RADIUS + 28;
+    // Top line: type name.
+    const nameEl = document.createElement('div');
+    nameEl.className = 'bp-label';
+    nameEl.style.top = y + 'px';
+    nameEl.textContent = entry.type.toUpperCase();
+    spacer.appendChild(nameEl);
+    // Second line: phase + one-line description (smaller, dimmer).
+    const descEl = document.createElement('div');
+    descEl.className = 'bp-label bp-label-sub';
+    descEl.style.top = (y + 18) + 'px';
+    descEl.textContent = entry.desc;
+    spacer.appendChild(descEl);
+    // Tiny column headers above the two previews (just on the first row).
+    if (i === 0) {
+      const hs = document.createElement('div');
+      hs.className = 'bp-label bp-label-col';
+      hs.style.top = (PREVIEW_BASE_Y - 30) + 'px';
+      hs.style.left = (PREVIEW_STATIC_X_FRAC * 100) + '%';
+      hs.textContent = 'STATIC';
+      spacer.appendChild(hs);
+      const hc = document.createElement('div');
+      hc.className = 'bp-label bp-label-col';
+      hc.style.top = (PREVIEW_BASE_Y - 30) + 'px';
+      hc.style.left = (PREVIEW_CONTEXT_X_FRAC * 100) + '%';
+      hc.textContent = 'IN-GAME';
+      spacer.appendChild(hc);
+    }
   }
 }
 
@@ -12751,11 +13980,23 @@ function enterBodyPreview() {
   previewSavedBodies = bodies;
   bodies = [];
   for (let i = 0; i < PREVIEW_TYPES.length; i++) {
-    const t = PREVIEW_TYPES[i];
+    const entry = PREVIEW_TYPES[i];
     const baseY = PREVIEW_BASE_Y + i * PREVIEW_SPACING;
-    const b = spawnBody(baseY, { type: t, x: W / 2, radius: PREVIEW_RADIUS });
-    b._previewBaseY = baseY;
-    bodies.push(b);
+    // Static body (left column) — decorative only, with cyan hitbox outlines.
+    const bs = spawnBody(baseY, { type: entry.type, x: Math.round(W * PREVIEW_STATIC_X_FRAC), radius: PREVIEW_RADIUS });
+    bs._previewBaseY = baseY;
+    bs._previewRole = 'static';
+    bodies.push(bs);
+    // Context body (right column) — same type, rendered with gameplay
+    // decorations: target ring + dashed line to a faux player offset.
+    const bc = spawnBody(baseY, { type: entry.type, x: Math.round(W * PREVIEW_CONTEXT_X_FRAC), radius: PREVIEW_RADIUS });
+    bc._previewBaseY = baseY;
+    bc._previewRole = 'context';
+    // Seed phase offset so static+context don't animate in lockstep.
+    if (typeof bc.pulse === 'number') bc.pulse += 1.3;
+    if (typeof bc.toothAngle === 'number') bc.toothAngle += 0.8;
+    if (typeof bc.screamPhase === 'number') bc.screamPhase = (bc.screamPhase + 3) % 6;
+    bodies.push(bc);
   }
   buildBodyPreviewLabels();
   document.getElementById('overlay').classList.add('hidden');
@@ -12788,8 +14029,17 @@ function tickPreviewAnimations() {
     if      (b.type === 'toothed') b.toothAngle = (b.toothAngle || 0) + 0.02;
     else if (b.type === 'eye') {
       b.eyePulse = (b.eyePulse || 0) + 0.08;
-      // Pupil tracks center of viewport so it visibly moves.
-      const dx = (W / 2) - b.x, dy = (H / 2) - b.y;
+      // v1.7: context-role eye tracks its faux player (below body) so the gaze
+      // reads as "locked onto something approaching". Static-role eye tracks
+      // viewport center for a neutral-looking idle animation.
+      let tx, ty;
+      if (b._previewRole === 'context') {
+        tx = b.x + Math.sin(frame * 0.025) * 10;
+        ty = b.y + 72 + Math.cos(frame * 0.02) * 8;
+      } else {
+        tx = W / 2; ty = H / 2;
+      }
+      const dx = tx - b.x, dy = ty - b.y;
       const mag = Math.hypot(dx, dy) || 1;
       const maxOff = b.radius * 0.3;
       b.pupilDx = (dx / mag) * maxOff;
@@ -12833,17 +14083,51 @@ function tickPreviewAnimations() {
     }
     else if (b.type === 'cracked') {
       if (b.eruptFlash > 0) b.eruptFlash--;
+      // v1.7.1: tick the eruption countdown so the charge-up ramp is
+      // visible on the preview page. Resets loop with random jitter when
+      // it reaches zero to mimic the gameplay cadence.
+      if (typeof b.nextEruptFrame === 'number') {
+        b.nextEruptFrame--;
+        if (b.nextEruptFrame <= 0) {
+          b.nextEruptFrame = 180 + Math.floor(Math.random() * 60);
+          b.eruptFlash = 10;
+        }
+      }
     }
   }
 }
 
-// Outline reference rings for preview: thin cyan at collision radius, dimmer
-// cyan at cachedMaxGlowR. Drawn on #c after drawBodies() so they sit on top
-// of the body sprite (visual ruler, not part of production rendering).
+// Outline reference rings for preview (Canvas 2D fallback). Static-role
+// bodies show cyan hitbox geometry + glow-extent ring. Context-role bodies
+// show an in-game target ring + dashed attract line to a faux player.
 function drawPreviewOutlines() {
   for (const b of bodies) {
     ctx.save();
-    // Outer glow extent — static dim ring (visual reference, not a hitbox).
+    if (b._previewRole === 'context') {
+      // Target ring (pulsing).
+      const ringR = b.radius + 6 + Math.sin(frame * 0.18) * 2;
+      const alpha = 0.55 + 0.25 * Math.sin(frame * 0.18);
+      ctx.strokeStyle = `rgba(80,200,255,${alpha * 0.75})`;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(b.x, b.y, ringR, 0, 6.28); ctx.stroke();
+      // Faux player + dashed line.
+      const fpx = b.x + Math.sin(frame * 0.025) * 10;
+      const fpy = b.y + 72 + Math.cos(frame * 0.02) * 8;
+      ctx.strokeStyle = 'rgba(80,200,255,0.45)';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([5, 5]);
+      ctx.beginPath(); ctx.moveTo(fpx, fpy); ctx.lineTo(b.x, b.y); ctx.stroke();
+      ctx.setLineDash([]);
+      // Faux player orb.
+      ctx.fillStyle = 'rgba(255,255,255,0.85)';
+      ctx.beginPath(); ctx.arc(fpx, fpy, 3, 0, 6.28); ctx.fill();
+      ctx.strokeStyle = 'rgba(125,232,255,0.6)';
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.arc(fpx, fpy, 6, 0, 6.28); ctx.stroke();
+      ctx.restore();
+      continue;
+    }
+    // Static-role: outer glow extent + collision geometry.
     ctx.lineWidth = 1;
     ctx.strokeStyle = 'rgba(125,232,255,0.28)';
     ctx.beginPath(); ctx.arc(b.x, b.y, b.cachedMaxGlowR || (b.radius * 2.95), 0, Math.PI * 2); ctx.stroke();
