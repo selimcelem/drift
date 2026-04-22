@@ -138,10 +138,14 @@ Pipeline: `terraform init` → `plan` → `apply -auto-approve`
 
 ## Screenshots
 
-![Main menu](store-assets/screenshots/menu.png)
-![Gameplay](store-assets/screenshots/gameplay.png)
-![Powerup active](store-assets/screenshots/powerup.png)
-![Leaderboard](store-assets/screenshots/leaderboard.png)
+<table>
+  <tr>
+    <td><img src="store-assets/screenshots/menu.png" width="200" alt="Main menu"></td>
+    <td><img src="store-assets/screenshots/gameplay.png" width="200" alt="Gameplay"></td>
+    <td><img src="store-assets/screenshots/powerup.png" width="200" alt="Powerup active"></td>
+    <td><img src="store-assets/screenshots/leaderboard.png" width="200" alt="Leaderboard"></td>
+  </tr>
+</table>
 
 ## Roadmap
 

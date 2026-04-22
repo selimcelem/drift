@@ -5032,7 +5032,7 @@ function normalScrollSpeed() {
   // v1.7.4 tuning: softened from 0.25 → 0.15 px/frame per minute. Late-game
   // Extreme was unwinnable beyond 4–5 minutes; gentler ramp keeps the
   // post-cap tension curve without the unavoidable-corridor problem.
-  const postCapBonus = postCapMinutes * 0.15;
+  const postCapBonus = postCapMinutes * 0.10;
   return baseSpeed + postCapBonus;
 }
 
