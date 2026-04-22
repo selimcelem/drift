@@ -2074,6 +2074,15 @@ window.addEventListener('resize', () => {
   }, 150);
 });
 
+// Shared DPR scale factor for any once-built canvas that feeds the pixi stage
+// (resolution capped at 2) or is drawImage'd at a larger display size. Canvas
+// dimensions are multiplied by this factor and the 2D ctx is scale()'d once so
+// draw code stays in logical coordinates. Capped at 2 so a 3× DPR display
+// doesn't inflate canvas memory 9× for minimal extra crispness.
+function atlasScale() {
+  return Math.min(window.devicePixelRatio || 1, 2);
+}
+
 // Background vignette canvas cache: the radial-gradient fillRect per bg object
 // every frame is a measurable cost on Android WebView. Pre-rendering the
 // vignette once per (style, size-bucket) and reusing via drawImage cuts it to
@@ -2085,9 +2094,11 @@ function getBgVignetteCanvas(style, size) {
   let c = bgVignetteCache[key];
   if (c) return c;
   c = document.createElement('canvas');
-  c.width = size;
-  c.height = size;
+  const dpr = atlasScale();
+  c.width = size * dpr;
+  c.height = size * dpr;
   const cctx = c.getContext('2d');
+  cctx.scale(dpr, dpr);
   const r = size / 2;
   const clearStop  = style === 'galaxy' ? 0.08 : 0.25;
   const opaqueStop = style === 'galaxy' ? 0.85 : 0.90;
@@ -4961,8 +4972,10 @@ function rebuildStarAtlases() {
   }
   for (let i = 0; i < STAR_BUCKETS; i++) {
     const c = document.createElement('canvas');
-    c.width = W; c.height = H;
+    const dpr = atlasScale();
+    c.width = W * dpr; c.height = H * dpr;
     const cctx = c.getContext('2d');
+    cctx.scale(dpr, dpr);
     cctx.fillStyle = '#fff';
     for (const s of bgStars) {
       if (starBucket(s) !== i) continue;
@@ -5027,6 +5040,11 @@ function initPixiStars() {
       const tex = PIXI.Texture.from(atlas);
       const main = new PIXI.Sprite(tex);
       const wrap = new PIXI.Sprite(tex);
+      // Atlas is DPR-scaled (2W × 2H pixels); pin the on-screen size to W × H
+      // CSS so the stars display at the correct pixel density (pixi renders
+      // at resolution DPR, downsampling the 2× source cleanly to physical).
+      main.width = W; main.height = H;
+      wrap.width = W; wrap.height = H;
       wrap.visible = false;
       pixiApp.stage.addChild(main);
       pixiApp.stage.addChild(wrap);
@@ -5118,6 +5136,10 @@ function syncPixiStarTextures() {
     b.tex = newTex;
     b.main.texture = newTex;
     b.wrap.texture = newTex;
+    // Re-pin CSS size after the texture swap (DPR-scaled atlas would otherwise
+    // auto-size the sprite to 2W × 2H).
+    b.main.width = W; b.main.height = H;
+    b.wrap.width = W; b.wrap.height = H;
     try { if (oldTex && oldTex !== newTex) oldTex.destroy(true); } catch {}
   }
 }
@@ -5220,8 +5242,11 @@ function buildBodyAuxCanvases(b) {
     let size = Math.ceil(b.cachedMaxGlowR) * 2 + 4;
     if (size % 2 !== 0) size += 1;
     const gc = document.createElement('canvas');
-    gc.width = size; gc.height = size;
+    const dpr = atlasScale();
+    gc.width = size * dpr; gc.height = size * dpr;
+    gc._logicalSize = size;
     const gctx = gc.getContext('2d');
+    gctx.scale(dpr, dpr);
     const cx = size / 2, cy = size / 2;
     // v1.7: quadratic-ish falloff (1/r² approximation) instead of linear
     // gradient stops — light drops off steeply near the body then trails
@@ -5251,8 +5276,11 @@ function buildBodyAuxCanvases(b) {
     let rsize = Math.ceil(rOuter) * 2 + 4;
     if (rsize % 2 !== 0) rsize += 1;
     const rc = document.createElement('canvas');
-    rc.width = rsize; rc.height = rsize;
+    const dpr = atlasScale();
+    rc.width = rsize * dpr; rc.height = rsize * dpr;
+    rc._logicalSize = rsize;
     const rctx = rc.getContext('2d');
+    rctx.scale(dpr, dpr);
     const cx = rsize / 2, cy = rsize / 2;
     rctx.strokeStyle = b.type === 'blackhole' ? 'rgba(160,70,255,1)' : b.glowColor;
     rctx.lineWidth = 1;
@@ -5285,13 +5313,18 @@ function updatePixiBodyLayer() {
     }
     const pulse = Math.sin(b.pulse) * 0.3 + 0.7;
     const glowR = b.radius * (2.6 + Math.sin(b.pulse) * 0.35);
+    // Glow + rings canvases are DPR-scaled; their PIXI.Sprite base size is
+    // the full texture pixel size (dpr × logical). Divide the scale factor by
+    // dpr so the displayed CSS dimensions match the original logical canvas.
+    const dprInv = 1 / atlasScale();
     entry.glowSprite.x = b.x;
     entry.glowSprite.y = b.y;
     entry.glowSprite.alpha = 0.32 * pulse;
-    entry.glowSprite.scale.set(b.cachedMaxGlowR > 0 ? glowR / b.cachedMaxGlowR : 1);
+    entry.glowSprite.scale.set((b.cachedMaxGlowR > 0 ? glowR / b.cachedMaxGlowR : 1) * dprInv);
     entry.ringsSprite.x = b.x;
     entry.ringsSprite.y = b.y;
     entry.ringsSprite.alpha = Math.max(0, 0.05 + 0.03 * Math.sin(b.pulse * 1.4));
+    entry.ringsSprite.scale.set(dprInv);
   }
   if (pixiBodyEntries.size > live.size) {
     for (const [b, entry] of pixiBodyEntries) {
@@ -5555,8 +5588,9 @@ function updatePixiBodyEffectsLayer() {
           const tipR = PLAYER_R + 6;
           for (let i = 0; i < 8; i++) {
             const a = b.toothAngle + i * (Math.PI / 4);
-            const ext = b.spikeLen * Math.abs(Math.sin(a));
-            if (ext < 0.5) continue;
+            // Match drawToothed / checkHit: 75% minimum length so every blade
+            // has a visible tip hitbox.
+            const ext = b.spikeLen * (0.75 + 0.25 * Math.abs(Math.sin(a)));
             const tipX = b.x + Math.cos(a) * (b.radius + ext);
             const tipY = b.y + Math.sin(a) * (b.radius + ext);
             g.drawCircle(tipX, tipY, tipR);
@@ -7781,11 +7815,13 @@ function bodyHits(b, padding) {
   const pad = padding || 0;
   if (b.type === 'toothed') {
     if (dist(player, b) < b.radius + PLAYER_R + pad) return true;
-    // 8 spikes rotating together. Each tip sits at toothAngle + i*(π/4)
-    // extended by spikeLen * |sin(toothAngle + i*(π/4))|.
+    // 8 spikes rotating together. Each tip sits at toothAngle + i*(π/4),
+    // extended by spikeLen * (0.75 + 0.25 * |sin(a)|) — 75% minimum length
+    // so the silhouette stays a uniform buzzsaw at every rotation instead of
+    // narrowing at 3 o'clock / 9 o'clock like the old |sin(a)|-only formula.
     for (let i = 0; i < 8; i++) {
       const a = b.toothAngle + i * (Math.PI / 4);
-      const ext = b.spikeLen * Math.abs(Math.sin(a));
+      const ext = b.spikeLen * (0.75 + 0.25 * Math.abs(Math.sin(a)));
       const tipX = b.x + Math.cos(a) * (b.radius + ext);
       const tipY = b.y + Math.sin(a) * (b.radius + ext);
       if (Math.hypot(player.x - tipX, player.y - tipY) < PLAYER_R + 6) return true;
@@ -9547,8 +9583,9 @@ function drawBg() {
     const midPhase = (i + 0.5) * (Math.PI * 2 / STAR_BUCKETS);
     ctx.globalAlpha = Math.max(0, 0.35 + 0.5 * Math.sin(frame * 0.05 + midPhase));
     const y = starBucketOffsets[i];
-    ctx.drawImage(atlas, 0, y);
-    if (y > 0) ctx.drawImage(atlas, 0, y - H);
+    // Atlas is DPR-scaled (2W × 2H); draw at logical W × H so CSS sizing is correct.
+    ctx.drawImage(atlas, 0, y, W, H);
+    if (y > 0) ctx.drawImage(atlas, 0, y - H, W, H);
   }
   ctx.globalAlpha = 1;
 }
@@ -9913,21 +9950,15 @@ function drawToothed(b, tctx = ctx) {
   // 8 main rotating blades: sharp triangles with a metallic steel core,
   // blood-red edge (rust stains), and a bright sheen line running down the
   // leading edge. Reads as a buzzsaw rather than a soft protrusion.
-  // v1.7.1: instead of skipping spikes when ext < 0.5 (which made the
-  // silhouette visibly narrow on horizontal rotations), draw a small solid-
-  // color stub triangle. The stub skips createLinearGradient entirely
-  // (that was the original crash reason for the skip on Android WebView at
-  // zero-length) — it uses a flat fillStyle. Silhouette stays 8-bladed at
-  // every angle.
-  const STUB_THRESHOLD = 0.5;
-  const MIN_STUB_EXT = 2.2; // visual stub length floor for horizontal-angle blades
+  // v1.7.2: ext = spikeLen * (0.75 + 0.25 * |sin(a)|) — 75% minimum extension
+  // so the silhouette stays a consistent 8-bladed buzzsaw at every rotation.
+  // Previous formula used |sin(a)| directly, which shrank horizontal blades
+  // to near-zero length at 3/9 o'clock and required a dead-stub fallback.
+  // With the new floor, rawExt is always ≥ 0.75 * spikeLen ≥ 1px for any
+  // real radius, so the stub branch is unreachable and has been removed.
   for (let i = 0; i < 8; i++) {
     const a = b.toothAngle + i * (Math.PI / 4);
-    const rawExt = b.spikeLen * Math.abs(Math.sin(a));
-    const isStub = rawExt < STUB_THRESHOLD;
-    // For stubs, substitute a tiny fixed extension so baseX/baseY and
-    // tipX/tipY don't coincide (still a valid triangle, just short).
-    const ext = isStub ? MIN_STUB_EXT : rawExt;
+    const ext = b.spikeLen * (0.75 + 0.25 * Math.abs(Math.sin(a)));
     const baseX = b.x + Math.cos(a) * b.radius;
     const baseY = b.y + Math.sin(a) * b.radius;
     const tipX = b.x + Math.cos(a) * (b.radius + ext);
@@ -9938,18 +9969,6 @@ function drawToothed(b, tctx = ctx) {
     const shadeY0 = baseY + tangY * baseW;
     const shadeX1 = baseX - tangX * baseW;
     const shadeY1 = baseY - tangY * baseW;
-    if (isStub) {
-      // Flat-filled stub — no gradient. Dark rust tone so it reads as an
-      // occluded/foreshortened blade rather than a protruding one.
-      ctx.fillStyle = '#4a1a14';
-      ctx.beginPath();
-      ctx.moveTo(shadeX0, shadeY0);
-      ctx.lineTo(tipX, tipY);
-      ctx.lineTo(shadeX1, shadeY1);
-      ctx.closePath();
-      ctx.fill();
-      continue;
-    }
     // Base blood/rust-stained steel: dark at base, brighter toward tip.
     const spikeGrad = ctx.createLinearGradient(baseX, baseY, tipX, tipY);
     spikeGrad.addColorStop(0,   '#2a0505');
