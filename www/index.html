@@ -3314,6 +3314,14 @@ const GRACE_DURATION_MS = 1500; // 1.5s post-reset invulnerability window
 // Vertical gap between bodies — H/3.5 gives ~3-4 slots visible at any
 // device height. Computed at load since H is a const captured at init.
 const BODY_SPACING = Math.floor(H / 3.5);
+// v1.7.4: minimum pixel distance (both horizontal AND vertical) between a
+// freshly-spawned body's candidate center and any existing body's center.
+// Prevents the spawner from dropping a new body on top of or immediately
+// above an existing one — without this, the zone-rotation logic can still
+// clump because consecutive yBase values land inside one screen height of
+// each other. 80 px ≈ 2× the largest body radius; tighter than "visually
+// comfortable" but loose enough not to starve the spawner.
+const MIN_BODY_DISTANCE = 80;
 // Round-robin spawn zone (0=left, 1=center, 2=right) so consecutive bodies
 // land in different zones for natural horizontal spread.
 let lastSpawnZone = -1;
@@ -5021,7 +5029,10 @@ function normalScrollSpeed() {
   const t = Math.min(elapsedRunSeconds() / d.speedCapScore, 1);
   const baseSpeed = d.startSpeed + (d.maxSpeed - d.startSpeed) * t;
   const postCapMinutes = Math.max(0, (elapsedRunSeconds() - d.speedCapScore) / 60);
-  const postCapBonus = postCapMinutes * 0.25;
+  // v1.7.4 tuning: softened from 0.25 → 0.15 px/frame per minute. Late-game
+  // Extreme was unwinnable beyond 4–5 minutes; gentler ramp keeps the
+  // post-cap tension curve without the unavoidable-corridor problem.
+  const postCapBonus = postCapMinutes * 0.15;
   return baseSpeed + postCapBonus;
 }
 
@@ -6574,33 +6585,53 @@ function spawnBody(yBase, opts) {
   // 70% chance to pick a horizontal zone different from the previous spawn
   // (spreads bodies across the screen). 30% chance to pick a fully random
   // x — keeps spawn variety so the player can't lock onto a strict pattern.
+  // v1.7.4: candidate x is re-rolled up to 5 times if it lands within
+  // MIN_BODY_DISTANCE (both axes) of any existing body. If every attempt
+  // clashes, spawnBody returns null and the caller skips the spawn this
+  // frame — next frame's refill retries after bodies have scrolled further.
   let x;
   if (opts && typeof opts.x === 'number') {
     x = opts.x;
   } else {
-  const useZone = lastSpawnZone < 0 || Math.random() < 0.7;
-  if (useZone) {
-    let zone;
-    if (lastSpawnZone < 0) {
-      zone = Math.floor(Math.random() * 3);
-    } else {
-      const choices = [0, 1, 2].filter(z => z !== lastSpawnZone);
-      zone = choices[Math.floor(Math.random() * choices.length)];
+    const pickCandidateX = () => {
+      const useZone = lastSpawnZone < 0 || Math.random() < 0.7;
+      if (useZone) {
+        let zone;
+        if (lastSpawnZone < 0) {
+          zone = Math.floor(Math.random() * 3);
+        } else {
+          const choices = [0, 1, 2].filter(z => z !== lastSpawnZone);
+          zone = choices[Math.floor(Math.random() * choices.length)];
+        }
+        const zoneStart = zone * (W / 3);
+        const zoneEnd   = (zone + 1) * (W / 3);
+        const xMin = Math.max(radius, zoneStart);
+        const xMax = Math.min(W - radius, zoneEnd);
+        const cx = xMin >= xMax ? (xMin + xMax) * 0.5 : xMin + Math.random() * (xMax - xMin);
+        return { x: cx, zone };
+      }
+      // Fully random x; record which zone it landed in so the next zone-mode
+      // pick still rotates away from it.
+      const xMin = radius, xMax = Math.max(radius, W - radius);
+      const cx = xMin + Math.random() * (xMax - xMin);
+      return { x: cx, zone: Math.min(2, Math.floor(cx / (W / 3))) };
+    };
+    let picked = null;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const cand = pickCandidateX();
+      let clash = false;
+      for (const ob of bodies) {
+        if (Math.abs(ob.x - cand.x) < MIN_BODY_DISTANCE &&
+            Math.abs(ob.y - yBase) < MIN_BODY_DISTANCE) {
+          clash = true; break;
+        }
+      }
+      if (!clash) { picked = cand; break; }
     }
-    lastSpawnZone = zone;
-    const zoneStart = zone * (W / 3);
-    const zoneEnd   = (zone + 1) * (W / 3);
-    const xMin = Math.max(radius, zoneStart);
-    const xMax = Math.min(W - radius, zoneEnd);
-    x = xMin >= xMax ? (xMin + xMax) * 0.5 : xMin + Math.random() * (xMax - xMin);
-  } else {
-    // Fully random x; record which zone it landed in so the next zone-mode
-    // pick still rotates away from it.
-    const xMin = radius, xMax = Math.max(radius, W - radius);
-    x = xMin + Math.random() * (xMax - xMin);
-    lastSpawnZone = Math.min(2, Math.floor(x / (W / 3)));
+    if (!picked) return null;
+    x = picked.x;
+    lastSpawnZone = picked.zone;
   }
-  } // end opts.x else
   // Defensive: never let an invalid x leak into the world; centre as fallback.
   if (isNaN(x) || x < 0 || x > W) x = W / 2;
   // And the same for the caller-supplied yBase — never spawn at NaN.
@@ -6711,7 +6742,10 @@ function spawnBody(yBase, opts) {
 // rather than runaway counts.
 function effectiveMaxBodies() {
   const d = diff();
-  const ramped = d.maxBodies + Math.max(0, Math.floor((elapsedProgressionSeconds() - 120) / 60));
+  // v1.7.4 tuning: ramp starts at 3:00 (was 2:00) and steps every 90s (was
+  // 60s). Caps are unchanged. Gives the player a full minute of steady
+  // density after the main speed cap hits before the board starts to thicken.
+  const ramped = d.maxBodies + Math.max(0, Math.floor((elapsedProgressionSeconds() - 180) / 90));
   return Math.min(ramped, d.maxBodiesCap);
 }
 
@@ -6726,8 +6760,13 @@ function effectiveBodySpacing() {
 function initBodies() {
   bodies = [];
   const max = effectiveMaxBodies();
-  for (let i = 0; i < max; i++)
-    bodies.push(spawnBody(H * 0.05 - i * BODY_SPACING));
+  for (let i = 0; i < max; i++) {
+    // spawnBody may return null if MIN_BODY_DISTANCE rejects every candidate
+    // across 5 retries. BODY_SPACING (H/3.5) is well above MIN_BODY_DISTANCE
+    // so clashes are rare here, but guard anyway — never push null.
+    const b = spawnBody(H * 0.05 - i * BODY_SPACING);
+    if (b) bodies.push(b);
+  }
 }
 
 // --- Powerup helpers ---
@@ -8694,7 +8733,14 @@ function update() {
       }
     }
     if (isNaN(yBase)) yBase = -100;
-    bodies.push(spawnBody(yBase));
+    // v1.7.4: spawnBody returns null if MIN_BODY_DISTANCE rejects every
+    // candidate x for this yBase. Break out of the refill loop so the next
+    // frame retries — bodies will have scrolled slightly, opening new
+    // positions. Prevents an infinite loop if the board is currently
+    // oversaturated.
+    const b = spawnBody(yBase);
+    if (!b) break;
+    bodies.push(b);
   }
 
   // Powerup spawning: cooldown scales with frequency, max 2 visible at once.
@@ -14690,7 +14736,10 @@ function dmSpawnBodyOfType(type) {
   if (devmodeRadiusMode === 'min' && range) opts.radius = range[0];
   else if (devmodeRadiusMode === 'max' && range) opts.radius = range[1];
   // 'rand' → leave opts.radius unset; spawnBody uses its built-in random range.
-  bodies.push(spawnBody(yBase, opts));
+  // v1.7.4: MIN_BODY_DISTANCE rejection can return null — guard the push.
+  // Devmode user can tap again if the first click lands on a crowded area.
+  const b = spawnBody(yBase, opts);
+  if (b) bodies.push(b);
 }
 
 function dmSpawnPowerupOfType(type) {
