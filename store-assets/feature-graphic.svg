@@ -1,0 +1,141 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="500" viewBox="0 0 1024 500">
+  <defs>
+    <radialGradient id="bg1" cx="30%" cy="40%" r="60%">
+      <stop offset="0%" stop-color="#0a0a1a"/>
+      <stop offset="100%" stop-color="#000005"/>
+    </radialGradient>
+    <radialGradient id="nebula1" cx="20%" cy="35%" r="45%">
+      <stop offset="0%" stop-color="rgba(70,30,160,0.25)"/>
+      <stop offset="100%" stop-color="rgba(0,0,0,0)"/>
+    </radialGradient>
+    <radialGradient id="nebula2" cx="75%" cy="55%" r="40%">
+      <stop offset="0%" stop-color="rgba(15,70,170,0.2)"/>
+      <stop offset="100%" stop-color="rgba(0,0,0,0)"/>
+    </radialGradient>
+    <radialGradient id="nebula3" cx="60%" cy="25%" r="35%">
+      <stop offset="0%" stop-color="rgba(140,30,70,0.15)"/>
+      <stop offset="100%" stop-color="rgba(0,0,0,0)"/>
+    </radialGradient>
+    <radialGradient id="planet1" cx="40%" cy="35%">
+      <stop offset="0%" stop-color="#fff"/>
+      <stop offset="30%" stop-color="#4a8fd4"/>
+      <stop offset="100%" stop-color="rgba(20,40,80,0.5)"/>
+    </radialGradient>
+    <radialGradient id="planet1glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="rgba(80,160,220,0.5)"/>
+      <stop offset="60%" stop-color="rgba(80,160,220,0.15)"/>
+      <stop offset="100%" stop-color="rgba(0,0,0,0)"/>
+    </radialGradient>
+    <radialGradient id="star1" cx="35%" cy="35%">
+      <stop offset="0%" stop-color="#fff"/>
+      <stop offset="30%" stop-color="#ffe066"/>
+      <stop offset="100%" stop-color="rgba(180,130,0,0.4)"/>
+    </radialGradient>
+    <radialGradient id="star1glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="rgba(255,220,80,0.45)"/>
+      <stop offset="60%" stop-color="rgba(255,200,60,0.12)"/>
+      <stop offset="100%" stop-color="rgba(0,0,0,0)"/>
+    </radialGradient>
+    <radialGradient id="bhglow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="rgba(170,70,255,0.6)"/>
+      <stop offset="50%" stop-color="rgba(120,40,200,0.2)"/>
+      <stop offset="100%" stop-color="rgba(0,0,0,0)"/>
+    </radialGradient>
+    <radialGradient id="playerglow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="rgba(100,220,255,0.6)"/>
+      <stop offset="50%" stop-color="rgba(100,220,255,0.15)"/>
+      <stop offset="100%" stop-color="rgba(0,0,0,0)"/>
+    </radialGradient>
+    <radialGradient id="playercore" cx="40%" cy="40%">
+      <stop offset="0%" stop-color="#fff"/>
+      <stop offset="40%" stop-color="#7de8ff"/>
+      <stop offset="100%" stop-color="rgba(30,110,190,0.5)"/>
+    </radialGradient>
+    <filter id="titleGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="4" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1024" height="500" fill="url(#bg1)"/>
+  <rect width="1024" height="500" fill="url(#nebula1)"/>
+  <rect width="1024" height="500" fill="url(#nebula2)"/>
+  <rect width="1024" height="500" fill="url(#nebula3)"/>
+
+  <!-- Stars field -->
+  <circle cx="45" cy="80" r="1.2" fill="#fff" opacity="0.6"/>
+  <circle cx="120" cy="340" r="0.8" fill="#fff" opacity="0.4"/>
+  <circle cx="200" cy="45" r="1.0" fill="#fff" opacity="0.5"/>
+  <circle cx="180" cy="420" r="0.7" fill="#fff" opacity="0.3"/>
+  <circle cx="310" cy="120" r="1.1" fill="#fff" opacity="0.55"/>
+  <circle cx="350" cy="380" r="0.9" fill="#fff" opacity="0.45"/>
+  <circle cx="420" cy="60" r="0.6" fill="#fff" opacity="0.35"/>
+  <circle cx="480" cy="440" r="1.3" fill="#fff" opacity="0.6"/>
+  <circle cx="550" cy="90" r="0.8" fill="#fff" opacity="0.4"/>
+  <circle cx="600" cy="400" r="1.0" fill="#fff" opacity="0.5"/>
+  <circle cx="650" cy="30" r="0.7" fill="#fff" opacity="0.35"/>
+  <circle cx="700" cy="460" r="1.1" fill="#fff" opacity="0.55"/>
+  <circle cx="760" cy="75" r="0.9" fill="#fff" opacity="0.4"/>
+  <circle cx="820" cy="350" r="1.2" fill="#fff" opacity="0.5"/>
+  <circle cx="880" cy="50" r="0.6" fill="#fff" opacity="0.3"/>
+  <circle cx="920" cy="420" r="0.8" fill="#fff" opacity="0.4"/>
+  <circle cx="960" cy="110" r="1.0" fill="#fff" opacity="0.5"/>
+  <circle cx="980" cy="300" r="0.7" fill="#fff" opacity="0.35"/>
+  <circle cx="70" cy="200" r="0.9" fill="#fff" opacity="0.45"/>
+  <circle cx="250" cy="250" r="0.6" fill="#fff" opacity="0.3"/>
+  <circle cx="750" cy="250" r="1.1" fill="#fff" opacity="0.5"/>
+  <circle cx="500" cy="200" r="0.5" fill="#fff" opacity="0.25"/>
+  <circle cx="150" cy="150" r="0.8" fill="#fff" opacity="0.4"/>
+  <circle cx="850" cy="180" r="0.7" fill="#fff" opacity="0.35"/>
+
+  <!-- Planet (bottom left) with glow -->
+  <circle cx="130" cy="380" r="65" fill="url(#planet1glow)"/>
+  <circle cx="130" cy="380" r="22" fill="url(#planet1)"/>
+  <circle cx="130" cy="380" r="44" fill="none" stroke="rgba(80,160,220,0.08)" stroke-width="1"/>
+  <circle cx="130" cy="380" r="70" fill="none" stroke="rgba(80,160,220,0.05)" stroke-width="1"/>
+
+  <!-- Star (top right) with glow -->
+  <circle cx="880" cy="130" r="50" fill="url(#star1glow)"/>
+  <circle cx="880" cy="130" r="16" fill="url(#star1)"/>
+  <circle cx="880" cy="130" r="35" fill="none" stroke="rgba(255,220,80,0.07)" stroke-width="1"/>
+
+  <!-- Black hole (bottom right) -->
+  <circle cx="920" cy="400" r="45" fill="url(#bhglow)"/>
+  <circle cx="920" cy="400" r="12" fill="#000"/>
+  <circle cx="920" cy="400" r="13.5" fill="none" stroke="rgba(160,70,255,0.6)" stroke-width="1.5"/>
+
+  <!-- Small star (top left) -->
+  <circle cx="80" cy="100" r="28" fill="url(#star1glow)" opacity="0.5"/>
+  <circle cx="80" cy="100" r="9" fill="url(#star1)"/>
+
+  <!-- Player with glow and trail -->
+  <circle cx="460" cy="340" r="22" fill="url(#playerglow)"/>
+  <circle cx="460" cy="340" r="6" fill="url(#playercore)"/>
+  <!-- Trail dots -->
+  <circle cx="455" cy="350" r="3.5" fill="rgba(100,220,255,0.35)"/>
+  <circle cx="450" cy="358" r="3.0" fill="rgba(110,210,250,0.28)"/>
+  <circle cx="446" cy="365" r="2.5" fill="rgba(120,200,240,0.2)"/>
+  <circle cx="443" cy="371" r="2.0" fill="rgba(130,195,235,0.14)"/>
+  <circle cx="441" cy="376" r="1.5" fill="rgba(140,190,230,0.09)"/>
+
+  <!-- Title -->
+  <text x="512" y="210" text-anchor="middle" font-family="'Orbitron', sans-serif" font-size="88" font-weight="900" letter-spacing="16" filter="url(#titleGlow)">
+    <tspan fill="url(#titleGrad)">DRIFT</tspan>
+  </text>
+
+  <!-- Title gradient -->
+  <defs>
+    <linearGradient id="titleGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#4af"/>
+      <stop offset="50%" stop-color="#a4f"/>
+      <stop offset="100%" stop-color="#4af"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Subtitle -->
+  <text x="512" y="260" text-anchor="middle" font-family="'Courier New', monospace" font-size="16" letter-spacing="6" fill="rgba(255,255,255,0.4)">GRAVITY SURFING</text>
+</svg>

@@ -2127,8 +2127,11 @@ function getShieldRingCanvas(orb, hits) {
   const SIZE = SHIELD_RING_CANVAS_SIZE;
   const cx = SIZE / 2, cy = SIZE / 2;
   const c = document.createElement('canvas');
-  c.width = SIZE; c.height = SIZE;
+  const dpr = atlasScale();
+  c.width = SIZE * dpr; c.height = SIZE * dpr;
+  c._logicalSize = SIZE;
   const cctx = c.getContext('2d');
+  cctx.scale(dpr, dpr);
   // Aura fill (baseline 0.55 alpha).
   cctx.globalAlpha = 0.55;
   const aura = cctx.createRadialGradient(cx, cy, 0, cx, cy, PLAYER_R * 4.2);
@@ -2223,8 +2226,11 @@ function buildEyeVeinSprite(b) {
   try {
     const size = bodySpriteSize(b);
     const c = document.createElement('canvas');
-    c.width = size; c.height = size;
+    const dpr = atlasScale();
+    c.width = size * dpr; c.height = size * dpr;
+    c._logicalSize = size;
     const cctx = c.getContext('2d');
+    cctx.scale(dpr, dpr);
     const cx = size / 2, cy = size / 2;
     // Veins are drawn at b.radius instead of the live pulseR (±3 px breath
     // on the eye base). The 3-pixel mismatch at the pulse extremes is
@@ -2269,8 +2275,11 @@ function buildSkullFaceSprite(b) {
   try {
     const size = bodySpriteSize(b);
     const c = document.createElement('canvas');
-    c.width = size; c.height = size;
+    const dpr = atlasScale();
+    c.width = size * dpr; c.height = size * dpr;
+    c._logicalSize = size;
     const cctx = c.getContext('2d');
+    cctx.scale(dpr, dpr);
     const cx = size / 2, cy = size / 2;
     const r = b.radius;
     // v1.7.1: cranium silhouette — an actual skull shape (upper cranium
@@ -2657,8 +2666,11 @@ function buildMirrorBodySprite(b) {
   try {
     const size = bodySpriteSize(b);
     const c = document.createElement('canvas');
-    c.width = size; c.height = size;
+    const dpr = atlasScale();
+    c.width = size * dpr; c.height = size * dpr;
+    c._logicalSize = size;
     const cctx = c.getContext('2d');
+    cctx.scale(dpr, dpr);
     const cx = size / 2, cy = size / 2;
     const r = b.radius;
     // Chrome sphere.
@@ -2705,8 +2717,11 @@ function buildScreamingStaticSprite(b) {
   try {
     const size = bodySpriteSize(b);
     const c = document.createElement('canvas');
-    c.width = size; c.height = size;
+    const dpr = atlasScale();
+    c.width = size * dpr; c.height = size * dpr;
+    c._logicalSize = size;
     const cctx = c.getContext('2d');
+    cctx.scale(dpr, dpr);
     const cx = size / 2, cy = size / 2;
     const r = b.radius;
     const rng = mulberry32(b.screamSeed);
@@ -2798,8 +2813,11 @@ function buildHeartStaticSprite(b) {
   try {
     const size = bodySpriteSize(b);
     const c = document.createElement('canvas');
-    c.width = size; c.height = size;
+    const dpr = atlasScale();
+    c.width = size * dpr; c.height = size * dpr;
+    c._logicalSize = size;
     const cctx = c.getContext('2d');
+    cctx.scale(dpr, dpr);
     const cx = size / 2, cy = size / 2;
     const w = b.radius;
     const seed = b.heartSeed || 1337;
@@ -3131,6 +3149,90 @@ function buildHeartStaticSprite(b) {
   } catch { return null; }
 }
 
+function buildCrackedSprite(b) {
+  // Bakes the 4 deterministic fractures + one-off shadowBlur halo into a
+  // DPR-scaled offscreen canvas at spawn. Runtime drawCracked draws this via
+  // drawImage and modulates the tint/alpha — no per-frame strokes, no per-
+  // frame shadowBlur (was the FPS regression cause pre-v1.7.3). Same seeded
+  // walk as the old live code (mulberry32(b.crackSeed)) so the geometry looks
+  // identical, just pre-rasterized.
+  try {
+    const size = bodySpriteSize(b);
+    const c = document.createElement('canvas');
+    const dpr = atlasScale();
+    c.width = size * dpr; c.height = size * dpr;
+    c._logicalSize = size;
+    const cctx = c.getContext('2d');
+    cctx.scale(dpr, dpr);
+    const cx = size / 2, cy = size / 2;
+    const rMax = b.radius * 0.9;
+    const rng = mulberry32(b.crackSeed);
+    const clampToDisc = (x, y) => {
+      const ddx = x - cx, ddy = y - cy;
+      const d = Math.hypot(ddx, ddy);
+      if (d <= rMax || d === 0) return [x, y];
+      const k = rMax / d;
+      return [cx + ddx * k, cy + ddy * k];
+    };
+    // One-time shadowBlur pass applied to ALL fracture strokes. Cost is paid
+    // once at spawn instead of ~40 times per frame forever. Taper is now via
+    // lineWidth variation (was per-segment linear gradient — dropped for the
+    // static bake since a single cached image can't re-colour per frame).
+    cctx.save();
+    cctx.lineCap = 'round';
+    cctx.shadowBlur = 10;
+    cctx.shadowColor = 'rgba(255,170,40,0.95)';
+    cctx.strokeStyle = 'rgba(255,200,90,0.95)';
+    const drawFracture = (sx, sy, trunkW, stepScale, recursion) => {
+      let x = sx, y = sy;
+      let curA = Math.atan2(cy - y, cx - x) + (rng() - 0.5) * 0.9;
+      const segs = 5 + Math.floor(rng() * 3);
+      for (let s = 0; s < segs; s++) {
+        curA += (rng() - 0.5) * 1.4;
+        const step = b.radius * stepScale * (0.3 + rng() * 0.45);
+        const [nx, ny] = clampToDisc(x + Math.cos(curA) * step, y + Math.sin(curA) * step);
+        const u = s / segs;
+        const segW = trunkW * (1 - u * 0.85);
+        cctx.lineWidth = Math.max(0.5, segW);
+        cctx.beginPath();
+        cctx.moveTo(x, y);
+        cctx.lineTo(nx, ny);
+        cctx.stroke();
+        if (recursion > 0 && rng() < 0.35 && s > 0) {
+          const branchW = segW * 0.6;
+          const bSteps = 2 + Math.floor(rng() * 2);
+          let bx = nx, by = ny;
+          let bA = curA + (rng() < 0.5 ? 1 : -1) * (0.8 + rng() * 0.9);
+          for (let bs = 0; bs < bSteps; bs++) {
+            bA += (rng() - 0.5) * 1.2;
+            const bStep = b.radius * 0.18 * (0.7 + rng() * 0.6);
+            const [nbx, nby] = clampToDisc(bx + Math.cos(bA) * bStep, by + Math.sin(bA) * bStep);
+            const bu = bs / bSteps;
+            const bSegW = branchW * (1 - bu * 0.8);
+            cctx.lineWidth = Math.max(0.4, bSegW);
+            cctx.beginPath();
+            cctx.moveTo(bx, by);
+            cctx.lineTo(nbx, nby);
+            cctx.stroke();
+            bx = nbx; by = nby;
+          }
+        }
+        x = nx; y = ny;
+      }
+    };
+    const crackCount = 4;
+    for (let ci = 0; ci < crackCount; ci++) {
+      const startA = rng() * Math.PI * 2;
+      const [sx, sy] = clampToDisc(cx + Math.cos(startA) * rMax, cy + Math.sin(startA) * rMax);
+      // trunkW 2.6 sits between old idle (2.2) and old peak-charge (3.0); the
+      // charge-up tell is carried entirely by runtime alpha/tint modulation.
+      drawFracture(sx, sy, 2.6, 1.0, 1);
+    }
+    cctx.restore();
+    return c;
+  } catch { return null; }
+}
+
 function releaseBodyCanvases(b) {
   if (!b) return;
   b.veinCanvas = null;
@@ -3138,6 +3240,7 @@ function releaseBodyCanvases(b) {
   b.mirrorCanvas = null;
   b.screamStaticCanvas = null;
   b.heartCanvas = null;
+  b.crackCanvas = null;
   // Phase 2 Step 3: pixi-baked glow + rings canvases. The pixi sprite holds
   // the texture reference; destroying the sprite (in updatePixiBodyLayer's
   // cull pass) releases the GPU side. Nulling here releases the JS side.
@@ -5389,27 +5492,34 @@ function updatePixiBodySpriteLayer() {
       const factor = PROCEDURAL_BODY_FACTORS[b.type];
       const drawer = PROCEDURAL_BODY_DRAWERS[b.type];
       if (!factor || !drawer) continue;
+      const dpr = atlasScale();
       if (!b._offscreenCanvas) {
         let size = Math.ceil(b.radius * factor) * 2 + 8;
         if (size % 2 !== 0) size += 1;
         b._offscreenCanvas = document.createElement('canvas');
-        b._offscreenCanvas.width = size;
-        b._offscreenCanvas.height = size;
+        // DPR-scaled backing so static per-body sprites (heartCanvas,
+        // mirrorCanvas, faceCanvas, etc.) composited in here via drawImage
+        // keep their full pixel density all the way to the pixi texture.
+        b._offscreenCanvas.width = size * dpr;
+        b._offscreenCanvas.height = size * dpr;
+        b._offscreenCanvas._logicalSize = size;
         b._offscreenCtx = b._offscreenCanvas.getContext('2d');
       }
       const ofc = b._offscreenCanvas;
       const ofx = b._offscreenCtx;
-      const cx = ofc.width / 2, cy = ofc.height / 2;
+      const logicalSize = ofc._logicalSize || ofc.width;
+      const cx = logicalSize / 2, cy = logicalSize / 2;
       ofx.save();
-      ofx.setTransform(1, 0, 0, 1, 0, 0);
-      ofx.clearRect(0, 0, ofc.width, ofc.height);
+      // Identity-plus-DPR — drawer keeps working in logical coords.
+      ofx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ofx.clearRect(0, 0, logicalSize, logicalSize);
       // Bias so arc(b.x, b.y, ...) lands at canvas center.
       ofx.translate(cx - b.x, cy - b.y);
       try { drawer(b, ofx); }
       catch (err) { console.error('[pixi-body] ' + b.type + ' threw, skipping frame', err); }
       ofx.restore();
       sourceCanvas = ofc;
-      displaySize = ofc.width;
+      displaySize = logicalSize;
       isProcedural = true;
     }
     if (!sourceCanvas) continue;
@@ -5622,10 +5732,14 @@ function updatePixiPlayerLayer() {
   // --- Player composite ---
   const playerVisible = (state === 'playing' || state === 'paused' || state === 'apocalypse' || state === 'devmode');
   if (playerVisible) {
+    const dpr = atlasScale();
     if (!pixiPlayerCanvas) {
       pixiPlayerCanvas = document.createElement('canvas');
-      pixiPlayerCanvas.width = PIXI_PLAYER_CANVAS_SIZE;
-      pixiPlayerCanvas.height = PIXI_PLAYER_CANVAS_SIZE;
+      // DPR-scaled backing store; ctx transform is multiplied by dpr each frame
+      // (setTransform below) so drawPlayer code stays in logical coordinates.
+      pixiPlayerCanvas.width = PIXI_PLAYER_CANVAS_SIZE * dpr;
+      pixiPlayerCanvas.height = PIXI_PLAYER_CANVAS_SIZE * dpr;
+      pixiPlayerCanvas._logicalSize = PIXI_PLAYER_CANVAS_SIZE;
       pixiPlayerCtx = pixiPlayerCanvas.getContext('2d');
     }
     if (!pixiPlayerSprite) {
@@ -5637,7 +5751,9 @@ function updatePixiPlayerLayer() {
     const cx = PIXI_PLAYER_CANVAS_SIZE / 2;
     const cy = PIXI_PLAYER_CANVAS_SIZE / 2;
     ofx.save();
-    ofx.setTransform(1, 0, 0, 1, 0, 0);
+    // Identity-plus-DPR: one matrix set replaces scale+setTransform, and
+    // clearRect uses the full backing-store pixel extent (backing = dpr × logical).
+    ofx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ofx.clearRect(0, 0, PIXI_PLAYER_CANVAS_SIZE, PIXI_PLAYER_CANVAS_SIZE);
     // Bias so drawPlayer's internal ctx.translate(player.x, player.y) lands
     // at canvas center.
@@ -5648,6 +5764,9 @@ function updatePixiPlayerLayer() {
     pixiPlayerSprite.x = player.x;
     pixiPlayerSprite.y = player.y;
     pixiPlayerSprite.visible = true;
+    // Texture backing is dpr × logical; counteract with 1/dpr scale so the on-
+    // screen CSS size equals PIXI_PLAYER_CANVAS_SIZE (same as pre-DPR fix).
+    pixiPlayerSprite.scale.set(1 / dpr);
     if (pixiPlayerSprite.texture && pixiPlayerSprite.texture.baseTexture) {
       try { pixiPlayerSprite.texture.baseTexture.update(); } catch {}
     }
@@ -6579,6 +6698,7 @@ function spawnBody(yBase, opts) {
   else if (type === 'mirror')    body.mirrorCanvas       = buildMirrorBodySprite(body);
   else if (type === 'screaming') body.screamStaticCanvas = buildScreamingStaticSprite(body);
   else if (type === 'heart')     body.heartCanvas        = buildHeartStaticSprite(body);
+  else if (type === 'cracked')   body.crackCanvas        = buildCrackedSprite(body);
 
   // First body of a fresh run has been built — release the phase-1 lock so
   // phase selection resumes using real elapsed time.
@@ -8331,13 +8451,15 @@ function deepCleanup() {
         (b.type === 'skull'     && !b.faceCanvas) ||
         (b.type === 'mirror'    && !b.mirrorCanvas) ||
         (b.type === 'screaming' && !b.screamStaticCanvas) ||
-        (b.type === 'heart'     && !b.heartCanvas);
+        (b.type === 'heart'     && !b.heartCanvas) ||
+        (b.type === 'cracked'   && !b.crackCanvas);
       if (needsSprite) {
         if      (b.type === 'eye')       b.veinCanvas         = buildEyeVeinSprite(b);
         else if (b.type === 'skull')     b.faceCanvas         = buildSkullFaceSprite(b);
         else if (b.type === 'mirror')    b.mirrorCanvas       = buildMirrorBodySprite(b);
         else if (b.type === 'screaming') b.screamStaticCanvas = buildScreamingStaticSprite(b);
         else if (b.type === 'heart')     b.heartCanvas        = buildHeartStaticSprite(b);
+        else if (b.type === 'cracked')   b.crackCanvas        = buildCrackedSprite(b);
       }
     }
   }
@@ -10175,113 +10297,78 @@ function drawEye(b, tctx = ctx) {
 function drawCracked(b, tctx = ctx) {
   const ctx = tctx;
   ctx.save();
-  // v1.7.1: charge-up ramp — in the last ~1 second before eruption the whole
-  // body (base darkening, heat haze, crack glow) brightens noticeably so the
-  // player gets a visual tell before fragments spawn. Ramp rises steeply as
-  // the timer approaches 0, eases back down after the eruption fires.
-  // nextEruptFrame is now ms (despite the legacy field name). 500ms charge
-  // window = the last ~half-second before eruption brightens visibly.
+  // v1.7.3 perf rewrite: the crack geometry + glow halo are baked once into
+  // b.crackCanvas (see buildCrackedSprite). Pre-rewrite, drawCracked did ~40
+  // strokes per body per frame under active shadowBlur, which devmode-paused
+  // with several cracked bodies on screen dropped below 60 fps. Now per-frame
+  // cost is: 2 cached-gradient fills + 1 drawImage + optional eruption flash.
+  // Charge-up tell (last ~500 ms before eruption) is carried by the alpha and
+  // tint of those live layers — the baked crack sprite is constant.
   const msToErupt = typeof b.nextEruptFrame === 'number' ? b.nextEruptFrame : 1000;
   const CHARGE_WINDOW = 500;
   const chargeT = msToErupt <= CHARGE_WINDOW && msToErupt >= 0
     ? 1 - (msToErupt / CHARGE_WINDOW)
     : 0;
   const charge = chargeT * chargeT; // ease-in quadratic
-  // Base planet (darker) with directional shading. Brighten under charge.
-  const baseTop = charge > 0 ? `rgb(${216 + Math.round(charge * 30)},${117 + Math.round(charge * 50)},${69 + Math.round(charge * 40)})` : '#d87545';
-  const grad = ctx.createRadialGradient(b.x - b.radius*0.35, b.y - b.radius*0.35, 0, b.x, b.y, b.radius);
-  grad.addColorStop(0,   baseTop);
-  grad.addColorStop(0.3, '#8a3a1e');
-  grad.addColorStop(0.75,'#3e1808');
-  grad.addColorStop(1,   '#1a0800');
-  ctx.fillStyle = grad;
-  ctx.beginPath(); ctx.arc(b.x, b.y, b.radius, 0, 6.28); ctx.fill();
+  // Bucket charge to 6 discrete levels so getCachedGradient hits a small cache
+  // (6 entries per radius) across the 500 ms ramp.
+  const chargeBucket = Math.max(0, Math.min(5, Math.round(charge * 5)));
+  const cb = chargeBucket / 5;
 
-  // Heat haze — outward warm amber. Intensity ramps with charge so the body
-  // feels like it's "warming up" visibly in the last second before eruption.
+  // Base planet radial gradient — cached per (radius, chargeBucket).
+  const rRound = Math.round(b.radius);
+  const baseKey = 'cracked_base_' + rRound + '_' + chargeBucket;
+  const baseGrad = getCachedGradient(baseKey, (c) => {
+    const tintR = 216 + Math.round(cb * 30);
+    const tintG = 117 + Math.round(cb * 50);
+    const tintB = 69  + Math.round(cb * 40);
+    const g = c.createRadialGradient(-b.radius*0.35, -b.radius*0.35, 0, 0, 0, b.radius);
+    g.addColorStop(0,    `rgb(${tintR},${tintG},${tintB})`);
+    g.addColorStop(0.3,  '#8a3a1e');
+    g.addColorStop(0.75, '#3e1808');
+    g.addColorStop(1,    '#1a0800');
+    return g;
+  }, ctx);
+  ctx.save();
+  ctx.translate(b.x, b.y);
+  ctx.fillStyle = baseGrad;
+  ctx.beginPath(); ctx.arc(0, 0, b.radius, 0, 6.28); ctx.fill();
+  ctx.restore();
+
+  // Heat haze — cached per (radius, chargeBucket). Extent (heatR) is bucketed
+  // so each cached gradient has a matching disc radius; live alpha gives the
+  // per-frame breathing feel.
   const heatPulse = 0.5 + 0.5 * Math.sin(Date.now() * 0.0018 + b.crackSeed);
   const heatAlpha = 0.15 + heatPulse * 0.12 + charge * 0.35;
-  const heatR = b.radius * (1.35 + charge * 0.3);
-  const heat = ctx.createRadialGradient(b.x, b.y, b.radius * 0.8, b.x, b.y, heatR);
-  heat.addColorStop(0, `rgba(255,${120 + Math.round(charge * 80)},40,${heatAlpha})`);
-  heat.addColorStop(1, 'rgba(255,60,0,0)');
-  ctx.fillStyle = heat;
-  ctx.beginPath(); ctx.arc(b.x, b.y, heatR, 0, 6.28); ctx.fill();
-
-  // v1.7.1: organic jagged cracks — multi-segment rock fractures with
-  // tapering width (thick arterial trunk at disc edge, thin whisker at the
-  // centre), jittered kinks and a 40% chance of spawning a branch at the
-  // midpoint of each segment. Pre-sampled to vertices/widths so we can
-  // stroke each segment independently for the taper effect.
-  const pulseAlpha = 0.6 + 0.4 * Math.abs(Math.sin(Date.now() * 0.0012 + b.crackSeed));
-  const crackGlowA = pulseAlpha * (0.85 + charge * 0.7);
+  const heatR = b.radius * (1.35 + cb * 0.3);
+  const heatKey = 'cracked_heat_' + rRound + '_' + chargeBucket;
+  const heatGrad = getCachedGradient(heatKey, (c) => {
+    const innerR = b.radius * (1.35 + cb * 0.3);
+    const innerG = 120 + Math.round(cb * 80);
+    const g = c.createRadialGradient(0, 0, b.radius * 0.8, 0, 0, innerR);
+    g.addColorStop(0, `rgba(255,${innerG},40,1)`);
+    g.addColorStop(1, 'rgba(255,60,0,0)');
+    return g;
+  }, ctx);
   ctx.save();
-  ctx.shadowBlur = 8 + charge * 8;
-  ctx.shadowColor = `rgba(255,${140 + Math.round(charge * 60)},40,${0.9 + charge * 0.1})`;
-  ctx.lineCap = 'round';
-  const rng = mulberry32(b.crackSeed);
-  const rMax = b.radius * 0.9;
-  const clampToDisc = (x, y) => {
-    const ddx = x - b.x, ddy = y - b.y;
-    const d = Math.hypot(ddx, ddy);
-    if (d <= rMax || d === 0) return [x, y];
-    const k = rMax / d;
-    return [b.x + ddx * k, b.y + ddy * k];
-  };
-  const drawFracture = (sx, sy, trunkW, stepScale, recursion) => {
-    let x = sx, y = sy;
-    let curA = Math.atan2(b.y - y, b.x - x) + (rng() - 0.5) * 0.9;
-    const segs = 5 + Math.floor(rng() * 3);
-    for (let s = 0; s < segs; s++) {
-      // Jitter direction more aggressively for organic look.
-      curA += (rng() - 0.5) * 1.4;
-      const step = b.radius * stepScale * (0.3 + rng() * 0.45);
-      let [nx, ny] = clampToDisc(x + Math.cos(curA) * step, y + Math.sin(curA) * step);
-      // Taper width from trunk → tip.
-      const u = s / segs;
-      const segW = trunkW * (1 - u * 0.85);
-      const grad = ctx.createLinearGradient(x, y, nx, ny);
-      grad.addColorStop(0, `rgba(255,230,140,${crackGlowA})`);
-      grad.addColorStop(0.5, `rgba(255,170,60,${crackGlowA * 0.9})`);
-      grad.addColorStop(1, `rgba(220,80,20,${crackGlowA * 0.75})`);
-      ctx.strokeStyle = grad;
-      ctx.lineWidth = Math.max(0.5, segW);
-      ctx.beginPath();
-      ctx.moveTo(x, y);
-      ctx.lineTo(nx, ny);
-      ctx.stroke();
-      // Branching — occasional offshoot with its own recursion (one level only
-      // to keep draw count bounded).
-      if (recursion > 0 && rng() < 0.35 && s > 0) {
-        const branchW = segW * 0.6;
-        const bSteps = 2 + Math.floor(rng() * 2);
-        let bx = nx, by = ny;
-        let bA = curA + (rng() < 0.5 ? 1 : -1) * (0.8 + rng() * 0.9);
-        for (let bs = 0; bs < bSteps; bs++) {
-          bA += (rng() - 0.5) * 1.2;
-          const bStep = b.radius * 0.18 * (0.7 + rng() * 0.6);
-          const [nbx, nby] = clampToDisc(bx + Math.cos(bA) * bStep, by + Math.sin(bA) * bStep);
-          const bu = bs / bSteps;
-          const bSegW = branchW * (1 - bu * 0.8);
-          ctx.lineWidth = Math.max(0.4, bSegW);
-          ctx.beginPath();
-          ctx.moveTo(bx, by);
-          ctx.lineTo(nbx, nby);
-          ctx.stroke();
-          bx = nbx; by = nby;
-        }
-      }
-      x = nx; y = ny;
-    }
-  };
-  const crackCount = 4;
-  for (let c = 0; c < crackCount; c++) {
-    const startA = rng() * Math.PI * 2;
-    const [sx, sy] = clampToDisc(b.x + Math.cos(startA) * rMax, b.y + Math.sin(startA) * rMax);
-    // Trunk width 2.2 at disc edge, tapers to ~0.3 by the interior tip.
-    drawFracture(sx, sy, 2.2 + charge * 0.8, 1.0, 1);
-  }
+  ctx.translate(b.x, b.y);
+  ctx.globalAlpha = heatAlpha;
+  ctx.fillStyle = heatGrad;
+  ctx.beginPath(); ctx.arc(0, 0, heatR, 0, 6.28); ctx.fill();
   ctx.restore();
+
+  // Baked crack geometry + glow halo. pulseAlpha breathes at ~1.6s period and
+  // charge linearly lifts peak alpha toward 1.0 — preserves the "warming up"
+  // tell without re-walking paths or running shadowBlur per frame.
+  if (b.crackCanvas) {
+    const pulseAlpha = 0.6 + 0.4 * Math.abs(Math.sin(Date.now() * 0.0012 + b.crackSeed));
+    const crackAlpha = Math.min(1, pulseAlpha * (0.85 + charge * 0.7));
+    const cs = b.crackCanvas._logicalSize || b.crackCanvas.width;
+    ctx.save();
+    ctx.globalAlpha = crackAlpha;
+    ctx.drawImage(b.crackCanvas, b.x - cs / 2, b.y - cs / 2, cs, cs);
+    ctx.restore();
+  }
 
   // Eruption flash — unchanged, still fires at eruptFlash > 0.
   if (b.eruptFlash > 0) {
@@ -10559,8 +10646,10 @@ function drawScreaming(b, tctx = ctx) {
   // b.screamStaticCanvas at spawn. One drawImage replaces 13 fills/strokes.
   // Fallback retains the original per-frame drawing path.
   if (b.screamStaticCanvas) {
-    const ss = b.screamStaticCanvas.width;
-    ctx.drawImage(b.screamStaticCanvas, b.x - ss / 2, b.y - ss / 2);
+    // Canvas is DPR-scaled (.width = logical × dpr). Use _logicalSize for CSS
+    // offset and pass explicit dst size so drawImage paints at logical dims.
+    const ss = b.screamStaticCanvas._logicalSize || b.screamStaticCanvas.width;
+    ctx.drawImage(b.screamStaticCanvas, b.x - ss / 2, b.y - ss / 2, ss, ss);
   } else {
     const rng = mulberry32(b.screamSeed);
     for (let i = 0; i < 9; i++) {
@@ -10949,11 +11038,11 @@ function drawHeart(b, tctx = ctx) {
   // becomes a uniform scale, a minor simplification for a large draw-call win.
   // Fallback path (no sprite) keeps the full per-frame rendering.
   if (b.heartCanvas) {
-    const hs = b.heartCanvas.width;
+    const hs = b.heartCanvas._logicalSize || b.heartCanvas.width;
     ctx.save();
     ctx.translate(b.x, b.y);
     ctx.scale(s, s);
-    ctx.drawImage(b.heartCanvas, -hs / 2, -hs / 2);
+    ctx.drawImage(b.heartCanvas, -hs / 2, -hs / 2, hs, hs);
     ctx.restore();
     // v1.7.1: live wet glisten — shifts with the beat. Two highlight spots
     // whose size/alpha scale with systolic phase (bigger glisten on
@@ -11116,8 +11205,8 @@ function drawMirror(b, tctx = ctx) {
     // Composite the baked chrome sphere (static: reflected stars, crescent
     // highlight, dark rim) first, then overlay the live reflection pass.
     // Works identically for the pixi offscreen ctx and the Canvas 2D ctx.
-    const ms = b.mirrorCanvas.width;
-    ctx.drawImage(b.mirrorCanvas, b.x - ms / 2, b.y - ms / 2);
+    const ms = b.mirrorCanvas._logicalSize || b.mirrorCanvas.width;
+    ctx.drawImage(b.mirrorCanvas, b.x - ms / 2, b.y - ms / 2, ms, ms);
     // Reflection overlay: place a soft dot inside the sphere at the direction
     // of the player. Magnitude pulled inward from the surface so it reads as
     // reflected on the curved mirror rather than floating in front of it.
@@ -11205,8 +11294,8 @@ function drawSkull(b, tctx = ctx) {
   // Eye glow flash draws live on top so random timing still reads.
   const flash = b.skullEyeFlash > 0;
   if (b.faceCanvas) {
-    const fs = b.faceCanvas.width;
-    ctx.drawImage(b.faceCanvas, b.x - fs / 2, b.y - fs / 2);
+    const fs = b.faceCanvas._logicalSize || b.faceCanvas.width;
+    ctx.drawImage(b.faceCanvas, b.x - fs / 2, b.y - fs / 2, fs, fs);
   } else {
     const rng = mulberry32(b.skullSeed);
     ctx.fillStyle = 'rgba(240,240,230,0.35)';
@@ -11555,7 +11644,13 @@ function drawPlayer(tctx = ctx) {
     const hits = Math.min(Math.max(shieldHits | 0, 1), 4);
     const atlas = getShieldRingCanvas(activeOrb, hits);
     ctx.globalAlpha = shieldVis;
-    ctx.drawImage(atlas, -SHIELD_RING_CANVAS_SIZE / 2, -SHIELD_RING_CANVAS_SIZE / 2);
+    // Atlas is DPR-scaled internally; pass explicit dest size so drawImage
+    // pulls the full baked texture but paints at logical SHIELD_RING size.
+    ctx.drawImage(
+      atlas,
+      -SHIELD_RING_CANVAS_SIZE / 2, -SHIELD_RING_CANVAS_SIZE / 2,
+      SHIELD_RING_CANVAS_SIZE, SHIELD_RING_CANVAS_SIZE
+    );
     ctx.globalAlpha = 1;
   }
   // PHANTOM BLAST: red/orange damage aura around player

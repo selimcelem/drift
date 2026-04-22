@@ -1,0 +1,11 @@
+Drift 1.1.0 — the Combos update.
+
+NEW: Combine powerups into 9 unique combos. Stack two Novas for SUPERNOVA, mix Hyperspeed + Ghost for SPECTRAL RUSH, chain Shield + Shield for FORTRESS SHIELD, and 6 more.
+
+NEW: Pair spawns — tethered powerup duos that trigger combos instantly.
+
+NEW: Quadratic streak scoring rewards aggressive chains.
+
+NEW: Full run summary on death — see exactly how you played.
+
+Plus rebalanced difficulty, smoother hyperspeed landings, and bug fixes.

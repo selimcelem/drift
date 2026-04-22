@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Drift — Menu</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Space+Mono&display=swap');
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #000; display: flex; align-items: center; justify-content: center; width: 1080px; height: 1920px; overflow: hidden; }
+  canvas { display: block; }
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script>
+const c = document.getElementById('c');
+const ctx = c.getContext('2d');
+const W = 1080, H = 1920;
+
+// Background
+ctx.fillStyle = '#00000a';
+ctx.fillRect(0, 0, W, H);
+
+// Nebula blobs
+function nebula(cx, cy, r, color, alpha) {
+  const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+  g.addColorStop(0, color);
+  g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, H);
+}
+nebula(W*0.25, H*0.3, W*0.55, 'rgba(70,30,160,0.55)', 0.055);
+nebula(W*0.7, H*0.5, W*0.45, 'rgba(15,70,170,0.55)', 0.055);
+nebula(W*0.5, H*0.2, W*0.5, 'rgba(140,30,70,0.55)', 0.04);
+ctx.globalAlpha = 1;
+
+// Stars
+for (let i = 0; i < 300; i++) {
+  const x = Math.random() * W, y = Math.random() * H;
+  const r = Math.random() * 2.2 + 0.3;
+  ctx.globalAlpha = Math.random() * 0.5 + 0.2;
+  ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.arc(x, y, r, 0, 6.28); ctx.fill();
+}
+ctx.globalAlpha = 1;
+
+// Celestial bodies (decorative, scattered)
+function drawStar(x, y, radius) {
+  const g = ctx.createRadialGradient(x, y, radius*0.4, x, y, radius*2.8);
+  g.addColorStop(0, 'rgba(255,220,80,0.5)');
+  g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.globalAlpha = 0.3;
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.arc(x, y, radius*2.8, 0, 6.28); ctx.fill();
+  ctx.globalAlpha = 1;
+  const bg = ctx.createRadialGradient(x-radius*0.28, y-radius*0.28, 0, x, y, radius);
+  bg.addColorStop(0, '#fff');
+  bg.addColorStop(0.3, '#ffe066');
+  bg.addColorStop(1, 'rgba(180,130,0,0.5)');
+  ctx.fillStyle = bg;
+  ctx.beginPath(); ctx.arc(x, y, radius, 0, 6.28); ctx.fill();
+}
+
+function drawPlanet(x, y, radius, hue) {
+  const g = ctx.createRadialGradient(x, y, radius*0.4, x, y, radius*2.6);
+  g.addColorStop(0, `hsla(${hue},80%,58%,0.4)`);
+  g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.globalAlpha = 0.3;
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.arc(x, y, radius*2.6, 0, 6.28); ctx.fill();
+  ctx.globalAlpha = 1;
+  const bg = ctx.createRadialGradient(x-radius*0.28, y-radius*0.28, 0, x, y, radius);
+  bg.addColorStop(0, '#fff');
+  bg.addColorStop(0.3, `hsl(${hue},55%,50%)`);
+  bg.addColorStop(1, 'rgba(0,0,0,0.5)');
+  ctx.fillStyle = bg;
+  ctx.beginPath(); ctx.arc(x, y, radius, 0, 6.28); ctx.fill();
+}
+
+function drawBlackhole(x, y, radius) {
+  const g = ctx.createRadialGradient(x, y, radius, x, y, radius*2.4);
+  g.addColorStop(0, 'rgba(170,70,255,0.6)');
+  g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.globalAlpha = 0.45;
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.arc(x, y, radius*2.4, 0, 6.28); ctx.fill();
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = '#000';
+  ctx.beginPath(); ctx.arc(x, y, radius, 0, 6.28); ctx.fill();
+  ctx.strokeStyle = 'rgba(160,70,255,0.65)';
+  ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.arc(x, y, radius+2, 0, 6.28); ctx.stroke();
+}
+
+drawStar(180, 350, 30);
+drawPlanet(850, 600, 45, 200);
+drawBlackhole(250, 900, 25);
+drawStar(900, 1100, 22);
+drawPlanet(150, 1350, 50, 140);
+drawPlanet(780, 1550, 35, 280);
+drawStar(500, 1700, 28);
+
+// Overlay dim
+ctx.fillStyle = 'rgba(0,0,5,0.88)';
+ctx.fillRect(0, 0, W, H);
+
+// Title: DRIFT
+ctx.textAlign = 'center';
+ctx.font = '900 180px Orbitron, monospace';
+ctx.letterSpacing = '40px';
+const grad = ctx.createLinearGradient(W*0.3, H*0.28, W*0.7, H*0.38);
+grad.addColorStop(0, '#4af');
+grad.addColorStop(0.5, '#a4f');
+grad.addColorStop(1, '#4af');
+ctx.fillStyle = grad;
+ctx.fillText('DRIFT', W/2+20, H*0.34);
+
+// Subtitle
+ctx.font = '400 26px "Space Mono", monospace';
+ctx.letterSpacing = '10px';
+ctx.fillStyle = 'rgba(255,255,255,0.4)';
+ctx.fillText('GRAVITY SURFING', W/2+5, H*0.38);
+
+// Difficulty buttons
+const diffs = ['NORMAL', 'HARD', 'EXTREME'];
+const diffColors = ['rgba(100,200,255,', 'rgba(255,180,80,', 'rgba(255,90,120,'];
+const btnW = 200, btnH = 65, gap = 22;
+const totalW = diffs.length * btnW + (diffs.length - 1) * gap;
+const startX = (W - totalW) / 2;
+const btnY = H * 0.47;
+
+diffs.forEach((d, i) => {
+  const x = startX + i * (btnW + gap);
+  const sel = i === 0;
+  ctx.strokeStyle = sel ? diffColors[i]+'0.9)' : 'rgba(255,255,255,0.18)';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(x, btnY, btnW, btnH);
+  if (sel) {
+    ctx.fillStyle = diffColors[i]+'0.08)';
+    ctx.fillRect(x, btnY, btnW, btnH);
+    ctx.shadowColor = diffColors[i]+'0.25)';
+    ctx.shadowBlur = 14;
+  }
+  ctx.font = '400 22px Orbitron, monospace';
+  ctx.letterSpacing = '5px';
+  ctx.fillStyle = sel ? diffColors[i]+'1)' : 'rgba(255,255,255,0.45)';
+  ctx.fillText(d, x + btnW/2, btnY + btnH/2 + 8);
+  ctx.shadowBlur = 0;
+});
+
+// Controls hint
+ctx.font = '400 26px "Space Mono", monospace';
+ctx.letterSpacing = '5px';
+ctx.fillStyle = 'rgba(255,255,255,0.5)';
+const lines = [
+  { text: 'LEFT', hl: true, rest: ' \u2014 pull toward nearest body' },
+  { text: 'RIGHT', hl: true, rest: ' \u2014 push away from nearest body' },
+  { text: 'thread the cosmos. don\'t get absorbed.', hl: false, rest: '' },
+];
+let ly = H * 0.6;
+lines.forEach(l => {
+  if (l.hl) {
+    ctx.fillStyle = 'rgba(100,200,255,0.9)';
+    const tw = ctx.measureText(l.text).width;
+    const full = l.text + l.rest;
+    const fw = ctx.measureText(full).width;
+    ctx.fillText(l.text, W/2 - fw/2 + tw/2, ly);
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    ctx.fillText(l.rest, W/2 - fw/2 + tw + ctx.measureText(l.rest).width/2, ly);
+  } else {
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    ctx.fillText(l.text, W/2, ly);
+  }
+  ly += 56;
+});
+
+// Start button
+const sbW = 420, sbH = 80;
+const sbX = (W - sbW) / 2, sbY = H * 0.74;
+ctx.strokeStyle = 'rgba(100,200,255,0.5)';
+ctx.lineWidth = 2;
+ctx.strokeRect(sbX, sbY, sbW, sbH);
+ctx.font = '400 28px Orbitron, monospace';
+ctx.letterSpacing = '10px';
+ctx.fillStyle = 'rgba(100,200,255,0.9)';
+ctx.fillText('ENTER THE VOID', W/2+5, sbY + sbH/2 + 10);
+</script>
+</body>
+</html>

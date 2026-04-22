@@ -1,0 +1,37 @@
+You're a speck of light falling through the cosmos. Stars, planets, and black holes scroll past — but instead of dodging them with thrusters, you use their gravity. Pull yourself toward the nearest body. Push yourself away. Thread the needle. Don't get absorbed.
+
+Two inputs. That's it.
+
+LEFT — attract toward the nearest celestial body
+RIGHT — repel away from the nearest celestial body
+
+The physics only cares about the closest body to you at any given moment. A soft ring highlights which one is pulling the strings. A dashed line appears when you're actively attracting or repelling so you can read exactly what's about to happen.
+
+Survive. Your score is the number of bodies you've drifted past. Speed ramps up as you go — after that, it's pure precision.
+
+THREE DIFFICULTY MODES
+
+NORMAL — Learn the gravity dance. Forgiving speed ramp, fewer bodies on screen.
+HARD — Tighter spacing, faster ramp, more bodies. You need to read the field ahead.
+EXTREME — Maximum density, aggressive speed. For players who've internalized the physics.
+
+FOUR POWERUPS
+
+SHIELD — Absorb one collision. The planet is destroyed, the shield shatters. Lasts 15 seconds if unused.
+NOVA — Triple expanding shockwave. Three rings blast outward from your position, destroying everything they sweep past.
+HYPERSPEED — Speed spikes to 3x. A glowing barrier plows ahead of you, destroying planets in your path. Gradually decelerates back to normal over 3 seconds.
+GHOST — Phase through everything for 8 seconds. Bodies ripple as you clip through them.
+
+Powerups participate in the gravity system — they're objects you can attract toward or repel from, just like planets. Navigate to them or accidentally avoid them.
+
+ONLINE LEADERBOARD
+
+Compete globally. Top 10 scores per difficulty, updated in real time. Pick a pilot name and see how you stack up. Your scores are submitted automatically on death.
+
+WHAT THIS GAME IS NOT
+
+No ads. No in-app purchases. No loot boxes. No energy system. No social login. No tracking. No notifications. No battle pass.
+
+Just gravity, reflexes, and the void.
+
+Built with vanilla HTML5 Canvas. One file. No frameworks. Runs at 60fps.

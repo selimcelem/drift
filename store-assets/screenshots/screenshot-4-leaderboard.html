@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Drift — Leaderboard</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Space+Mono&display=swap');
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #000; display: flex; align-items: center; justify-content: center; width: 1080px; height: 1920px; overflow: hidden; }
+  canvas { display: block; }
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script>
+const c = document.getElementById('c');
+const ctx = c.getContext('2d');
+const W = 1080, H = 1920;
+
+// Background
+ctx.fillStyle = '#00000a';
+ctx.fillRect(0, 0, W, H);
+
+// Nebula
+function nebula(cx, cy, r, color, alpha) {
+  const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+  g.addColorStop(0, color);
+  g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, H);
+}
+nebula(W*0.3, H*0.3, W*0.5, 'rgba(70,30,160,0.55)', 0.055);
+nebula(W*0.7, H*0.6, W*0.45, 'rgba(15,70,170,0.55)', 0.055);
+ctx.globalAlpha = 1;
+
+// Stars
+for (let i = 0; i < 250; i++) {
+  ctx.globalAlpha = Math.random() * 0.5 + 0.15;
+  ctx.fillStyle = '#fff';
+  ctx.beginPath();
+  ctx.arc(Math.random()*W, Math.random()*H, Math.random()*1.8+0.3, 0, 6.28);
+  ctx.fill();
+}
+ctx.globalAlpha = 1;
+
+// A few decorative bodies
+function drawPlanet(x, y, radius, hue) {
+  const g = ctx.createRadialGradient(x, y, radius*0.4, x, y, radius*2.6);
+  g.addColorStop(0, `hsla(${hue},80%,58%,0.4)`);
+  g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.globalAlpha = 0.2;
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.arc(x, y, radius*2.6, 0, 6.28); ctx.fill();
+  ctx.globalAlpha = 1;
+  const bg = ctx.createRadialGradient(x-radius*0.28, y-radius*0.28, 0, x, y, radius);
+  bg.addColorStop(0, '#fff');
+  bg.addColorStop(0.3, `hsl(${hue},55%,50%)`);
+  bg.addColorStop(1, 'rgba(0,0,0,0.5)');
+  ctx.fillStyle = bg;
+  ctx.beginPath(); ctx.arc(x, y, radius, 0, 6.28); ctx.fill();
+}
+
+drawPlanet(180, 400, 40, 200);
+drawPlanet(850, 1500, 35, 280);
+
+// Death particles (scattered at a point)
+const dpx = 540, dpy = 1200;
+for (let i = 0; i < 35; i++) {
+  const a = Math.random() * Math.PI * 2;
+  const d = Math.random() * 80 + 15;
+  const x = dpx + Math.cos(a) * d;
+  const y = dpy + Math.sin(a) * d;
+  const life = Math.random() * 0.5 + 0.1;
+  ctx.globalAlpha = life;
+  ctx.fillStyle = `hsl(${185 + (1-life)*80},100%,72%)`;
+  ctx.beginPath(); ctx.arc(x, y, (Math.random()*4+1)*life, 0, 6.28); ctx.fill();
+}
+ctx.globalAlpha = 1;
+
+// Overlay
+ctx.fillStyle = 'rgba(0,0,5,0.88)';
+ctx.fillRect(0, 0, W, H);
+
+// Title
+ctx.textAlign = 'center';
+ctx.font = '900 180px Orbitron, monospace';
+const grad = ctx.createLinearGradient(W*0.3, H*0.15, W*0.7, H*0.22);
+grad.addColorStop(0, '#4af');
+grad.addColorStop(0.5, '#a4f');
+grad.addColorStop(1, '#4af');
+ctx.fillStyle = grad;
+ctx.fillText('DRIFT', W/2+20, H*0.18);
+
+// Subtitle
+ctx.font = '400 26px "Space Mono", monospace';
+ctx.letterSpacing = '10px';
+ctx.fillStyle = 'rgba(255,255,255,0.4)';
+ctx.fillText('GRAVITY SURFING', W/2+5, H*0.22);
+
+// Difficulty buttons
+const diffs = ['NORMAL', 'HARD', 'EXTREME'];
+const diffColors = ['rgba(100,200,255,', 'rgba(255,180,80,', 'rgba(255,90,120,'];
+const btnW = 200, btnH = 60, gap = 22;
+const totalBW = diffs.length * btnW + (diffs.length - 1) * gap;
+const startBX = (W - totalBW) / 2;
+const btnY = H * 0.27;
+
+diffs.forEach((d, i) => {
+  const x = startBX + i * (btnW + gap);
+  const sel = i === 0;
+  ctx.strokeStyle = sel ? diffColors[i]+'0.9)' : 'rgba(255,255,255,0.18)';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(x, btnY, btnW, btnH);
+  if (sel) {
+    ctx.fillStyle = diffColors[i]+'0.08)';
+    ctx.fillRect(x, btnY, btnW, btnH);
+  }
+  ctx.font = '400 20px Orbitron, monospace';
+  ctx.letterSpacing = '4px';
+  ctx.fillStyle = sel ? diffColors[i]+'1)' : 'rgba(255,255,255,0.45)';
+  ctx.fillText(d, x + btnW/2, btnY + btnH/2 + 7);
+});
+
+// Death score
+ctx.font = '400 36px Orbitron, monospace';
+ctx.letterSpacing = '8px';
+ctx.fillStyle = 'rgba(255,255,255,0.6)';
+ctx.fillText('312 \u2014 NORMAL', W/2, H*0.35);
+
+// Leaderboard tabs
+const tabW = 280, tabH = 52;
+const tabY = H * 0.39;
+const tabStartX = W/2 - tabW;
+
+// LOCAL tab (inactive)
+ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+ctx.lineWidth = 2;
+ctx.strokeRect(tabStartX, tabY, tabW, tabH);
+ctx.font = '400 20px "Space Mono", monospace';
+ctx.letterSpacing = '4px';
+ctx.fillStyle = 'rgba(255,255,255,0.35)';
+ctx.fillText('LOCAL', tabStartX + tabW/2, tabY + tabH/2 + 7);
+
+// GLOBAL tab (active)
+ctx.strokeStyle = 'rgba(100,200,255,0.5)';
+ctx.strokeRect(tabStartX + tabW, tabY, tabW, tabH);
+ctx.fillStyle = 'rgba(100,200,255,0.08)';
+ctx.fillRect(tabStartX + tabW, tabY, tabW, tabH);
+ctx.fillStyle = 'rgba(100,200,255,0.9)';
+ctx.fillText('GLOBAL', tabStartX + tabW + tabW/2, tabY + tabH/2 + 7);
+
+// Global leaderboard entries
+const entries = [
+  { rank: 1,  name: 'PHANTOM',   score: 847, diff: 'NORMAL' },
+  { rank: 2,  name: 'NOVACORE',  score: 723, diff: 'NORMAL' },
+  { rank: 3,  name: 'ZEPHYR',    score: 689, diff: 'NORMAL' },
+  { rank: 4,  name: 'STARDUST',  score: 551, diff: 'NORMAL' },
+  { rank: 5,  name: 'COSMIQ',    score: 498, diff: 'NORMAL' },
+  { rank: 6,  name: 'DRIFTKING', score: 445, diff: 'NORMAL' },
+  { rank: 7,  name: 'SELIM',     score: 312, diff: 'NORMAL', self: true },
+  { rank: 8,  name: 'NEBULA',    score: 287, diff: 'NORMAL' },
+  { rank: 9,  name: 'VOIDRUN',   score: 234, diff: 'NORMAL' },
+  { rank: 10, name: 'ORBIT',     score: 198, diff: 'NORMAL' },
+];
+
+const rowH = 52;
+const listY = H * 0.47;
+const listX = W/2;
+const colW = 560;
+
+ctx.font = '400 24px "Space Mono", monospace';
+ctx.letterSpacing = '3px';
+
+entries.forEach((e, i) => {
+  const y = listY + i * rowH;
+  const baseColor = e.self ? 'rgba(100,220,255,' : 'rgba(255,255,255,';
+
+  // Divider line
+  ctx.strokeStyle = 'rgba(255,255,255,0.07)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(listX - colW/2, y + rowH - 1);
+  ctx.lineTo(listX + colW/2, y + rowH - 1);
+  ctx.stroke();
+
+  // Rank
+  ctx.textAlign = 'left';
+  ctx.fillStyle = e.self ? 'rgba(100,220,255,0.5)' : 'rgba(255,255,255,0.25)';
+  ctx.fillText(String(e.rank), listX - colW/2, y + rowH/2 + 8);
+
+  // Name
+  ctx.fillStyle = baseColor + (e.self ? '0.95)' : '0.5)');
+  ctx.fillText(e.name, listX - colW/2 + 60, y + rowH/2 + 8);
+
+  // Score
+  ctx.textAlign = 'right';
+  ctx.fillStyle = baseColor + (e.self ? '0.95)' : '0.5)');
+  ctx.fillText(String(e.score), listX + colW/2 - 120, y + rowH/2 + 8);
+
+  // Difficulty badge
+  ctx.font = '400 18px "Space Mono", monospace';
+  ctx.letterSpacing = '2px';
+  let diffColor = 'rgba(255,255,255,0.35)';
+  if (e.diff === 'HARD') diffColor = 'rgba(255,180,80,0.7)';
+  if (e.diff === 'EXTREME') diffColor = 'rgba(255,90,120,0.85)';
+  ctx.fillStyle = diffColor;
+  ctx.fillText(e.diff, listX + colW/2, y + rowH/2 + 8);
+
+  ctx.font = '400 24px "Space Mono", monospace';
+  ctx.letterSpacing = '3px';
+});
+
+// Drift Again button
+ctx.textAlign = 'center';
+const sbW = 420, sbH = 80;
+const sbX = (W - sbW) / 2, sbY = H * 0.82;
+ctx.strokeStyle = 'rgba(100,200,255,0.5)';
+ctx.lineWidth = 2;
+ctx.strokeRect(sbX, sbY, sbW, sbH);
+ctx.font = '400 28px Orbitron, monospace';
+ctx.letterSpacing = '10px';
+ctx.fillStyle = 'rgba(100,200,255,0.9)';
+ctx.fillText('DRIFT AGAIN', W/2+5, sbY + sbH/2 + 10);
+</script>
+</body>
+</html>

@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Drift — Gameplay</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Space+Mono&display=swap');
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #000; display: flex; align-items: center; justify-content: center; width: 1080px; height: 1920px; overflow: hidden; }
+  canvas { display: block; }
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script>
+const c = document.getElementById('c');
+const ctx = c.getContext('2d');
+const W = 1080, H = 1920;
+
+// Background
+ctx.fillStyle = '#00000a';
+ctx.fillRect(0, 0, W, H);
+
+// Nebula
+function nebula(cx, cy, r, color, alpha) {
+  const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+  g.addColorStop(0, color);
+  g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, H);
+}
+nebula(W*0.3, H*0.25, W*0.6, 'rgba(70,30,160,0.55)', 0.055);
+nebula(W*0.65, H*0.6, W*0.5, 'rgba(15,70,170,0.55)', 0.055);
+nebula(W*0.5, H*0.15, W*0.45, 'rgba(140,30,70,0.55)', 0.04);
+ctx.globalAlpha = 1;
+
+// Stars
+for (let i = 0; i < 300; i++) {
+  ctx.globalAlpha = Math.random() * 0.5 + 0.2;
+  ctx.fillStyle = '#fff';
+  ctx.beginPath();
+  ctx.arc(Math.random()*W, Math.random()*H, Math.random()*2+0.3, 0, 6.28);
+  ctx.fill();
+}
+ctx.globalAlpha = 1;
+
+// Helper functions
+function drawBodyGlow(x, y, radius, glowColor, glowR) {
+  const g = ctx.createRadialGradient(x, y, radius*0.4, x, y, glowR);
+  g.addColorStop(0, glowColor);
+  g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.globalAlpha = 0.28;
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.arc(x, y, glowR, 0, 6.28); ctx.fill();
+  ctx.globalAlpha = 1;
+}
+
+function drawStar(x, y, radius) {
+  drawBodyGlow(x, y, radius, 'rgba(255,220,80,0.5)', radius*2.6);
+  const bg = ctx.createRadialGradient(x-radius*0.28, y-radius*0.28, 0, x, y, radius);
+  bg.addColorStop(0, '#fff');
+  bg.addColorStop(0.3, '#ffe066');
+  bg.addColorStop(1, 'rgba(180,130,0,0.5)');
+  ctx.fillStyle = bg;
+  ctx.beginPath(); ctx.arc(x, y, radius, 0, 6.28); ctx.fill();
+  // Subtle rings
+  ctx.globalAlpha = 0.06;
+  ctx.strokeStyle = 'rgba(255,220,80,1)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(x, y, radius*2, 0, 6.28); ctx.stroke();
+  ctx.beginPath(); ctx.arc(x, y, radius*3.5, 0, 6.28); ctx.stroke();
+  ctx.globalAlpha = 1;
+}
+
+function drawPlanet(x, y, radius, hue) {
+  drawBodyGlow(x, y, radius, `hsla(${hue},80%,58%,0.4)`, radius*2.6);
+  const bg = ctx.createRadialGradient(x-radius*0.28, y-radius*0.28, 0, x, y, radius);
+  bg.addColorStop(0, '#fff');
+  bg.addColorStop(0.3, `hsl(${hue},55%,50%)`);
+  bg.addColorStop(1, 'rgba(0,0,0,0.5)');
+  ctx.fillStyle = bg;
+  ctx.beginPath(); ctx.arc(x, y, radius, 0, 6.28); ctx.fill();
+  ctx.globalAlpha = 0.06;
+  ctx.strokeStyle = `hsl(${hue},80%,58%)`;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(x, y, radius*2, 0, 6.28); ctx.stroke();
+  ctx.globalAlpha = 1;
+}
+
+function drawBlackhole(x, y, radius) {
+  const g = ctx.createRadialGradient(x, y, radius, x, y, radius*2.4);
+  g.addColorStop(0, 'rgba(170,70,255,0.6)');
+  g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.globalAlpha = 0.45;
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.arc(x, y, radius*2.4, 0, 6.28); ctx.fill();
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = '#000';
+  ctx.beginPath(); ctx.arc(x, y, radius, 0, 6.28); ctx.fill();
+  ctx.strokeStyle = 'rgba(160,70,255,0.65)';
+  ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.arc(x, y, radius+2, 0, 6.28); ctx.stroke();
+}
+
+// Bodies
+drawStar(250, 200, 40);
+drawPlanet(780, 480, 55, 200);
+drawBlackhole(350, 780, 30);
+drawStar(750, 1050, 35);
+drawPlanet(280, 1300, 48, 140);
+drawStar(820, 1550, 30);
+drawPlanet(450, 1750, 42, 300);
+
+// Target ring on closest body (the black hole)
+const tx = 350, ty = 780, tr = 30;
+ctx.globalAlpha = 0.7;
+ctx.strokeStyle = 'rgba(80,200,255,0.7)';
+ctx.lineWidth = 3;
+ctx.beginPath(); ctx.arc(tx, ty, tr+12, 0, 6.28); ctx.stroke();
+ctx.globalAlpha = 1;
+
+// Player
+const px = 480, py = 1100;
+
+// Dashed attract line to closest body
+ctx.globalAlpha = 0.3;
+ctx.strokeStyle = 'rgba(80,200,255,0.8)';
+ctx.lineWidth = 2;
+ctx.setLineDash([12, 12]);
+ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(tx, ty); ctx.stroke();
+ctx.setLineDash([]);
+ctx.globalAlpha = 1;
+
+// Trail
+const trail = [];
+for (let i = 0; i < 30; i++) {
+  trail.push({
+    x: px - Math.sin(i*0.15) * (i*3),
+    y: py + i * 14
+  });
+}
+for (let i = 0; i < trail.length; i++) {
+  const t = 1 - i / trail.length;
+  ctx.globalAlpha = t * 0.6;
+  ctx.fillStyle = `hsl(${185+t*55},100%,78%)`;
+  ctx.beginPath(); ctx.arc(trail[i].x, trail[i].y, t*11, 0, 6.28); ctx.fill();
+}
+ctx.globalAlpha = 1;
+
+// Player glow
+const pg = ctx.createRadialGradient(px, py, 0, px, py, 42);
+pg.addColorStop(0, 'rgba(100,220,255,0.38)');
+pg.addColorStop(1, 'rgba(0,0,0,0)');
+ctx.fillStyle = pg;
+ctx.beginPath(); ctx.arc(px, py, 42, 0, 6.28); ctx.fill();
+
+// Player core
+const pc = ctx.createRadialGradient(px-3, py-3, 0, px, py, 15);
+pc.addColorStop(0, '#fff');
+pc.addColorStop(0.4, '#7de8ff');
+pc.addColorStop(1, 'rgba(30,110,190,0.5)');
+ctx.fillStyle = pc;
+ctx.beginPath(); ctx.arc(px, py, 15, 0, 6.28); ctx.fill();
+
+// Thrust line
+ctx.globalAlpha = 0.45;
+ctx.strokeStyle = 'rgba(100,220,255,0.8)';
+ctx.lineWidth = 4;
+ctx.lineCap = 'round';
+ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(px+8, py+35); ctx.stroke();
+ctx.globalAlpha = 1;
+
+// Score HUD
+ctx.textAlign = 'center';
+ctx.font = '700 72px Orbitron, monospace';
+ctx.letterSpacing = '10px';
+ctx.fillStyle = 'rgba(255,255,255,0.9)';
+ctx.shadowColor = 'rgba(100,200,255,0.8)';
+ctx.shadowBlur = 30;
+ctx.fillText('147', W/2+5, 80);
+ctx.shadowBlur = 0;
+
+// Hint text
+ctx.font = '400 24px "Space Mono", monospace';
+ctx.letterSpacing = '5px';
+ctx.fillStyle = 'rgba(255,255,255,0.35)';
+ctx.textAlign = 'left';
+ctx.fillText('\u25C0 ATTRACT', 50, H - 160);
+ctx.textAlign = 'right';
+ctx.fillText('REPEL \u25B6', W - 50, H - 160);
+
+// Pause button
+ctx.textAlign = 'center';
+ctx.strokeStyle = 'rgba(100,200,255,0.25)';
+ctx.lineWidth = 2;
+const pbx = W - 55, pby = 28;
+ctx.strokeRect(pbx, pby, 80, 80);
+ctx.fillStyle = 'rgba(0,0,10,0.35)';
+ctx.fillRect(pbx, pby, 80, 80);
+ctx.font = '400 26px Orbitron, monospace';
+ctx.fillStyle = 'rgba(100,200,255,0.6)';
+ctx.fillText('\u275A\u275A', pbx + 40, pby + 50);
+</script>
+</body>
+</html>

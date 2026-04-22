@@ -1,0 +1,51 @@
+Content Rating Questionnaire Notes — Drift
+===========================================
+
+VIOLENCE
+- No violence against characters, people, or animals
+- Abstract celestial bodies (stars, planets, black holes) are destroyed by powerups — purely geometric particle effects, no gore or damage depictions
+- Player "death" is represented by the dot breaking into particles — no blood, injury, or violent imagery
+- Rating: None / Mild fantasy
+
+FEAR / HORROR
+- None. Space aesthetic is calm/ambient, not threatening
+
+USER INTERACTION
+- Online leaderboard displays usernames and scores only
+- No chat, messaging, voice, or social features
+- No friend lists or direct player-to-player interaction
+- Username is a local text field (1-20 alphanumeric characters), not tied to any account system
+
+PERSONAL INFORMATION
+- No account creation or login
+- No email, phone, or personal data collected
+- Username is stored locally in the browser/app and sent to the leaderboard API alongside scores only
+- No analytics, tracking, or advertising SDKs
+
+IN-APP PURCHASES
+- None
+
+ADVERTISING
+- None
+
+CONTROLLED SUBSTANCES / DRUGS / ALCOHOL / TOBACCO
+- None
+
+SEXUAL CONTENT / NUDITY
+- None
+
+PROFANITY / CRUDE HUMOR
+- None
+
+GAMBLING
+- None. No randomized paid mechanics
+
+TARGET AGE
+- Suitable for all ages (PEGI 3 / ESRB Everyone)
+- No content that would restrict to older audiences
+
+ADDITIONAL NOTES
+- Game is a single-player endless runner with optional online leaderboard
+- All audio is procedurally synthesized (no licensed music)
+- No third-party SDKs beyond Capacitor (native shell)
+- Minimal data transmission: score submissions (username, score, difficulty) to AWS API Gateway
