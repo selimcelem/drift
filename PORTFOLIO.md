@@ -1,13 +1,14 @@
 # Drift — Portfolio
 
-**Current version:** v1.5.5
+**Current version:** v1.6.0
 
 ## What it is
 
-A gravity-surfing endless runner built as a single HTML5 Canvas game, shipped as an Android app via Capacitor, with an AWS serverless leaderboard backend and fully automated infrastructure deployment.
+A gravity-surfing endless runner built as a single-file web game (PixiJS/WebGL with a Canvas 2D fallback), shipped as an Android app via Capacitor, with an AWS serverless leaderboard backend and fully automated infrastructure deployment.
 
 ## Highlights
 
+- **Full WebGL renderer migration (v1.6.0)** — the entire render pipeline was ported from Canvas 2D to PixiJS 7 incrementally, layer by layer, behind a feature flag (`pixiActive`): star field → nebula + background imagery → 12 body types → player + trail → particle systems (pickup, death, shard, crack, destroy) → powerups + pair tethers → screen-effect overlays → unified screen shake on the stage root. Each step kept the Canvas 2D path running in parallel until the pixi path achieved visual parity, so every commit was individually shippable. The original Canvas 2D code stays in the source as a fallback for WebViews where WebGL or the PIXI CDN load fails. Net result on the test device: late-phase gameplay went from ~50–60 FPS on Canvas 2D (CPU-bound on per-frame path rebuilds) to a stable 110–120 FPS on WebGL, and the Adreno GPU mutex crash path on certain Qualcomm devices was eliminated — the Canvas 2D workload had been triggering a driver deadlock that GPU-batched sprite rendering sidesteps entirely
 - **Real-time timer refactor** — every gameplay timer (powerup durations, cooldowns, combos, spawn cadences, phase thresholds) was migrated from frame-count state to wall-clock milliseconds, giving the game frame-rate-independent behaviour across 30/60/120 Hz devices and making Android low-power throttling a non-issue
 - **Progressive difficulty system with phase-based content** — the game is carved into four two-minute phases that gate spawn pools, soundtrack, and background imagery, culminating in a scripted 10-minute "apocalypse" sequence. Phase selection has a reset-guard so a fresh run always starts in phase 1 regardless of prior wall-clock elapsed time
 - **Complex canvas animations with dynamic hitboxes** — nine custom planet types (toothed, eye, cracked, tentacle, screaming, void, heart, mirror, skull), each procedurally drawn with pulsing/rotating/extending geometry, and several with hitboxes that follow the animation (spike tips, tentacle line-segments, pulsing-heart radius). All rendered with WebView-safe canvas operations (no `clip()`, bounded gradients, guarded degenerate paths) to avoid Android native crashes
@@ -27,7 +28,7 @@ A gravity-surfing endless runner built as a single HTML5 Canvas game, shipped as
 
 | Layer | Tech |
 |-------|------|
-| Game | Vanilla HTML5 Canvas + JS — single file, no frameworks, no build step |
+| Game | Vanilla HTML + JS with PixiJS 7 (WebGL) primary renderer and Canvas 2D fallback — single file, no bundler, no build step |
 | Mobile | Capacitor 8 wrapping the web app into a native Android shell |
 | Backend | AWS API Gateway (HTTP API) → Lambda (Node.js 20) → DynamoDB |
 | Infrastructure | Terraform with S3 remote state |
@@ -35,7 +36,7 @@ A gravity-surfing endless runner built as a single HTML5 Canvas game, shipped as
 
 ## Architecture decisions
 
-**Single HTML file game** — The entire game is one `index.html`. No bundler, no asset pipeline, no framework. This keeps iteration fast (refresh the browser), deployment trivial (copy one file), and the mental model simple. The tradeoff is no module system, but at ~1800 lines that's manageable.
+**Single HTML file game** — The entire game is one `index.html`. No bundler, no asset pipeline, no app framework. PixiJS is pulled in as a CDN `<script>` tag rather than an npm dependency so the "no build step" property is preserved. This keeps iteration fast (refresh the browser), deployment trivial (copy one file), and the mental model simple. The tradeoff is no module system, but at ~13k lines — most of it rendering and gameplay logic — it's still manageable in a single file.
 
 **HTTP API over REST API** — API Gateway's HTTP API is cheaper (~70% less), faster (lower latency), and simpler for this use case. REST API features like request validation, WAF integration, and usage plans aren't needed for a game leaderboard.
 

@@ -75,7 +75,7 @@ npx cap sync android
 npx cap open android        # opens Android Studio
 # or, from the command line:
 cd android && ./gradlew assembleDebug
-# APK lands in android/app/build/outputs/apk/debug/
+# APK lands in android/app/build/outputs/apk/debug
 ```
 
 To produce a release build, sign it with your own keystore — see the [Capacitor docs on Android deployment](https://capacitorjs.com/docs/android/deploying-to-google-play).
