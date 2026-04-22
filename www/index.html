@@ -1491,6 +1491,138 @@
     align-items: center;
     justify-content: center;
   }
+  /* DEVMODE — sandbox panel. Internal QA tool, activated via pilot name. */
+  #devmodeOverlay { position: fixed; inset: 0; display: none; z-index: 100; pointer-events: none; }
+  #devmodeOverlay.visible { display: block; }
+  #devmodeClose {
+    position: fixed;
+    top: calc(var(--safe-top) + 16px);
+    right: calc(var(--safe-right) + 16px);
+    width: 44px; height: 44px;
+    background: rgba(0,0,10,0.7);
+    border: 1px solid rgba(100,200,255,0.45);
+    border-radius: 4px;
+    color: rgba(125,232,255,0.95);
+    font: 16px 'Orbitron', monospace;
+    z-index: 101;
+    pointer-events: auto;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #devmodePanel {
+    position: fixed;
+    bottom: calc(var(--safe-bottom) + 16px);
+    left: calc(var(--safe-left) + 16px);
+    width: min(320px, calc(100vw - 2 * var(--safe-left) - 32px));
+    background: rgba(0,0,10,0.88);
+    border: 1px solid rgba(100,200,255,0.4);
+    border-radius: 6px;
+    pointer-events: auto;
+    font-family: 'Space Mono', monospace;
+    color: rgba(220,235,250,0.95);
+    z-index: 100;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.5);
+  }
+  #devmodeHeader {
+    display: flex; align-items: center;
+    padding: 6px 8px;
+    border-bottom: 1px solid rgba(100,200,255,0.18);
+    background: rgba(20,30,50,0.45);
+  }
+  .dm-title {
+    font-family: 'Orbitron', monospace;
+    font-size: 11px;
+    letter-spacing: 3px;
+    color: rgba(125,232,255,0.95);
+    margin-left: 8px;
+    flex: 1;
+  }
+  .dm-icon-btn {
+    width: 30px; height: 30px;
+    background: transparent;
+    border: 1px solid rgba(100,200,255,0.3);
+    border-radius: 3px;
+    color: rgba(125,232,255,0.9);
+    font-family: 'Orbitron', monospace;
+    font-size: 11px;
+    cursor: pointer;
+  }
+  #devmodePanel.minimized #devmodeBody { display: none; }
+  #devmodePanel.minimized { width: auto; }
+  .dm-tabs {
+    display: flex;
+    gap: 4px;
+    padding: 6px;
+    border-bottom: 1px solid rgba(100,200,255,0.15);
+  }
+  .dm-tab {
+    flex: 1;
+    min-height: 32px;
+    background: transparent;
+    border: 1px solid rgba(100,200,255,0.25);
+    border-radius: 3px;
+    color: rgba(125,232,255,0.7);
+    font-family: 'Orbitron', monospace;
+    font-size: 10px;
+    letter-spacing: 2px;
+    cursor: pointer;
+  }
+  .dm-tab.dm-tab-active {
+    background: rgba(60,140,200,0.28);
+    border-color: rgba(125,232,255,0.65);
+    color: rgba(125,232,255,1);
+  }
+  .dm-tab-pane { display: none; padding: 8px; max-height: 52vh; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+  .dm-tab-pane.dm-pane-active { display: block; }
+  .dm-section { margin-bottom: 10px; }
+  .dm-section-label {
+    font-size: 9px;
+    letter-spacing: 2px;
+    color: rgba(125,232,255,0.6);
+    margin: 0 0 4px 0;
+    text-transform: uppercase;
+  }
+  .dm-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 4px;
+  }
+  .dm-grid-2 { grid-template-columns: repeat(2, 1fr); }
+  .dm-btn {
+    min-height: 44px;
+    padding: 4px 6px;
+    background: rgba(40,60,90,0.55);
+    border: 1px solid rgba(100,200,255,0.28);
+    border-radius: 3px;
+    color: rgba(220,235,250,0.95);
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 1px;
+    cursor: pointer;
+    text-align: center;
+    line-height: 1.2;
+  }
+  .dm-btn:active { background: rgba(60,140,200,0.6); border-color: rgba(125,232,255,0.85); }
+  .dm-btn-wide { grid-column: 1 / -1; }
+  .dm-row { display: flex; gap: 4px; }
+  .dm-row .dm-btn { flex: 1; }
+  .dm-toggle .dm-btn.active {
+    background: rgba(60,140,200,0.55);
+    border-color: rgba(125,232,255,0.75);
+    color: rgba(255,255,255,1);
+  }
+  .dm-btn.dm-toggle.active {
+    background: rgba(60,140,200,0.55);
+    border-color: rgba(125,232,255,0.75);
+    color: rgba(255,255,255,1);
+  }
+  .dm-note {
+    margin: 6px 0 0 0;
+    font-size: 9px;
+    line-height: 1.35;
+    color: rgba(180,210,235,0.65);
+    letter-spacing: 0.5px;
+  }
 </style>
 </head>
 <body>
@@ -1613,6 +1745,59 @@
   <div id="bodyPreviewOverlay">
     <button id="bodyPreviewClose" aria-label="Close preview">✕</button>
     <div id="bodyPreviewScroll"><div id="bodyPreviewSpacer"></div></div>
+  </div>
+  <!-- Dev-only sandbox; activated by enterDevMode() (pilot name DEVMODE).
+       Renders on top of #c so the live game scene shows underneath. -->
+  <div id="devmodeOverlay">
+    <button id="devmodeClose" aria-label="Close devmode">✕</button>
+    <div id="devmodePanel">
+      <div id="devmodeHeader">
+        <button id="devmodeMinBtn" class="dm-icon-btn" aria-label="Collapse panel">▾</button>
+        <span class="dm-title">DEVMODE</span>
+      </div>
+      <div id="devmodeBody">
+        <div class="dm-tabs">
+          <button class="dm-tab dm-tab-active" data-tab="spawn">SPAWN</button>
+          <button class="dm-tab" data-tab="trigger">WORLD</button>
+        </div>
+        <div class="dm-tab-pane dm-pane-active" data-pane="spawn">
+          <div class="dm-section">
+            <div class="dm-section-label">BODY</div>
+            <div class="dm-grid" id="dmBodyGrid"></div>
+          </div>
+          <div class="dm-section">
+            <div class="dm-section-label">RADIUS</div>
+            <div class="dm-row dm-toggle" id="dmRadiusToggle">
+              <button class="dm-btn" data-radius="min">MIN</button>
+              <button class="dm-btn active" data-radius="rand">RAND</button>
+              <button class="dm-btn" data-radius="max">MAX</button>
+            </div>
+          </div>
+          <div class="dm-section">
+            <div class="dm-section-label">POWERUP</div>
+            <div class="dm-grid dm-grid-2" id="dmPowerupGrid"></div>
+          </div>
+          <div class="dm-section">
+            <div class="dm-section-label">QUICK</div>
+            <button class="dm-btn dm-btn-wide" id="dmSpawn5">SPAWN 5 RANDOM BODIES</button>
+            <button class="dm-btn dm-btn-wide" id="dmClearBodies" style="margin-top:4px">CLEAR ALL BODIES</button>
+            <button class="dm-btn dm-btn-wide" id="dmClearPowerups" style="margin-top:4px">CLEAR ALL POWERUPS</button>
+          </div>
+        </div>
+        <div class="dm-tab-pane" data-pane="trigger">
+          <div class="dm-section">
+            <div class="dm-section-label">SCROLL</div>
+            <button class="dm-btn dm-btn-wide dm-toggle active" id="dmScrollToggle">SCROLL: PAUSED</button>
+            <p class="dm-note">Bodies behave naturally with scroll paused. Toggle scroll to test moving behavior. Apocalypse / Nova must be triggered because they're player-initiated events.</p>
+          </div>
+          <div class="dm-section">
+            <div class="dm-section-label">EVENTS</div>
+            <button class="dm-btn dm-btn-wide" id="dmTriggerNova">TRIGGER NOVA (CENTRAL)</button>
+            <button class="dm-btn dm-btn-wide" id="dmTriggerApocalypse" style="margin-top:4px">TRIGGER APOCALYPSE NOW</button>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
   <div id="settingsOverlay">
     <div class="pause-title">SETTINGS</div>
@@ -2606,155 +2791,331 @@ function buildHeartStaticSprite(b) {
     const cctx = c.getContext('2d');
     const cx = size / 2, cy = size / 2;
     const w = b.radius;
-    // v1.7.1: anatomically accurate asymmetric heart. Reference is a real
-    // human heart, not a valentine symbol. Key points:
-    //   - Overall axis tilted ~18° counter-clockwise (apex points down-left)
-    //   - Left ventricle (viewer-right due to mirror) larger than right
-    //   - Two atrial bulges visible at the top (right atrium smaller & more
-    //     right-side, left atrium tucked behind)
-    //   - Aortas/arteries exit from the top with distinct shapes:
-    //       - Aorta: thick, curves right then arches back left (the arch)
-    //       - Pulmonary trunk: slightly smaller, exits left-front
-    //       - Vena cava (superior): straight thick tube from right atrium
-    //   - Ventricle groove ("anterior interventricular sulcus") runs
-    //     diagonally down the front
-    const axialTilt = -0.32; // radians, tilts the whole shape
+    const seed = b.heartSeed || 1337;
+    const shapeRng = mulberry32(seed);
+    // v1.7.3 anatomical heart rework — closer to the reference illustration.
+    // Key visual goals (from E:\projects\drift\dev-reference\heart-reference.png):
+    //   - Deep crimson base with stark dark shadows and bright red surface
+    //     — the reference has high local contrast, not muted tones.
+    //   - Thick bundled great-vessel cluster at the top (aorta arch + pulm
+    //     trunk + venae cavae) reading as real tubes with lumen shadow.
+    //   - Bright crimson coronary vein network visible against the dark
+    //     shadows — the illustration's veins POP, they aren't dark-on-dark.
+    //   - Deep interventricular groove carving the heart into two lobes.
+    //   - Right ventricle darker/bluer (deoxygenated side) for anatomical
+    //     correctness. Drips at bottom stay in the live draw pass.
+    //
+    // Canvas 2D can approximate the illustration's surface texture with
+    // layered radial gradients + seeded noise ellipses. What it can't
+    // replicate: painterly ink-wash texture, photographic subsurface
+    // scattering. We lean on high-contrast gradients + dense vein detail
+    // to approximate those looks within 2D primitives.
+    const axialTilt = -0.22; // slight lean, matching reference pose
     const sa = Math.sin(axialTilt), ca = Math.cos(axialTilt);
     const tilt = (x, y) => ({ x: cx + x * ca - y * sa, y: cy + x * sa + y * ca });
-    // Aortas/arteries — 3 distinct vessels with anatomically plausible
-    // shapes. Draw in reverse z-order so the aortic arch overlaps correctly.
-    // Aorta arch (large vessel that curves right then loops back — the
-    // distinctive S-curve).
+
+    // Body path FIRST so we can clip gradients to it. Perturbed per-spawn.
+    const jit = (base, amt) => base + (shapeRng() - 0.5) * amt * w;
+    const bodyPath = new Path2D();
+    let p0 = tilt(jit(w * 0.55, 0.06), jit(-w * 0.75, 0.06));
+    bodyPath.moveTo(p0.x, p0.y);
+    let c1, p1;
+    c1 = tilt(jit(w * 0.95, 0.07), jit(-w * 0.55, 0.07));
+    p1 = tilt(jit(w * 0.9,  0.07), jit(-w * 0.15, 0.07));
+    bodyPath.quadraticCurveTo(c1.x, c1.y, p1.x, p1.y);
+    c1 = tilt(jit(w * 1.05, 0.08), jit(w * 0.2,  0.07));
+    p1 = tilt(jit(w * 0.75, 0.07), jit(w * 0.55, 0.06));
+    bodyPath.quadraticCurveTo(c1.x, c1.y, p1.x, p1.y);
+    c1 = tilt(jit(w * 0.35, 0.07), jit(w * 1.05, 0.06));
+    p1 = tilt(jit(-w * 0.1, 0.06), jit(w * 1.15, 0.05));
+    bodyPath.quadraticCurveTo(c1.x, c1.y, p1.x, p1.y);
+    c1 = tilt(jit(-w * 0.85, 0.09), jit(w * 0.85, 0.07));
+    p1 = tilt(jit(-w * 1.1,  0.07), jit(w * 0.1,  0.06));
+    bodyPath.quadraticCurveTo(c1.x, c1.y, p1.x, p1.y);
+    c1 = tilt(jit(-w * 1.1,  0.07), jit(-w * 0.35, 0.06));
+    p1 = tilt(jit(-w * 0.75, 0.07), jit(-w * 0.65, 0.06));
+    bodyPath.quadraticCurveTo(c1.x, c1.y, p1.x, p1.y);
+    c1 = tilt(jit(-w * 0.5,  0.06), jit(-w * 0.95, 0.06));
+    p1 = tilt(jit(-w * 0.1,  0.05), jit(-w * 0.72, 0.04));
+    bodyPath.quadraticCurveTo(c1.x, c1.y, p1.x, p1.y);
+    c1 = tilt(jit(w * 0.05, 0.05), jit(-w * 0.55, 0.05));
+    p1 = tilt(jit(w * 0.2,  0.05), jit(-w * 0.72, 0.04));
+    bodyPath.quadraticCurveTo(c1.x, c1.y, p1.x, p1.y);
+    c1 = tilt(jit(w * 0.4,  0.06), jit(-w * 0.88, 0.06));
+    bodyPath.quadraticCurveTo(c1.x, c1.y, p0.x, p0.y);
+    bodyPath.closePath();
+
+    // --- Great vessels. Each tube is drawn as shadow (dark wide) + body
+    // (mid) + lumen stripe (darker narrow) + top highlight so it reads as
+    // a cylindrical tube with depth. Matches the reference cluster at top.
     const vessels = [
-      // Superior vena cava — thick, nearly straight from right atrium.
-      { from: {x: -w * 0.4, y: -w * 0.7}, cp: {x: -w * 0.5, y: -w * 1.05},  tip: {x: -w * 0.55, y: -w * 1.3},  width: 7 },
-      // Aorta — large, arches right and curves up then back.
-      { from: {x: 0.05 * w, y: -w * 0.75}, cp: {x: w * 0.45, y: -w * 1.05}, tip: {x: w * 0.25, y: -w * 1.4}, width: 11 },
-      // Pulmonary trunk — medium, exits forward-left.
-      { from: {x: w * 0.45, y: -w * 0.65}, cp: {x: w * 0.55, y: -w * 0.95}, tip: {x: w * 0.7, y: -w * 1.25}, width: 7 },
+      // Superior vena cava — thick venous tube (right atrium in).
+      { from: {x: -w * 0.38, y: -w * 0.7},  cp: {x: -w * 0.48, y: -w * 1.05}, tip: {x: -w * 0.52, y: -w * 1.32}, width: 9,  body: '#4a0616', hi: '#7a1a2e' },
+      // Aorta — arching arterial trunk. Trimmed in v1.7.3: was width 13 and
+      // extended to tip.y = -1.42w (far beyond the collision disc), which
+      // dominated the silhouette. Now width 9 (matches SVC/pulm trunk) and
+      // tip.y = -1.15w so the arch stays close to the body.
+      { from: {x:  0.0,      y: -w * 0.78}, cp: {x:  w * 0.22, y: -w * 0.95}, tip: {x:  w * 0.18, y: -w * 1.15}, width: 9,  body: '#7a0c14', hi: '#b1202a' },
+      // Pulmonary trunk — medium arterial, forward-right.
+      { from: {x:  w * 0.4,  y: -w * 0.66}, cp: {x:  w * 0.55, y: -w * 0.98}, tip: {x:  w * 0.7,  y: -w * 1.28}, width: 9,  body: '#6e0a10', hi: '#a81828' },
+      // Inferior vena cava stub (small, tucked behind atrium).
+      { from: {x: -w * 0.58, y: -w * 0.3},  cp: {x: -w * 0.88, y: -w * 0.5},  tip: {x: -w * 1.02, y: -w * 0.72}, width: 6,  body: '#3d0612', hi: '#6a1020' },
+      // Pulmonary vein branch (thin, between SVC and aorta).
+      { from: {x: -w * 0.15, y: -w * 0.72}, cp: {x: -w * 0.25, y: -w * 0.96}, tip: {x: -w * 0.2,  y: -w * 1.22}, width: 5,  body: '#4a0616', hi: '#7a1a2e' },
     ];
+    cctx.lineCap = 'round';
     for (const v of vessels) {
       const from = tilt(v.from.x, v.from.y);
       const cp   = tilt(v.cp.x,   v.cp.y);
       const tip  = tilt(v.tip.x,  v.tip.y);
-      // Outer wall.
-      cctx.strokeStyle = '#6b0a0a';
-      cctx.lineCap = 'round';
+      // Shadow underlay — slightly wider & offset down-right so tubes cast depth.
+      cctx.strokeStyle = 'rgba(5,0,2,0.70)';
+      cctx.lineWidth = v.width + 2;
+      cctx.beginPath();
+      cctx.moveTo(from.x + 1, from.y + 1);
+      cctx.quadraticCurveTo(cp.x + 1, cp.y + 1, tip.x + 1, tip.y + 1);
+      cctx.stroke();
+      // Tube body.
+      cctx.strokeStyle = v.body;
       cctx.lineWidth = v.width;
       cctx.beginPath();
       cctx.moveTo(from.x, from.y);
       cctx.quadraticCurveTo(cp.x, cp.y, tip.x, tip.y);
       cctx.stroke();
-      // Inner lumen.
-      cctx.strokeStyle = 'rgba(20,0,0,0.6)';
+      // Lumen — dark central line showing the tube is hollow.
+      cctx.strokeStyle = 'rgba(20,0,4,0.82)';
       cctx.lineWidth = Math.max(1, v.width * 0.35);
       cctx.beginPath();
       cctx.moveTo(from.x, from.y);
       cctx.quadraticCurveTo(cp.x, cp.y, tip.x, tip.y);
       cctx.stroke();
+      // Top highlight — narrow bright stripe above the lumen, offset up-left.
+      cctx.strokeStyle = v.hi;
+      cctx.lineWidth = Math.max(1, v.width * 0.22);
+      cctx.beginPath();
+      cctx.moveTo(from.x - 1.2, from.y - 1.2);
+      cctx.quadraticCurveTo(cp.x - 1.2, cp.y - 1.2, tip.x - 1.2, tip.y - 1.2);
+      cctx.stroke();
     }
-    // Remember the aorta + pulmonary tip positions for drip origins.
-    const aortaTip = tilt(vessels[1].tip.x, vessels[1].tip.y);
-    const pulmTip  = tilt(vessels[2].tip.x, vessels[2].tip.y);
-    const vcTip    = tilt(vessels[0].tip.x, vessels[0].tip.y);
-    b._heartAortaTips = [aortaTip, pulmTip, vcTip];
-    // Main heart body — asymmetric silhouette. Built from two overlapping
-    // ventricle lobes (left bigger than right) + two atrial bulges on top.
-    // Instead of the symmetric parametric heart curve, we draw a
-    // hand-tuned path that approximates an anatomical outline.
-    const bodyPath = new Path2D();
-    // Start at upper-right atrium.
-    let p0 = tilt(w * 0.55, -w * 0.75);
-    bodyPath.moveTo(p0.x, p0.y);
-    // Right atrium bulge.
-    let c1 = tilt(w * 0.95, -w * 0.55), p1 = tilt(w * 0.9, -w * 0.15);
-    bodyPath.quadraticCurveTo(c1.x, c1.y, p1.x, p1.y);
-    // Down right side of right ventricle.
-    c1 = tilt(w * 1.05, w * 0.2); p1 = tilt(w * 0.75, w * 0.55);
-    bodyPath.quadraticCurveTo(c1.x, c1.y, p1.x, p1.y);
-    // Down to apex (tilt pulls apex down-left).
-    c1 = tilt(w * 0.35, w * 1.05); p1 = tilt(-w * 0.1, w * 1.15);
-    bodyPath.quadraticCurveTo(c1.x, c1.y, p1.x, p1.y);
-    // Apex curves up-left side of left ventricle (the bigger lobe).
-    c1 = tilt(-w * 0.8, w * 0.8); p1 = tilt(-w * 1.05, w * 0.1);
-    bodyPath.quadraticCurveTo(c1.x, c1.y, p1.x, p1.y);
-    // Up left side to left atrium.
-    c1 = tilt(-w * 1.05, -w * 0.35); p1 = tilt(-w * 0.75, -w * 0.65);
-    bodyPath.quadraticCurveTo(c1.x, c1.y, p1.x, p1.y);
-    // Left atrium bulge — smaller than right atrium bulge.
-    c1 = tilt(-w * 0.5, -w * 0.95); p1 = tilt(-w * 0.1, -w * 0.72);
-    bodyPath.quadraticCurveTo(c1.x, c1.y, p1.x, p1.y);
-    // Atrial cleft (small dip between atria).
-    c1 = tilt(w * 0.05, -w * 0.55); p1 = tilt(w * 0.2, -w * 0.72);
-    bodyPath.quadraticCurveTo(c1.x, c1.y, p1.x, p1.y);
-    // Close back to right atrium start.
-    c1 = tilt(w * 0.4, -w * 0.88); p1 = p0;
-    bodyPath.quadraticCurveTo(c1.x, c1.y, p1.x, p1.y);
-    bodyPath.closePath();
-    // Fill with radial gradient offset for top-left directional highlight.
-    const fill = cctx.createRadialGradient(cx - w * 0.4, cy - w * 0.4, 0, cx, cy, w * 1.4);
-    fill.addColorStop(0,   '#e02530');
-    fill.addColorStop(0.4, '#9a0a0a');
-    fill.addColorStop(0.85,'#4a0005');
-    fill.addColorStop(1,   '#1a0000');
+    b._heartAortaTips = [
+      tilt(vessels[1].tip.x, vessels[1].tip.y),
+      tilt(vessels[2].tip.x, vessels[2].tip.y),
+      tilt(vessels[0].tip.x, vessels[0].tip.y),
+    ];
+
+    // --- Main body fill. Two-stop gradient: brighter top-left crimson
+    // highlight, falling off to near-black shadow at the rim. Higher contrast
+    // than v1.7.2 so the surface reads "lit" from top-left (matches
+    // illustration lighting).
+    const fill = cctx.createRadialGradient(cx - w * 0.45, cy - w * 0.5, w * 0.08, cx + w * 0.15, cy + w * 0.25, w * 1.55);
+    fill.addColorStop(0,    '#d12a2e');  // bright crimson highlight
+    fill.addColorStop(0.25, '#9a0e14');  // arterial red mid
+    fill.addColorStop(0.55, '#5e0408');  // dark crimson
+    fill.addColorStop(0.85, '#260003');  // near-black shadow
+    fill.addColorStop(1,    '#0a0001');  // black rim
     cctx.fillStyle = fill;
     cctx.fill(bodyPath);
-    // v1.7.1: chamber divisions — darker grooves visible on the surface that
-    // mark the internal chamber walls.
-    //   - Anterior interventricular sulcus (diagonal groove down the front
-    //     between the two ventricles).
-    //   - Atrioventricular groove (horizontal band separating atria from
-    //     ventricles).
-    cctx.strokeStyle = 'rgba(20,0,0,0.75)';
+
+    // Right-side venous shadow — deeper/darker on the right ventricle + atrium
+    // (deoxygenated blood reads darker anatomically). Tinted purple-black so
+    // it distinguishes from the arterial-red left lobe.
+    cctx.save();
+    cctx.clip(bodyPath);
+    const venousG = cctx.createRadialGradient(
+      cx + w * 0.6,  cy - w * 0.1, 0,
+      cx + w * 0.35, cy,            w * 1.35
+    );
+    venousG.addColorStop(0,   'rgba(20,4,28,0.55)');
+    venousG.addColorStop(0.5, 'rgba(12,2,20,0.28)');
+    venousG.addColorStop(1,   'rgba(0,0,0,0)');
+    cctx.fillStyle = venousG;
+    cctx.fillRect(0, 0, size, size);
+    cctx.restore();
+
+    // Lower-rim deep shadow — the bottom third of the body fades to near
+    // black. Reference shows the apex darkening into the drip line.
+    cctx.save();
+    cctx.clip(bodyPath);
+    const rimG = cctx.createRadialGradient(cx, cy + w * 0.8, w * 0.1, cx, cy + w * 0.5, w * 1.4);
+    rimG.addColorStop(0,   'rgba(10,0,2,0.55)');
+    rimG.addColorStop(0.5, 'rgba(6,0,1,0.22)');
+    rimG.addColorStop(1,   'rgba(0,0,0,0)');
+    cctx.fillStyle = rimG;
+    cctx.fillRect(0, 0, size, size);
+    cctx.restore();
+
+    // Surface muscle striations — elongated dark ellipses aligned radially
+    // from the apex, reading as muscle fiber direction (real myocardium
+    // fibers spiral from apex to base; we approximate with apex-aligned
+    // elongation).
+    cctx.save();
+    cctx.clip(bodyPath);
+    const bumpRng = mulberry32(seed ^ 0x4242);
+    for (let i = 0; i < 26; i++) {
+      const ax = cx + (bumpRng() - 0.5) * w * 1.75;
+      const ay = cy + (bumpRng() - 0.5) * w * 1.75;
+      const ar = w * (0.06 + bumpRng() * 0.14);
+      const aOpacity = 0.20 + bumpRng() * 0.25;
+      // Fiber orientation — roughly tangent to radial from the apex (below cy).
+      const apexX = cx, apexY = cy + w * 1.0;
+      const dx = ax - apexX, dy = ay - apexY;
+      const fiberAng = Math.atan2(dy, dx) + Math.PI / 2 + (bumpRng() - 0.5) * 0.5;
+      cctx.fillStyle = `rgba(10,0,2,${aOpacity})`;
+      cctx.beginPath();
+      cctx.ellipse(ax, ay, ar * 1.3, ar * 0.4, fiberAng, 0, 6.28);
+      cctx.fill();
+    }
+    cctx.restore();
+
+    // Brighter surface speculars — smaller lit ridges that catch the top-left
+    // light. Gives the muscle a glistening wet read (the reference is clearly
+    // painted as wet tissue).
+    cctx.save();
+    cctx.clip(bodyPath);
+    const litRng = mulberry32(seed ^ 0x9977);
+    for (let i = 0; i < 14; i++) {
+      // Weighted toward the upper-left illuminated region.
+      const lx = cx + (litRng() - 0.7) * w * 1.3;
+      const ly = cy + (litRng() - 0.7) * w * 1.3;
+      const lr = w * (0.05 + litRng() * 0.10);
+      cctx.fillStyle = `rgba(230,100,110,${0.12 + litRng() * 0.18})`;
+      cctx.beginPath();
+      cctx.ellipse(lx, ly, lr * 1.1, lr * 0.55, litRng() * Math.PI, 0, 6.28);
+      cctx.fill();
+    }
+    cctx.restore();
+
+    // Epicardial fat patches — yellow-ochre deposits at vessel bases + AV
+    // groove. Subtler than v1.7.2 so they don't fight the crimson pop.
+    const fatPatches = [
+      tilt(-w * 0.3, -w * 0.55),
+      tilt(w * 0.15, -w * 0.55),
+      tilt(w * 0.5,  -w * 0.5),
+      tilt(-w * 0.4, -w * 0.2),
+      tilt(w * 0.55, -w * 0.05),
+    ];
+    cctx.save();
+    cctx.clip(bodyPath);
+    const fatRng = mulberry32(seed ^ 0xfa11);
+    for (const fp of fatPatches) {
+      const fr = w * (0.16 + fatRng() * 0.10);
+      const fg = cctx.createRadialGradient(fp.x, fp.y, 0, fp.x, fp.y, fr);
+      fg.addColorStop(0,   'rgba(190,160,80,0.38)');
+      fg.addColorStop(0.5, 'rgba(170,130,60,0.15)');
+      fg.addColorStop(1,   'rgba(140,100,50,0)');
+      cctx.fillStyle = fg;
+      cctx.beginPath();
+      cctx.ellipse(fp.x, fp.y, fr, fr * 0.7, fatRng() * Math.PI, 0, 6.28);
+      cctx.fill();
+    }
+    cctx.restore();
+
+    // --- Interventricular sulcus — the deep groove splitting left/right
+    // ventricles. Reference shows this as a strong dark canyon with a thin
+    // lit edge on one side. We approximate with a wide dark stroke plus a
+    // narrow highlight ridge offset up-left.
+    cctx.save();
+    cctx.clip(bodyPath);
     cctx.lineCap = 'round';
-    cctx.lineWidth = Math.max(2, w * 0.06);
-    // Interventricular sulcus — diagonal, from mid-upper to apex.
-    const ivs_start = tilt(w * 0.18, -w * 0.35);
-    const ivs_mid   = tilt(w * 0.0,  w * 0.2);
+    const ivs_start = tilt(w * 0.18, -w * 0.3);
+    const ivs_mid   = tilt(w * 0.02, w * 0.25);
     const ivs_end   = tilt(-w * 0.1, w * 1.05);
+    // Dark canyon.
+    cctx.strokeStyle = 'rgba(6,0,1,0.92)';
+    cctx.lineWidth = Math.max(3, w * 0.11);
     cctx.beginPath();
     cctx.moveTo(ivs_start.x, ivs_start.y);
     cctx.quadraticCurveTo(ivs_mid.x, ivs_mid.y, ivs_end.x, ivs_end.y);
     cctx.stroke();
-    // Atrioventricular groove — horizontal band at the top.
-    cctx.lineWidth = Math.max(1.5, w * 0.05);
-    const avg_left  = tilt(-w * 0.95, -w * 0.25);
-    const avg_mid   = tilt(0,         -w * 0.45);
-    const avg_right = tilt(w * 0.85,  -w * 0.15);
+    // Lit ridge along the left wall of the groove (catches the top-left light).
+    cctx.strokeStyle = 'rgba(200,70,80,0.50)';
+    cctx.lineWidth = Math.max(1.2, w * 0.035);
+    cctx.beginPath();
+    cctx.moveTo(ivs_start.x - 2, ivs_start.y - 1);
+    cctx.quadraticCurveTo(ivs_mid.x - 2, ivs_mid.y - 1, ivs_end.x - 2, ivs_end.y - 1);
+    cctx.stroke();
+    // Atrioventricular groove — shallower, horizontal.
+    cctx.strokeStyle = 'rgba(10,0,2,0.82)';
+    cctx.lineWidth = Math.max(2, w * 0.06);
+    const avg_left  = tilt(-w * 0.95, -w * 0.22);
+    const avg_mid   = tilt(0,         -w * 0.42);
+    const avg_right = tilt(w * 0.85,  -w * 0.12);
     cctx.beginPath();
     cctx.moveTo(avg_left.x, avg_left.y);
     cctx.quadraticCurveTo(avg_mid.x, avg_mid.y, avg_right.x, avg_right.y);
     cctx.stroke();
-    // Branching coronary arteries (surface veins/arteries spreading across).
-    cctx.strokeStyle = 'rgba(80,5,5,0.88)';
-    const veinRng = mulberry32(b.heartSeed ^ 0xbeef);
+    cctx.restore();
+
+    // --- Coronary vein network. Two layers:
+    //   1. Dark shadow strokes — dense branching, dark-on-crimson.
+    //   2. Bright highlight strokes on top, offset up-left, so the veins
+    //      read as raised tubules catching the light (like the reference).
+    // Both pass through the same seeded walk for each branch so the highlight
+    // tracks the shadow.
+    cctx.save();
+    cctx.clip(bodyPath);
     const branchPoints = [
-      tilt(w * 0.3,  -w * 0.1),
-      tilt(-w * 0.15, -w * 0.2),
+      tilt(w * 0.3,  -w * 0.05),
+      tilt(-w * 0.15, -w * 0.15),
       tilt(w * 0.1,   w * 0.3),
-      tilt(-w * 0.4,  w * 0.1),
+      tilt(-w * 0.4,  w * 0.15),
       tilt(w * 0.5,   w * 0.2),
+      tilt(-w * 0.55, -w * 0.02),
+      tilt(w * 0.65,  -w * 0.02),
+      tilt(-w * 0.25, w * 0.55),
+      tilt(w * 0.35,  w * 0.55),
     ];
     for (const bp of branchPoints) {
-      const branches = 2 + Math.floor(veinRng() * 2);
+      const branchRng = mulberry32(seed ^ 0xbeef ^ Math.floor(bp.x * 7 + bp.y * 13));
+      const branches = 2 + Math.floor(branchRng() * 2);
       for (let j = 0; j < branches; j++) {
+        // Capture the exact walk so shadow + highlight align.
         let ax = bp.x, ay = bp.y;
-        let ang = veinRng() * Math.PI * 2;
-        const segs = 3 + Math.floor(veinRng() * 2);
-        cctx.lineWidth = 1.6;
-        cctx.beginPath();
-        cctx.moveTo(ax, ay);
+        let ang = branchRng() * Math.PI * 2;
+        const segs = 4 + Math.floor(branchRng() * 3);
+        const pts = [{ x: ax, y: ay }];
+        const widths = [2.0];
+        let curW = 2.0;
         for (let s = 0; s < segs; s++) {
-          ang += (veinRng() - 0.5) * 1.4;
-          const step = w * (0.12 + veinRng() * 0.18);
+          ang += (branchRng() - 0.5) * 1.5;
+          const step = w * (0.11 + branchRng() * 0.18);
           ax += Math.cos(ang) * step;
           ay += Math.sin(ang) * step;
-          cctx.lineTo(ax, ay);
-          cctx.lineWidth *= 0.65; // taper each segment
+          pts.push({ x: ax, y: ay });
+          curW *= 0.72;
+          widths.push(curW);
         }
-        cctx.stroke();
+        // Shadow stroke.
+        for (let s = 1; s < pts.length; s++) {
+          cctx.strokeStyle = 'rgba(4,0,1,0.85)';
+          cctx.lineWidth = widths[s - 1];
+          cctx.beginPath();
+          cctx.moveTo(pts[s - 1].x, pts[s - 1].y);
+          cctx.lineTo(pts[s].x, pts[s].y);
+          cctx.stroke();
+        }
+        // Highlight — thinner, offset up-left, brighter crimson.
+        for (let s = 1; s < pts.length; s++) {
+          cctx.strokeStyle = 'rgba(210,60,70,0.75)';
+          cctx.lineWidth = Math.max(0.6, widths[s - 1] * 0.55);
+          cctx.beginPath();
+          cctx.moveTo(pts[s - 1].x - 0.8, pts[s - 1].y - 0.8);
+          cctx.lineTo(pts[s].x - 0.8, pts[s].y - 0.8);
+          cctx.stroke();
+        }
       }
     }
+    cctx.restore();
+
+    // --- Silhouette outline — thin dark rim traces the body edge so the
+    // heart reads as a defined shape against any background (the reference
+    // has a clear inked outline). Drawn last so it stays on top of veins.
+    cctx.save();
+    cctx.strokeStyle = 'rgba(5,0,2,0.85)';
+    cctx.lineWidth = Math.max(1.2, w * 0.035);
+    cctx.stroke(bodyPath);
+    cctx.restore();
+
     return c;
   } catch { return null; }
 }
@@ -2919,6 +3280,18 @@ let state = 'idle', score = 0, frame = 0, planetsPassed = 0;
 let player = {}, bodies = [], trail = [], bgStars = [], deathParticles = [];
 let leftDown = false, rightDown = false;
 let closestBody = null;
+
+// DEVMODE — internal gameplay sandbox. True only while a sandbox session is
+// active. Gates: spawn auto-refill, powerup auto-spawn, apocalypse 10-min
+// auto-trigger, leaderboard submit, analytics. God mode (devGodMode) is a
+// separate flag so future PLAYER tab can toggle it without leaving devmode.
+// devPauseScroll freezes world Y-scroll (bodies/powerups/fragments/ripples/
+// stars) so spawned bodies stay visible while their internal animations
+// continue. Effective ONLY when state === 'devmode' — the production scroll
+// path is byte-identical when devmode is off.
+let devmodeActive = false;
+let devGodMode = false;
+let devPauseScroll = false;
 
 // Streak scoring. lastDestroyTime tracks the wall-clock of the most recent
 // destroy so the streak resets after 5s of inactivity instead of on the next
@@ -3778,40 +4151,54 @@ const SFX = (function() {
   // Deep sustained rumble for the 10-minute apocalypse sequence. Two sine
   // layers at 35hz (fundamental) + 70hz (2nd harmonic @ 0.3x). Caller controls
   // the master amplitude via setVolume so we can smoothly build the dread.
+  // v1.7.2 mobile fix: pitched up an octave (was 80/120/180Hz, now 160/240/360Hz)
+  // so phone speakers can actually reproduce all three layers — sub-100Hz content
+  // was being silently filtered/rolled-off by mobile DACs and speaker drivers.
+  // Inserted a DynamicsCompressor between master and sfxGain to pre-tame the
+  // dynamics so the browser's mobile loudness limiter doesn't unpredictably
+  // attenuate the output. Base gain reduced to give the limiter more headroom.
   function startApocalypseRumble() {
     if (!ensureRunning()) return null;
     if (!sfxEnabled) return null;
     try {
       const t = ctx.currentTime;
-      // Primary 120hz — phone speakers can actually reproduce this. Tremolo
-      // applied per-frame via setVolume's "level" arg.
+      // Primary 240hz (was 120hz). Tremolo applied per-frame via setVolume's "level" arg.
       const o1 = ctx.createOscillator();
-      o1.type = 'sine'; o1.frequency.value = 120;
+      o1.type = 'sine'; o1.frequency.value = 240;
       const g1 = ctx.createGain(); g1.gain.value = 1;
       o1.connect(g1);
 
-      // Secondary harmonic at 180hz, 0.3x the primary.
+      // Secondary harmonic at 360hz (was 180hz), 0.3x the primary.
       const o2 = ctx.createOscillator();
-      o2.type = 'sine'; o2.frequency.value = 180;
+      o2.type = 'sine'; o2.frequency.value = 360;
       const g2 = ctx.createGain(); g2.gain.value = 0.3;
       o2.connect(g2);
 
-      // Third low layer at 80hz — bottom of what most phone speakers handle.
+      // Third low layer at 160hz (was 80hz) — comfortably above mobile speaker rolloff.
       const o3 = ctx.createOscillator();
-      o3.type = 'sine'; o3.frequency.value = 80;
+      o3.type = 'sine'; o3.frequency.value = 160;
       const g3 = ctx.createGain(); g3.gain.value = 0.2;
       o3.connect(g3);
 
       const master = ctx.createGain();
       master.gain.setValueAtTime(0, t);
-      master.gain.linearRampToValueAtTime(0.1, t + 0.2);
+      master.gain.linearRampToValueAtTime(0.05, t + 0.2);
       g1.connect(master); g2.connect(master); g3.connect(master);
-      master.connect(sfxGain);
+      // DynamicsCompressor: pre-tames combined oscillator output so the mobile
+      // browser limiter doesn't have to step in unpredictably. Threshold/knee/
+      // ratio chosen for gentle bus compression rather than aggressive limiting.
+      const comp = ctx.createDynamicsCompressor();
+      comp.threshold.value = -24;
+      comp.knee.value = 12;
+      comp.ratio.value = 4;
+      comp.attack.value = 0.01;
+      comp.release.value = 0.25;
+      master.connect(comp); comp.connect(sfxGain);
 
       o1.start(t); o2.start(t); o3.start(t);
       // Track the "intended" base volume from setVolume so per-frame tremolo
       // can modulate around it without fighting the linear ramps.
-      let baseVol = 0.1;
+      let baseVol = 0.05;
       return {
         setVolume(v) {
           try {
@@ -3838,7 +4225,7 @@ const SFX = (function() {
             master.gain.setValueAtTime(master.gain.value, now);
             master.gain.linearRampToValueAtTime(0, now + 0.3);
             o1.stop(now + 0.35); o2.stop(now + 0.35); o3.stop(now + 0.35);
-            killOnEnd(o1, o2, o3, g1, g2, g3, master);
+            killOnEnd(o1, o2, o3, g1, g2, g3, master, comp);
           } catch {}
         },
       };
@@ -3846,14 +4233,13 @@ const SFX = (function() {
     return null;
   }
 
-  // Final impact: bass sweep 150→40hz over 0.8s + a full-volume white noise
-  // burst. Sweep raised from the original 60→10hz so phone speakers can
-  // actually reproduce the impact. Wired through sfxGain so the SFX toggle
-  // silences it.
+  // Final impact: bass sweep 150→80hz over 0.8s + a full-volume white noise
+  // burst. v1.7.2: sweep endpoint raised from 40hz → 80hz so the lowest note
+  // stays above mobile speaker rolloff (was silently filtered on phones).
   function playApocalypseImpact() {
     safeSfx(t => {
       // Bass sweep.
-      chipSweep('sine', 150, 40, t, 0.8, 0.9);
+      chipSweep('sine', 150, 80, t, 0.8, 0.9);
       // Noise burst.
       const n = ctx.createBufferSource();
       n.buffer = noiseBuffer(0.5, x => Math.pow(1 - x, 0.6));
@@ -4533,6 +4919,12 @@ function scrollSpeed() {
 
 function dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
 
+// Per-frame exponential decay. Used by every Category A drag site so the
+// pattern stays grep-able: search `decay(` to audit FPS-decoupled drag.
+// Naive `v *= k * dtScale` is mathematically wrong for variable timesteps;
+// `v *= Math.pow(k, dtScale)` preserves the decay curve at any frame rate.
+function decay(k, dt) { return Math.pow(k, dt); }
+
 // --- Background stars ---
 function initBgStars() {
   bgStars = [];
@@ -5194,7 +5586,7 @@ function updatePixiBodyEffectsLayer() {
 function updatePixiPlayerLayer() {
   if (!pixiActive || !pixiPlayerLayer) return;
   // --- Player composite ---
-  const playerVisible = (state === 'playing' || state === 'paused' || state === 'apocalypse');
+  const playerVisible = (state === 'playing' || state === 'paused' || state === 'apocalypse' || state === 'devmode');
   if (playerVisible) {
     if (!pixiPlayerCanvas) {
       pixiPlayerCanvas = document.createElement('canvas');
@@ -5230,7 +5622,7 @@ function updatePixiPlayerLayer() {
   }
 
   // --- Trail ---
-  const trailVisible = (state === 'playing' || state === 'paused' || state === 'apocalypse' || state === 'dead');
+  const trailVisible = (state === 'playing' || state === 'paused' || state === 'apocalypse' || state === 'dead' || state === 'devmode');
   pixiTrailGraphics.clear();
   if (trailVisible && orbTrailParticles.length) {
     const orbRgb = activeOrbColor();
@@ -5991,33 +6383,32 @@ function spawnBody(yBase, opts) {
     radius = 11 + Math.random() * 7;
     color = '#080808'; glowColor = 'rgba(170,70,255,0.9)';
   } else if (type === 'toothed') {
-    radius = (16 + Math.random() * 10) * 0.85;
+    radius = 16 + Math.random() * 6;
     color = '#8b0000'; glowColor = 'rgba(220,30,30,0.9)';
   } else if (type === 'eye') {
-    radius = (18 + Math.random() * 8) * 0.9;
+    radius = 18 + Math.random() * 5;
     color = '#f6efd6'; glowColor = 'rgba(255,220,160,0.7)';
   } else if (type === 'cracked') {
-    radius = (17 + Math.random() * 10) * 0.95;
+    radius = 17 + Math.random() * 7;
     color = '#5a2b16'; glowColor = 'rgba(255,120,40,0.85)';
   } else if (type === 'tentacle') {
     // Tentacles add extra reach so the base disc is extra-small.
-    radius = (16 + Math.random() * 8) * 0.85;
+    radius = 16 + Math.random() * 4;
     color = '#4a0080'; glowColor = 'rgba(140,40,200,0.85)';
   } else if (type === 'screaming') {
-    radius = (17 + Math.random() * 9) * 0.9;
+    radius = 17 + Math.random() * 6;
     color = '#4a4040'; glowColor = 'rgba(80,20,20,0.3)';
   } else if (type === 'void') {
-    radius = (14 + Math.random() * 7) * 0.9;
+    radius = 14 + Math.random() * 5;
     color = '#000'; glowColor = 'rgba(180,240,255,0.6)';
   } else if (type === 'heart') {
-    radius = (17 + Math.random() * 8) * 0.85;
+    radius = 17 + Math.random() * 4;
     color = '#cc0000'; glowColor = 'rgba(255,40,40,0.85)';
   } else if (type === 'mirror') {
-    radius = (14 + Math.random() * 6) * 0.95;
+    radius = 14 + Math.random() * 5;
     color = '#222'; glowColor = 'rgba(255,255,255,0.5)';
   } else if (type === 'skull') {
-    // Spec: 1.3x vs normal planets, then scaled down 0.9 for mobile = ~1.17x.
-    radius = (17 + Math.random() * 10) * 1.3 * 0.9;
+    radius = 20 + Math.random() * 10;
     color = '#0d0d0d'; glowColor = 'rgba(200,200,200,0.6)';
   } else {
     radius = 16; color = '#888'; glowColor = 'rgba(255,255,255,0.5)';
@@ -6103,7 +6494,7 @@ function spawnBody(yBase, opts) {
     body.eyePulse = Math.random() * 6.28;
     body.veinSeed = Math.floor(Math.random() * 1e6);
   } else if (type === 'cracked') {
-    body.nextEruptFrame = 180 + Math.floor(Math.random() * 60); // 3-4s
+    body.nextEruptFrame = 1500 + Math.random() * 500; // ms (was 180+r*60 frames @ 120fps baseline)
     body.eruptFlash = 0;
     body.crackSeed = Math.floor(Math.random() * 1e6);
   } else if (type === 'tentacle') {
@@ -6133,7 +6524,7 @@ function spawnBody(yBase, opts) {
   } else if (type === 'skull') {
     body.skullRotation = 0;
     body.skullEyeFlash = 0;
-    body.nextSkullFlash = 60 + Math.floor(Math.random() * 240);
+    body.nextSkullFlash = 500 + Math.random() * 2000; // ms (was 60+r*240 frames @ 120fps baseline)
     body.skullSeed = Math.floor(Math.random() * 1e6);
     // Pick planet palette once per skull — greens/browns/blues for the upper half.
     const palettes = [
@@ -6792,7 +7183,7 @@ function activateCombo(key, x, y) {
     const supernovaWaves = activeOrb === 'solar' ? 6 : 4;
     for (let i = 0; i < supernovaWaves; i++) {
       pendingNovaTimeouts.push(setTimeout(() => {
-        if (state !== 'playing') return;
+        if (state !== 'playing' && state !== 'devmode') return;
         pushCapped(novaRings, {
           x: player.x, y: player.y, radius: 0, life: 1, prevR: 0,
           radiusMult: 1 + i * 0.15,
@@ -6931,7 +7322,7 @@ function fireTripleNova(px, py) {
     const life = Math.max(0.4, 1 - i * 0.1);
     const shake = Math.max(3, 10 - i * 1.5);
     pendingNovaTimeouts.push(setTimeout(() => {
-      if (state === 'playing') {
+      if (state === 'playing' || state === 'devmode') {
         pushCapped(novaRings, { x: player.x, y: player.y, radius: 0, life, prevR: 0, startTime: Date.now() }, NOVA_RINGS_CAP);
         screenShake = Math.max(screenShake, shake);
         SFX.pickup('nova');
@@ -7234,8 +7625,8 @@ function applyEnvironmentForces() {
       if (d < b.radius * 4 && d > 0.5) {
         const nx = (b.x - player.x) / d;
         const ny = (b.y - player.y) / d;
-        player.vx += nx * 0.15;
-        player.vy += ny * 0.15;
+        player.vx += nx * 0.15 * dtScale;
+        player.vy += ny * 0.15 * dtScale;
       }
     } else if (b.type === 'void') {
       const dx = player.x - b.x, dy = player.y - b.y;
@@ -7243,8 +7634,8 @@ function applyEnvironmentForces() {
       if (d < b.radius * 4 && d > 0.5) {
         // Gentle repel away from the void, strongest at the center.
         const repelStrength = 0.25 * (1 - d / (b.radius * 4));
-        player.vx += (dx / d) * repelStrength;
-        player.vy += (dy / d) * repelStrength;
+        player.vx += (dx / d) * repelStrength * dtScale;
+        player.vy += (dy / d) * repelStrength * dtScale;
         nearVoid = true;
         b.voidRepellingPlayer = true;
       } else {
@@ -7290,7 +7681,7 @@ function applyForce() {
   const inputDamp = inHyperspeedInput ? 0.4 : 1;
   const f = FORCE * influence * forceMult * inputDamp;
 
-  if (leftDown)  { player.vx += nx*f; player.vy += ny*f; }
+  if (leftDown)  { player.vx += nx*f*dtScale; player.vy += ny*f*dtScale; }
   if (rightDown) {
     // Dead zone fix: when planet is directly above and repel vector is nearly
     // vertical, nudge it horizontally based on actual relative position. Nudge
@@ -7306,7 +7697,7 @@ function applyForce() {
       const mag = Math.hypot(rnx, rny);
       rnx /= mag; rny /= mag;
     }
-    player.vx += rnx*f; player.vy += rny*f;
+    player.vx += rnx*f*dtScale; player.vy += rny*f*dtScale;
   }
 
   // Center-seeking vertical gravity: gently pulls the player toward the
@@ -7335,7 +7726,7 @@ function applyForce() {
       if (player.y >= H * 0.3) {
         ay -= 0.15 * launchK;
       }
-      player.vx += (W / 2 - player.x) * 0.002 * launchK;
+      player.vx += (W / 2 - player.x) * 0.002 * launchK * dtScale;
     }
     if (activeEffects.hyperspeed < 800) {
       // Stacked hyperspeed lands harder: scale pull by the peak stacks reached
@@ -7351,7 +7742,7 @@ function applyForce() {
       const pullStrength = Math.max(0.0004, (1 - activeEffects.hyperspeed / 800) * 0.002 * stackBoost) * inputYield * topEscape;
       ay += (H * 0.72 - player.y) * pullStrength;
       // Also pull horizontally toward centre for the same window.
-      player.vx += (W / 2 - player.x) * pullStrength;
+      player.vx += (W / 2 - player.x) * pullStrength * dtScale;
     }
   }
 
@@ -7366,9 +7757,12 @@ function applyForce() {
       ay += 0.06 * safetyMul * ((H * 0.22 - player.y) / (H * 0.22));
     }
   }
-  player.vy += ay;
+  // ay accumulates every per-frame gravity/safety/launch/landing component
+  // above; scaling once at the apply point is equivalent to scaling each
+  // contribution and keeps the diff small.
+  player.vy += ay * dtScale;
 
-  player.vx *= dragCoef; player.vy *= dragCoef;
+  player.vx *= decay(dragCoef, dtScale); player.vy *= decay(dragCoef, dtScale);
   if (isNaN(player.vx)) player.vx = 0;
   if (isNaN(player.vy)) player.vy = 0;
   const spd = Math.hypot(player.vx, player.vy);
@@ -7376,7 +7770,7 @@ function applyForce() {
   const speedCap = difficulty === 'EXTREME' ? 5.5 : 4.5;
   if (spd > speedCap) { player.vx = player.vx/spd*speedCap; player.vy = player.vy/spd*speedCap; }
 
-  player.x += player.vx; player.y += player.vy;
+  player.x += player.vx * dtScale; player.y += player.vy * dtScale;
   player.angle = Math.atan2(player.vy, player.vx);
 }
 
@@ -7439,6 +7833,9 @@ function pointSegmentDist(px, py, ax, ay, bx, by) {
 
 function checkCollisions() {
   if (Date.now() < graceEndTime) return false;
+  // Devmode god mode short-circuits ALL damage — including lethal borders.
+  // Keeps the sandbox session from ending while spawning/triggering.
+  if (devGodMode) return false;
   // Borders are always lethal — shield/ghost only protect against bodies
   if (player.x < PLAYER_R+3) { lastDeathCause = 'wall_left'; return true; }
   if (player.x > W-PLAYER_R-3) { lastDeathCause = 'wall_right'; return true; }
@@ -7581,13 +7978,14 @@ function updateBodyTypes(spd) {
   for (const b of bodies) {
     if (b.type === 'toothed') {
       b.toothAngle += 0.02;
-      // Subtle grinding loop every 3s per on-screen toothed planet.
+      // Subtle grinding loop every 1.5s per on-screen toothed planet
+      // (180 frames @ 120fps baseline = 1500ms).
       const onScreen = b.y > -b.radius && b.y < H + b.radius;
       if (onScreen) {
-        if (b.lastToothSound === undefined) b.lastToothSound = frame - 90;
-        if (frame - b.lastToothSound > 180) {
+        if (b.lastToothSound === undefined) b.lastToothSound = Date.now() - 750;
+        if (Date.now() - b.lastToothSound > 1500) {
           SFX.playSfxBuffer('toothed', 0.08);
-          b.lastToothSound = frame;
+          b.lastToothSound = Date.now();
         }
       }
     } else if (b.type === 'eye') {
@@ -7600,7 +7998,8 @@ function updateBodyTypes(spd) {
       b.pupilDx = (dx / mag) * maxOff;
       b.pupilDy = (dy / mag) * maxOff;
     } else if (b.type === 'cracked') {
-      b.nextEruptFrame--;
+      // ms accumulator: 180 frames @ 120fps baseline = 1500ms; +60 frames jitter = +500ms.
+      b.nextEruptFrame -= frameDt;
       if (b.eruptFlash > 0) b.eruptFlash--;
       if (b.nextEruptFrame <= 0) {
         const count = 2 + Math.floor(Math.random() * 2);
@@ -7626,7 +8025,7 @@ function updateBodyTypes(spd) {
             pulse: Math.random() * 6.28,
           });
         }
-        b.nextEruptFrame = 180 + Math.floor(Math.random() * 60);
+        b.nextEruptFrame = 1500 + Math.random() * 500;
         b.eruptFlash = 10;
         SFX.playSfxBuffer('eruption', 0.3);
       }
@@ -7636,18 +8035,21 @@ function updateBodyTypes(spd) {
       let extendTrigger = false;
       for (let i = 0; i < b.tentaclePhases.length; i++) {
         const before = b.tentaclePhases[i];
-        b.tentaclePhases[i] += 1 / 60;
+        // Drives collision geometry via tentacleExtension(phase). dt-scaling
+        // is essential or hitbox length differs by FPS.
+        b.tentaclePhases[i] += (1 / 60) * dtScale;
         if (b.tentaclePhases[i] >= 3.5) {
           b.tentaclePhases[i] -= 3.5;
           extendTrigger = true;
         }
       }
       if (extendTrigger) {
-        if (b.lastTentacleSound === undefined || frame - b.lastTentacleSound > 60) {
+        // Throttle: 60 frames @ 120fps baseline = 500ms.
+        if (b.lastTentacleSound === undefined || Date.now() - b.lastTentacleSound > 500) {
           const onScreen = b.y > -b.radius && b.y < H + b.radius;
           if (onScreen) {
             SFX.playSfxBuffer('tentacle', 0.2);
-            b.lastTentacleSound = frame;
+            b.lastTentacleSound = Date.now();
           }
         }
       }
@@ -7660,7 +8062,7 @@ function updateBodyTypes(spd) {
       b.screamActive = (p >= 4.5 && p < 5.5);
       if (b.screamActive && !wasScreaming) {
         SFX.screamShriek();
-        b.screamSurgeFrames = 48; // 0.8s @ 60fps
+        b.screamSurgeFrames = 400; // 400ms — was 48 frames @ 120fps baseline
         // Fire a visible shockwave ripple emanating from the body.
         b.shockwaves.push({ age: 0, maxLife: 28 });
         // Contracting "suck" rings — 3 rings staggered so they drop in over
@@ -7670,7 +8072,9 @@ function updateBodyTypes(spd) {
         b.contractRings.push({ age: -16, maxLife: 48 });
         b.contractRings.push({ age: -32, maxLife: 48 });
       }
-      if (b.screamSurgeFrames > 0) b.screamSurgeFrames--;
+      // Surge gates the player-push force at line 7237 — ms accumulator so
+      // surge duration is FPS-independent (was: integer frame countdown).
+      if (b.screamSurgeFrames > 0) b.screamSurgeFrames -= frameDt;
       if (b.shockwaves.length) {
         for (const sw of b.shockwaves) sw.age++;
         b.shockwaves = b.shockwaves.filter(sw => sw.age < sw.maxLife);
@@ -7710,69 +8114,73 @@ function updateBodyTypes(spd) {
       }
       for (const d of b.bloodDrops) d.age++;
       b.bloodDrops = b.bloodDrops.filter(d => d.age < d.maxAge);
-      // Heartbeat SFX throttled to at most once every 2 seconds per planet.
-      if (b.lastHeartSound === undefined || frame - b.lastHeartSound > 120) {
-        const onScreen = b.y > -b.radius && b.y < H + b.radius;
-        if (onScreen) SFX.playSfxBuffer('heartbeat', 0.15);
-        b.lastHeartSound = frame;
+      // Heartbeat SFX. Direct heartScale-window detection instead of
+      // peakIdx math: when scale enters the systole window (>= 1.4 of the
+      // ~1.45 max), play once and throttle. This is robust against any
+      // heartPhase math edge case — if the visual peaks, the SFX plays.
+      // Volume 0.15 was inaudible on mobile against ambient gameplay; bumped
+      // to 0.6 to match the visual prominence of the throbbing body.
+      const onScreenHeart = b.y > -b.radius && b.y < H + b.radius;
+      if (onScreenHeart && b.heartScale >= 1.4) {
+        if (b.lastHeartSound === undefined || Date.now() - b.lastHeartSound > 600) {
+          SFX.playSfxBuffer('heartbeat', 0.6);
+          b.lastHeartSound = Date.now();
+        }
       }
     } else if (b.type === 'mirror') {
-      // Replays the player's input from MIRROR_INPUT_DELAY_MS ago against
-      // the mirror's OWN nearest body. If neither button was pressed at that
-      // moment, the mirror doesn't apply any force this frame.
+      // Direct velocity copy from player's history at MIRROR_INPUT_DELAY_MS ago.
+      // HORIZONTAL ONLY — vertical position is governed solely by the scroll
+      // (b.y += spd earlier in updateBodies). Previously we also mirrored
+      // player.vy, which made the mirror drift upward when the player moved
+      // up and visually "stop falling" — confusing since every other body
+      // falls at scroll speed.
       const prevX = b.x;
       const targetTs = Date.now() - MIRROR_INPUT_DELAY_MS;
       let pastInput = null;
-      // Walk newest→oldest to find the first entry at or before targetTs.
       for (let i = inputHistory.length - 1; i >= 0; i--) {
         if (inputHistory[i].timestamp <= targetTs) { pastInput = inputHistory[i]; break; }
       }
-      if (pastInput && (pastInput.leftDown || pastInput.rightDown)) {
-        // Find nearest other body to this mirror.
-        let nearest = null, nd = Infinity;
-        for (const ob of bodies) {
-          if (ob === b) continue;
-          const ddx = ob.x - b.x, ddy = ob.y - b.y;
-          const dd2 = ddx * ddx + ddy * ddy;
-          if (dd2 < nd) { nd = dd2; nearest = ob; }
-        }
-        if (nearest) {
-          const ddx = nearest.x - b.x, ddy = nearest.y - b.y;
-          const dd = Math.max(Math.hypot(ddx, ddy), nearest.radius * 2.2);
-          const nnx = ddx / dd, nny = ddy / dd;
-          const influence = Math.min(140 / dd, 1.8);
-          const f = FORCE * influence * MIRROR_INPUT_FORCE_MUL;
-          if (pastInput.leftDown)  { b.mirrorVx += nnx * f; b.mirrorVy += nny * f; }
-          if (pastInput.rightDown) { b.mirrorVx -= nnx * f; b.mirrorVy -= nny * f; }
-        }
+      if (pastInput && pastInput.vx !== undefined) {
+        // Mirror travels at MIRROR_INPUT_FORCE_MUL × past player X-velocity.
+        // Ease toward target so direction changes feel smooth, not jerky.
+        // The (1 - decay(0.85, dtScale)) factor is FPS-independent lerp:
+        // ~15% per frame at 120fps baseline.
+        const lerpAmt = 1 - decay(0.85, dtScale);
+        const targetVx = pastInput.vx * MIRROR_INPUT_FORCE_MUL * 5; // *5 since MUL was tuned for impulse, not target
+        b.mirrorVx += (targetVx - b.mirrorVx) * lerpAmt;
+      } else {
+        // No history (e.g., devmode session just started, or pre-update older
+        // than MIRROR_INPUT_HISTORY_MS): coast and decay.
+        b.mirrorVx *= decay(0.92, dtScale);
       }
-      // Drag and integrate. Drag matches the player's mid-range coefficient
-      // so the mirror coasts but doesn't accumulate forever.
-      b.mirrorVx *= 0.92;
-      b.mirrorVy *= 0.92;
-      b.x += b.mirrorVx;
-      b.y += b.mirrorVy;
+      b.mirrorVy = 0;
+      b.x += b.mirrorVx * dtScale;
       // Keep mirrors inside the playfield horizontally — they shouldn't
       // wander off-screen sideways.
       if (b.x < b.radius) { b.x = b.radius; b.mirrorVx = 0; }
       if (b.x > W - b.radius) { b.x = W - b.radius; b.mirrorVx = 0; }
       const moved = Math.abs(b.x - prevX);
       if (moved > 2) {
-        if (b.lastMirrorSound === undefined || frame - b.lastMirrorSound > 60) {
+        // Throttle: 60 frames @ 120fps baseline = 500ms.
+        if (b.lastMirrorSound === undefined || Date.now() - b.lastMirrorSound > 500) {
           const onScreen = b.y > -b.radius && b.y < H + b.radius;
           if (onScreen) {
             SFX.playSfxBuffer('mirror', 0.15);
-            b.lastMirrorSound = frame;
+            b.lastMirrorSound = Date.now();
           }
         }
       }
     } else if (b.type === 'skull') {
       // No rotation — face stays upright as the planet drifts down.
+      // skullEyeFlash is the visual flash duration (frame-stepped per spec).
+      // nextSkullFlash is a gameplay-timing countdown — ms accumulator so
+      // the flash cadence is FPS-independent. 60+r*240 frames @ 120fps
+      // baseline = 500+r*2000 ms.
       if (b.skullEyeFlash > 0) b.skullEyeFlash--;
-      b.nextSkullFlash--;
+      b.nextSkullFlash -= frameDt;
       if (b.nextSkullFlash <= 0) {
         b.skullEyeFlash = 30;
-        b.nextSkullFlash = 60 + Math.floor(Math.random() * 240);
+        b.nextSkullFlash = 500 + Math.random() * 2000;
       }
     }
   }
@@ -7782,9 +8190,9 @@ function updateCrackFragments(spd) {
   const nowCf = Date.now();
   for (let i = crackFragments.length - 1; i >= 0; i--) {
     const f = crackFragments[i];
-    f.x += f.vx;
-    f.y += f.vy + spd;
-    f.vx *= 0.985; f.vy *= 0.985;
+    f.x += f.vx * dtScale;
+    f.y += (f.vy + spd) * dtScale;
+    f.vx *= decay(0.985, dtScale); f.vy *= decay(0.985, dtScale);
     // Recompute life from real time so frag alpha/drawcode using f.life/f.maxLife
     // fades at the same real-world rate regardless of framerate.
     if (f.startTime !== undefined && f.maxLifeMs) {
@@ -7910,16 +8318,25 @@ function deepCleanup() {
 // --- Update ---
 function update() {
   if (state === 'apocalypse') { frame++; updateApocalypse(); return; }
-  if (state !== 'playing') return;
+  // DEVMODE runs the same physics/animation/collision loop as 'playing' so
+  // the sandbox feels real, but auto-spawns / score submit / analytics /
+  // apocalypse auto-trigger are gated below.
+  if (state !== 'playing' && state !== 'devmode') return;
   frame++;
   // Phase-based gameplay music crossfade — only during active play.
-  checkGameplayPhase();
-  const spd = scrollSpeed();
+  if (state === 'playing') checkGameplayPhase();
+  // Single-point world-scroll gate: zeroing spd here propagates through every
+  // downstream site (b.y, p.y, f.y+spd, r.y, star atlases). Crack fragments
+  // keep their f.vy eruption velocity since that's an internal animation,
+  // not world scroll. Only effective in devmode → production unchanged.
+  let spd = scrollSpeed();
+  if (state === 'devmode' && devPauseScroll) spd = 0;
   const d = diff();
 
   // 10-minute mark: kick off the apocalypse sequence. Progression clock so
-  // TIME_DILATION fast-forwards the trigger proportionally.
-  if (elapsedProgressionSeconds() >= 600) { startApocalypse(); return; }
+  // TIME_DILATION fast-forwards the trigger proportionally. Skipped in
+  // devmode unless the user manually triggers it from the panel.
+  if (state === 'playing' && elapsedProgressionSeconds() >= 600) { startApocalypse(); return; }
 
   // Burst trigger: also catches keyboard-held combos each frame.
   if (leftDown && rightDown) burstTriggered = true;
@@ -8064,17 +8481,19 @@ function update() {
     bodies = survivors;
   }
 
-  // Log this frame's input so mirror orbs can replay it ~500ms later. We
-  // store the timestamp inline so lookups are real-time (frame-rate
-  // independent). Trim entries older than MIRROR_INPUT_HISTORY_MS.
+  // Log this frame's input + resulting player velocity so mirror orbs can
+  // replay it ~500ms later. Velocity is what gives the mirror its actual
+  // direction copy — leftDown/rightDown alone aren't enough because the
+  // gameplay-direction (attract toward closestBody vs. repel) depends on
+  // body geometry the mirror doesn't share. Trim older than MIRROR_INPUT_HISTORY_MS.
   const nowInput = Date.now();
-  inputHistory.push({ leftDown, rightDown, timestamp: nowInput });
+  inputHistory.push({ leftDown, rightDown, vx: player.vx, vy: player.vy, timestamp: nowInput });
   while (inputHistory.length && nowInput - inputHistory[0].timestamp > MIRROR_INPUT_HISTORY_MS) {
     inputHistory.shift();
   }
 
   for (const b of bodies) {
-    b.y += spd;
+    b.y += spd * dtScale;
     b.pulse += 0.038;
     if (!b.passed && b.y > H * 0.75) {
       b.passed = true;
@@ -8099,7 +8518,8 @@ function update() {
   bodies = bodies.filter(b => !isNaN(b.x) && !isNaN(b.y) && !(b.x <= 1 && b.y <= 1) && b.y > -H * 3 && b.y < H + 80);
   const bodyCap = effectiveMaxBodies();
   const refillSpacing = effectiveBodySpacing();
-  while (bodies.length < bodyCap) {
+  // Devmode disables auto-refill — user spawns manually from the panel.
+  while (state === 'playing' && bodies.length < bodyCap) {
     let yBase;
     if (bodies.length === 0) {
       // Math.min of an empty array is +Infinity — explicit fallback so the
@@ -8124,22 +8544,26 @@ function update() {
   // a +50% total boost above the base difficulty rate.
   const minutesOver = Math.max(0, Math.floor((elapsedProgressionSeconds() - 120) / 60));
   const effectivePowerupFrequency = d.powerupFrequency * Math.min(1.5, 1 + 0.05 * minutesOver);
-  const spawnInterval = 220 / effectivePowerupFrequency;
-  // Vertical spacing guard: if a powerup spawned in the last 3 seconds, add
-  // an extra 2-second delay on top of the normal interval so successive
-  // powerups can't appear stacked too close together vertically.
-  const timeSinceSpawn = frame - lastPowerupSpawn;
-  const extraSpacingFrames = timeSinceSpawn < 180 ? 120 : 0;
-  if (powerups.length < 2 && timeSinceSpawn > spawnInterval + extraSpacingFrames && Math.random() < 0.025) {
+  // ms-based at the 120fps baseline: 220 frames * 8.33ms = 1833ms per unit
+  // of (1 / effectivePowerupFrequency). Was a frame-count comparison.
+  const spawnIntervalMs = (220 / effectivePowerupFrequency) * 8.33;
+  // Vertical spacing guard: 180-frame window = 1500ms; extra 120-frame
+  // delay = 1000ms when triggered. All at 120fps baseline.
+  const timeSinceSpawn = Date.now() - lastPowerupSpawn;
+  const extraSpacingMs = timeSinceSpawn < 1500 ? 1000 : 0;
+  // Per-frame Math.random() probability also dt-scaled so attempts/second
+  // stays constant across frame rates. 0.025 @ 120fps = 3 attempts/sec avg.
+  // Devmode disables auto-spawn — user spawns powerups manually from the panel.
+  if (state === 'playing' && powerups.length < 2 && timeSinceSpawn > spawnIntervalMs + extraSpacingMs && Math.random() < 0.025 * dtScale) {
     spawnPowerup();
-    lastPowerupSpawn = frame;
+    lastPowerupSpawn = Date.now();
   }
 
   // Powerup scroll + pickup detection. Pickup radius boosted 10% over the
   // old literal 6px bumper so near-misses feel consistent with the visual.
   // Powerups scroll slightly slower than the world so the player always has
   // a touch more time to grab them, regardless of game speed.
-  const powerupScrollSpeed = spd * 0.85;
+  const powerupScrollSpeed = spd * 0.85 * dtScale;
   for (const p of powerups) {
     p.y += powerupScrollSpeed;
     p.pulse += 0.11;
@@ -8318,16 +8742,17 @@ function update() {
     if (barrierAteFragment) SFX.playSfxBuffer('hyperspeedBarrier', 0.3);
   }
 
-  // Planet ripples scroll with the world. expand/speed stays frame-based
-  // (physics) but life is now real-time.
+  // Planet ripples scroll with the world. y-scroll and expand are dt-scaled
+  // so motion-per-second is constant; life uses real-time when maxLifeMs is
+  // present, otherwise dt-scaled exponential decay.
   const nowPr = Date.now();
   for (const r of planetRipples) {
-    r.y += spd;
-    r.expand += 1.6;
+    r.y += spd * dtScale;
+    r.expand += 1.6 * dtScale;
     if (r.startTime !== undefined && r.maxLifeMs) {
       r.life = Math.max(0, 1 - (nowPr - r.startTime) / r.maxLifeMs);
     } else {
-      r.life *= 0.92;
+      r.life *= decay(0.92, dtScale);
     }
   }
   planetRipples = planetRipples.filter(r => r.life > 0.05);
@@ -8429,12 +8854,14 @@ function updateApocalypse() {
   }
   if (shake > 0) screenShake = Math.max(screenShake, shake);
 
-  // Rumble volume builds from 0.1 to ~0.5 over 8s (phone-friendly target),
-  // then a slower swell. Tremolo on the 120hz primary applied each frame.
+  // Rumble volume builds from 0.05 to ~0.25 over 8s (mobile-friendly target;
+  // halved from v1.7.1 to give the new compressor + browser limiter more
+  // headroom), then a slower swell to 0.45 over 28s. Tremolo on the 240hz
+  // primary applied each frame.
   if (apocalypseRumbleNodes) {
-    let vol = 0.1;
-    if (t < 8) vol = 0.1 + 0.4 * ((t - 3) / 5);
-    else vol = Math.min(0.9, 0.5 + 0.3 * Math.min(1, (t - 8) / 20));
+    let vol = 0.05;
+    if (t < 8) vol = 0.05 + 0.20 * ((t - 3) / 5);
+    else vol = Math.min(0.45, 0.25 + 0.20 * Math.min(1, (t - 8) / 20));
     apocalypseRumbleNodes.setVolume(vol);
     if (apocalypseRumbleNodes.tick) apocalypseRumbleNodes.tick();
   }
@@ -8733,11 +9160,11 @@ function triggerDeath() {
       pushCapped(deathParticles, { x: player.x, y: player.y, vx: Math.cos(a)*s, vy: Math.sin(a)*s, life: 1, startTime: nowDpSpawn, maxLifeMs: DEATH_PART_LIFE_MS, size: Math.random()*2.5+0.8 }, DEATH_PART_CAP);
     }
   }, 1200);
-  // Submit score online (fire and forget)
+  // Submit score online (fire and forget). Devmode runs do NOT submit or
+  // emit analytics — sandbox sessions are not real plays.
   const uname = getUsername();
-  if (uname) submitScoreOnline(uname, score, difficulty);
-  // Analytics post — fire and forget; never awaits, never throws.
-  sendAnalytics();
+  if (uname && !devmodeActive) submitScoreOnline(uname, score, difficulty);
+  if (!devmodeActive) sendAnalytics();
 
   // Save run stats snapshot for the death screen
   const deathDifficulty = difficulty;
@@ -8931,20 +9358,25 @@ const BG_IMAGE_POOLS = {
 };
 
 let bgObjects = [];
-let lastBgSpawnFrame = -99999;  // frame index of most recent spawn
-let nextBgSpawnDelay = 45 * 60; // frames until the next scheduled spawn
+// FPS-decoupled: timestamps in ms (Date.now()), not frame counts. Values
+// converted at the 120fps baseline (frame * 8.33 ≈ ms) to preserve current
+// feel. Original "45s at 60fps" comment reflects 60fps design intent — at
+// 120fps NOW that cadence already runs at ~22.5s (the current "feels right"
+// rate), which the ms values below freeze in place.
+let lastBgSpawnTime = -1e9;     // ms timestamp of most recent spawn
+let nextBgSpawnDelay = 22500;   // ms until the next scheduled spawn (was 45*60 frames)
 let lastBgImageKey = null;      // prevents same image twice in a row
 let nextBgSide = 'left';        // alternates 'left' / 'right'
 
 function nextBgSpawnStep() {
-  // 60-90 seconds between subsequent spawns at 60fps.
-  return 3600 + Math.floor(Math.random() * 1801);
+  // 30-45s between subsequent spawns at the 120fps baseline (was: 3600 + r*1801 frames).
+  return 30000 + Math.floor(Math.random() * 15000);
 }
 
 function resetBgObjects() {
   bgObjects = [];
-  lastBgSpawnFrame = -99999;    // ensures first spawn triggers at 45s in
-  nextBgSpawnDelay = 45 * 60;   // 2700 frames = 45s at 60fps
+  lastBgSpawnTime = -1e9;       // ensures first spawn triggers at the initial delay in
+  nextBgSpawnDelay = 22500;     // 22.5s @ 120fps baseline (was 45*60 frames)
   lastBgImageKey = null;
   nextBgSide = Math.random() < 0.5 ? 'left' : 'right';
 }
@@ -8972,29 +9404,30 @@ function spawnBgObject() {
   bgObjects.push({ key, x, y: -300, size, opacity, seed: Math.random() * 1e9 | 0 });
   lastBgImageKey = key;
   nextBgSide = nextBgSide === 'left' ? 'right' : 'left';
-  lastBgSpawnFrame = frame;
+  lastBgSpawnTime = Date.now();
   nextBgSpawnDelay = nextBgSpawnStep();
 }
 
-// Scale a frame-count interval by current scrollSpeed so fast runs see
-// proportionally more imagery. Floor at 20s so spawns never pile up.
-function scaledBgInterval(baseFrames) {
+// Scale a ms interval by current scrollSpeed so fast runs see proportionally
+// more imagery. Floor at 10s so spawns never pile up (was 1200 frames @ 60fps;
+// at 120fps baseline that floor is 10s).
+function scaledBgInterval(baseMs) {
   const spd = scrollSpeed();
   const factor = Math.max(0.0001, spd / 1.5);
-  const scaled = baseFrames / factor;
-  const minFrames = 20 * 60; // 20 seconds @60fps
-  return Math.max(minFrames, scaled);
+  const scaled = baseMs / factor;
+  const minMs = 10000; // 10 seconds @ 120fps baseline (was 20*60 frames)
+  return Math.max(minMs, scaled);
 }
 
 function maybeSpawnBgObject() {
   if (bgObjects.length >= 2) return;
-  const sinceLast = frame - lastBgSpawnFrame;
-  // Normal schedule: wait nextBgSpawnDelay frames since last spawn, with the
+  const sinceLast = Date.now() - lastBgSpawnTime;
+  // Normal schedule: wait nextBgSpawnDelay ms since last spawn, with the
   // wait shortened by current scrollSpeed (floored at 20s).
   const scheduledReady = sinceLast >= scaledBgInterval(nextBgSpawnDelay);
   // Hyperspeed shortcut: counts as distance travelled — while stacks >= 3,
   // allow an extra spawn if it's been at least 30s since the last one.
-  const hyperspeedReady = hyperSpeedStacks >= 3 && sinceLast >= 30 * 60;
+  const hyperspeedReady = hyperSpeedStacks >= 3 && sinceLast >= 15000; // 30*60 frames @ 120fps baseline
   if (!scheduledReady && !hyperspeedReady) return;
   spawnBgObject();
 }
@@ -9002,7 +9435,12 @@ function maybeSpawnBgObject() {
 function updateBgObjects() {
   if (state === 'playing') {
     maybeSpawnBgObject();
-    const ds = scrollSpeed() * 0.12;
+    const ds = scrollSpeed() * 0.12 * dtScale;
+    for (const o of bgObjects) o.y += ds;
+  } else if (state === 'devmode' && !devPauseScroll) {
+    // Devmode: bg scroll runs only when scroll is unpaused. Auto-spawn stays
+    // off (use SPAWN tab to trigger bg manually if needed in future).
+    const ds = scrollSpeed() * 0.12 * dtScale;
     for (const o of bgObjects) o.y += ds;
   }
   bgObjects = bgObjects.filter(o => o.y <= H + 300);
@@ -9055,6 +9493,11 @@ function drawBg() {
     // nothing drawn. State still updates on the main thread — only the draw
     // calls move.
     ctx.clearRect(0, 0, W, H);
+    // Architectural note: bg state is mutated from the render path, in this
+    // pixi branch and the canvas-2D fallback branch below — mutually
+    // exclusive, so updateBgObjects runs exactly once per frame. Spawn cadence
+    // and o.y motion are wall-clock / dt-scaled so frame rate doesn't change
+    // bg pacing despite the placement.
     updateBgObjects();
     const nebDelta = frame - nebulaRenderedFrame;
     if (nebulaRenderedFrame < 0 || nebDelta < 0 || nebDelta >= NEBULA_UPDATE_INTERVAL) {
@@ -9717,10 +10160,12 @@ function drawCracked(b, tctx = ctx) {
   // body (base darkening, heat haze, crack glow) brightens noticeably so the
   // player gets a visual tell before fragments spawn. Ramp rises steeply as
   // the timer approaches 0, eases back down after the eruption fires.
-  const framesToErupt = typeof b.nextEruptFrame === 'number' ? b.nextEruptFrame : 120;
-  const CHARGE_WINDOW = 60;
-  const chargeT = framesToErupt <= CHARGE_WINDOW && framesToErupt >= 0
-    ? 1 - (framesToErupt / CHARGE_WINDOW)
+  // nextEruptFrame is now ms (despite the legacy field name). 500ms charge
+  // window = the last ~half-second before eruption brightens visibly.
+  const msToErupt = typeof b.nextEruptFrame === 'number' ? b.nextEruptFrame : 1000;
+  const CHARGE_WINDOW = 500;
+  const chargeT = msToErupt <= CHARGE_WINDOW && msToErupt >= 0
+    ? 1 - (msToErupt / CHARGE_WINDOW)
     : 0;
   const charge = chargeT * chargeT; // ease-in quadratic
   // Base planet (darker) with directional shading. Brighten under charge.
@@ -9836,17 +10281,17 @@ function drawTentacle(b, tctx = ctx) {
   const ctx = tctx;
   ctx.save();
   const count = b.tentacleCount;
-  const STEPS = 10; // segments per tentacle
 
-  // v1.7.1: organic tapering tentacles with per-segment stroke widths, S-curve
-  // undulation along full length (two sine waves at different wavelengths so
-  // arms never look like straight rods), suckers alternating down each arm,
-  // and a bioluminescent base-glow where they meet the body. Draws under the
-  // body so the base connection is hidden by the jelly silhouette.
+  // v1.7.2 perf rewrite: each arm is ONE quadratic Bezier with a perpendicular
+  // wobble offset on the control point. Two stacked strokes (dark outline +
+  // brighter muscle highlight) reuse the same path. Round lineCap gives the
+  // tip a natural soft taper — no separate orb fill needed. 3 suckers per arm
+  // (down from 5) for further perf. Per-arm op count: ~13 (was ~121). Body
+  // render unchanged.
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
-  // Cache sampled tentacles so we can reuse them for the sucker pass.
-  const samples = []; // {pts:[{x,y,u}], angle, baseX, baseY, phase, tipX, tipY}
+  // Cache tip + curve params so the sucker pass doesn't recompute.
+  const samples = []; // {baseX, baseY, midX, midY, tipX, tipY, ext}
   for (let i = 0; i < count; i++) {
     const phase = b.tentaclePhases[i];
     const ext = tentacleExtension(phase);
@@ -9854,104 +10299,89 @@ function drawTentacle(b, tctx = ctx) {
     const retract = phase > 2.5 ? (phase - 2.5) / 1 : 0;
     const ampBoost = 1 + retract * 1.5;
     const angle = (i / count) * Math.PI * 2;
-    const maxLen = b.radius + b.radius * 1.2 * ext;
+    // Collision-aligned: tip lives at b.radius + b.radius * 1.2 * ext from
+    // body center (matches checkCollisions / tentacleExtension contract).
+    const armLen = b.radius * 1.2 * ext;
     const baseX = b.x + Math.cos(angle) * b.radius;
     const baseY = b.y + Math.sin(angle) * b.radius;
     const outX  = Math.cos(angle), outY  = Math.sin(angle);
     const tangX = -outY, tangY = outX;
-    // Sample STEPS+1 points along the tentacle with dual-frequency S-curve
-    // wobble — one slow long wave + one faster short wave. The slow wave
-    // does the organic S-curve, the fast wave gives micro-undulation.
-    const pts = [{ x: baseX, y: baseY, u: 0 }];
-    let tipX = baseX, tipY = baseY;
-    for (let s = 1; s <= STEPS; s++) {
-      const u = s / STEPS;
-      // Long S-curve: sin over [0, π] along length → full swing side-to-side.
-      const slow = Math.sin(u * Math.PI + frame * 0.04 + i * 1.2) * 10 * u * ampBoost;
-      // Fast ripple: small amplitude, higher frequency.
-      const fast = Math.sin(u * Math.PI * 3.3 + frame * 0.09 + i * 0.4) * 3 * u * ampBoost;
-      const wig = slow + fast;
-      const cx = baseX + outX * (maxLen - b.radius) * u + tangX * wig;
-      const cy = baseY + outY * (maxLen - b.radius) * u + tangY * wig;
-      pts.push({ x: cx, y: cy, u });
-      tipX = cx; tipY = cy;
-    }
-    samples.push({ pts, angle, baseX, baseY, phase, tipX, tipY, outX, outY });
-    // Bioluminescent base glow — soft radial at the body-tentacle junction,
-    // drawn before the tentacle strokes so the arm appears to emerge from a
-    // lit socket.
+    // Wobble at the midpoint controls the S-curve. Two sine components
+    // (slow long-wave + fast short-wave) give organic feel without the cost
+    // of sampling 10 points. Tip wobble is half the mid wobble so the tip
+    // doesn't jitter past the collision endpoint.
+    const slowMid = Math.sin(0.5 * Math.PI + frame * 0.04 + i * 1.2) * 12 * ampBoost;
+    const fastMid = Math.sin(0.5 * Math.PI * 3.3 + frame * 0.09 + i * 0.4) * 4 * ampBoost;
+    const wigMid = slowMid + fastMid;
+    const slowTip = Math.sin(Math.PI + frame * 0.04 + i * 1.2) * 10 * ampBoost;
+    const fastTip = Math.sin(Math.PI * 3.3 + frame * 0.09 + i * 0.4) * 3 * ampBoost;
+    const wigTip = slowTip + fastTip;
+    const midX = baseX + outX * armLen * 0.5 + tangX * wigMid;
+    const midY = baseY + outY * armLen * 0.5 + tangY * wigMid;
+    const tipX = baseX + outX * armLen + tangX * wigTip;
+    const tipY = baseY + outY * armLen + tangY * wigTip;
+    samples.push({ baseX, baseY, midX, midY, tipX, tipY, ext });
+
+    // Bioluminescent base glow — soft radial at body-arm junction so the
+    // arm appears to emerge from a lit socket. Kept from v1.7.1.
     const baseGlowR = 8;
     const baseG = ctx.createRadialGradient(baseX, baseY, 0, baseX, baseY, baseGlowR);
     baseG.addColorStop(0, 'rgba(180,240,255,0.75)');
     baseG.addColorStop(1, 'rgba(180,240,255,0)');
     ctx.fillStyle = baseG;
     ctx.beginPath(); ctx.arc(baseX, baseY, baseGlowR, 0, 6.28); ctx.fill();
-    // Stroke per segment with a taper: thick at the base (10px), thin at the
-    // tip (2.5px). Two strokes per segment — outline + muscle highlight.
-    for (let s = 1; s < pts.length; s++) {
-      const u0 = pts[s - 1].u;
-      const u1 = pts[s].u;
-      const uMid = (u0 + u1) * 0.5;
-      const trunk = 10;
-      const tip = 2.4;
-      const widthOutline = trunk + (tip - trunk) * uMid;
-      const widthHighlight = widthOutline * 0.5;
-      // Outline (dark shadow edge).
-      ctx.strokeStyle = `rgba(26,8,48,${0.92 - uMid * 0.1})`;
-      ctx.lineWidth = widthOutline;
-      ctx.beginPath();
-      ctx.moveTo(pts[s - 1].x, pts[s - 1].y);
-      ctx.lineTo(pts[s].x, pts[s].y);
-      ctx.stroke();
-      // Muscle highlight (lit belly). Hue shifts slightly toward magenta
-      // mid-length so the arm reads as having internal structure.
-      const hueMix = Math.round(70 + uMid * 60);
-      ctx.strokeStyle = `rgba(${hueMix + 50},${70 - uMid * 20},${180 - uMid * 30},0.78)`;
-      ctx.lineWidth = widthHighlight;
-      ctx.beginPath();
-      ctx.moveTo(pts[s - 1].x, pts[s - 1].y);
-      ctx.lineTo(pts[s].x, pts[s].y);
-      ctx.stroke();
-    }
-    // Bulbous tip — unchanged look, still reads as a heavy club-end.
-    ctx.fillStyle = 'rgba(160,110,220,0.98)';
-    ctx.beginPath(); ctx.arc(tipX, tipY, 5.2, 0, 6.28); ctx.fill();
-    ctx.strokeStyle = 'rgba(200,170,255,0.55)';
-    ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.arc(tipX, tipY, 5.2, 0, 6.28); ctx.stroke();
+
+    // Single Bezier path, two stacked strokes. Outline first (dark, wide),
+    // then highlight (lit, narrow). Both reuse the same path data — just one
+    // beginPath + moveTo + quadraticCurveTo + two strokes per arm.
+    ctx.beginPath();
+    ctx.moveTo(baseX, baseY);
+    ctx.quadraticCurveTo(midX, midY, tipX, tipY);
+    ctx.strokeStyle = 'rgba(26,8,48,0.92)';
+    ctx.lineWidth = 7;
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(160,110,220,0.78)';
+    ctx.lineWidth = 3;
+    ctx.stroke();
+
+    // Tip orb — hitbox indicator drawn at (tipX, tipY), the arm's extending
+    // far end (same point the collision check uses). The previous pass sized
+    // this orb at 3.2px, but the arm stroke uses lineCap='round' with width 7,
+    // so its round cap already draws a ~3.5px half-circle in the SAME dark
+    // violet at the tip — the orb fell exactly under the cap and was invisible.
+    // Bumped to 4.6px and given a thin bright violet ring so it reads as a
+    // distinct terminal bulb rather than the stroke's own lineCap.
+    const tipR = 4.6;
+    ctx.fillStyle = 'rgba(20,4,40,0.98)';
+    ctx.beginPath(); ctx.arc(tipX, tipY, tipR, 0, 6.28); ctx.fill();
+    ctx.strokeStyle = 'rgba(200,150,240,0.95)';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.arc(tipX, tipY, tipR, 0, 6.28); ctx.stroke();
+    ctx.fillStyle = 'rgba(220,180,255,0.92)';
+    ctx.beginPath(); ctx.arc(tipX - tipR * 0.32, tipY - tipR * 0.32, tipR * 0.38, 0, 6.28); ctx.fill();
   }
-  // Sucker pass — alternating small dark circles along each tentacle, offset
-  // to alternating sides of the arm centreline. Drawn AFTER all tentacles so
-  // suckers layer cleanly on top of the muscle highlights. Skipped if the
-  // tentacle is too short (ext<0.25 → still retracting).
+  // Sucker pass — 3 per arm (down from 5), evaluated via quadratic Bezier
+  // formula at u=0.3/0.55/0.8 instead of the cached sample-points list.
   for (let i = 0; i < count; i++) {
     const tent = samples[i];
     if (!tent) continue;
-    const ext = tentacleExtension(tent.phase);
-    if (ext < 0.25) continue;
-    const suckerCount = 5;
-    for (let k = 1; k <= suckerCount; k++) {
-      const uTarget = (k / (suckerCount + 1));
-      // Find the two adjacent sample points.
-      const idx = Math.min(tent.pts.length - 1, Math.max(1, Math.round(uTarget * STEPS)));
-      const p = tent.pts[idx];
-      const prev = tent.pts[idx - 1];
-      // Local tangent from prev→p, perpendicular gives the sucker offset.
-      const dx = p.x - prev.x, dy = p.y - prev.y;
-      const dlen = Math.hypot(dx, dy) || 1;
-      const perpX = -dy / dlen, perpY = dx / dlen;
-      // Alternate sides so suckers zigzag down the arm.
-      const side = (k % 2 === 0) ? 1 : -1;
-      const armW = 10 + (2.4 - 10) * p.u; // matches outline taper
-      const suckerOff = (armW * 0.5) * 0.55 * side;
-      const sx = p.x + perpX * suckerOff;
-      const sy = p.y + perpY * suckerOff;
-      const sr = Math.max(0.8, 1.9 - p.u * 0.9); // bigger near base
-      // Outer dark ring.
+    if (tent.ext < 0.25) continue;
+    const us = [0.3, 0.55, 0.8];
+    for (let k = 0; k < us.length; k++) {
+      const u = us[k];
+      const iu = 1 - u;
+      // Quadratic Bezier point at u.
+      const sx = iu * iu * tent.baseX + 2 * iu * u * tent.midX + u * u * tent.tipX;
+      const sy = iu * iu * tent.baseY + 2 * iu * u * tent.midY + u * u * tent.tipY;
+      // Evenly sized (was "bigger near base" — that made the u=0.3 sucker
+      // visually compete with the tip orb, since a big dark circle near the
+      // body-arm junction read as "the orb is at the wrong end").
+      const sr = 1.3;
+      // Dark outer ring + lit catchlight, centered on the curve (no zigzag —
+      // simpler and reads cleaner at smaller op count).
       ctx.fillStyle = 'rgba(10,4,20,0.9)';
       ctx.beginPath(); ctx.arc(sx, sy, sr, 0, 6.28); ctx.fill();
-      // Inner pale dot — catchlight on the sucker rim.
-      ctx.fillStyle = 'rgba(220,180,255,0.75)';
+      ctx.fillStyle = 'rgba(220,180,255,0.7)';
       ctx.beginPath(); ctx.arc(sx - sr * 0.25, sy - sr * 0.25, sr * 0.35, 0, 6.28); ctx.fill();
     }
   }
@@ -10678,14 +11108,18 @@ function drawMirror(b, tctx = ctx) {
       const pd = Math.hypot(pdx, pdy) || 1;
       const px = b.x + (pdx / pd) * b.radius * 0.6;
       const py = b.y + (pdy / pd) * b.radius * 0.6;
+      // Mirror the CURRENT orb's color so the dot matches whatever the player
+      // has equipped (cyan / purple / orange / etc). activeOrbColor() returns
+      // the same "r,g,b" triplet drawPlayer/drawOrbTrailParticles use.
+      const orbRgb = activeOrbColor();
       const g = ctx.createRadialGradient(px, py, 0, px, py, b.radius * 0.25);
-      g.addColorStop(0, 'rgba(125,232,255,0.85)');
-      g.addColorStop(1, 'rgba(125,232,255,0)');
+      g.addColorStop(0, `rgba(${orbRgb},0.85)`);
+      g.addColorStop(1, `rgba(${orbRgb},0)`);
       ctx.fillStyle = g;
       ctx.beginPath(); ctx.arc(px, py, b.radius * 0.25, 0, 6.28); ctx.fill();
       // Secondary highlight trail from the reflected dot — short streak
       // pointing toward the mirror center, as if light streak on curved glass.
-      ctx.strokeStyle = 'rgba(125,232,255,0.35)';
+      ctx.strokeStyle = `rgba(${orbRgb},0.35)`;
       ctx.lineWidth = 1.5;
       ctx.beginPath();
       ctx.moveTo(px, py);
@@ -11857,7 +12291,7 @@ function render() {
     ctx.globalAlpha = 1;
   }
 
-  if (state==='playing'||state==='dead'||state==='paused'||state==='apocalypse') {
+  if (state==='playing'||state==='dead'||state==='paused'||state==='apocalypse'||state==='devmode') {
     drawPowerups();
     drawNovaRings();
     drawEmpRings();
@@ -11906,11 +12340,20 @@ let loopFrameCounter = 0;
 // feed a giant step into the simulation.
 let lastFrameTime = null;
 let frameDt = 0;
+// Frame-rate decoupling: dtScale = 1 at the 120fps reference rate (8.33ms/frame).
+// Every per-frame physics value in Category A is multiplied by dtScale so
+// motion-per-second stays constant regardless of refresh rate. Clamped to
+// [0.125, 4.0] so a single frame can't advance physics by more than 4× the
+// reference step (tunneling guard) or freeze it (catastrophic frame rates).
+// Read directly from physics callees rather than threaded as a parameter,
+// matching the existing frameDt global pattern.
+let dtScale = 1;
 function loop() {
   try {
     const nowTs = performance.now();
     const skipPhysics = (lastFrameTime === null);
     frameDt = skipPhysics ? 0 : Math.min(nowTs - lastFrameTime, 32);
+    dtScale = skipPhysics ? 1 : Math.min(Math.max(frameDt / 8.33, 0.125), 4.0);
     lastFrameTime = nowTs;
     try {
       if (!skipPhysics) update();
@@ -11993,7 +12436,7 @@ function loop() {
 
 // --- Input ---
 function readInput(e) {
-  if (state!=='playing') return;
+  if (state!=='playing' && state!=='devmode') return;
   const rect=canvas.getBoundingClientRect();
   leftDown=false; rightDown=false;
   const pts=e.touches||[e];
@@ -12035,6 +12478,12 @@ document.getElementById('startBtn').addEventListener('click', ()=>{
   // instead of starting a run. Removed/gated before v1.6.0.
   if (getUsername() === 'BODYPREVIEW') {
     enterBodyPreview();
+    return;
+  }
+  // DEV cheat: pilot name "DEVMODE" opens the internal gameplay sandbox
+  // instead of starting a run. Removed/gated before public release.
+  if (getUsername() === 'DEVMODE') {
+    enterDevMode();
     return;
   }
   // Sentry fire-test cheat: pilot name "SENTRY" triggers a tagged test event
@@ -14018,6 +14467,247 @@ function exitBodyPreview() {
   state = 'idle';
 }
 
+// =====================================================================
+// DEVMODE — internal sandbox. Activated by pilot name "DEVMODE" (see
+// startBtn handler). Production code paths are gated by `devmodeActive`
+// and `state === 'devmode'` so behavior is unchanged when the sandbox is
+// inactive. Phase 1: SPAWN + TRIGGER tabs + always-on god mode + close.
+// Phase 2 (PLAYER tab, WORLD tab, hitbox overlay, FPS cap) lives in a
+// separate pass.
+// =====================================================================
+const DEVMODE_BODY_TYPES = [
+  'star','planet','blackhole','toothed','eye','cracked',
+  'tentacle','screaming','void','heart','mirror','skull',
+];
+// Per-type radius range — must match spawnBody() in www/index.html. Used
+// to spawn at exact min/max when the radius toggle is not 'rand'.
+const DEVMODE_RADIUS_RANGE = {
+  star:      [13, 22],
+  planet:    [17, 30],
+  blackhole: [11, 18],
+  toothed:   [16, 22],
+  eye:       [18, 23],
+  cracked:   [17, 24],
+  tentacle:  [16, 20],
+  screaming: [17, 23],
+  void:      [14, 19],
+  heart:     [17, 21],
+  mirror:    [14, 19],
+  skull:     [20, 30],
+};
+const DEVMODE_POWERUP_TYPES = ['shield','nova','hyperspeed','ghost'];
+let devmodeRadiusMode = 'rand'; // 'min' | 'rand' | 'max'
+
+function enterDevMode() {
+  // Mirror the production startBtn flow: full reset, then override into
+  // the sandbox state. resetGame() seeds initial bodies via initBodies();
+  // we wipe them so the sandbox starts empty (manual spawn only).
+  clearResumeState();
+  resetGame();
+  bodies = [];
+  powerups = [];
+  // Devmode state. devGodMode is ON by default in phase 1; phase 2 will
+  // expose the toggle via the PLAYER tab.
+  state = 'devmode';
+  devmodeActive = true;
+  devGodMode = true;
+  // Scroll paused by default — bodies stay visible so you can watch their
+  // natural animation cycles (heart beat, cracked eruption, skull flash, etc.)
+  // without them scrolling off screen mid-observation. Toggle in the panel.
+  devPauseScroll = true;
+  // Replace menu chrome with the sandbox panel. We deliberately don't
+  // show the production pauseBtn — the X close in the panel owns exit.
+  document.getElementById('overlay').classList.add('hidden');
+  document.getElementById('devmodeOverlay').classList.add('visible');
+  // FPS counter visible during sandbox sessions for live frame-rate read.
+  document.getElementById('fpsCounter').classList.add('visible');
+  // Sync the panel's scroll-toggle button label to the default state.
+  refreshDevScrollButton();
+}
+
+function exitDevMode() {
+  // Hide UI.
+  document.getElementById('devmodeOverlay').classList.remove('visible');
+  document.getElementById('fpsCounter').classList.remove('visible');
+  document.getElementById('overlay').classList.remove('hidden');
+  // Clear all transient game state spawned during the session. resetGame()
+  // would seed fresh bodies — we want the menu to look idle, so wipe.
+  bodies = [];
+  powerups = [];
+  novaRings = [];
+  empRings = [];
+  pickupParticles = [];
+  deathParticles = [];
+  orbTrailParticles = [];
+  planetRipples = [];
+  destroyEffects = [];
+  deathShards = [];
+  crackFragments = [];
+  trail = [];
+  // Revert dev flags BEFORE state change so any in-flight checks see the
+  // reverted values.
+  devmodeActive = false;
+  devGodMode = false;
+  devPauseScroll = false;
+  // Reset effect timers so the next real run starts clean. Same set
+  // resetGame() clears — duplicated here so we don't run a full resetGame
+  // (which would re-seed bodies + restart runStartTime).
+  activeEffects = { shield: 0, hyperspeed: 0, ghost: 0 };
+  shieldEndTime = 0;
+  ghostEndTime = 0;
+  hyperSpeedTimers = [];
+  hyperspeedCurrentMult = 1;
+  hyperspeedPeakMult = 1;
+  hyperSpeedStacks = 0;
+  burstCooldownEnd = 0;
+  burstTriggered = false;
+  state = 'idle';
+}
+
+function dmSpawnBodyOfType(type) {
+  // When scroll is paused, spawn directly on-screen (otherwise the body
+  // sits at y=-60 forever and is never visible). Stagger vertically so
+  // multiple taps don't perfectly overlap.
+  const yBase = devPauseScroll
+    ? H * 0.25 + Math.random() * (H * 0.4)
+    : -60 - Math.random() * 60;
+  const range = DEVMODE_RADIUS_RANGE[type];
+  let opts = { type };
+  if (devmodeRadiusMode === 'min' && range) opts.radius = range[0];
+  else if (devmodeRadiusMode === 'max' && range) opts.radius = range[1];
+  // 'rand' → leave opts.radius unset; spawnBody uses its built-in random range.
+  bodies.push(spawnBody(yBase, opts));
+}
+
+function dmSpawnPowerupOfType(type) {
+  // Mirror spawnPowerup() positioning, but force a specific type and skip
+  // pair-combo logic and nova-overload reroll. When paused, spawn on-screen
+  // so the powerup is immediately visible (and pickup-able by drifting into it).
+  let y;
+  if (devPauseScroll) {
+    y = H * 0.25 + Math.random() * (H * 0.4);
+  } else {
+    const topBodyY = bodies.length ? Math.min(...bodies.map(b => b.y)) : -100;
+    y = Math.min(-30, topBodyY - 60 - Math.random() * 80);
+  }
+  powerups.push({
+    type,
+    x: 60 + Math.random() * (W - 120),
+    y,
+    radius: 13,
+    pulse: Math.random() * 6.28,
+    collected: false,
+  });
+}
+
+// --- WORLD tab: scroll toggle + global events ---
+// Per-body force triggers were removed in the v2 redesign — the previous
+// approach was clunky because by the time you spawned + tapped, the body had
+// scrolled off. Now the WORLD tab freezes scroll by default and bodies stay
+// on screen while their internal animation cycles run naturally (heart beat,
+// cracked eruption, skull flash, scream, tentacle extension, mirror drift).
+function dmToggleScroll() {
+  devPauseScroll = !devPauseScroll;
+  refreshDevScrollButton();
+}
+function refreshDevScrollButton() {
+  const btn = document.getElementById('dmScrollToggle');
+  if (!btn) return;
+  btn.textContent = 'SCROLL: ' + (devPauseScroll ? 'PAUSED' : 'PLAYING');
+  btn.classList.toggle('active', devPauseScroll);
+}
+function dmTriggerApocalypse() {
+  // startApocalypse() guards against re-entry, but we also gate on state
+  // so we don't wedge if the user double-taps mid-sequence.
+  if (state === 'devmode') startApocalypse();
+}
+function dmTriggerNova() {
+  // Mirrors player burst behavior. executeBurst reads activeOrb and
+  // produces the right nova flavor. Clear the cooldown first so the
+  // call always succeeds.
+  burstCooldownEnd = 0;
+  executeBurst();
+}
+
+// --- Panel UI wiring (runs once on load) ---
+let devmodePanelInitialized = false;
+function setupDevModePanel() {
+  if (devmodePanelInitialized) return;
+  devmodePanelInitialized = true;
+
+  // Body buttons.
+  const bodyGrid = document.getElementById('dmBodyGrid');
+  for (const t of DEVMODE_BODY_TYPES) {
+    const btn = document.createElement('button');
+    btn.className = 'dm-btn';
+    btn.textContent = t.toUpperCase();
+    btn.addEventListener('click', () => dmSpawnBodyOfType(t));
+    bodyGrid.appendChild(btn);
+  }
+
+  // Radius toggle.
+  const radiusToggle = document.getElementById('dmRadiusToggle');
+  radiusToggle.querySelectorAll('.dm-btn').forEach(b => {
+    b.addEventListener('click', () => {
+      devmodeRadiusMode = b.dataset.radius;
+      radiusToggle.querySelectorAll('.dm-btn').forEach(o => o.classList.remove('active'));
+      b.classList.add('active');
+    });
+  });
+
+  // Powerup buttons.
+  const powerupGrid = document.getElementById('dmPowerupGrid');
+  for (const t of DEVMODE_POWERUP_TYPES) {
+    const btn = document.createElement('button');
+    btn.className = 'dm-btn';
+    btn.textContent = t.toUpperCase();
+    btn.addEventListener('click', () => dmSpawnPowerupOfType(t));
+    powerupGrid.appendChild(btn);
+  }
+
+  // Quick actions.
+  document.getElementById('dmSpawn5').addEventListener('click', () => {
+    for (let i = 0; i < 5; i++) {
+      const t = DEVMODE_BODY_TYPES[Math.floor(Math.random() * DEVMODE_BODY_TYPES.length)];
+      dmSpawnBodyOfType(t);
+    }
+  });
+  document.getElementById('dmClearBodies').addEventListener('click', () => { bodies = []; });
+  document.getElementById('dmClearPowerups').addEventListener('click', () => { powerups = []; });
+
+  // WORLD tab: scroll toggle + 2 global events. Per-body force triggers
+  // were removed in v2 — paused-scroll lets bodies demonstrate themselves
+  // naturally over their full animation cycles.
+  document.getElementById('dmScrollToggle').addEventListener('click', dmToggleScroll);
+  document.getElementById('dmTriggerNova').addEventListener('click', dmTriggerNova);
+  document.getElementById('dmTriggerApocalypse').addEventListener('click', dmTriggerApocalypse);
+
+  // Tab switching.
+  document.querySelectorAll('#devmodePanel .dm-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      const target = tab.dataset.tab;
+      document.querySelectorAll('#devmodePanel .dm-tab').forEach(t => t.classList.remove('dm-tab-active'));
+      document.querySelectorAll('#devmodePanel .dm-tab-pane').forEach(p => p.classList.remove('dm-pane-active'));
+      tab.classList.add('dm-tab-active');
+      document.querySelector('#devmodePanel .dm-tab-pane[data-pane="' + target + '"]').classList.add('dm-pane-active');
+    });
+  });
+
+  // Minimize / restore. The header acts as the toggle so the panel can
+  // shrink to the title bar (still tap-able to restore).
+  const panel = document.getElementById('devmodePanel');
+  document.getElementById('devmodeMinBtn').addEventListener('click', () => {
+    panel.classList.toggle('minimized');
+    document.getElementById('devmodeMinBtn').textContent = panel.classList.contains('minimized') ? '▴' : '▾';
+  });
+
+  // Close X.
+  document.getElementById('devmodeClose').addEventListener('click', () => {
+    try { SFX.clickSecondary && SFX.clickSecondary(); } catch {}
+    exitDevMode();
+  });
+}
+
 // Per-frame ticks for preview-mode bodies. Mirrors only the visual-animation
 // fields touched in updateBodyTypes (no SFX, no fragment spawns, no physics,
 // no player.x reads — those would need a real game session).
@@ -14087,9 +14777,9 @@ function tickPreviewAnimations() {
       // visible on the preview page. Resets loop with random jitter when
       // it reaches zero to mimic the gameplay cadence.
       if (typeof b.nextEruptFrame === 'number') {
-        b.nextEruptFrame--;
+        b.nextEruptFrame -= frameDt;
         if (b.nextEruptFrame <= 0) {
-          b.nextEruptFrame = 180 + Math.floor(Math.random() * 60);
+          b.nextEruptFrame = 1500 + Math.random() * 500;
           b.eruptFlash = 10;
         }
       }
@@ -14184,6 +14874,7 @@ document.getElementById('bodyPreviewClose').addEventListener('click', () => {
   try { SFX.clickSecondary && SFX.clickSecondary(); } catch {}
   exitBodyPreview();
 });
+setupDevModePanel();
 
 initBgStars(); initBodies();
 initPixiStars();
