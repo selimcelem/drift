@@ -1186,6 +1186,111 @@
     color: rgba(255,255,255,0.9);
   }
 
+  /* --- DEAD CENTER (Drifter capstone) radial overlay ---
+     Full-screen overlay with 4 quadrant buttons positioned around a centered
+     "PICK" label. While visible, the game state is 'deadCenter' which the
+     update loop short-circuits so physics/scroll/animations freeze. On tap
+     or slot-machine auto-pick, the overlay disappears instantly and the
+     chosen powerup (or pair combo when CALCULATED DRIFT is owned) fires. */
+  #deadCenterOverlay {
+    position: absolute;
+    inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 4, 0.68);
+    backdrop-filter: blur(4px);
+    z-index: 38; /* above gameplay, above tree menu */
+    touch-action: manipulation;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  #deadCenterOverlay.visible { display: flex; }
+  .dc-ring {
+    position: absolute;
+    top: 50%; left: 50%;
+    width: 260px; height: 260px;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    border: 1px solid rgba(125, 232, 255, 0.35);
+    box-shadow: 0 0 40px rgba(125, 232, 255, 0.12),
+                inset 0 0 40px rgba(125, 232, 255, 0.08);
+    pointer-events: none;
+  }
+  .dc-center {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+    pointer-events: none;
+  }
+  .dc-center-label {
+    font-family: 'Orbitron', monospace;
+    font-size: 18px;
+    letter-spacing: 5px;
+    color: rgba(180, 240, 255, 1);
+    text-shadow: 0 0 12px rgba(125, 232, 255, 0.6);
+  }
+  .dc-center-sub {
+    font-family: 'Orbitron', monospace;
+    font-size: 10px;
+    letter-spacing: 4px;
+    color: rgba(180, 240, 255, 0.55);
+    margin-top: 2px;
+  }
+  .dc-quadrant {
+    position: absolute;
+    width: 110px;
+    min-height: 86px;
+    background: rgba(0, 0, 12, 0.7);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    color: rgba(255, 255, 255, 0.9);
+    font-family: 'Orbitron', monospace;
+    border-radius: 6px;
+    padding: 10px;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    transition: border-color 0.12s, box-shadow 0.12s, background 0.12s, transform 0.12s;
+    touch-action: manipulation;
+  }
+  .dc-quadrant .dc-q-icon {
+    font-size: 28px;
+    line-height: 1;
+  }
+  .dc-quadrant .dc-q-label {
+    font-size: 11px;
+    letter-spacing: 3px;
+  }
+  /* Position each quadrant in its compass direction around the center ring. */
+  .dc-quadrant.dc-top    { top: calc(50% - 180px); left: 50%; transform: translateX(-50%); }
+  .dc-quadrant.dc-right  { top: 50%; left: calc(50% + 70px); transform: translateY(-50%); }
+  .dc-quadrant.dc-bottom { top: calc(50% + 94px); left: 50%; transform: translateX(-50%); }
+  .dc-quadrant.dc-left   { top: 50%; left: calc(50% - 180px); transform: translateY(-50%); }
+  /* Per-quadrant color accents to reinforce the powerup mapping. */
+  .dc-quadrant[data-q="shield"]     { border-color: rgba(120, 230, 255, 0.55); color: rgba(180, 240, 255, 1); }
+  .dc-quadrant[data-q="nova"]       { border-color: rgba(255, 150, 80, 0.55);  color: rgba(255, 180, 110, 1); }
+  .dc-quadrant[data-q="hyperspeed"] { border-color: rgba(255, 220, 60, 0.55);  color: rgba(255, 235, 120, 1); }
+  .dc-quadrant[data-q="ghost"]      { border-color: rgba(192, 132, 252, 0.55); color: rgba(220, 190, 255, 1); }
+  .dc-quadrant:hover {
+    background: rgba(20, 24, 40, 0.85);
+    box-shadow: 0 0 18px currentColor;
+  }
+  /* Slot-machine highlight: applied by the JS cycler at 50ms/step. */
+  .dc-quadrant.dc-highlight {
+    background: rgba(30, 40, 60, 0.9);
+    box-shadow: 0 0 28px currentColor;
+    border-color: currentColor;
+  }
+  /* Landed state (final stop of the slot-machine): briefly brighter pulse. */
+  .dc-quadrant.dc-landed {
+    background: rgba(50, 60, 90, 0.95);
+    box-shadow: 0 0 44px currentColor;
+  }
+
   /* --- Skill trees (v1.6.3) --- */
   /* Main-menu entry button. Shown only when at least one tree is unlocked. */
   #skillTreesBtn {
@@ -2227,6 +2332,29 @@
     </div>
   </div>
   <div id="pgsToast"></div>
+  <div id="deadCenterOverlay">
+    <div class="dc-ring"></div>
+    <div class="dc-center">
+      <div class="dc-center-label">PICK</div>
+      <div class="dc-center-sub">BURST</div>
+    </div>
+    <button class="dc-quadrant dc-top" data-q="shield">
+      <div class="dc-q-icon">◐</div>
+      <div class="dc-q-label">SHIELD</div>
+    </button>
+    <button class="dc-quadrant dc-right" data-q="nova">
+      <div class="dc-q-icon">✸</div>
+      <div class="dc-q-label">NOVA</div>
+    </button>
+    <button class="dc-quadrant dc-bottom" data-q="hyperspeed">
+      <div class="dc-q-icon">⚡</div>
+      <div class="dc-q-label">HYPER</div>
+    </button>
+    <button class="dc-quadrant dc-left" data-q="ghost">
+      <div class="dc-q-icon">✦</div>
+      <div class="dc-q-label">GHOST</div>
+    </button>
+  </div>
   <div id="treeOverlay">
     <div class="tree-header">
       <div class="tree-title" id="treeTitle">SKILL TREES</div>
@@ -3885,13 +4013,9 @@ const TREE_RESPEC_PER_RANK = 1400;
 // gameplay effects. Remove entries from this set as each capstone's effect
 // ships in a future pass. Keeping the UI visible so players can see what's
 // planned. Purchase flow early-returns for members; no crystal spend occurs.
-const COMING_SOON_CAPSTONES = new Set([
-  'deadCenter', 'calculatedDrift', 'butterfly',
-  'shroud', 'nightShade',
-  'sunForge', 'criticalMass',
-  'superluminal', 'eventHorizon',
-  'phalanx', 'aegis',
-]);
+// All 11 capstones wired in the v1.6.3 capstone pass — set empty but kept
+// for future capstone additions.
+const COMING_SOON_CAPSTONES = new Set([]);
 function isCapstoneComingSoon(capKey) { return COMING_SOON_CAPSTONES.has(capKey); }
 
 // TREE_DEFS: single source of truth for node metadata. Each path's `nodes`
@@ -4510,6 +4634,50 @@ function bastion2Proc() {
   treeLog('bastion2: shield stacked → ' + shieldHits);
 }
 
+// Per-frame capstone auto-fire tick. NIGHT SHADE / SUN FORGE / AEGIS each
+// have their own cadence; fires silently if conditions aren't met. Timers
+// are shifted on pause via applyPauseDeltaShift so they don't drift during
+// pauses or DEAD CENTER overlay. Called once per update() tick.
+function tickCapstoneTimers() {
+  const now = Date.now();
+  // NIGHT SHADE (Phantom): auto-ghost 2 s every 60 s. Skip if ghost already
+  // active; still reschedule so we don't spam-check.
+  if (activeOrb === 'cosmic' && hasCapstone('nightShade')) {
+    if (now >= nightShadeNextFireTime) {
+      if (activeEffects.ghost <= 0) {
+        ghostEndTime = now + 2000;
+        activeEffects.ghost = 2000;
+        treeLog('nightShade: auto-ghost 2s');
+      } else {
+        treeLog('nightShade: ghost already active, skipping');
+      }
+      nightShadeNextFireTime = now + 60000;
+    }
+  }
+  // SUN FORGE (Inferno): auto-supernova every 15 s. Bypasses nova-overload
+  // guard — nova_nova is the documented exception that always re-fires.
+  if (activeOrb === 'solar' && hasCapstone('sunForge')) {
+    if (now >= sunForgeNextFireTime) {
+      activateCombo('nova_nova', player.x, player.y);
+      treeLog('sunForge: auto-supernova');
+      sunForgeNextFireTime = now + 15000;
+    }
+  }
+  // AEGIS (Fortress): auto Fortress Shield every 45 s. Skip + reschedule
+  // if the shield_shield combo is already active.
+  if (activeOrb === 'asteroid' && hasCapstone('aegis')) {
+    if (now >= aegisNextFireTime) {
+      if (!activeCombos.shield_shield) {
+        activateCombo('shield_shield', player.x, player.y);
+        treeLog('aegis: auto Fortress Shield');
+      } else {
+        treeLog('aegis: Fortress already active, skipping');
+      }
+      aegisNextFireTime = now + 45000;
+    }
+  }
+}
+
 // Entry point called from every body-destroy site. `source` tag gates certain
 // procs — Bastion II excludes source === 'emp' to break the PHALANX +
 // Bastion II feedback loop that would otherwise trigger when PHALANX ships.
@@ -4583,6 +4751,28 @@ const BURN_ZONE_RADIUS = 60;
 // Second Flame (Inferno Pyre T3): setTimeouts for bonus waves — tracked so
 // we can clear on resetGame() to avoid a ghost wave firing after restart.
 let secondFlamePending = [];
+// SHROUD (Phantom capstone): timestamp of the last single-ghost pickup,
+// used to auto-combo two rapid ghost pickups into Eternal Phantom.
+let lastGhostSingleTime = 0;
+// CRITICAL MASS (Inferno capstone): kills tallied within the current nova
+// cast. 10+ triggers a free supernova on 5 s cooldown.
+let novaCastKillCount = 0;
+let criticalMassCooldownEnd = 0;
+// Capstone auto-fire timers (NIGHT SHADE 60 s, SUN FORGE 15 s, AEGIS 45 s).
+// Initialised to +interval in resetTreeNodeState so first fire waits the
+// full cadence after run start.
+let nightShadeNextFireTime = 0;
+let sunForgeNextFireTime   = 0;
+let aegisNextFireTime      = 0;
+// BUTTERFLY EFFECT (Drifter capstone): setTimeouts for deferred mirror-
+// pickup spawns. Tracked for cleanup on run restart so a ghost pickup
+// can't spawn into a fresh run.
+let butterflyPending = [];
+// DEAD CENTER (Drifter capstone): radial-menu overlay state.
+let deadCenterActive = false;
+let deadCenterTimeoutId = null;
+let deadCenterCycleIntervalId = null;
+let deadCenterResolved = false;
 
 function resetTreeNodeState() {
   powerupLastActivated = { shield: 0, nova: 0, hyperspeed: 0, ghost: 0 };
@@ -4598,6 +4788,18 @@ function resetTreeNodeState() {
   burnZones = [];
   for (const id of secondFlamePending) clearTimeout(id);
   secondFlamePending = [];
+  // Capstone state.
+  lastGhostSingleTime = 0;
+  novaCastKillCount = 0;
+  criticalMassCooldownEnd = 0;
+  const now = Date.now();
+  nightShadeNextFireTime = now + 60000;
+  sunForgeNextFireTime   = now + 15000;
+  aegisNextFireTime      = now + 45000;
+  for (const id of butterflyPending) clearTimeout(id);
+  butterflyPending = [];
+  // If a DEAD CENTER overlay was mid-show during restart, hide it cleanly.
+  if (deadCenterActive) closeDeadCenterOverlay(false);
 }
 
 // Helper: combined nova-radius scale for Solar Flare + Coronal Hold.
@@ -4637,6 +4839,129 @@ function effectActiveForBurstReroll(type) {
       activeCombos.nova_hyperspeed || activeCombos.nova_ghost || activeCombos.nova_shield;
   }
   return false;
+}
+
+// DEAD CENTER (Drifter capstone) overlay lifecycle. Called from executeBurst
+// on cyan when the capstone is owned. Freezes the game by setting
+// state = 'deadCenter' (which update() short-circuits on) and runPauseStart
+// so applyPauseDeltaShift can compensate every timer when the overlay
+// dismisses. The slot-machine fallback fires if no tap lands within 0.5 s.
+function openDeadCenterOverlay() {
+  if (deadCenterActive) return;
+  deadCenterActive = true;
+  deadCenterResolved = false;
+  state = 'deadCenter';
+  leftDown = false; rightDown = false;
+  runPauseStart = Date.now();
+  const ov = document.getElementById('deadCenterOverlay');
+  if (ov) ov.classList.add('visible');
+  // 0.5 s real-time to tap; then slot-machine auto-cycle.
+  deadCenterTimeoutId = setTimeout(() => {
+    if (deadCenterResolved) return;
+    runDeadCenterSlotMachine();
+  }, 500);
+  treeLog('deadCenter: overlay open');
+}
+
+function runDeadCenterSlotMachine() {
+  const types = ['shield', 'nova', 'hyperspeed', 'ghost'];
+  const totalCycles = 4 + Math.floor(Math.random() * 3); // 4-6 full rotations
+  const totalSteps = totalCycles * types.length;
+  let step = 0;
+  deadCenterCycleIntervalId = setInterval(() => {
+    if (deadCenterResolved) {
+      clearInterval(deadCenterCycleIntervalId);
+      deadCenterCycleIntervalId = null;
+      return;
+    }
+    // Clear previous highlights, then set the current index's.
+    document.querySelectorAll('#deadCenterOverlay .dc-quadrant').forEach(q => q.classList.remove('dc-highlight'));
+    const idx = step % types.length;
+    const q = document.querySelector(`#deadCenterOverlay .dc-quadrant[data-q="${types[idx]}"]`);
+    if (q) q.classList.add('dc-highlight');
+    step++;
+    if (step >= totalSteps) {
+      clearInterval(deadCenterCycleIntervalId);
+      deadCenterCycleIntervalId = null;
+      const finalType = types[Math.floor(Math.random() * types.length)];
+      document.querySelectorAll('#deadCenterOverlay .dc-quadrant').forEach(q => q.classList.remove('dc-highlight'));
+      const finalQ = document.querySelector(`#deadCenterOverlay .dc-quadrant[data-q="${finalType}"]`);
+      if (finalQ) finalQ.classList.add('dc-highlight', 'dc-landed');
+      // Brief final-flash before resolving so the auto-pick is readable.
+      setTimeout(() => resolveDeadCenter(finalType), 150);
+    }
+  }, 50);
+}
+
+function resolveDeadCenter(pickedType) {
+  if (deadCenterResolved) return;
+  deadCenterResolved = true;
+  if (deadCenterTimeoutId) { clearTimeout(deadCenterTimeoutId); deadCenterTimeoutId = null; }
+  if (deadCenterCycleIntervalId) { clearInterval(deadCenterCycleIntervalId); deadCenterCycleIntervalId = null; }
+  closeDeadCenterOverlay(true);
+  // Apply the chosen powerup/combo. CALCULATED DRIFT upgrades singles to
+  // pair combos; without it, fires the single powerup normally.
+  if (hasCapstone('calculatedDrift')) {
+    if (pickedType === 'shield') {
+      activateCombo('shield_shield', player.x, player.y);
+    } else if (pickedType === 'nova') {
+      activateCombo('nova_nova', player.x, player.y);
+    } else if (pickedType === 'hyperspeed') {
+      activateHyperspeed();
+      activateHyperspeed();
+      SFX.pickup('hyperspeed', { stacks: hyperSpeedStacks });
+    } else if (pickedType === 'ghost') {
+      activateCombo('ghost_ghost', player.x, player.y);
+    }
+    treeLog('deadCenter + calculatedDrift: ' + pickedType + ' combo');
+  } else {
+    activatePowerup(pickedType, player.x, player.y);
+    treeLog('deadCenter: ' + pickedType);
+  }
+  screenShake = Math.max(screenShake, 6);
+  runBurstCount++;
+}
+
+// Close the overlay and (optionally) resume gameplay with pause-delta shift.
+// `resumePlay=false` is used by resetTreeNodeState when a run restart
+// happens mid-overlay — the game state is already being reset so we skip
+// the shift.
+function closeDeadCenterOverlay(resumePlay) {
+  const ov = document.getElementById('deadCenterOverlay');
+  if (ov) ov.classList.remove('visible');
+  document.querySelectorAll('#deadCenterOverlay .dc-quadrant').forEach(q =>
+    q.classList.remove('dc-highlight', 'dc-landed'));
+  if (deadCenterTimeoutId) { clearTimeout(deadCenterTimeoutId); deadCenterTimeoutId = null; }
+  if (deadCenterCycleIntervalId) { clearInterval(deadCenterCycleIntervalId); deadCenterCycleIntervalId = null; }
+  if (resumePlay && runPauseStart) {
+    applyPauseDeltaShift(Date.now() - runPauseStart);
+  }
+  runPauseStart = 0;
+  deadCenterActive = false;
+  if (resumePlay) state = 'playing';
+}
+
+// BUTTERFLY EFFECT (Drifter capstone): on a qualifying pickup event, roll
+// 15 % to spawn a mirror pickup of the same type ~1 s later, at a random
+// x ± 80 px offset above the player. One roll per pair-pickup event (the
+// roll is done at the pair call-site, not per tethered piece).
+function maybeButterflyEffect(type, srcX, srcY) {
+  if (Math.random() >= 0.15) return;
+  const dx = (Math.random() - 0.5) * 160; // ±80 px
+  const spawnX = Math.max(60, Math.min(W - 60, player.x + dx));
+  const spawnY = Math.max(-30, player.y - 80);
+  const id = setTimeout(() => {
+    if (state !== 'playing' && state !== 'devmode') return;
+    powerups.push({
+      type,
+      x: spawnX, y: spawnY,
+      radius: 13,
+      pulse: Math.random() * 6.28,
+      collected: false,
+    });
+    treeLog('butterfly: mirror ' + type + ' spawned');
+  }, 1000);
+  butterflyPending.push(id);
 }
 
 // Ghostlight burst: spawn a small harmless EMP-lite burst at (x, y) that
@@ -5141,6 +5466,11 @@ let hyperspeedWhooshNodes = null; // audio nodes for sustained whoosh
 const HYPERSPEED_MAX_STACKS_DEFAULT = 4;
 const HYPERSPEED_MAX_STACKS_NEBULA = 6;
 function HYPERSPEED_MAX_STACKS() {
+  // SUPERLUMINAL (Warp capstone): removes the cap entirely. 999 used as a
+  // practical infinity — all downstream math (peak mult, timer array)
+  // handles the larger values gracefully; visual clamping lives in the
+  // visual-escalation pass.
+  if (activeOrb === 'nebula' && hasCapstone('superluminal')) return 999;
   let base = activeOrb === 'nebula' ? HYPERSPEED_MAX_STACKS_NEBULA : HYPERSPEED_MAX_STACKS_DEFAULT;
   // Skill tree: Overdrive (+1/rank), Warp-only.
   if (activeOrb === 'nebula') base += rankOf('overdrive');
@@ -8940,6 +9270,8 @@ function activateCombo(key, x, y) {
     //   - Conflagration +1/rank to supernova wave count (Inferno-only)
     //   - Combustion carries +1 wave per nova-kill within 3 s, rank-capped
     //   - Halo scales the step coefficient 0.15 → +0.033/rank
+    // CRITICAL MASS: fresh cast resets the kill counter.
+    novaCastKillCount = 0;
     let supernovaWaves = activeOrb === 'solar' ? 6 : 4;
     if (activeOrb === 'solar') supernovaWaves += rankOf('conflagration');
     if (activeOrb === 'solar' && rankOf('combustion') > 0 && Date.now() < combustionBonusExpiry) {
@@ -9064,6 +9396,12 @@ function activatePair(a, b) {
   // Rule 3 (random tie-break) on the next single pickup.
   lastGainedEffects = [a.type, b.type];
   lastGainedTimestamp = frame;
+  // BUTTERFLY EFFECT: one roll per pair event, mirror type picked randomly
+  // between the two tethered pieces. Never rolls twice for the same pair.
+  if (activeOrb === 'cyan' && hasCapstone('butterfly')) {
+    const mirrorType = Math.random() < 0.5 ? a.type : b.type;
+    maybeButterflyEffect(mirrorType, a.x, a.y);
+  }
 }
 
 function rawActivate(type, x, y) {
@@ -9110,6 +9448,8 @@ function rawActivate(type, x, y) {
 }
 
 function fireTripleNova(px, py) {
+  // CRITICAL MASS: fresh cast resets the kill counter.
+  novaCastKillCount = 0;
   pushCapped(novaRings, { x: px, y: py, radius: 0, life: 1, prevR: 0, startTime: Date.now() }, NOVA_RINGS_CAP);
   screenShake = Math.max(screenShake, 10);
   // Skill tree:
@@ -9198,7 +9538,12 @@ function spawnEmpRing(x, y, isChain, depth) {
     // Devastation T2) to allow chains deeper than the default 1 hop.
     depth: depth || 1,
     maxRadius: isChain
-      ? 120 * (activeOrb === 'asteroid' ? (1 + 0.30 * rankOf('detonation')) : 1)
+      ? (
+          120 * (activeOrb === 'asteroid' ? (1 + 0.30 * rankOf('detonation')) : 1)
+          // PHALANX radius decay: 80 %/hop beyond the first secondary (depth 2).
+          * ((activeOrb === 'asteroid' && hasCapstone('phalanx') && (depth || 1) > 2)
+              ? Math.pow(0.8, (depth || 1) - 2) : 1)
+        )
       : EMP_MAX_RADIUS * (activeOrb === 'asteroid' ? (1 + 0.10 * rankOf('chainReaction')) : 1),
     opacity: isChain ? 0.6 : 1,
     bolts, sparks,
@@ -9301,6 +9646,19 @@ function activatePowerup(type, x, y) {
       }
     }
   }
+  // SHROUD (Phantom capstone): two single-ghost pickups within 3 s auto-combo
+  // into Eternal Phantom, even if the first ghost effect has expired between
+  // them (which detectCombo's effect-active path would miss).
+  if (!key && activeOrb === 'cosmic' && hasCapstone('shroud') && type === 'ghost') {
+    if (lastGhostSingleTime > 0 && Date.now() - lastGhostSingleTime < 3000) {
+      key = 'ghost_ghost';
+      lastGhostSingleTime = 0; // consumed — next window starts fresh
+      treeLog('shroud: paired ghost → eternal phantom');
+    }
+  }
+  if (activeOrb === 'cosmic' && hasCapstone('shroud') && type === 'ghost' && key !== 'ghost_ghost') {
+    lastGhostSingleTime = Date.now();
+  }
 
   // The new pickup always activates its own individual effect timer, and
   // the combo (if any) stacks on top with a fresh activation.
@@ -9314,6 +9672,11 @@ function activatePowerup(type, x, y) {
   // Keystone-specific single-pickup tracking.
   lastSingleType = type;
   lastSingleTime = Date.now();
+  // BUTTERFLY EFFECT (Drifter capstone): 15 % chance to spawn a mirror
+  // pickup of the same type 1 s later.
+  if (activeOrb === 'cyan' && hasCapstone('butterfly')) {
+    maybeButterflyEffect(type, x, y);
+  }
 }
 
 // --- Run timer ---
@@ -9832,6 +10195,17 @@ function checkCollisions() {
 function executeBurst() {
   if (typeof Sentry !== 'undefined') Sentry.addBreadcrumb({ category: 'burst', message: 'burst: ' + activeOrb, level: 'info' });
   if (activeOrb === 'cyan') {
+    // DEAD CENTER capstone: open radial picker instead of random roll.
+    // The overlay freezes the game; powerup fires on dismissal via
+    // resolveDeadCenter(). executeBurst returns true unconditionally, which
+    // keeps the burst cooldown ticking — but applyPauseDeltaShift on
+    // dismissal bumps burstCooldownEnd forward by the pause delta so the
+    // cooldown effectively pauses during the picker.
+    if (hasCapstone('deadCenter')) {
+      openDeadCenterOverlay();
+      runBurstCount++;
+      return true;
+    }
     const types = ['shield','nova','hyperspeed','ghost'];
     const ldRank = rankOf('loadedDice');
     const ffRank = rankOf('fortuneFavors');
@@ -10421,6 +10795,8 @@ function update() {
     }
   }
   recentNovaFrames = Math.max(0, recentNovaEndTime - Date.now());
+  // v1.6.3 capstone auto-fire timers (NIGHT SHADE / SUN FORGE / AEGIS).
+  tickCapstoneTimers();
   // PHANTOM BLAST aura ends when its end-time passes, even if ghost was extended
   if (activeCombos.nova_ghost && Date.now() >= phantomBlastEndTime) {
     delete activeCombos.nova_ghost;
@@ -10523,6 +10899,30 @@ function update() {
   }
   updateBodyTypes(spd);
   updateCrackFragments(spd);
+  // EVENT HORIZON (Warp capstone): at 6+ hyperspeed stacks, bodies within
+  // 30 px of the player are destroyed on proximity (no contact required).
+  // 0.3 s spawn-grace via a per-body _ehSeenAt timestamp so freshly-visible
+  // bodies aren't instantly killed when they enter the radius.
+  if (activeOrb === 'nebula' && hasCapstone('eventHorizon') && hyperSpeedStacks >= 6) {
+    const ehSurvivors = [];
+    const ehNow = Date.now();
+    for (const b of bodies) {
+      if (!b._ehSeenAt) b._ehSeenAt = ehNow;
+      if (ehNow - b._ehSeenAt < 300) { ehSurvivors.push(b); continue; }
+      if (dist(player, b) < 30 + b.radius) {
+        emitDestroyBurst(b.x, b.y, POWERUP_COLORS.hyperspeed.rgb);
+        emitDestroyEffects(b, 'barrier');
+        addDestroyPoints();
+        SFX.planetDestroyed('barrier');
+        checkDestroyProc(b, 'nova');
+        releaseBodyCanvases(b);
+        treeLog('eventHorizon: proximity kill');
+        continue;
+      }
+      ehSurvivors.push(b);
+    }
+    bodies = ehSurvivors;
+  }
   // Cinder burn zones: scroll with world, expire after lifetime, destroy any
   // body whose collision sphere intersects.
   if (burnZones.length) {
@@ -10699,6 +11099,23 @@ function update() {
             combustionBonus++;
             combustionBonusExpiry = Date.now() + 3000;
           }
+          // CRITICAL MASS (Inferno capstone): 10+ kills in one cast triggers
+          // a free 6-wave supernova at player. 5 s internal cooldown prevents
+          // the free supernova from re-triggering CRITICAL MASS mid-cast.
+          // Deferred via setTimeout to avoid mutating novaRings mid-iteration.
+          if (activeOrb === 'solar' && hasCapstone('criticalMass')) {
+            novaCastKillCount++;
+            if (novaCastKillCount >= 10 && Date.now() >= criticalMassCooldownEnd) {
+              criticalMassCooldownEnd = Date.now() + 5000;
+              novaCastKillCount = 0;
+              const id = setTimeout(() => {
+                if (state !== 'playing' && state !== 'devmode') return;
+                activateCombo('nova_nova', player.x, player.y);
+                treeLog('criticalMass: free supernova triggered');
+              }, 100);
+              pendingNovaTimeouts.push(id);
+            }
+          }
           // Cinder (Inferno T1): nova-killed bodies leave a burn zone that
           // destroys anything entering it for its 1 s lifetime.
           if (activeOrb === 'solar' && rankOf('cinder') > 0) {
@@ -10772,7 +11189,15 @@ function update() {
             // Chain depth: default 1 (primary → 1 secondary). Chain Reaction
             // II (Fortress T2) extends depth to 2/3/4. A ring at depth N
             // spawns a depth-(N+1) ring on its kill, up to the rank-based cap.
-            const maxDepth = 1 + ((activeOrb === 'asteroid') ? rankOf('chainReaction2') : 0);
+            // PHALANX (Fortress capstone) removes the cap entirely: the chain
+            // continues as long as each new hop kills a body, with radius
+            // decay (80 %/hop past the first secondary) applied in
+            // spawnEmpRing. The `source:'emp'` flag on each kill keeps
+            // Bastion II's destroy-to-shield proc excluded, preventing the
+            // PHALANX + Bastion II infinite-shield feedback loop.
+            const maxDepth = (activeOrb === 'asteroid' && hasCapstone('phalanx'))
+              ? 999
+              : (1 + ((activeOrb === 'asteroid') ? rankOf('chainReaction2') : 0));
             if ((r.depth || 1) < maxDepth) {
               secondarySpawns.push({ x: b.x, y: b.y, depth: (r.depth || 1) + 1 });
             }
@@ -14654,6 +15079,66 @@ function beginResumedRun(snap) {
 }
 
 let runPauseStart = 0;
+
+// Shared pause-delta shift. Bumps every real-time-driven timestamp by
+// `pauseDelta` so effects/cooldowns/timers don't drift through the pause.
+// Used by resumeGame() (the player-initiated pause overlay) and by
+// DEAD CENTER's overlay dismiss path (which pauses the game the same way).
+// Centralized so capstone timers added in the v1.6.3 pass are covered in
+// both places without duplicating the shift list.
+function applyPauseDeltaShift(pauseDelta) {
+  if (runStartTime) runStartTime += pauseDelta;
+  if (shieldEndTime) shieldEndTime += pauseDelta;
+  if (ghostEndTime) ghostEndTime += pauseDelta;
+  if (phantomBlastEndTime) phantomBlastEndTime += pauseDelta;
+  if (pulsarNextNovaTime) pulsarNextNovaTime += pauseDelta;
+  if (warpNextNovaTime) warpNextNovaTime += pauseDelta;
+  if (graceEndTime) graceEndTime += pauseDelta;
+  if (recentNovaEndTime) recentNovaEndTime += pauseDelta;
+  if (burstCooldownEnd) burstCooldownEnd += pauseDelta;
+  // v1.6.3 tree-node timers.
+  if (beyondEndTime) beyondEndTime += pauseDelta;
+  if (razorVeilNextArmTime) razorVeilNextArmTime += pauseDelta;
+  if (combustionBonusExpiry) combustionBonusExpiry += pauseDelta;
+  if (lastComboEndTime) lastComboEndTime += pauseDelta;
+  if (lastGhostSingleTime) lastGhostSingleTime += pauseDelta;
+  if (lastSingleTime) lastSingleTime += pauseDelta;
+  // v1.6.3 capstone timers.
+  if (nightShadeNextFireTime) nightShadeNextFireTime += pauseDelta;
+  if (sunForgeNextFireTime) sunForgeNextFireTime += pauseDelta;
+  if (aegisNextFireTime) aegisNextFireTime += pauseDelta;
+  if (criticalMassCooldownEnd) criticalMassCooldownEnd += pauseDelta;
+  for (const c of Object.values(activeCombos)) {
+    if (c && c.endTime !== undefined) c.endTime += pauseDelta;
+  }
+  for (let i = 0; i < hyperSpeedTimers.length; i++) {
+    hyperSpeedTimers[i] += pauseDelta;
+  }
+  for (const r of novaRings) {
+    if (r.startTime !== undefined) r.startTime += pauseDelta;
+    if (r._decayStart !== undefined) r._decayStart += pauseDelta;
+  }
+  for (const r of empRings) {
+    if (r.startTime !== undefined) r.startTime += pauseDelta;
+    if (r.victim && r.victim.expiry !== undefined) r.victim.expiry += pauseDelta;
+  }
+  for (const z of burnZones) {
+    if (z.startTime !== undefined) z.startTime += pauseDelta;
+  }
+  const shiftStart = (arr) => {
+    for (const p of arr) {
+      if (p && p.startTime !== undefined) p.startTime += pauseDelta;
+    }
+  };
+  shiftStart(pickupParticles);
+  shiftStart(deathParticles);
+  shiftStart(orbTrailParticles);
+  shiftStart(planetRipples);
+  shiftStart(destroyEffects);
+  shiftStart(deathShards);
+  shiftStart(crackFragments);
+}
+
 function pauseGame() {
   if (state !== 'playing') return;
   state = 'paused';
@@ -14668,51 +15153,7 @@ function resumeGame() {
   if (state !== 'paused') return;
   state = 'playing';
   SFX.resumeMusic();
-  // Shift runStartTime forward by the pause duration so elapsed stays real.
-  // Also shift every real-time-driven effect end-timestamp by the same delta
-  // so effects don't keep expiring through the pause.
-  if (runPauseStart) {
-    const pauseDelta = Date.now() - runPauseStart;
-    if (runStartTime) runStartTime += pauseDelta;
-    if (shieldEndTime) shieldEndTime += pauseDelta;
-    if (ghostEndTime) ghostEndTime += pauseDelta;
-    if (phantomBlastEndTime) phantomBlastEndTime += pauseDelta;
-    if (pulsarNextNovaTime) pulsarNextNovaTime += pauseDelta;
-    if (warpNextNovaTime) warpNextNovaTime += pauseDelta;
-    if (graceEndTime) graceEndTime += pauseDelta;
-    if (recentNovaEndTime) recentNovaEndTime += pauseDelta;
-    if (burstCooldownEnd) burstCooldownEnd += pauseDelta;
-    for (const c of Object.values(activeCombos)) {
-      if (c && c.endTime !== undefined) c.endTime += pauseDelta;
-    }
-    for (let i = 0; i < hyperSpeedTimers.length; i++) {
-      hyperSpeedTimers[i] += pauseDelta;
-    }
-    // Nova rings drive their radius from startTime — shift those too so an
-    // in-flight ring doesn't suddenly jump forward on resume. Also shift the
-    // decay-start timestamp if it has been set.
-    for (const r of novaRings) {
-      if (r.startTime !== undefined) r.startTime += pauseDelta;
-      if (r._decayStart !== undefined) r._decayStart += pauseDelta;
-    }
-    for (const r of empRings) {
-      if (r.startTime !== undefined) r.startTime += pauseDelta;
-      if (r.victim && r.victim.expiry !== undefined) r.victim.expiry += pauseDelta;
-    }
-    // Particle arrays with startTime fields.
-    const shiftStart = (arr) => {
-      for (const p of arr) {
-        if (p && p.startTime !== undefined) p.startTime += pauseDelta;
-      }
-    };
-    shiftStart(pickupParticles);
-    shiftStart(deathParticles);
-    shiftStart(orbTrailParticles);
-    shiftStart(planetRipples);
-    shiftStart(destroyEffects);
-    shiftStart(deathShards);
-    shiftStart(crackFragments);
-  }
+  if (runPauseStart) applyPauseDeltaShift(Date.now() - runPauseStart);
   runPauseStart = 0;
   pauseOverlay.classList.remove('visible');
   quitMsg.style.display = 'none';
@@ -16265,6 +16706,24 @@ document.getElementById('treeConfirmYes').addEventListener('click', () => {
 document.getElementById('treeConfirmNo').addEventListener('click', () => { SFX.clickSecondary(); closeTreeConfirm(); });
 
 refreshSkillTreesBtn();
+
+// --- DEAD CENTER radial menu: quadrant tap handlers ---
+// Each quadrant directly resolves the overlay with its mapped powerup type.
+// Tap hits are allowed only while the overlay is active (deadCenterActive +
+// not-yet-resolved) to avoid double-fires from stale taps after auto-cycle.
+document.querySelectorAll('#deadCenterOverlay .dc-quadrant').forEach(btn => {
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (!deadCenterActive || deadCenterResolved) return;
+    const type = btn.dataset.q;
+    if (!type) return;
+    SFX.clickPrimary();
+    // Flash the chosen quadrant briefly for tactile feedback, then resolve.
+    document.querySelectorAll('#deadCenterOverlay .dc-quadrant').forEach(q => q.classList.remove('dc-highlight'));
+    btn.classList.add('dc-highlight', 'dc-landed');
+    setTimeout(() => resolveDeadCenter(type), 80);
+  });
+});
 
 // --- Play In-App Update ---
 // Only runs on Android via the @capawesome/capacitor-app-update plugin.
