@@ -1186,6 +1186,265 @@
     color: rgba(255,255,255,0.9);
   }
 
+  /* --- Skill trees (v1.6.3) --- */
+  /* Main-menu entry button. Shown only when at least one tree is unlocked. */
+  #skillTreesBtn {
+    display: none;
+    margin-top: 10px;
+    background: transparent;
+    border: 1px solid rgba(180,140,255,0.55);
+    color: rgba(220,200,255,0.9);
+    font-family: 'Orbitron', monospace;
+    font-size: 11px;
+    letter-spacing: 4px;
+    padding: 10px 36px;
+    cursor: pointer;
+    text-transform: uppercase;
+    transition: all 0.25s;
+  }
+  #skillTreesBtn:hover {
+    background: rgba(180,140,255,0.1);
+    border-color: rgba(180,140,255,0.85);
+    box-shadow: 0 0 22px rgba(180,140,255,0.35);
+  }
+  #skillTreesBtn.visible { display: inline-block; }
+  #treeOverlay {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    display: none;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
+    background: rgba(0,0,8,0.96);
+    backdrop-filter: blur(10px);
+    z-index: 35;
+    padding: 20px 14px 14px;
+    overflow-y: auto;
+  }
+  #treeOverlay.visible { display: flex; }
+  .tree-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+  .tree-title {
+    font-family: 'Orbitron', monospace;
+    font-size: 18px;
+    letter-spacing: 5px;
+    color: rgba(220,200,255,0.95);
+    text-transform: uppercase;
+  }
+  .tree-crystals {
+    font-family: 'Orbitron', monospace;
+    font-size: 12px;
+    letter-spacing: 2px;
+    color: rgba(180,240,255,1);
+  }
+  .tree-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 14px;
+    justify-content: center;
+  }
+  .tree-tab {
+    background: transparent;
+    border: 1px solid rgba(255,255,255,0.22);
+    color: rgba(255,255,255,0.55);
+    font-family: 'Orbitron', monospace;
+    font-size: 10px;
+    letter-spacing: 2px;
+    padding: 6px 12px;
+    cursor: pointer;
+    border-radius: 3px;
+    transition: all 0.2s;
+    text-transform: uppercase;
+  }
+  .tree-tab:hover { color: rgba(255,255,255,0.9); border-color: rgba(255,255,255,0.6); }
+  .tree-tab.active {
+    color: rgba(255,255,255,1);
+    border-color: currentColor;
+    box-shadow: 0 0 12px currentColor;
+  }
+  .tree-tab.locked { color: rgba(255,255,255,0.25); cursor: not-allowed; border-color: rgba(255,255,255,0.1); }
+  .tree-paths {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+  .tree-path {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .tree-path-title {
+    font-family: 'Orbitron', monospace;
+    font-size: 10px;
+    letter-spacing: 3px;
+    text-align: center;
+    padding: 4px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.12);
+    margin-bottom: 4px;
+    text-transform: uppercase;
+  }
+  .tree-node {
+    background: rgba(10,12,24,0.65);
+    border: 1px solid rgba(255,255,255,0.22);
+    color: rgba(255,255,255,0.78);
+    font-family: 'Orbitron', monospace;
+    font-size: 10px;
+    letter-spacing: 1px;
+    padding: 8px 10px;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: all 0.18s;
+    text-align: left;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .tree-node:hover {
+    background: rgba(20,22,40,0.85);
+    border-color: rgba(255,255,255,0.5);
+  }
+  .tree-node.locked {
+    opacity: 0.35;
+    cursor: not-allowed;
+  }
+  .tree-node.partial { border-color: rgba(220,200,80,0.7); color: rgba(240,220,120,0.95); }
+  .tree-node.maxed   { border-color: currentColor; color: currentColor; background: rgba(30,60,45,0.55); box-shadow: 0 0 8px currentColor; }
+  .tree-node-name {
+    font-weight: 700;
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+  }
+  .tree-node-meta {
+    font-size: 9px;
+    letter-spacing: 1.5px;
+    opacity: 0.85;
+  }
+  .tree-capstones {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: center;
+    padding-top: 10px;
+    border-top: 1px solid rgba(255,255,255,0.12);
+    margin-bottom: 14px;
+  }
+  .tree-capstones .tree-node { min-width: 110px; max-width: 150px; }
+  .tree-footer {
+    display: flex;
+    gap: 10px;
+    justify-content: space-between;
+    align-items: center;
+    padding-top: 8px;
+    border-top: 1px solid rgba(255,255,255,0.12);
+  }
+  .tree-btn {
+    background: transparent;
+    border: 1px solid rgba(255,255,255,0.35);
+    color: rgba(255,255,255,0.85);
+    font-family: 'Orbitron', monospace;
+    font-size: 10px;
+    letter-spacing: 2px;
+    padding: 8px 16px;
+    cursor: pointer;
+    border-radius: 3px;
+    transition: all 0.2s;
+    text-transform: uppercase;
+  }
+  .tree-btn:hover { background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.8); }
+  .tree-btn.respec-full { border-color: rgba(255,150,120,0.6); color: rgba(255,180,140,0.95); }
+  .tree-btn.respec-full:hover { background: rgba(255,150,120,0.1); }
+  .tree-btn.close { border-color: rgba(180,240,255,0.6); color: rgba(180,240,255,0.95); }
+  .tree-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+  #treeNodeDetail {
+    position: absolute;
+    inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0,0,8,0.8);
+    backdrop-filter: blur(6px);
+    z-index: 36;
+    padding: 20px;
+  }
+  #treeNodeDetail.visible { display: flex; }
+  .tree-detail-inner {
+    max-width: 360px;
+    width: 100%;
+    background: rgba(10,12,24,0.95);
+    border: 1px solid rgba(255,255,255,0.22);
+    border-radius: 6px;
+    padding: 18px;
+    text-align: left;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .tree-detail-title {
+    font-family: 'Orbitron', monospace;
+    font-size: 14px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+  }
+  .tree-detail-desc {
+    font-family: 'Orbitron', monospace;
+    font-size: 10px;
+    letter-spacing: 1px;
+    color: rgba(255,255,255,0.7);
+    line-height: 1.6;
+  }
+  .tree-detail-ranks {
+    font-family: 'Orbitron', monospace;
+    font-size: 10px;
+    letter-spacing: 1.5px;
+    color: rgba(220,200,255,0.85);
+    padding: 8px 0;
+    border-top: 1px solid rgba(255,255,255,0.15);
+    border-bottom: 1px solid rgba(255,255,255,0.15);
+  }
+  .tree-detail-ranks .rank-row { margin: 2px 0; }
+  .tree-detail-ranks .rank-row.current { color: rgba(180,240,255,1); }
+  .tree-detail-ranks .rank-row.next    { color: rgba(255,220,140,1); }
+  .tree-detail-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: space-between;
+  }
+
+  #treeConfirm {
+    position: absolute;
+    inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0,0,8,0.85);
+    backdrop-filter: blur(6px);
+    z-index: 37;
+    padding: 20px;
+  }
+  #treeConfirm.visible { display: flex; }
+  .tree-confirm-inner {
+    max-width: 320px;
+    background: rgba(10,12,24,0.97);
+    border: 1px solid rgba(255,150,120,0.5);
+    border-radius: 6px;
+    padding: 18px;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
   /* Floating toast for sync status. Fires with .visible, auto-hides. */
   #pgsToast {
     position: absolute;
@@ -1836,6 +2095,7 @@
     <button id="startBtn">ENTER THE VOID</button>
     <button id="guideBtn">GUIDE</button>
     <button id="leaderboardBtn">LEADERBOARD</button>
+    <button id="skillTreesBtn">SKILL TREES</button>
     <button id="leaderboardReturnBtn">RETURN</button>
     <div id="deathActions">
       <button id="shopBtn">SHOP</button>
@@ -1967,6 +2227,41 @@
     </div>
   </div>
   <div id="pgsToast"></div>
+  <div id="treeOverlay">
+    <div class="tree-header">
+      <div class="tree-title" id="treeTitle">SKILL TREES</div>
+      <div class="tree-crystals" id="treeCrystals">💎 0</div>
+    </div>
+    <div class="tree-tabs" id="treeTabs"></div>
+    <div class="tree-paths" id="treePaths"></div>
+    <div class="tree-capstones" id="treeCapstones"></div>
+    <div class="tree-footer">
+      <button class="tree-btn respec-full" id="treeRespecFullBtn">RESPEC TREE</button>
+      <button class="tree-btn close" id="treeCloseBtn">BACK</button>
+    </div>
+    <div id="treeNodeDetail">
+      <div class="tree-detail-inner">
+        <div class="tree-detail-title" id="treeDetailTitle"></div>
+        <div class="tree-detail-desc" id="treeDetailDesc"></div>
+        <div class="tree-detail-ranks" id="treeDetailRanks"></div>
+        <div class="tree-detail-actions">
+          <button class="tree-btn" id="treeDetailUpgradeBtn">UPGRADE</button>
+          <button class="tree-btn respec-full" id="treeDetailRespecBtn">RESPEC NODE (4K)</button>
+          <button class="tree-btn close" id="treeDetailCloseBtn">CLOSE</button>
+        </div>
+      </div>
+    </div>
+    <div id="treeConfirm">
+      <div class="tree-confirm-inner">
+        <div class="tree-detail-title" id="treeConfirmTitle">CONFIRM</div>
+        <div class="tree-detail-desc" id="treeConfirmMsg"></div>
+        <div class="tree-detail-actions" style="justify-content:center">
+          <button class="tree-btn respec-full" id="treeConfirmYes">CONFIRM</button>
+          <button class="tree-btn close" id="treeConfirmNo">CANCEL</button>
+        </div>
+      </div>
+    </div>
+  </div>
   <div id="usernameOverlay">
     <div class="username-title">ENTER YOUR PILOT NAME</div>
     <input type="text" id="usernameInput" maxlength="20" placeholder="pilot name" autocomplete="off" spellcheck="false">
@@ -3553,10 +3848,690 @@ function getOrbBonus() { return ORB_DEFS[activeOrb] || ORB_DEFS.cyan; }
 // Universal streak cap — all orbs share the same 8-streak ceiling. Per-orb
 // streakCap fields in ORB_DEFS are intentionally ignored. Max per-kill is
 // 8 × 4 = 32 pts.
-function getStreakCap() { return 8; }
+function getStreakCap() {
+  // Skill tree: Prime Mover (+1/rank), Drifter-only. Activates the previously
+  // inert streakCap:10 on cyan and extends up to 12.
+  if (activeOrb === 'cyan') return 8 + rankOf('primeMover');
+  return 8;
+}
 function activeOrbColor() { return getOrbBonus().color; }
 function formatCrystals(n) {
   return (n || 0).toLocaleString('en-US');
+}
+
+// --- Skill trees (v1.6.3) ---
+// Per-orb upgrade trees unlocked by beating the 10-min apocalypse on each
+// difficulty (NORMAL → cyan + cosmic; HARD → solar + nebula; EXTREME → asteroid).
+// State shape per orb:
+//   { <pathKey>: [rank, rank, rank], ..., capstones: { <capKey>: bool, ... } }
+// Array indices correspond to the node order in TREE_DEFS[orb].paths[pathKey].nodes.
+// See docs/skill-tree-design.md for the full design spec.
+//
+// Node costs per tier (rank-indexed). These totals match the design doc:
+//   T1 3-rank = 42k, T1 4-rank = 70k
+//   T2 3-rank = 63k, T2 4-rank = 98k, T2 5-rank = 140k
+//   T3 3-rank = 95k, T3 4-rank = 148k
+//   Capstone = 28k flat
+const TREE_NODE_COSTS = {
+  1: [7000, 14000, 21000, 28000],
+  2: [14000, 21000, 28000, 35000, 42000],
+  3: [21000, 32000, 42000, 53000],
+};
+const TREE_CAPSTONE_COST = 28000;
+const TREE_RESPEC_SINGLE = 4000;
+const TREE_RESPEC_PER_RANK = 1400;
+
+// Capstones that are purchasable in the UI data model but NOT yet wired to
+// gameplay effects. Remove entries from this set as each capstone's effect
+// ships in a future pass. Keeping the UI visible so players can see what's
+// planned. Purchase flow early-returns for members; no crystal spend occurs.
+const COMING_SOON_CAPSTONES = new Set([
+  'deadCenter', 'calculatedDrift', 'butterfly',
+  'shroud', 'nightShade',
+  'sunForge', 'criticalMass',
+  'superluminal', 'eventHorizon',
+  'phalanx', 'aegis',
+]);
+function isCapstoneComingSoon(capKey) { return COMING_SOON_CAPSTONES.has(capKey); }
+
+// TREE_DEFS: single source of truth for node metadata. Each path's `nodes`
+// array order is the canonical state array order. Each node has:
+//   key   — stable identifier for logging / persistence
+//   name  — display name
+//   tier  — 1/2/3 for cost lookup
+//   max   — max rank
+//   desc  — short description (UI detail popup)
+//   effect(rank) — returns display string for current rank's numeric effect
+// Capstones have { key, name, desc, prereq(orb,state) → bool }.
+const TREE_DEFS = {
+  cyan: {
+    name: 'DRIFTER',
+    color: '125,232,255',
+    paths: {
+      chance: {
+        name: 'CHANCE',
+        nodes: [
+          { key: 'loadedDice',    name: 'Loaded Dice',     tier: 1, max: 3, desc: 'Burst reroll if rolled powerup type is already active.', effect: r => `${[33,66,100][r-1]||0}% reroll chance` },
+          { key: 'fortuneFavors', name: 'Fortune Favors',  tier: 2, max: 3, desc: 'Burst biased toward your longest-expired powerup type.', effect: r => `${[25,50,75][r-1]||0}% bias strength` },
+          { key: 'doubleNothing', name: 'Double or Nothing', tier: 3, max: 3, desc: 'After burst fires, chance to immediately fire a second random single powerup.', effect: r => `${[30,60,90][r-1]||0}% second-fire chance` },
+        ],
+      },
+      cadence: {
+        name: 'CADENCE',
+        nodes: [
+          { key: 'restlessOrb', name: 'Restless Orb', tier: 1, max: 3, desc: 'Burst cooldown reduced by 5% per rank.', effect: r => `-${5*r}% burst CD` },
+          { key: 'primeMover',  name: 'Prime Mover',  tier: 2, max: 4, desc: 'Streak cap +1 per rank. Max pts per kill rises from 32 to (8+rank)×4.', effect: r => `Streak cap ${8+r} (${(8+r)*4} pts/kill)` },
+          { key: 'tempo',       name: 'Tempo',        tier: 3, max: 3, desc: 'Time bonus interval shrinks from 30s.', effect: r => `${30 - [5,10,15][r-1]}s interval` },
+        ],
+      },
+      convergence: {
+        name: 'CONVERGENCE',
+        nodes: [
+          { key: 'oracleEdge', name: 'Oracle Edge', tier: 1, max: 3, desc: 'Pair spawn chance +1.5 percentage points per rank.', effect: r => `+${(1.5*r).toFixed(1)}% pair spawn` },
+          { key: 'siphon',     name: 'Siphon',      tier: 2, max: 5, desc: 'On body destroyed, chance to grant a random powerup. (0.5s global cooldown)', effect: r => `${[2,4,6,8,10][r-1]||0}% per destroy` },
+          { key: 'keystone',   name: 'Keystone',    tier: 3, max: 3, desc: 'Two simultaneous single pickups within a window register as a pair combo.', effect: r => `${[0.3,0.6,1.0][r-1]||0}s window` },
+        ],
+      },
+    },
+    capstones: [
+      { key: 'deadCenter',       name: 'DEAD CENTER',       desc: 'Tap burst to pause and pick a powerup from a radial menu.' },
+      { key: 'calculatedDrift',  name: 'CALCULATED DRIFT',  desc: 'DEAD CENTER picks fire as pair combos instead of single powerups.' },
+      { key: 'butterfly',        name: 'BUTTERFLY EFFECT',  desc: '15% chance on any pickup to spawn a mirror pickup 1s later.' },
+    ],
+  },
+  cosmic: {
+    name: 'PHANTOM',
+    color: '192,132,252',
+    paths: {
+      dusk: {
+        name: 'DUSK',
+        nodes: [
+          { key: 'lingeringVeil', name: 'Lingering Veil', tier: 1, max: 3, desc: 'Single-pickup ghost +0.5s per rank (Cosmic baseline 6s).', effect: r => `+${0.5*r}s ghost (${6 + 0.5*r}s total)` },
+          { key: 'eternalEmber',  name: 'Eternal Ember',  tier: 2, max: 4, desc: 'Eternal Phantom duration +1s per rank (Cosmic baseline 8s).', effect: r => `+${r}s (${8+r}s total)` },
+          { key: 'twilightEcho',  name: 'Twilight Echo',  tier: 3, max: 3, desc: 'If ghost ends within 3s of any other combo ending, auto-refresh ghost for half its base duration.', effect: r => `${[33,66,100][r-1]||0}% chance` },
+        ],
+      },
+      wraith: {
+        name: 'WRAITH',
+        nodes: [
+          { key: 'razorVeil',    name: 'Razor Veil',    tier: 1, max: 3, desc: 'Destroy-on-contact during ghost without needing a shield.', effect: r => `Every ${[3,2,1][r-1]||0}s` },
+          { key: 'ghostlight',   name: 'Ghostlight',    tier: 2, max: 3, desc: 'Ghost destroys spawn a 90px EMP-lite burst (no chain).', effect: r => `${[33,66,100][r-1]||0}% trigger` },
+          { key: 'phantomBlade', name: 'Phantom Blade', tier: 3, max: 3, desc: 'Permanent Phantom-Blast aura while ghost is active.', effect: r => `${[30,45,60][r-1]||0}px radius` },
+        ],
+      },
+      veil: {
+        name: 'VEIL',
+        nodes: [
+          { key: 'shadowRegen', name: 'Shadow Regen', tier: 1, max: 3, desc: 'Ghost pickups stack additively rather than refreshing.', effect: r => `${[50,75,100][r-1]||0}% additive` },
+          { key: 'soulbound',   name: 'Soulbound',    tier: 2, max: 5, desc: 'On body destroyed, chance to grant a ghost powerup. (Cap: 2× base ghost duration)', effect: r => `${[2,4,6,8,10][r-1]||0}% per destroy` },
+          { key: 'beyond',      name: 'Beyond',       tier: 3, max: 3, desc: 'When ghost ends, remain invulnerable for an afterimage window.', effect: r => `${[1,1.5,2][r-1]||0}s afterimage` },
+        ],
+      },
+    },
+    capstones: [
+      { key: 'shroud',     name: 'SHROUD',      desc: 'Two ghost pickups within 3s auto-trigger Eternal Phantom.' },
+      { key: 'nightShade', name: 'NIGHT SHADE', desc: 'Every 60s of gameplay, auto-activate a 2s ghost.' },
+    ],
+  },
+  solar: {
+    name: 'INFERNO',
+    color: '251,146,60',
+    paths: {
+      pyre: {
+        name: 'PYRE',
+        nodes: [
+          { key: 'kindling',      name: 'Kindling',      tier: 1, max: 3, desc: 'Single nova +1 wave per rank (Inferno baseline 6).', effect: r => `+${r} waves (${6+r} total)` },
+          { key: 'conflagration', name: 'Conflagration', tier: 2, max: 3, desc: 'Supernova +1 wave per rank (Inferno baseline 6).', effect: r => `+${r} waves (${6+r} total)` },
+          { key: 'secondFlame',   name: 'Second Flame',  tier: 3, max: 3, desc: 'Chance to fire one free extra wave after a nova finishes.', effect: r => `${[30,60,90][r-1]||0}% chance` },
+        ],
+      },
+      corona: {
+        name: 'CORONA',
+        nodes: [
+          { key: 'solarFlare',  name: 'Solar Flare',  tier: 1, max: 3, desc: 'Nova ring lethal radius +15% per rank (360px baseline).', effect: r => `+${15*r}% radius` },
+          { key: 'halo',        name: 'Halo',         tier: 2, max: 3, desc: 'Supernova radiusMult step coefficient boosted (0.15 → 0.183/0.217/0.25).', effect: r => `+${(3.3*r).toFixed(1)}% step` },
+          { key: 'coronalHold', name: 'Coronal Hold', tier: 3, max: 3, desc: 'Supernova wave lethal window duration +50% per rank.', effect: r => `+${50*r}% window` },
+        ],
+      },
+      inferno: {
+        name: 'INFERNO',
+        nodes: [
+          { key: 'cinder',     name: 'Cinder',     tier: 1, max: 3, desc: 'Nova-killed bodies leave a 1s, 60px burn zone.', effect: r => `${[20,40,60][r-1]||0}% proc` },
+          { key: 'firebrand',  name: 'Firebrand',  tier: 2, max: 5, desc: 'On body destroyed, chance to fire a nova. (1.0s global cooldown)', effect: r => `${[2,4,6,8,10][r-1]||0}% per destroy` },
+          { key: 'combustion', name: 'Combustion', tier: 3, max: 3, desc: 'Each nova-kill adds +1 wave to the next nova within 3s.', effect: r => `Cap +${[2,3,5][r-1]||0} bonus waves` },
+        ],
+      },
+    },
+    capstones: [
+      { key: 'sunForge',     name: 'SUN FORGE',     desc: 'Supernova auto-fires every 15s.' },
+      { key: 'criticalMass', name: 'CRITICAL MASS', desc: '10+ destroys from one nova cast triggers a free 6-wave supernova. 5s cooldown.' },
+    ],
+  },
+  nebula: {
+    name: 'WARP',
+    color: '96,165,250',
+    paths: {
+      velocity: {
+        name: 'VELOCITY',
+        nodes: [
+          { key: 'thrust',    name: 'Thrust',    tier: 1, max: 3, desc: 'Hyperspeed peak multiplier coefficient +10% per rank.', effect: r => `+${10*r}% peak coefficient` },
+          { key: 'afterburn', name: 'Afterburn', tier: 2, max: 3, desc: 'Hyperspeed deceleration curve slowed -50% per rank.', effect: r => `-${50*r}% decel speed` },
+          { key: 'breakaway', name: 'Breakaway', tier: 3, max: 3, desc: 'At max stacks, peak multiplier +25% per rank.', effect: r => `+${25*r}% at max stacks` },
+        ],
+      },
+      endurance: {
+        name: 'ENDURANCE',
+        nodes: [
+          { key: 'reservoir',    name: 'Reservoir',    tier: 1, max: 3, desc: 'Per-stack duration +0.5s per rank (3s baseline).', effect: r => `+${0.5*r}s stack (${3 + 0.5*r}s)` },
+          { key: 'overdrive',    name: 'Overdrive',    tier: 2, max: 4, desc: 'Max hyperspeed stacks +1 per rank (Nebula baseline 6).', effect: r => `Cap ${6+r} stacks` },
+          { key: 'infiniteGate', name: 'Infinite Gate', tier: 3, max: 3, desc: 'At max stacks, each pickup adds time to every live stack.', effect: r => `+${r}s per pickup at max` },
+        ],
+      },
+      drift: {
+        name: 'DRIFT',
+        nodes: [
+          { key: 'smoothEntry',  name: 'Smooth Entry',  tier: 1, max: 3, desc: 'Hyperspeed barrier width +20% per rank.', effect: r => `+${20*r}% barrier width` },
+          { key: 'slipstream',   name: 'Slipstream',    tier: 2, max: 5, desc: 'On body destroyed, chance to grant a hyperspeed stack.', effect: r => `${[2,4,6,8,10][r-1]||0}% per destroy` },
+          { key: 'warpHarmonic', name: 'Warp Harmonic', tier: 3, max: 3, desc: 'Hyperspeed pair combos grant bonus free stacks.', effect: r => `+${r} free stacks` },
+        ],
+      },
+    },
+    capstones: [
+      { key: 'superluminal', name: 'SUPERLUMINAL',  desc: 'Removes the hyperspeed stack cap entirely.' },
+      { key: 'eventHorizon', name: 'EVENT HORIZON', desc: 'At 6+ stacks, bodies within 30px destroyed on proximity.' },
+    ],
+  },
+  asteroid: {
+    name: 'FORTRESS',
+    color: '168,162,158',
+    paths: {
+      fortification: {
+        name: 'FORTIFICATION',
+        nodes: [
+          { key: 'kineticWard',  name: 'Kinetic Ward',    tier: 1, max: 3, desc: 'Shield duration +10% per rank (6s baseline).', effect: r => `+${10*r}% shield duration` },
+          { key: 'kineticWard2', name: 'Kinetic Ward II', tier: 2, max: 4, desc: 'Shield duration +0.5s per rank.', effect: r => `+${0.5*r}s shield` },
+          { key: 'bastion',      name: 'Bastion',         tier: 3, max: 3, desc: 'Shield stack cap +1 per rank (Asteroid baseline 4).', effect: r => `Cap ${4+r} hits` },
+        ],
+      },
+      devastation: {
+        name: 'DEVASTATION',
+        nodes: [
+          { key: 'chainReaction',  name: 'Chain Reaction',    tier: 1, max: 3, desc: 'EMP primary radius +10% per rank (180px baseline).', effect: r => `+${10*r}% EMP radius` },
+          { key: 'chainReaction2', name: 'Chain Reaction II', tier: 2, max: 3, desc: 'EMP chain depth +1 hop per rank (baseline depth 1).', effect: r => `Depth ${1+r}` },
+          { key: 'detonation',     name: 'Detonation',        tier: 3, max: 3, desc: 'Secondary EMP radius +30% per rank (120px baseline).', effect: r => `+${30*r}% secondary` },
+        ],
+      },
+      opportunism: {
+        name: 'OPPORTUNISM',
+        nodes: [
+          { key: 'salvage',      name: 'Salvage',      tier: 1, max: 3, desc: 'Chance per destroy to grant +1 crystal to the run payout.', effect: r => `${[1,2,3][r-1]||0}% per destroy` },
+          { key: 'bastion2',     name: 'Bastion II',   tier: 2, max: 5, desc: 'On body destroyed, chance to grant a shield pickup. Overflow at cap → +0.5s duration.', effect: r => `${[2,4,6,8,10][r-1]||0}% per destroy` },
+          { key: 'gravityWell',  name: 'Gravity Well', tier: 3, max: 3, desc: 'During shield, bodies are attracted toward the player.', effect: r => `Force ${[0.2,0.5,0.8][r-1]||0}` },
+        ],
+      },
+    },
+    capstones: [
+      { key: 'phalanx', name: 'PHALANX', desc: 'EMP chain depth uncapped if each hop kills. Radius decays 80% per hop.' },
+      { key: 'aegis',   name: 'AEGIS',   desc: 'Full Fortress Shield (4 hits, 8s) auto-fires every 45s.' },
+    ],
+  },
+};
+
+// Freshly-initialised per-orb state.
+function freshOrbTreeState(orbKey) {
+  const def = TREE_DEFS[orbKey];
+  if (!def) return null;
+  const state = {};
+  for (const pKey of Object.keys(def.paths)) {
+    const nodeCount = def.paths[pKey].nodes.length;
+    state[pKey] = new Array(nodeCount).fill(0);
+  }
+  state.capstones = {};
+  for (const cap of def.capstones) state.capstones[cap.key] = false;
+  return state;
+}
+
+let orbTrees = {
+  cyan:     freshOrbTreeState('cyan'),
+  cosmic:   freshOrbTreeState('cosmic'),
+  solar:    freshOrbTreeState('solar'),
+  nebula:   freshOrbTreeState('nebula'),
+  asteroid: freshOrbTreeState('asteroid'),
+};
+
+// Difficulty-beat flags. Set to true when the player dies from the apocalypse
+// sequence on that difficulty (i.e., reached the 10-min mark).
+let beatDifficulty = { NORMAL: false, HARD: false, EXTREME: false };
+
+// Cached ranks for the currently-equipped orb — refreshed in refreshActiveTreeCache().
+// Gameplay hot paths read from these globals instead of walking the orbTrees
+// object every frame. Indexed by node key (flat map).
+let activeTreeRanks = {};
+
+function refreshActiveTreeCache() {
+  activeTreeRanks = {};
+  const state = orbTrees[activeOrb];
+  const def = TREE_DEFS[activeOrb];
+  if (!state || !def) return;
+  for (const pKey of Object.keys(def.paths)) {
+    const nodes = def.paths[pKey].nodes;
+    const arr = state[pKey] || [];
+    for (let i = 0; i < nodes.length; i++) {
+      activeTreeRanks[nodes[i].key] = Math.max(0, Math.min(nodes[i].max, arr[i] | 0));
+    }
+  }
+  for (const cap of def.capstones) {
+    activeTreeRanks[cap.key] = state.capstones && state.capstones[cap.key] ? 1 : 0;
+  }
+}
+function rankOf(nodeKey) { return activeTreeRanks[nodeKey] | 0; }
+function hasCapstone(capKey) { return !!activeTreeRanks[capKey]; }
+
+function loadTreeState() {
+  try {
+    const raw = localStorage.getItem('drift_orb_trees');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      for (const orb of Object.keys(orbTrees)) {
+        if (!parsed || !parsed[orb]) continue;
+        const def = TREE_DEFS[orb];
+        const fresh = freshOrbTreeState(orb);
+        for (const pKey of Object.keys(def.paths)) {
+          const nodes = def.paths[pKey].nodes;
+          const loaded = Array.isArray(parsed[orb][pKey]) ? parsed[orb][pKey] : [];
+          for (let i = 0; i < nodes.length; i++) {
+            fresh[pKey][i] = Math.max(0, Math.min(nodes[i].max, (loaded[i] | 0)));
+          }
+        }
+        if (parsed[orb].capstones) {
+          for (const cap of def.capstones) {
+            fresh.capstones[cap.key] = !!parsed[orb].capstones[cap.key];
+          }
+        }
+        orbTrees[orb] = fresh;
+      }
+    }
+  } catch {}
+  try {
+    const n = localStorage.getItem('drift_beat_normal');
+    const h = localStorage.getItem('drift_beat_hard');
+    const e = localStorage.getItem('drift_beat_extreme');
+    beatDifficulty.NORMAL = n === '1';
+    beatDifficulty.HARD = h === '1';
+    beatDifficulty.EXTREME = e === '1';
+  } catch {}
+  refreshActiveTreeCache();
+}
+function saveTreeState() {
+  try { localStorage.setItem('drift_orb_trees', JSON.stringify(orbTrees)); } catch {}
+  pgsScheduleWrite();
+}
+function saveBeatFlags() {
+  try {
+    localStorage.setItem('drift_beat_normal',  beatDifficulty.NORMAL  ? '1' : '0');
+    localStorage.setItem('drift_beat_hard',    beatDifficulty.HARD    ? '1' : '0');
+    localStorage.setItem('drift_beat_extreme', beatDifficulty.EXTREME ? '1' : '0');
+  } catch {}
+  pgsScheduleWrite();
+}
+
+// Unlock gating: which orbs' trees are available for investment right now.
+function treeUnlocked(orbKey) {
+  if (orbKey === 'cyan' || orbKey === 'cosmic') return beatDifficulty.NORMAL || beatDifficulty.HARD || beatDifficulty.EXTREME;
+  if (orbKey === 'solar' || orbKey === 'nebula') return beatDifficulty.HARD || beatDifficulty.EXTREME;
+  if (orbKey === 'asteroid') return beatDifficulty.EXTREME;
+  return false;
+}
+function anyTreeUnlocked() {
+  return beatDifficulty.NORMAL || beatDifficulty.HARD || beatDifficulty.EXTREME;
+}
+
+function nodeCost(tier, nextRank) {
+  const table = TREE_NODE_COSTS[tier];
+  if (!table) return 0;
+  return table[nextRank - 1] || 0;
+}
+function nodeTotalCost(tier, maxRank) {
+  let sum = 0;
+  for (let r = 1; r <= maxRank; r++) sum += nodeCost(tier, r);
+  return sum;
+}
+function pathPrereqMet(state, pathKey, nodeIdx) {
+  // Same-path prereq: T2 requires T1 rank ≥ 1; T3 requires T2 rank ≥ 1.
+  // Node index maps 1:1 to tier in our schema (T1=idx 0, T2=idx 1, T3=idx 2).
+  if (nodeIdx === 0) return true;
+  const arr = state[pathKey] || [];
+  return (arr[nodeIdx - 1] | 0) >= 1;
+}
+function totalRanksInvested(orbKey) {
+  const state = orbTrees[orbKey];
+  const def = TREE_DEFS[orbKey];
+  if (!state || !def) return 0;
+  let sum = 0;
+  for (const pKey of Object.keys(def.paths)) {
+    const arr = state[pKey] || [];
+    for (const r of arr) sum += r | 0;
+  }
+  for (const cap of def.capstones) {
+    if (state.capstones && state.capstones[cap.key]) sum += 1;
+  }
+  return sum;
+}
+function fullTreeRespecCost(orbKey) {
+  return TREE_RESPEC_PER_RANK * totalRanksInvested(orbKey);
+}
+
+// Purchase a single rank increment on (orb, path, nodeIdx). Returns true on
+// success (spent crystals + saved), false on any failure (locked, at max,
+// can't afford, prereq not met).
+function purchaseNodeRank(orbKey, pathKey, nodeIdx) {
+  if (!treeUnlocked(orbKey)) return false;
+  const def = TREE_DEFS[orbKey];
+  const state = orbTrees[orbKey];
+  if (!def || !state) return false;
+  const node = def.paths[pathKey] && def.paths[pathKey].nodes[nodeIdx];
+  if (!node) return false;
+  const current = state[pathKey][nodeIdx] | 0;
+  if (current >= node.max) return false;
+  if (!pathPrereqMet(state, pathKey, nodeIdx)) return false;
+  const cost = nodeCost(node.tier, current + 1);
+  if (totalCrystals < cost) return false;
+  totalCrystals = Math.max(0, totalCrystals - cost);
+  state[pathKey][nodeIdx] = current + 1;
+  saveCrystals();
+  saveTreeState();
+  if (orbKey === activeOrb) refreshActiveTreeCache();
+  return true;
+}
+function purchaseCapstone(orbKey, capKey) {
+  if (!treeUnlocked(orbKey)) return false;
+  if (isCapstoneComingSoon(capKey)) return false; // effect not yet wired
+  const def = TREE_DEFS[orbKey];
+  const state = orbTrees[orbKey];
+  if (!def || !state) return false;
+  const cap = def.capstones.find(c => c.key === capKey);
+  if (!cap) return false;
+  if (state.capstones[capKey]) return false;
+  if (!capstonePrereqMet(orbKey, capKey)) return false;
+  if (totalCrystals < TREE_CAPSTONE_COST) return false;
+  totalCrystals = Math.max(0, totalCrystals - TREE_CAPSTONE_COST);
+  state.capstones[capKey] = true;
+  saveCrystals();
+  saveTreeState();
+  if (orbKey === activeOrb) refreshActiveTreeCache();
+  return true;
+}
+
+// Capstone prereqs per design doc. Hand-coded because each capstone has its
+// own rule; keeping them close to the call site makes the logic auditable.
+function capstonePrereqMet(orbKey, capKey) {
+  const s = orbTrees[orbKey];
+  if (!s) return false;
+  const anyAtRank = (pKey, idx, r) => (s[pKey] && (s[pKey][idx] | 0) >= r);
+  const anyT3 = (o) => {
+    const def = TREE_DEFS[o];
+    for (const pKey of Object.keys(def.paths)) {
+      if ((s[pKey][2] | 0) >= 1) return true;
+    }
+    return false;
+  };
+  const countT2Invested = () => {
+    const def = TREE_DEFS[orbKey];
+    let c = 0;
+    for (const pKey of Object.keys(def.paths)) {
+      if ((s[pKey][1] | 0) >= 1) c++;
+    }
+    return c;
+  };
+  if (orbKey === 'cyan') {
+    if (capKey === 'deadCenter')      return anyT3('cyan');
+    if (capKey === 'calculatedDrift') return !!s.capstones.deadCenter;
+    if (capKey === 'butterfly')       return countT2Invested() >= 2;
+  }
+  if (orbKey === 'cosmic') {
+    if (capKey === 'shroud')     return countT2Invested() >= 2;
+    if (capKey === 'nightShade') return anyT3('cosmic');
+  }
+  if (orbKey === 'solar') {
+    if (capKey === 'sunForge')     return anyAtRank('pyre',0,1) && anyAtRank('corona',0,1) && anyAtRank('inferno',0,1);
+    if (capKey === 'criticalMass') return anyT3('solar');
+  }
+  if (orbKey === 'nebula') {
+    if (capKey === 'superluminal') return (s.endurance[1] | 0) >= 4;
+    if (capKey === 'eventHorizon') return anyT3('nebula');
+  }
+  if (orbKey === 'asteroid') {
+    if (capKey === 'phalanx') return (s.devastation[1] | 0) >= 3 && anyT3('asteroid');
+    if (capKey === 'aegis')   return (s.fortification[2] | 0) >= 1 && (s.fortification[1] | 0) >= 1;
+  }
+  return false;
+}
+
+// Single-node respec: refund all ranks of that node, spend a flat fee.
+function respecNode(orbKey, pathKey, nodeIdx) {
+  const def = TREE_DEFS[orbKey];
+  const state = orbTrees[orbKey];
+  if (!def || !state) return false;
+  const node = def.paths[pathKey] && def.paths[pathKey].nodes[nodeIdx];
+  if (!node) return false;
+  const current = state[pathKey][nodeIdx] | 0;
+  if (current <= 0) return false;
+  if (totalCrystals < TREE_RESPEC_SINGLE) return false;
+  totalCrystals = Math.max(0, totalCrystals - TREE_RESPEC_SINGLE);
+  // Refund all rank costs spent on this node.
+  for (let r = 1; r <= current; r++) totalCrystals += nodeCost(node.tier, r);
+  state[pathKey][nodeIdx] = 0;
+  // Cascading capstone invalidation: if refunding this node violates any
+  // purchased capstone's prereq, refund the capstone too.
+  for (const cap of def.capstones) {
+    if (state.capstones[cap.key] && !capstonePrereqMet(orbKey, cap.key)) {
+      state.capstones[cap.key] = false;
+      totalCrystals += TREE_CAPSTONE_COST;
+      // DEAD CENTER refund implies CALCULATED DRIFT also refunds (gated by it).
+      if (cap.key === 'deadCenter' && state.capstones.calculatedDrift) {
+        state.capstones.calculatedDrift = false;
+        totalCrystals += TREE_CAPSTONE_COST;
+      }
+    }
+  }
+  saveCrystals();
+  saveTreeState();
+  if (orbKey === activeOrb) refreshActiveTreeCache();
+  return true;
+}
+
+// Full-tree respec: refund everything spent in the tree, spend 1.4k × ranks fee.
+function respecTree(orbKey) {
+  const def = TREE_DEFS[orbKey];
+  const state = orbTrees[orbKey];
+  if (!def || !state) return false;
+  const ranks = totalRanksInvested(orbKey);
+  if (ranks <= 0) return false;
+  const fee = TREE_RESPEC_PER_RANK * ranks;
+  if (totalCrystals < fee) return false;
+  totalCrystals = Math.max(0, totalCrystals - fee);
+  // Refund all node rank costs + capstone costs.
+  for (const pKey of Object.keys(def.paths)) {
+    const nodes = def.paths[pKey].nodes;
+    const arr = state[pKey];
+    for (let i = 0; i < nodes.length; i++) {
+      for (let r = 1; r <= (arr[i] | 0); r++) totalCrystals += nodeCost(nodes[i].tier, r);
+      arr[i] = 0;
+    }
+  }
+  for (const cap of def.capstones) {
+    if (state.capstones[cap.key]) {
+      totalCrystals += TREE_CAPSTONE_COST;
+      state.capstones[cap.key] = false;
+    }
+  }
+  saveCrystals();
+  saveTreeState();
+  if (orbKey === activeOrb) refreshActiveTreeCache();
+  return true;
+}
+
+// Debug: gated console logging for balance QA. Only fires while devmode flag
+// is active. Deliberately kept cheap so forgetting-to-gate-a-call is ok.
+function treeLog(msg) {
+  if (typeof devmodeActive !== 'undefined' && devmodeActive) {
+    console.log('[tree] ' + msg);
+  }
+}
+
+// Initial load. refreshActiveTreeCache() is called at the end; active orb
+// defaults to cyan so it will be safe even before any real equip happens.
+loadTreeState();
+
+// --- Skill-tree destroy-proc family (Siphon / Soulbound / Firebrand / Slipstream / Bastion II) ---
+// Shared mechanic: on body destroyed, chance per rank to grant a powerup.
+// Rank chance table (shared by all 5 nodes): 2% / 4% / 6% / 8% / 10%.
+// checkDestroyProc(body, source) is called from every destroy site. Only the
+// node matching the currently-equipped orb's tree can fire, so only one proc
+// class is in play at a time.
+//
+// Guard rails per docs/skill-tree-design.md Revisions + cascade-guard-rails
+// table:
+//   Siphon     — global 500 ms cooldown
+//   Soulbound  — hard cap at 2× base ghost duration; at-cap procs no-op
+//   Firebrand  — global 1000 ms cooldown + respects nova-overload guard
+//   Slipstream — no cooldown (existing refresh-soonest-timer absorbs at max)
+//   Bastion II — EMP-sourced destroys excluded; at-cap → +0.5 s shield
+//
+// All five fire the same shared visual via spawnDestroyProcFlash(powerupType)
+// — a brief pickup-particle burst in the powerup's color at player position.
+// The design-doc-specified 150 ms sprite-flash halo is a CRITICAL visual
+// scheduled for a dedicated pass; the particle burst is the minimum cue.
+const TREE_PROC_CHANCES = [0.02, 0.04, 0.06, 0.08, 0.10];
+let lastSiphonProc = 0;
+let lastFirebrandProc = 0;
+
+function spawnDestroyProcFlash(powerupType) {
+  if (!POWERUP_COLORS || !POWERUP_COLORS[powerupType]) return;
+  if (typeof emitPickupParticles !== 'function') return;
+  try { emitPickupParticles(player.x, player.y, powerupType); } catch {}
+}
+
+function siphonProc() {
+  const now = Date.now();
+  if (now - lastSiphonProc < 500) { treeLog('siphon: cooldown-blocked'); return; }
+  const picks = ['shield', 'nova', 'hyperspeed', 'ghost'];
+  const pick = picks[Math.floor(Math.random() * picks.length)];
+  if (pick === 'shield') {
+    shieldEndTime = now + SHIELD_DURATION();
+    activeEffects.shield = SHIELD_DURATION();
+    shieldBroken = false;
+    if (activeOrb === 'asteroid') shieldHits = Math.min(shieldHitsCap(), shieldHits + 2);
+    else shieldHits = Math.min(2, shieldHits + 1);
+  } else if (pick === 'nova') {
+    fireTripleNova(player.x, player.y);
+    recentNovaEndTime = now + 1500;
+    recentNovaFrames = 1500;
+  } else if (pick === 'hyperspeed') {
+    activateHyperspeed();
+    if (activeOrb === 'nebula') activateHyperspeed();
+  } else if (pick === 'ghost') {
+    ghostEndTime = now + GHOST_DURATION();
+    activeEffects.ghost = GHOST_DURATION();
+  }
+  lastSiphonProc = now;
+  spawnDestroyProcFlash(pick);
+  treeLog('siphon: granted ' + pick);
+}
+
+function soulboundProc() {
+  const base = GHOST_DURATION();
+  const cap = base * 2;
+  const now = Date.now();
+  if (!activeEffects.ghost || activeEffects.ghost <= 0) {
+    ghostEndTime = now + base;
+    activeEffects.ghost = base;
+    spawnDestroyProcFlash('ghost');
+    treeLog('soulbound: fresh ghost (' + base + 'ms)');
+    return;
+  }
+  const currentRemaining = Math.max(0, ghostEndTime - now);
+  if (currentRemaining >= cap) {
+    treeLog('soulbound: cap-blocked (' + currentRemaining + '/' + cap + ')');
+    return;
+  }
+  const newRemaining = Math.min(cap, currentRemaining + base);
+  ghostEndTime = now + newRemaining;
+  activeEffects.ghost = newRemaining;
+  spawnDestroyProcFlash('ghost');
+  treeLog('soulbound: extended ghost → ' + newRemaining + 'ms (cap ' + cap + ')');
+}
+
+function firebrandProc() {
+  const now = Date.now();
+  if (now - lastFirebrandProc < 1000) { treeLog('firebrand: cooldown-blocked'); return; }
+  // Nova-overload guard: mirrors the single-powerup-spawn suppression so
+  // Firebrand doesn't double up on existing nova-flavored effects.
+  const novaActive = novaRings.length > 0
+    || activeCombos.nova_nova
+    || activeCombos.nova_hyperspeed
+    || activeCombos.nova_ghost
+    || activeCombos.nova_shield;
+  if (novaActive) { treeLog('firebrand: suppressed (nova-overload)'); return; }
+  fireTripleNova(player.x, player.y);
+  recentNovaEndTime = now + 1500;
+  recentNovaFrames = 1500;
+  lastFirebrandProc = now;
+  spawnDestroyProcFlash('nova');
+  treeLog('firebrand: fired');
+}
+
+function slipstreamProc() {
+  activateHyperspeed();
+  if (activeOrb === 'nebula') activateHyperspeed();
+  spawnDestroyProcFlash('hyperspeed');
+  treeLog('slipstream: +' + (activeOrb === 'nebula' ? 2 : 1) + ' stack');
+}
+
+function bastion2Proc() {
+  if (activeOrb !== 'asteroid') return;
+  const cap = shieldHitsCap();
+  if (shieldHits >= cap) {
+    if (activeEffects.shield > 0) {
+      shieldEndTime += 500;
+      activeEffects.shield += 500;
+      spawnDestroyProcFlash('shield');
+      treeLog('bastion2: cap overflow → +0.5s shield');
+    } else {
+      treeLog('bastion2: cap-blocked (no active shield to extend)');
+    }
+    return;
+  }
+  shieldEndTime = Date.now() + SHIELD_DURATION();
+  activeEffects.shield = SHIELD_DURATION();
+  shieldBroken = false;
+  shieldHits = Math.min(cap, shieldHits + 2);
+  spawnDestroyProcFlash('shield');
+  treeLog('bastion2: shield stacked → ' + shieldHits);
+}
+
+// Entry point called from every body-destroy site. `source` tag gates certain
+// procs — Bastion II excludes source === 'emp' to break the PHALANX +
+// Bastion II feedback loop that would otherwise trigger when PHALANX ships.
+function checkDestroyProc(body, source) {
+  if (state !== 'playing' && state !== 'devmode') return;
+  if (activeOrb === 'cyan') {
+    const r = rankOf('siphon');
+    if (r > 0 && Math.random() < TREE_PROC_CHANCES[r - 1]) siphonProc();
+  } else if (activeOrb === 'cosmic') {
+    const r = rankOf('soulbound');
+    if (r > 0 && Math.random() < TREE_PROC_CHANCES[r - 1]) soulboundProc();
+  } else if (activeOrb === 'solar') {
+    const r = rankOf('firebrand');
+    if (r > 0 && Math.random() < TREE_PROC_CHANCES[r - 1]) firebrandProc();
+  } else if (activeOrb === 'nebula') {
+    const r = rankOf('slipstream');
+    if (r > 0 && Math.random() < TREE_PROC_CHANCES[r - 1]) slipstreamProc();
+  } else if (activeOrb === 'asteroid') {
+    if (source === 'emp') return; // exclude EMP-chain destroys (anti-loop)
+    const r = rankOf('bastion2');
+    if (r > 0 && Math.random() < TREE_PROC_CHANCES[r - 1]) bastion2Proc();
+  }
 }
 
 // --- Google Play Games Services cloud save (Android-only, opt-in) ---
@@ -3586,12 +4561,21 @@ const PGS = (() => {
   function buildPayload() {
     let scores = [];
     try { scores = JSON.parse(localStorage.getItem('drift_scores') || '[]'); } catch {}
+    // Deep-clone tree state so the snapshot is a frozen point-in-time copy.
+    const treesSnapshot = {};
+    try { Object.keys(orbTrees).forEach(k => { treesSnapshot[k] = JSON.parse(JSON.stringify(orbTrees[k])); }); } catch {}
     return {
       version: SAVE_VERSION,
       crystals: Math.max(0, totalCrystals | 0),
       activeOrb: activeOrb,
       unlockedOrbs: Array.isArray(unlockedOrbs) ? unlockedOrbs.slice() : ['cyan'],
       scores,
+      orbTrees: treesSnapshot,
+      beatDifficulty: {
+        NORMAL:  !!beatDifficulty.NORMAL,
+        HARD:    !!beatDifficulty.HARD,
+        EXTREME: !!beatDifficulty.EXTREME,
+      },
     };
   }
 
@@ -3611,6 +4595,8 @@ const PGS = (() => {
         activeOrb: local.activeOrb,
         unlockedOrbs: mergeOrbs(local.unlockedOrbs, remote.unlockedOrbs),
         scores: mergeScores(local.scores, remote.scores),
+        orbTrees: mergeTrees(local.orbTrees, remote.orbTrees),
+        beatDifficulty: mergeBeat(local.beatDifficulty, remote.beatDifficulty),
       };
     }
     return {
@@ -3619,6 +4605,41 @@ const PGS = (() => {
       activeOrb: local.activeOrb,
       unlockedOrbs: mergeOrbs(local.unlockedOrbs, remote.unlockedOrbs),
       scores: mergeScores(local.scores, remote.scores),
+      orbTrees: mergeTrees(local.orbTrees, remote.orbTrees),
+      beatDifficulty: mergeBeat(local.beatDifficulty, remote.beatDifficulty),
+    };
+  }
+  // Tree state merge: per-orb, max-per-rank across node arrays; union of
+  // capstones. Unrecognized orbs/paths/nodes are dropped.
+  function mergeTrees(a, b) {
+    const out = {};
+    const orbs = Object.keys(TREE_DEFS);
+    for (const orb of orbs) {
+      const def = TREE_DEFS[orb];
+      out[orb] = freshOrbTreeState(orb);
+      for (const pKey of Object.keys(def.paths)) {
+        const nodes = def.paths[pKey].nodes;
+        const la = (a && a[orb] && a[orb][pKey]) || [];
+        const rb = (b && b[orb] && b[orb][pKey]) || [];
+        for (let i = 0; i < nodes.length; i++) {
+          out[orb][pKey][i] = Math.max(0, Math.min(nodes[i].max, Math.max((la[i] | 0), (rb[i] | 0))));
+        }
+      }
+      const aCaps = (a && a[orb] && a[orb].capstones) || {};
+      const bCaps = (b && b[orb] && b[orb].capstones) || {};
+      for (const cap of def.capstones) {
+        out[orb].capstones[cap.key] = !!(aCaps[cap.key] || bCaps[cap.key]);
+      }
+    }
+    return out;
+  }
+  // Beat-difficulty merge: OR across devices (either device unlocking counts).
+  function mergeBeat(a, b) {
+    a = a || {}; b = b || {};
+    return {
+      NORMAL:  !!(a.NORMAL  || b.NORMAL),
+      HARD:    !!(a.HARD    || b.HARD),
+      EXTREME: !!(a.EXTREME || b.EXTREME),
     };
   }
   function mergeOrbs(a, b) {
@@ -3658,6 +4679,25 @@ const PGS = (() => {
     }
     if (Array.isArray(payload.scores)) {
       try { localStorage.setItem('drift_scores', JSON.stringify(payload.scores)); } catch {}
+    }
+    // Tree state: replace local with merged (merged is already sanitized via
+    // mergeTrees which validates against TREE_DEFS).
+    if (payload.orbTrees && typeof payload.orbTrees === 'object') {
+      for (const orb of Object.keys(TREE_DEFS)) {
+        if (payload.orbTrees[orb]) orbTrees[orb] = payload.orbTrees[orb];
+      }
+      try { localStorage.setItem('drift_orb_trees', JSON.stringify(orbTrees)); } catch {}
+      refreshActiveTreeCache();
+    }
+    if (payload.beatDifficulty && typeof payload.beatDifficulty === 'object') {
+      beatDifficulty.NORMAL  = !!payload.beatDifficulty.NORMAL;
+      beatDifficulty.HARD    = !!payload.beatDifficulty.HARD;
+      beatDifficulty.EXTREME = !!payload.beatDifficulty.EXTREME;
+      try {
+        localStorage.setItem('drift_beat_normal',  beatDifficulty.NORMAL  ? '1' : '0');
+        localStorage.setItem('drift_beat_hard',    beatDifficulty.HARD    ? '1' : '0');
+        localStorage.setItem('drift_beat_extreme', beatDifficulty.EXTREME ? '1' : '0');
+      } catch {}
     }
     // activeOrb intentionally NOT applied from remote.
   }
@@ -3878,6 +4918,15 @@ let voidHumNodes = null;
 // Reset by resetGame(). burstTriggered is a one-shot flag consumed by update().
 const BURST_COOLDOWN_MS = 20000;
 let burstCooldownEnd = 0;
+// Duration captured at cooldown-start so the HUD bar can compute % even if the
+// player equips a different orb mid-cooldown (which could change BURST_COOLDOWN()).
+let burstCooldownDuration = BURST_COOLDOWN_MS;
+function BURST_COOLDOWN() {
+  // Skill tree: Restless Orb -5%/rank (Drifter-only).
+  let cd = BURST_COOLDOWN_MS;
+  if (activeOrb === 'cyan') cd *= (1 - 0.05 * rankOf('restlessOrb'));
+  return Math.max(5000, Math.floor(cd));
+}
 let burstTriggered = false;
 let pendingNovaTimeouts = [];
 let destroyEffects = [];   // per-planet destruction visuals (flash + ring + debris)
@@ -3929,9 +4978,28 @@ const GHOST_DURATION_MS_COSMIC = 6000;           // 6s for cosmic orb
 const GHOST_ETERNAL_DURATION_DEFAULT = 6000;     // 6s Eternal Phantom
 const GHOST_ETERNAL_DURATION_COSMIC  = 8000;     // 8s Eternal Phantom on cosmic orb
 const SHIELD_BLINK_MS = 1000;                    // last 1s blink
-function SHIELD_DURATION() { return activeOrb === 'asteroid' ? SHIELD_DURATION_MS_ASTEROID : SHIELD_DURATION_MS_DEFAULT; }
-function GHOST_DURATION() { return activeOrb === 'cosmic' ? GHOST_DURATION_MS_COSMIC : GHOST_DURATION_MS_DEFAULT; }
-function GHOST_ETERNAL_DURATION() { return activeOrb === 'cosmic' ? GHOST_ETERNAL_DURATION_COSMIC : GHOST_ETERNAL_DURATION_DEFAULT; }
+function SHIELD_DURATION() {
+  const base = activeOrb === 'asteroid' ? SHIELD_DURATION_MS_ASTEROID : SHIELD_DURATION_MS_DEFAULT;
+  // Skill tree: Kinetic Ward (+10%/rank), Kinetic Ward II (+0.5s/rank). Fortress-only.
+  if (activeOrb === 'asteroid') {
+    const kw1 = rankOf('kineticWard');
+    const kw2 = rankOf('kineticWard2');
+    return Math.round(base * (1 + 0.10 * kw1) + 500 * kw2);
+  }
+  return base;
+}
+function GHOST_DURATION() {
+  let base = activeOrb === 'cosmic' ? GHOST_DURATION_MS_COSMIC : GHOST_DURATION_MS_DEFAULT;
+  // Skill tree: Lingering Veil (+0.5s/rank), Phantom-only.
+  if (activeOrb === 'cosmic') base += 500 * rankOf('lingeringVeil');
+  return base;
+}
+function GHOST_ETERNAL_DURATION() {
+  let base = activeOrb === 'cosmic' ? GHOST_ETERNAL_DURATION_COSMIC : GHOST_ETERNAL_DURATION_DEFAULT;
+  // Skill tree: Eternal Ember (+1s/rank), Phantom-only.
+  if (activeOrb === 'cosmic') base += 1000 * rankOf('eternalEmber');
+  return base;
+}
 // Absolute end timestamps for the primary effects. activeEffects.shield /
 // .ghost are recomputed each frame as `max(0, endTime - Date.now())`.
 let shieldEndTime = 0;
@@ -3951,7 +5019,18 @@ let hyperspeedWhooshNodes = null; // audio nodes for sustained whoosh
 // with how aggressive the run was.
 const HYPERSPEED_MAX_STACKS_DEFAULT = 4;
 const HYPERSPEED_MAX_STACKS_NEBULA = 6;
-function HYPERSPEED_MAX_STACKS() { return activeOrb === 'nebula' ? HYPERSPEED_MAX_STACKS_NEBULA : HYPERSPEED_MAX_STACKS_DEFAULT; }
+function HYPERSPEED_MAX_STACKS() {
+  let base = activeOrb === 'nebula' ? HYPERSPEED_MAX_STACKS_NEBULA : HYPERSPEED_MAX_STACKS_DEFAULT;
+  // Skill tree: Overdrive (+1/rank), Warp-only.
+  if (activeOrb === 'nebula') base += rankOf('overdrive');
+  return base;
+}
+function HYPERSPEED_DURATION() {
+  // Skill tree: Reservoir (+0.5s/rank), Warp-only.
+  let base = HYPERSPEED_DURATION_MS;
+  if (activeOrb === 'nebula') base += 500 * rankOf('reservoir');
+  return base;
+}
 let hyperSpeedStacks = 0;
 // Each entry is an absolute end timestamp (Date.now() + duration, in ms).
 // Stacks expire when their timestamp is reached; hyperSpeedStacks is kept in
@@ -3964,6 +5043,11 @@ let peakHyperSpeedStacks = 0;
 // keeping a stale 1 across breaks would produce off-by-one stacks on pickup.
 const SHIELD_HITS_MAX_ASTEROID = 4;
 let shieldHits = 0;
+// Skill tree: Bastion +1/rank to the Asteroid hit cap (Fortress-only).
+function shieldHitsCap() {
+  if (activeOrb === 'asteroid') return SHIELD_HITS_MAX_ASTEROID + rankOf('bastion');
+  return 2;
+}
 
 // --- Combos ---
 const COMBO_DEFS = {
@@ -7138,7 +8222,10 @@ function spawnPowerup() {
   // Tethered pair spawn chance is per-difficulty: NORMAL 16%, HARD 13%,
   // EXTREME 10%. Easier difficulties get more combo chains to compensate
   // for the lower baseline powerup frequency pressure.
-  if (Math.random() < diff().pairSpawnChance) {
+  // Skill tree: Oracle Edge adds +1.5pp/rank (Drifter-only).
+  let pairChance = diff().pairSpawnChance;
+  if (activeOrb === 'cyan') pairChance += 0.015 * rankOf('oracleEdge');
+  if (Math.random() < pairChance) {
     // Pair-combo selection weighted by active orb's specialty: combos that
     // include the orb's bias type get 2x weight so they spawn more often.
     const bias = getOrbBonus().bias;
@@ -7703,7 +8790,7 @@ function activateCombo(key, x, y) {
       activeEffects.shield = FORTRESS_SHIELD_DURATION_MS;
       shieldBroken = false;
       if (activeOrb === 'asteroid') {
-        shieldHits = 4;
+        shieldHits = shieldHitsCap();
       } else {
         shieldHits = Math.min(2, shieldHits + 2);
       }
@@ -7728,7 +8815,9 @@ function activateCombo(key, x, y) {
   if (key === 'nova_nova') {
     // SUPERNOVA: red/crimson waves at 400ms intervals, each larger.
     // Inferno orb (solar) fires 6; other orbs fire 4.
-    const supernovaWaves = activeOrb === 'solar' ? 6 : 4;
+    // Skill tree: Conflagration +1/rank to supernova wave count (Inferno-only).
+    let supernovaWaves = activeOrb === 'solar' ? 6 : 4;
+    if (activeOrb === 'solar') supernovaWaves += rankOf('conflagration');
     for (let i = 0; i < supernovaWaves; i++) {
       pendingNovaTimeouts.push(setTimeout(() => {
         if (state !== 'playing' && state !== 'devmode') return;
@@ -7792,13 +8881,14 @@ function activateCombo(key, x, y) {
     activeEffects.ghost = GHOST_ETERNAL_DURATION();
     activeCombos[key] = { def, deps: ['ghost'] };
   } else if (key === 'shield_shield') {
-    // FORTRESS SHIELD. Asteroid: direct set to the 4-hit cap so the pair is
-    // an instant fortress. Other orbs: +2 additive capped at 2.
+    // FORTRESS SHIELD. Asteroid: direct set to the hit cap (Bastion rank
+    // extends this past 4) so the pair is an instant fortress. Other orbs:
+    // +2 additive capped at 2.
     shieldEndTime = Date.now() + FORTRESS_SHIELD_DURATION_MS;
     activeEffects.shield = FORTRESS_SHIELD_DURATION_MS;
     shieldBroken = false;
     if (activeOrb === 'asteroid') {
-      shieldHits = 4;
+      shieldHits = shieldHitsCap();
     } else {
       shieldHits = Math.min(2, shieldHits + 2);
     }
@@ -7844,7 +8934,7 @@ function rawActivate(type, x, y) {
     //   - Burst           -> shieldHits = 4 (direct set, instant full stack).
     //   - Fortress pair   -> shieldHits = 4 (direct set, instant full stack).
     if (activeOrb === 'asteroid') {
-      shieldHits = Math.min(4, shieldHits + 2);
+      shieldHits = Math.min(shieldHitsCap(), shieldHits + 2);
     } else {
       shieldHits = Math.min(2, shieldHits + 1);
     }
@@ -7865,7 +8955,9 @@ function rawActivate(type, x, y) {
 function fireTripleNova(px, py) {
   pushCapped(novaRings, { x: px, y: py, radius: 0, life: 1, prevR: 0, startTime: Date.now() }, NOVA_RINGS_CAP);
   screenShake = Math.max(screenShake, 10);
-  const waves = activeOrb === 'solar' ? 6 : 3;
+  // Skill tree: Kindling +1/rank to single-nova wave count (Inferno-only).
+  let waves = activeOrb === 'solar' ? 6 : 3;
+  if (activeOrb === 'solar') waves += rankOf('kindling');
   for (let i = 1; i < waves; i++) {
     const life = Math.max(0.4, 1 - i * 0.1);
     const shake = Math.max(3, 10 - i * 1.5);
@@ -7917,7 +9009,9 @@ function spawnEmpRing(x, y, isChain) {
     startTime: Date.now(),
     triggered: false, // only destroys one planet ever
     isChain: !!isChain,
-    maxRadius: isChain ? 120 : EMP_MAX_RADIUS,
+    maxRadius: isChain
+      ? 120 * (activeOrb === 'asteroid' ? (1 + 0.30 * rankOf('detonation')) : 1)
+      : EMP_MAX_RADIUS * (activeOrb === 'asteroid' ? (1 + 0.10 * rankOf('chainReaction')) : 1),
     opacity: isChain ? 0.6 : 1,
     bolts, sparks,
   }, EMP_RINGS_CAP);
@@ -7930,7 +9024,15 @@ function spawnEmpRing(x, y, isChain) {
 function computeHyperspeedPeakMult(stacks, peakScale) {
   const normSpd = normalScrollSpeed();
   const s = Math.max(1, stacks || 1);
-  const basePeak = Math.max(3.5 * s, (6.0 * s) / Math.max(normSpd, 0.01));
+  // Skill tree: Thrust scales the two coefficients (3.5 and 6.0) by +10%/rank (Warp-only).
+  let thrustMult = 1;
+  if (activeOrb === 'nebula') thrustMult += 0.10 * rankOf('thrust');
+  let basePeak = Math.max(3.5 * thrustMult * s, (6.0 * thrustMult * s) / Math.max(normSpd, 0.01));
+  // Breakaway: at-max-stacks bonus +25%/rank (Warp-only).
+  if (activeOrb === 'nebula') {
+    const cap = HYPERSPEED_MAX_STACKS();
+    if (s >= cap) basePeak *= (1 + 0.25 * rankOf('breakaway'));
+  }
   return basePeak * (peakScale || 1);
 }
 
@@ -7939,7 +9041,7 @@ function computeHyperspeedPeakMult(stacks, peakScale) {
 // instead of growing the array. The whoosh restarts so the engine pitch can
 // shift up. hyperSpeedTimers stores absolute end timestamps (Date.now() + ms).
 function activateHyperspeed(durationOverride, peakScale) {
-  const durationMs = durationOverride || HYPERSPEED_DURATION_MS;
+  const durationMs = durationOverride || HYPERSPEED_DURATION();
   const now = Date.now();
   const newEnd = now + durationMs;
   if (hyperSpeedStacks < HYPERSPEED_MAX_STACKS()) {
@@ -8409,6 +9511,7 @@ function checkCollisions() {
           spawnEmpRing(b.x, b.y);
           releaseBodyCanvases(b);
           bodies.splice(i, 1);
+          checkDestroyProc(b, 'ghost');
           continue;
         }
         if (!b._rippleCd || b._rippleCd <= 0) {
@@ -8428,6 +9531,7 @@ function checkCollisions() {
   if (activeEffects.shield > 0) {
     for (let i = 0; i < bodies.length; i++) {
       if (bodyHits(bodies[i], 0)) {
+        const _shieldVictim = bodies[i];
         emitDestroyBurst(bodies[i].x, bodies[i].y, POWERUP_COLORS.shield.rgb);
         emitDestroyEffects(bodies[i], 'shield');
         SFX.planetDestroyed('shield');
@@ -8435,6 +9539,7 @@ function checkCollisions() {
         spawnEmpRing(bodies[i].x, bodies[i].y);
         releaseBodyCanvases(bodies[i]);
         bodies.splice(i, 1);
+        checkDestroyProc(_shieldVictim, 'shield');
         shieldHits--;
         if (shieldHits <= 0) {
           shieldEndTime = 0;
@@ -8503,14 +9608,13 @@ function executeBurst() {
     activateHyperspeed();
     SFX.pickup('hyperspeed', { stacks: hyperSpeedStacks });
   } else if (activeOrb === 'asteroid') {
-    // Fortress Shield — burst gives an instant full 4-hit fortress (direct
-    // set) on asteroid, matching the fortress-pair combo. Uses the fortress-
-    // tier duration so the burst matches a manually-triggered shield_shield
-    // combo. Single shield pickups on asteroid add +2 (cap 4) on top — which
-    // is a no-op once the burst has already filled the stack.
+    // Fortress Shield — burst gives an instant full fortress (direct set to
+    // the current cap — Bastion extends this past 4) on asteroid, matching
+    // the fortress-pair combo. Uses the fortress-tier duration so the burst
+    // matches a manually-triggered shield_shield combo.
     shieldEndTime = Date.now() + FORTRESS_SHIELD_DURATION_MS;
     activeEffects.shield = FORTRESS_SHIELD_DURATION_MS;
-    shieldHits = 4;
+    shieldHits = shieldHitsCap();
     shieldBroken = false;
     fortressShield = true;
     const def = COMBO_DEFS.shield_shield;
@@ -8895,7 +9999,8 @@ function update() {
   const burstReady = Date.now() >= burstCooldownEnd;
   if (burstTriggered && burstReady) {
     executeBurst();
-    burstCooldownEnd = Date.now() + BURST_COOLDOWN_MS;
+    burstCooldownDuration = BURST_COOLDOWN();
+    burstCooldownEnd = Date.now() + burstCooldownDuration;
   }
   burstTriggered = false;
 
@@ -9028,6 +10133,7 @@ function update() {
         emitDestroyEffects(b, 'nova');
         addDestroyPoints();
         SFX.planetDestroyed('nova');
+        checkDestroyProc(b, 'nova');
       } else survivors.push(b);
     }
     bodies = survivors;
@@ -9191,6 +10297,7 @@ function update() {
           addDestroyPoints();
           if (activeCombos.nova_nova) SFX.comboDestroySound('nova_nova');
           else SFX.planetDestroyed('nova');
+          checkDestroyProc(b, 'nova');
           break;
         }
       }
@@ -9244,6 +10351,7 @@ function update() {
             emitDestroyEffects(b, 'shield');
             addDestroyPoints();
             SFX.planetDestroyed('shield');
+            checkDestroyProc(b, 'emp');
             // Only primary rings chain — one level deep, no recursion.
             if (!r.isChain) secondarySpawns.push({ x: b.x, y: b.y });
             break;
@@ -9684,8 +10792,14 @@ function triggerDeath() {
 
   // Time bonus: every 30s survived = score * 0.03 bonus, capped at 20 intervals
   // (= 10 minutes, the apocalypse mark).
+  // Skill tree: Tempo shrinks interval 30→25/20/15s (Drifter-only). The
+  // effective interval cap scales so apocalypse-length runs still top out
+  // proportionally (e.g. rank 3 at 15s → 40 intervals over 10 min).
   const elapsedAtDeath = elapsedRunSeconds();
-  const survivedIntervals = Math.min(20, Math.floor(elapsedAtDeath / 30));
+  const tempoRank = activeOrb === 'cyan' ? rankOf('tempo') : 0;
+  const tbInterval = 30 - 5 * tempoRank; // 30 / 25 / 20 / 15
+  const tbCap = Math.floor(600 / tbInterval); // 20 / 24 / 30 / 40
+  const survivedIntervals = Math.min(tbCap, Math.floor(elapsedAtDeath / tbInterval));
   const timeBonus = Math.floor(score * 0.03 * survivedIntervals);
   const baseScore = score;
   score += timeBonus;
@@ -9697,6 +10811,16 @@ function triggerDeath() {
   const crystalsEarned = Math.max(0, Math.floor(score * crystalMult));
   totalCrystals = Math.max(0, totalCrystals + crystalsEarned);
   saveCrystals();
+
+  // v1.6.3 skill-tree unlock flags: dying *from* the apocalypse sequence on
+  // a given difficulty counts as beating that difficulty (reached the 10:00
+  // mark and got through the scripted sequence). Unlock flags gate which
+  // trees are visible/investable in the skill-trees menu.
+  if (apocalypseDeathFlag && beatDifficulty && !beatDifficulty[difficulty]) {
+    beatDifficulty[difficulty] = true;
+    saveBeatFlags();
+    treeLog('beat ' + difficulty + ' — trees unlocked');
+  }
 
   // Orb shatter: 6-8 irregular shards fly outward from the player position
   // before the existing particle burst fires. Each shard has a random
@@ -9816,6 +10940,7 @@ function triggerDeath() {
     document.getElementById('guideBtn').style.display = 'none';
     document.getElementById('leaderboardBtn').style.display = 'none';
     document.getElementById('leaderboardReturnBtn').style.display = 'none';
+    document.getElementById('skillTreesBtn').style.display = 'none';
     // Resume snapshot was already cleared in triggerDeath; sync the DOM.
     document.getElementById('resumeRunBtn').style.display = 'none';
     document.getElementById('resumeRunInfo').style.display = 'none';
@@ -12483,7 +13608,7 @@ function updateBurstBar() {
   const ready = (burstCooldownEnd === 0) || (Date.now() >= burstCooldownEnd);
   const pct = ready
     ? 1
-    : Math.max(0, Math.min(1, (Date.now() - (burstCooldownEnd - BURST_COOLDOWN_MS)) / BURST_COOLDOWN_MS));
+    : Math.max(0, Math.min(1, (Date.now() - (burstCooldownEnd - burstCooldownDuration)) / burstCooldownDuration));
   burstFillEl.style.width = (pct * 100) + '%';
   if (ready) {
     // Ready: bright gold/orange so it reads clearly against the grey cooldown
@@ -13218,6 +14343,8 @@ function goToMainMenu() {
   document.getElementById('guideBtn').style.display = '';
   document.getElementById('leaderboardBtn').style.display = '';
   document.getElementById('leaderboardReturnBtn').style.display = 'none';
+  document.getElementById('skillTreesBtn').style.display = '';
+  refreshSkillTreesBtn();
   document.getElementById('startBtn').style.display = '';
   document.getElementById('difficultySelect').style.display = '';
   leaderboardFromMenu = false;
@@ -13414,6 +14541,7 @@ function refreshOrbBrowser() {
       SFX.clickPrimary();
       activeOrb = key;
       saveOrb();
+      refreshActiveTreeCache();
       refreshOrbBrowser();
     });
   } else {
@@ -13436,6 +14564,7 @@ function refreshOrbBrowser() {
       saveUnlockedOrbs();
       activeOrb = key;
       saveOrb();
+      refreshActiveTreeCache();
       refreshOrbBrowser();
     });
   }
@@ -13709,6 +14838,7 @@ function openLeaderboardFromMenu() {
   document.getElementById('startBtn').style.display = 'none';
   document.getElementById('guideBtn').style.display = 'none';
   document.getElementById('leaderboardBtn').style.display = 'none';
+  document.getElementById('skillTreesBtn').style.display = 'none';
   document.getElementById('difficultySelect').style.display = 'none';
   document.getElementById('deathActions').style.display = 'none';
   // Leaderboard view uses centered layout, not the menu's column-flex rules.
@@ -14397,6 +15527,286 @@ async function pgsBootFlow() {
 // the game is already playable while this runs in the background.
 refreshPgsUI();
 pgsBootFlow();
+
+// --- Skill trees UI (v1.6.3) ---
+// The in-menu tree browser. Renders all unlocked orb trees with tab switcher,
+// per-path node pills, capstones row, and node-detail popup supporting
+// upgrade / single-node respec / full-tree respec. Tree state + persistence
+// live in the PGS-adjacent module above.
+let treeUiCurrentOrb = 'cyan';
+let treeDetailCurrent = null; // { kind: 'node'|'cap', pathKey, nodeIdx, capKey }
+let treeConfirmAction = null; // function called if user confirms
+
+function refreshSkillTreesBtn() {
+  const btn = document.getElementById('skillTreesBtn');
+  if (!btn) return;
+  btn.classList.toggle('visible', anyTreeUnlocked());
+}
+
+function openTreeOverlay() {
+  if (!anyTreeUnlocked()) return;
+  // Default to first unlocked orb if current is locked.
+  if (!treeUnlocked(treeUiCurrentOrb)) {
+    treeUiCurrentOrb = ORB_ORDER.find(o => treeUnlocked(o)) || 'cyan';
+  }
+  renderTreeOverlay();
+  document.getElementById('treeOverlay').classList.add('visible');
+}
+function closeTreeOverlay() {
+  document.getElementById('treeOverlay').classList.remove('visible');
+  closeTreeDetail();
+  closeTreeConfirm();
+  // Crystal balance may have changed from tree purchases — reflect it on the
+  // main menu so players don't see stale HUD after closing the tree screen.
+  const cb = document.getElementById('orbCrystalBalance');
+  if (cb) cb.textContent = '💎 ' + formatCrystals(totalCrystals);
+  // Keep the shop's orb browser (costs vs crystals) in sync too.
+  if (typeof refreshOrbBrowser === 'function') {
+    try { refreshOrbBrowser(); } catch {}
+  }
+}
+function renderTreeOverlay() {
+  const orbKey = treeUiCurrentOrb;
+  const def = TREE_DEFS[orbKey];
+  const state = orbTrees[orbKey];
+  if (!def || !state) return;
+  const color = def.color;
+  document.getElementById('treeTitle').textContent = def.name + ' TREE';
+  document.getElementById('treeTitle').style.color = `rgba(${color},1)`;
+  document.getElementById('treeCrystals').textContent = '💎 ' + formatCrystals(totalCrystals);
+
+  // Tabs
+  const tabsEl = document.getElementById('treeTabs');
+  tabsEl.innerHTML = '';
+  for (const o of ORB_ORDER) {
+    const odef = TREE_DEFS[o];
+    const unlocked = treeUnlocked(o);
+    const btn = document.createElement('button');
+    btn.className = 'tree-tab' + (o === orbKey ? ' active' : '') + (unlocked ? '' : ' locked');
+    btn.textContent = odef.name;
+    btn.style.color = `rgba(${odef.color},${o === orbKey ? 1 : 0.55})`;
+    if (unlocked) {
+      btn.addEventListener('click', () => { treeUiCurrentOrb = o; renderTreeOverlay(); });
+    }
+    tabsEl.appendChild(btn);
+  }
+
+  // Paths
+  const pathsEl = document.getElementById('treePaths');
+  pathsEl.innerHTML = '';
+  for (const pKey of Object.keys(def.paths)) {
+    const pathDef = def.paths[pKey];
+    const col = document.createElement('div');
+    col.className = 'tree-path';
+    const title = document.createElement('div');
+    title.className = 'tree-path-title';
+    title.textContent = pathDef.name;
+    title.style.color = `rgba(${color},0.85)`;
+    col.appendChild(title);
+    for (let i = 0; i < pathDef.nodes.length; i++) {
+      col.appendChild(buildNodePill(orbKey, pKey, i));
+    }
+    pathsEl.appendChild(col);
+  }
+
+  // Capstones
+  const capsEl = document.getElementById('treeCapstones');
+  capsEl.innerHTML = '';
+  for (const cap of def.capstones) {
+    capsEl.appendChild(buildCapstonePill(orbKey, cap));
+  }
+
+  // Footer
+  const ranks = totalRanksInvested(orbKey);
+  const full = document.getElementById('treeRespecFullBtn');
+  full.textContent = ranks > 0
+    ? `RESPEC TREE (${formatCrystals(fullTreeRespecCost(orbKey))} 💎)`
+    : 'RESPEC TREE';
+  full.disabled = ranks === 0 || totalCrystals < fullTreeRespecCost(orbKey);
+}
+
+function buildNodePill(orbKey, pathKey, nodeIdx) {
+  const def = TREE_DEFS[orbKey];
+  const state = orbTrees[orbKey];
+  const node = def.paths[pathKey].nodes[nodeIdx];
+  const current = state[pathKey][nodeIdx] | 0;
+  const locked = !pathPrereqMet(state, pathKey, nodeIdx);
+  const maxed = current >= node.max;
+  const partial = current > 0 && !maxed;
+  const el = document.createElement('button');
+  el.className = 'tree-node' + (locked ? ' locked' : '') + (maxed ? ' maxed' : '') + (partial ? ' partial' : '');
+  el.style.color = maxed ? `rgba(${def.color},1)` : '';
+  if (maxed) el.style.borderColor = `rgba(${def.color},0.8)`;
+  const nameEl = document.createElement('div');
+  nameEl.className = 'tree-node-name';
+  nameEl.textContent = node.name;
+  el.appendChild(nameEl);
+  const metaEl = document.createElement('div');
+  metaEl.className = 'tree-node-meta';
+  const nextCost = maxed ? 'MAX' : (formatCrystals(nodeCost(node.tier, current + 1)) + ' 💎');
+  metaEl.textContent = locked ? 'LOCKED' : `${current}/${node.max} · ${nextCost}`;
+  el.appendChild(metaEl);
+  if (!locked) {
+    el.addEventListener('click', () => openTreeDetail({ kind: 'node', orbKey, pathKey, nodeIdx }));
+  }
+  return el;
+}
+
+function buildCapstonePill(orbKey, cap) {
+  const def = TREE_DEFS[orbKey];
+  const state = orbTrees[orbKey];
+  const owned = !!state.capstones[cap.key];
+  const prereqOk = capstonePrereqMet(orbKey, cap.key);
+  const comingSoon = isCapstoneComingSoon(cap.key);
+  const el = document.createElement('button');
+  el.className = 'tree-node' + (!prereqOk && !owned && !comingSoon ? ' locked' : '') + (owned ? ' maxed' : '');
+  el.style.color = owned ? `rgba(${def.color},1)` : '';
+  if (owned) el.style.borderColor = `rgba(${def.color},0.8)`;
+  const nameEl = document.createElement('div');
+  nameEl.className = 'tree-node-name';
+  nameEl.textContent = '★ ' + cap.name;
+  el.appendChild(nameEl);
+  const metaEl = document.createElement('div');
+  metaEl.className = 'tree-node-meta';
+  metaEl.textContent = owned
+    ? 'UNLOCKED'
+    : comingSoon
+      ? 'COMING SOON'
+      : (prereqOk ? (formatCrystals(TREE_CAPSTONE_COST) + ' 💎') : 'LOCKED');
+  el.appendChild(metaEl);
+  // Tap always opens the detail popup so players can read what's planned,
+  // even for coming-soon capstones. The detail popup disables the Unlock
+  // button for coming-soon entries.
+  if (prereqOk || owned || comingSoon) {
+    el.addEventListener('click', () => openTreeDetail({ kind: 'cap', orbKey, capKey: cap.key }));
+  }
+  return el;
+}
+
+function openTreeDetail(target) {
+  treeDetailCurrent = target;
+  renderTreeDetail();
+  document.getElementById('treeNodeDetail').classList.add('visible');
+}
+function closeTreeDetail() {
+  treeDetailCurrent = null;
+  document.getElementById('treeNodeDetail').classList.remove('visible');
+}
+function renderTreeDetail() {
+  if (!treeDetailCurrent) return;
+  const t = treeDetailCurrent;
+  const def = TREE_DEFS[t.orbKey];
+  const state = orbTrees[t.orbKey];
+  const titleEl = document.getElementById('treeDetailTitle');
+  const descEl = document.getElementById('treeDetailDesc');
+  const ranksEl = document.getElementById('treeDetailRanks');
+  const upBtn = document.getElementById('treeDetailUpgradeBtn');
+  const respecBtn = document.getElementById('treeDetailRespecBtn');
+  if (t.kind === 'node') {
+    const node = def.paths[t.pathKey].nodes[t.nodeIdx];
+    const current = state[t.pathKey][t.nodeIdx] | 0;
+    titleEl.textContent = node.name;
+    titleEl.style.color = `rgba(${def.color},1)`;
+    descEl.textContent = node.desc;
+    let ranksHtml = '';
+    for (let r = 1; r <= node.max; r++) {
+      const cls = r <= current ? 'current' : (r === current + 1 ? 'next' : '');
+      ranksHtml += `<div class="rank-row ${cls}">Rank ${r}: ${node.effect(r)} · ${formatCrystals(nodeCost(node.tier, r))} 💎</div>`;
+    }
+    ranksEl.innerHTML = ranksHtml;
+    const maxed = current >= node.max;
+    const nextCost = maxed ? 0 : nodeCost(node.tier, current + 1);
+    upBtn.style.display = '';
+    upBtn.textContent = maxed ? 'MAXED' : `UPGRADE (${formatCrystals(nextCost)} 💎)`;
+    upBtn.disabled = maxed || totalCrystals < nextCost;
+    respecBtn.style.display = current > 0 ? '' : 'none';
+    respecBtn.disabled = totalCrystals < TREE_RESPEC_SINGLE;
+    upBtn.onclick = () => {
+      if (purchaseNodeRank(t.orbKey, t.pathKey, t.nodeIdx)) {
+        treeLog(`purchased ${def.name}.${t.pathKey}[${t.nodeIdx}] → rank ${state[t.pathKey][t.nodeIdx]}`);
+        SFX.clickPrimary();
+        renderTreeOverlay();
+        renderTreeDetail();
+      }
+    };
+    respecBtn.onclick = () => {
+      confirmTreeAction(`Refund all ranks of ${node.name}? Costs ${formatCrystals(TREE_RESPEC_SINGLE)} 💎.`, () => {
+        if (respecNode(t.orbKey, t.pathKey, t.nodeIdx)) {
+          treeLog(`respec node ${def.name}.${t.pathKey}[${t.nodeIdx}]`);
+          SFX.clickSecondary();
+          renderTreeOverlay();
+          closeTreeDetail();
+        }
+      });
+    };
+  } else if (t.kind === 'cap') {
+    const cap = def.capstones.find(c => c.key === t.capKey);
+    const owned = !!state.capstones[t.capKey];
+    const comingSoon = isCapstoneComingSoon(t.capKey);
+    titleEl.textContent = '★ ' + cap.name;
+    titleEl.style.color = `rgba(${def.color},1)`;
+    descEl.textContent = cap.desc;
+    ranksEl.innerHTML = owned
+      ? '<div class="rank-row current">Unlocked</div>'
+      : comingSoon
+        ? '<div class="rank-row next">Coming soon — effect ships in a future update</div>'
+        : `<div class="rank-row next">${formatCrystals(TREE_CAPSTONE_COST)} 💎</div>`;
+    upBtn.style.display = owned ? 'none' : '';
+    upBtn.textContent = owned
+      ? 'UNLOCKED'
+      : comingSoon
+        ? 'COMING SOON'
+        : `UNLOCK (${formatCrystals(TREE_CAPSTONE_COST)} 💎)`;
+    upBtn.disabled = owned || comingSoon || totalCrystals < TREE_CAPSTONE_COST;
+    respecBtn.style.display = 'none';
+    upBtn.onclick = () => {
+      if (purchaseCapstone(t.orbKey, t.capKey)) {
+        treeLog(`purchased capstone ${def.name}.${t.capKey}`);
+        SFX.clickPrimary();
+        renderTreeOverlay();
+        renderTreeDetail();
+      }
+    };
+  }
+}
+
+function confirmTreeAction(msg, onYes) {
+  document.getElementById('treeConfirmMsg').textContent = msg;
+  treeConfirmAction = onYes;
+  document.getElementById('treeConfirm').classList.add('visible');
+}
+function closeTreeConfirm() {
+  treeConfirmAction = null;
+  document.getElementById('treeConfirm').classList.remove('visible');
+}
+
+document.getElementById('skillTreesBtn').addEventListener('click', () => {
+  SFX.clickSecondary();
+  openTreeOverlay();
+});
+document.getElementById('treeCloseBtn').addEventListener('click', () => { SFX.clickSecondary(); closeTreeOverlay(); });
+document.getElementById('treeDetailCloseBtn').addEventListener('click', () => { SFX.clickSecondary(); closeTreeDetail(); });
+document.getElementById('treeRespecFullBtn').addEventListener('click', () => {
+  const fee = fullTreeRespecCost(treeUiCurrentOrb);
+  const ranks = totalRanksInvested(treeUiCurrentOrb);
+  if (ranks === 0 || totalCrystals < fee) return;
+  confirmTreeAction(`Respec entire ${TREE_DEFS[treeUiCurrentOrb].name} tree? Costs ${formatCrystals(fee)} 💎 and refunds all invested crystals.`, () => {
+    if (respecTree(treeUiCurrentOrb)) {
+      treeLog(`respec tree ${TREE_DEFS[treeUiCurrentOrb].name}`);
+      SFX.clickSecondary();
+      renderTreeOverlay();
+    }
+  });
+});
+document.getElementById('treeConfirmYes').addEventListener('click', () => {
+  SFX.clickPrimary();
+  const fn = treeConfirmAction;
+  closeTreeConfirm();
+  if (fn) fn();
+});
+document.getElementById('treeConfirmNo').addEventListener('click', () => { SFX.clickSecondary(); closeTreeConfirm(); });
+
+refreshSkillTreesBtn();
 
 // --- Play In-App Update ---
 // Only runs on Android via the @capawesome/capacitor-app-update plugin.
