@@ -14116,15 +14116,37 @@ document.getElementById('startBtn').addEventListener('click', ()=>{
   SFX.clickPrimary();
   // DEV cheat: pilot name "BODYPREVIEW" diverts to the internal QA page
   // instead of starting a run. Removed/gated before v1.6.0.
-  if (getUsername() === 'BODYPREVIEW') {
+  if (getUsername().toUpperCase() === 'BODYPREVIEW') {
     enterBodyPreview();
     return;
   }
   // DEV cheat: pilot name "DEVMODE" opens the internal gameplay sandbox
   // instead of starting a run. Removed/gated before public release.
-  if (getUsername() === 'DEVMODE') {
+  if (getUsername().toUpperCase() === 'DEVMODE') {
     enterDevMode();
     return;
+  }
+  // DEV cheat: pilot name "TREETEST" (case-insensitive) grants 5,000,000
+  // crystals, unlocks all three difficulty gates, and resets every orb's
+  // skill tree to fresh state. One-shot per run start (the ENTER THE VOID
+  // click handler runs once per button press, so no per-frame concern).
+  // After the grant the run proceeds normally so testers can verify
+  // purchase / respec / proc behaviour against a known starting point.
+  if (getUsername().toUpperCase() === 'TREETEST') {
+    totalCrystals = Math.max(totalCrystals, 5000000);
+    beatDifficulty.NORMAL = true;
+    beatDifficulty.HARD = true;
+    beatDifficulty.EXTREME = true;
+    for (const orb of Object.keys(orbTrees)) {
+      orbTrees[orb] = freshOrbTreeState(orb);
+    }
+    saveCrystals();       // localStorage + PGS schedule
+    saveBeatFlags();      // localStorage + PGS schedule
+    saveTreeState();      // localStorage + PGS schedule
+    refreshActiveTreeCache();
+    refreshSkillTreesBtn();
+    console.log('[TREETEST] Crystals granted, all trees unlocked, tree state reset');
+    // Fall through — the run starts normally so the tester can play a round.
   }
   // Sentry fire-test cheat: pilot name "SENTRY" triggers a tagged test event
   // on start so a tester can verify the crash-reporting pipeline end-to-end.

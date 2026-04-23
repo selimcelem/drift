@@ -61,9 +61,9 @@ detail beyond the summaries here.
   spawn cadences converted to ms timestamps, `decay()` helper for exponential
   drag patterns. Fixes the "game plays easier on 60 fps devices" bug; gameplay
   now feels identical at 30/60/120 Hz and under Android low-power throttling
-- DEVMODE sandbox — pilot name `DEVMODE` enters a gameplay test sandbox with
-  scroll pauseable, manual body/powerup spawning, god mode, and live FPS
-  observation. Internal QA tool, not exposed to players
+- Internal QA sandbox — dev-only diagnostic mode with scroll pauseable,
+  manual body/powerup spawning, god mode, and live FPS observation.
+  Not exposed to players
 - Heartbeat SFX synced to systole peaks on the heart planet
 
 ### Changed
@@ -93,7 +93,7 @@ detail beyond the summaries here.
   stay pixel-perfect across every element that used to have its own offset
 - Loading screen warms the PixiJS texture cache during preload: the atlases, per-body sprites, powerup halos, and
   overlay canvases are uploaded to the GPU before the first real frame so there's no first-spawn hitch
-- Body preview developer tool — type pilot name `BODYPREVIEW` on the main menu to open a scrollable page rendering
+- Body preview developer tool — dev-only diagnostic page rendering
   every body type at rest with labels for rapid visual QA over the PixiJS sprite outputs
 - Tappable pilot name on the main menu for quick name changes without going through the pause menu
 - `TIME_DILATION` dev cheat constant for rapidly exercising late-phase gameplay and the apocalypse sequence during testing
@@ -151,7 +151,7 @@ detail beyond the summaries here.
 ### Developer
 - Added on-screen debug overlay (DEBUG_RESUME flag, currently off) for on-device resume-state
   diagnostics without chrome://inspect tethering
-- Added Sentry fire-test cheat (pilot name "SENTRY") to verify error reporting wiring on any build
+- Added Sentry fire-test diagnostic to verify error reporting wiring on any build
 
 ### Known issues
 - Qualcomm Adreno GPU driver crashes on a small number of devices still being monitored;

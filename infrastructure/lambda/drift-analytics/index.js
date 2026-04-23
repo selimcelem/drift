@@ -5,12 +5,30 @@ const {
   ScanCommand,
   QueryCommand,
 } = require("@aws-sdk/lib-dynamodb");
+const { SSMClient, GetParameterCommand } = require("@aws-sdk/client-ssm");
 
 const client = new DynamoDBClient({});
 const ddb = DynamoDBDocumentClient.from(client);
+const ssm = new SSMClient({ region: process.env.AWS_REGION });
 
 const TABLE = process.env.ANALYTICS_TABLE || "drift-analytics";
-const PASSWORD = process.env.ANALYTICS_PASSWORD || "drift2026";
+
+// Password is fetched from SSM Parameter Store on the first authenticated
+// request and cached in module scope for the lifetime of the Lambda container.
+// Cold-start fetches ~1 decrypt call; warm invocations are free. Never falls
+// back to a hardcoded default — if SSM fetch fails the handler 500s rather
+// than accepting a guessable literal.
+let cachedPassword = null;
+async function getAnalyticsPassword() {
+  if (cachedPassword) return cachedPassword;
+  const paramName = process.env.ANALYTICS_PASSWORD_PARAM;
+  if (!paramName) throw new Error("ANALYTICS_PASSWORD_PARAM env var not set");
+  const result = await ssm.send(
+    new GetParameterCommand({ Name: paramName, WithDecryption: true })
+  );
+  cachedPassword = result.Parameter.Value;
+  return cachedPassword;
+}
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -89,7 +107,15 @@ async function handleGet(event) {
     event.headers?.authorization || event.headers?.Authorization || "";
   const supplied = authHeader.replace(/^Bearer\s+/i, "");
 
-  if (supplied !== PASSWORD) {
+  let expected;
+  try {
+    expected = await getAnalyticsPassword();
+  } catch (err) {
+    console.error("SSM fetch for analytics password failed:", err);
+    return json(500, { error: "auth backend unavailable" });
+  }
+
+  if (supplied !== expected) {
     return {
       statusCode: 401,
       headers: { ...CORS_HEADERS, "Content-Type": "text/html; charset=utf-8" },

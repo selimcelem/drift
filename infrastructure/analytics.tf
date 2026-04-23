@@ -74,6 +74,39 @@ resource "aws_iam_role_policy" "lambda_analytics" {
   })
 }
 
+# Analytics dashboard password — stored in SSM Parameter Store (SecureString).
+# Lambda fetches at cold-start and caches in module scope. Never committed to
+# source. After `terraform apply`, the operator sets the real value via:
+#   aws ssm put-parameter --name /drift/analytics-password \
+#     --value "NEW_PASSWORD" --overwrite --type SecureString
+# lifecycle.ignore_changes prevents Terraform from ever overwriting the live
+# value on subsequent applies.
+resource "aws_ssm_parameter" "analytics_password" {
+  name  = "/drift/analytics-password"
+  type  = "SecureString"
+  value = "REPLACE_AFTER_APPLY"
+
+  lifecycle {
+    ignore_changes = [value]
+  }
+}
+
+resource "aws_iam_role_policy" "read_ssm_analytics_password" {
+  name = "drift-lambda-read-analytics-password"
+  role = aws_iam_role.lambda_exec.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["ssm:GetParameter"]
+        Resource = aws_ssm_parameter.analytics_password.arn
+      }
+    ]
+  })
+}
+
 resource "aws_lambda_function" "drift_analytics" {
   function_name    = "drift-analytics"
   filename         = data.archive_file.drift_analytics.output_path
@@ -85,8 +118,8 @@ resource "aws_lambda_function" "drift_analytics" {
 
   environment {
     variables = {
-      ANALYTICS_PASSWORD = "drift2026"
-      ANALYTICS_TABLE    = "drift-analytics"
+      ANALYTICS_PASSWORD_PARAM = aws_ssm_parameter.analytics_password.name
+      ANALYTICS_TABLE          = "drift-analytics"
     }
   }
 }
