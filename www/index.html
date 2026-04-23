@@ -58,7 +58,10 @@
 
   #gameWrapper {
     width: 100vw;
-    height: 100vh;
+    /* 100dvh (dynamic viewport height) collapses with mobile browser chrome
+       auto-hide so the playfield doesn't end up behind the URL bar on
+       Android. Desktop browsers treat 100dvh == 100vh. */
+    height: 100dvh;
     position: fixed;
     top: 0;
     left: 0;
@@ -464,12 +467,30 @@
      switches to flex-start + margin-top:auto so buttons anchor at the bottom
      (thumb reach) instead of clipping the DRIFT logo off the top. */
   #overlay.menu-mode {
-    justify-content: center;
+    justify-content: flex-start;
     padding: calc(env(safe-area-inset-top, 0px) + 12px) 16px calc(env(safe-area-inset-bottom, 0px) + 12px);
     gap: clamp(6px, 1.6vh, 18px);
     box-sizing: border-box;
-    min-height: 100vh;
-    overflow: hidden;
+    /* 100dvh accounts for mobile browser chrome auto-hide; 100vh falls back
+       on desktop. min-height not height — content shorter than viewport
+       still centers via margin:auto on the first/last flex items in the
+       short-screen rules below, but content taller than viewport can SCROLL
+       instead of getting clipped. This was the v1.6.3 regression where the
+       SKILL TREES button + larger menu pushed the column taller than
+       915 px on the S20 FE, clipping the DRIFT title above and the
+       SKILL TREES button below. */
+    min-height: 100dvh;
+    overflow-y: auto;
+    overflow-x: hidden;
+    /* Smooth momentum scrolling on iOS/Android WebView. */
+    -webkit-overflow-scrolling: touch;
+  }
+  /* On viewports taller than the content, auto-center via flex glue so the
+     composed-poster look is preserved. Achieved by margin-top/bottom:auto
+     on the first and last visible children — flex-start + auto margins is
+     the tall-screen-centering / short-screen-top-anchored trick. */
+  @media (min-height: 900px) {
+    #overlay.menu-mode { justify-content: center; }
   }
   /* Zero out the legacy per-child margin-bottoms so the parent gap is the
      only source of vertical spacing in menu mode. */
@@ -1030,13 +1051,18 @@
     backdrop-filter: blur(8px);
     border-radius: 4px;
     z-index: 28;
+    padding: calc(env(safe-area-inset-top, 0px) + 20px) 16px
+             calc(env(safe-area-inset-bottom, 0px) + 20px);
+    overflow-y: auto;
+    box-sizing: border-box;
   }
   #settingsOverlay.visible { display: flex; }
   .settings-rows {
     display: flex;
     flex-direction: column;
     gap: 22px;
-    width: 260px;
+    /* Clamped: 260px on roomy viewports, shrinks to fit on narrow phones. */
+    width: min(260px, 100%);
     margin-bottom: 36px;
   }
   .settings-row {
@@ -1265,11 +1291,25 @@
     font-size: 11px;
     letter-spacing: 3px;
   }
-  /* Position each quadrant in its compass direction around the center ring. */
+  /* Position each quadrant in its compass direction around the center ring.
+     Offsets keep the radial layout on phones as narrow as ~360 px. The
+     narrow-viewport media query below shrinks the ring + quadrants on
+     devices under ~400 px wide so nothing clips the screen edges. */
   .dc-quadrant.dc-top    { top: calc(50% - 180px); left: 50%; transform: translateX(-50%); }
   .dc-quadrant.dc-right  { top: 50%; left: calc(50% + 70px); transform: translateY(-50%); }
   .dc-quadrant.dc-bottom { top: calc(50% + 94px); left: 50%; transform: translateX(-50%); }
   .dc-quadrant.dc-left   { top: 50%; left: calc(50% - 180px); transform: translateY(-50%); }
+  @media (max-width: 400px) {
+    .dc-ring { width: 220px; height: 220px; }
+    .dc-quadrant { width: 92px; min-height: 72px; padding: 8px; }
+    .dc-quadrant .dc-q-icon { font-size: 22px; }
+    .dc-quadrant .dc-q-label { font-size: 10px; }
+    .dc-quadrant.dc-top    { top: calc(50% - 150px); }
+    .dc-quadrant.dc-right  { left: calc(50% + 56px); }
+    .dc-quadrant.dc-bottom { top: calc(50% + 78px); }
+    .dc-quadrant.dc-left   { left: calc(50% - 148px); }
+    .dc-center-label { font-size: 15px; letter-spacing: 4px; }
+  }
   /* Per-quadrant color accents to reinforce the powerup mapping. */
   .dc-quadrant[data-q="shield"]     { border-color: rgba(120, 230, 255, 0.55); color: rgba(180, 240, 255, 1); }
   .dc-quadrant[data-q="nova"]       { border-color: rgba(255, 150, 80, 0.55);  color: rgba(255, 180, 110, 1); }
@@ -1323,8 +1363,19 @@
     background: rgba(0,0,8,0.96);
     backdrop-filter: blur(10px);
     z-index: 35;
-    padding: 20px 14px 14px;
+    /* env(safe-area-inset-*) keeps the top/bottom chrome padding when the
+       overlay falls behind a notch or gesture bar. padding-x is clamped so
+       very narrow phones don't eat too much horizontal real estate. */
+    padding: calc(env(safe-area-inset-top, 0px) + 20px)
+             clamp(10px, 3vw, 18px)
+             calc(env(safe-area-inset-bottom, 0px) + 14px);
     overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+    /* Prevent any child grid/flex from dragging the overlay wider than the
+       viewport — belt-and-braces for the main fix in .tree-paths. */
+    max-width: 100vw;
+    box-sizing: border-box;
   }
   #treeOverlay.visible { display: flex; }
   .tree-header {
@@ -1353,6 +1404,10 @@
     gap: 6px;
     margin-bottom: 14px;
     justify-content: center;
+    /* Safety net: on very narrow viewports where all 5 orb tabs don't wrap
+       cleanly, allow horizontal scroll within the row rather than overflowing
+       the parent overlay. flex-wrap:wrap above handles the common case. */
+    max-width: 100%;
   }
   .tree-tab {
     background: transparent;
@@ -1366,6 +1421,12 @@
     border-radius: 3px;
     transition: all 0.2s;
     text-transform: uppercase;
+    /* Prevent text wrapping inside the tab so tab widths stay consistent
+       across the 5 orb names. flex-wrap on the parent row handles line
+       breaks between tabs. */
+    white-space: nowrap;
+    /* WCAG 2.5.5 minimum tap target size on touch devices. */
+    min-height: 28px;
   }
   .tree-tab:hover { color: rgba(255,255,255,0.9); border-color: rgba(255,255,255,0.6); }
   .tree-tab.active {
@@ -1376,9 +1437,16 @@
   .tree-tab.locked { color: rgba(255,255,255,0.25); cursor: not-allowed; border-color: rgba(255,255,255,0.1); }
   .tree-paths {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    /* minmax(0, 1fr) allows columns to SHRINK below content intrinsic size,
+       which prevents long node names (e.g. "CALCULATED DRIFT", 16 chars) from
+       forcing their column wider than the grid container on narrow phones.
+       Text inside wraps to multiple lines within each cell instead of pushing
+       the whole overlay horizontally. */
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 10px;
     margin-bottom: 16px;
+    /* Defensive: never grow wider than the parent overlay. */
+    max-width: 100%;
   }
   .tree-path {
     display: flex;
@@ -1411,6 +1479,14 @@
     display: flex;
     flex-direction: column;
     gap: 3px;
+    /* min-width:0 lets the flex item shrink below its content's intrinsic
+       width inside the grid cell; without it, long names force the cell
+       wider than the column. The node-name element's own word-break handles
+       the visual wrap. */
+    min-width: 0;
+    word-break: break-word;
+    /* Minimum WCAG tap target on touch. */
+    min-height: 44px;
   }
   .tree-node:hover {
     background: rgba(20,22,40,0.85);
@@ -1594,6 +1670,10 @@
     backdrop-filter: blur(8px);
     border-radius: 4px;
     z-index: 20;
+    padding: calc(env(safe-area-inset-top, 0px) + 20px) 16px
+             calc(env(safe-area-inset-bottom, 0px) + 20px);
+    overflow-y: auto;
+    box-sizing: border-box;
   }
   #pauseOverlay.visible { display: flex; }
 
