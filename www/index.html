@@ -9376,6 +9376,28 @@ function activateCombo(key, x, y) {
         SFX.pickup('nova');
       }, i * 400));
     }
+    // Second Flame (Inferno Pyre T3): supernovas are also eligible per the
+    // user-specified Bug 2 fix list — SUN FORGE auto-fires, CRITICAL MASS
+    // triggers, and manually-landed Supernova combos can all roll the
+    // bonus wave. Same guard as fireTripleNova: not eligible from the
+    // Second-Flame-fired path. activateCombo isn't currently recursively
+    // callable from the bonus wave (which is a raw ring push) so the
+    // guard is preventive.
+    const sfRankCombo = (activeOrb === 'solar') ? rankOf('secondFlame') : 0;
+    if (sfRankCombo > 0) {
+      const chanceC = [0.30, 0.60, 0.90][sfRankCombo - 1] || 0;
+      if (Math.random() < chanceC) {
+        const id = setTimeout(() => {
+          if (state === 'playing' || state === 'devmode') {
+            pushCapped(novaRings, { x: player.x, y: player.y, radius: 0, life: 1, prevR: 0, supernova: true, startTime: Date.now() }, NOVA_RINGS_CAP);
+            screenShake = Math.max(screenShake, 6);
+            SFX.pickup('nova');
+            treeLog('secondFlame: bonus wave fired (source=supernova)');
+          }
+        }, supernovaWaves * 400);
+        secondFlamePending.push(id);
+      }
+    }
     // 170 frames ≈ 2833ms
     activeCombos[key] = { def, endTime: Date.now() + 2833 };
   } else if (key === 'nova_hyperspeed') {
@@ -9527,7 +9549,7 @@ function rawActivate(type, x, y) {
   }
 }
 
-function fireTripleNova(px, py) {
+function fireTripleNova(px, py, source) {
   // CRITICAL MASS: fresh cast resets the kill counter.
   novaCastKillCount = 0;
   pushCapped(novaRings, { x: px, y: py, radius: 0, life: 1, prevR: 0, startTime: Date.now() }, NOVA_RINGS_CAP);
@@ -9558,8 +9580,19 @@ function fireTripleNova(px, py) {
   }
   // Second Flame (Inferno Pyre T3): after the cast finishes, roll chance to
   // fire one bonus wave at player position. Scheduled after the last wave.
+  // Bug 2 fix: `source` tag gates re-rolls so Second Flame can't re-trigger
+  // on its own bonus wave's completion. Eligible sources (all pass source
+  // as undefined or a non-'second_flame_proc' value — rolls normally):
+  //   • nova pickup activation (rawActivate)   → undefined
+  //   • burst-fired nova (executeBurst cyan)   → undefined
+  //   • Firebrand proc                         → undefined
+  // Ineligible:
+  //   • Second Flame bonus wave refactored to call fireTripleNova → pass
+  //     'second_flame_proc' to suppress re-roll (defensive — the current
+  //     bonus-wave implementation is a direct ring-push and does not
+  //     re-enter fireTripleNova, so the guard is preventive).
   const sfRank = (activeOrb === 'solar') ? rankOf('secondFlame') : 0;
-  if (sfRank > 0) {
+  if (sfRank > 0 && source !== 'second_flame_proc') {
     const chance = [0.30, 0.60, 0.90][sfRank - 1] || 0;
     if (Math.random() < chance) {
       const id = setTimeout(() => {
@@ -9567,7 +9600,7 @@ function fireTripleNova(px, py) {
           pushCapped(novaRings, { x: player.x, y: player.y, radius: 0, life: 1, prevR: 0, startTime: Date.now() }, NOVA_RINGS_CAP);
           screenShake = Math.max(screenShake, 6);
           SFX.pickup('nova');
-          treeLog('secondFlame: bonus wave fired');
+          treeLog('secondFlame: bonus wave fired (source=' + (source || 'player') + ')');
         }
       }, waves * 400);
       secondFlamePending.push(id);
@@ -15147,6 +15180,13 @@ function beginResumedRun(snap) {
   resetGame();
   if (snap.difficulty && DIFFICULTIES[snap.difficulty]) difficulty = snap.difficulty;
   if (snap.orb && ORB_DEFS && ORB_DEFS[snap.orb]) activeOrb = snap.orb;
+  // v1.6.3 skill-tree cache MUST follow any activeOrb mutation — the
+  // gameplay hot-path nodes (Kindling, Bastion, Thrust, etc.) read from
+  // activeTreeRanks which is built for whichever orb was active at cache
+  // time. Without this refresh, resuming a different orb than the one
+  // currently equipped left the cache stale and tree effects inactive
+  // until the next orb-equip event.
+  refreshActiveTreeCache();
   score = snap.score | 0;
   document.getElementById('score').textContent = String(score);
   runStartTime = Date.now() - (snap.timesurvived * 1000);
