@@ -1078,6 +1078,139 @@
     color: rgba(180,240,255,1);
     box-shadow: 0 0 10px rgba(100,200,255,0.25);
   }
+
+  /* Cloud-save button inside the settings overlay. Reuses toggle border/font
+     for visual consistency; behaves as a single button rather than a pair. */
+  .settings-cloud-btn {
+    background: transparent;
+    border: 1px solid rgba(100,200,255,0.35);
+    color: rgba(100,200,255,0.75);
+    font-family: 'Orbitron', monospace;
+    font-size: 10px;
+    letter-spacing: 2px;
+    padding: 6px 14px;
+    cursor: pointer;
+    border-radius: 3px;
+    transition: all 0.2s;
+    text-transform: uppercase;
+  }
+  .settings-cloud-btn:hover {
+    color: rgba(180,240,255,1);
+    border-color: rgba(100,200,255,0.6);
+    background: rgba(100,200,255,0.08);
+  }
+  .settings-cloud-btn.signed-in {
+    color: rgba(180,240,255,1);
+    border-color: rgba(100,200,255,0.65);
+    background: rgba(100,200,255,0.15);
+    box-shadow: 0 0 10px rgba(100,200,255,0.2);
+    cursor: default;
+  }
+  .settings-cloud-btn.warn {
+    border-color: rgba(255,180,80,0.55);
+    color: rgba(255,210,140,0.9);
+    box-shadow: 0 0 10px rgba(255,180,80,0.2);
+  }
+  .settings-cloud-btn.hidden { display: none; }
+
+  /* First-launch PGS sign-in prompt. Matches the pause/settings overlay
+     aesthetic (rgba(0,0,5,0.92) backdrop + blur). Shown once on first boot
+     unless the user has already answered (drift_pgs_prompted flag). */
+  #pgsPromptOverlay {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0,0,5,0.92);
+    backdrop-filter: blur(8px);
+    border-radius: 4px;
+    z-index: 30;
+  }
+  #pgsPromptOverlay.visible { display: flex; }
+  .pgs-prompt-inner {
+    max-width: 320px;
+    padding: 32px 28px;
+    text-align: center;
+  }
+  .pgs-prompt-title {
+    font-family: 'Orbitron', monospace;
+    font-size: 14px;
+    letter-spacing: 3px;
+    color: rgba(180,240,255,1);
+    line-height: 1.5;
+    margin-bottom: 18px;
+    text-transform: uppercase;
+  }
+  .pgs-prompt-body {
+    font-family: 'Orbitron', monospace;
+    font-size: 11px;
+    letter-spacing: 1px;
+    color: rgba(255,255,255,0.75);
+    line-height: 1.7;
+    margin-bottom: 28px;
+  }
+  .pgs-prompt-btns {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    align-items: center;
+  }
+  .pgs-btn {
+    font-family: 'Orbitron', monospace;
+    font-size: 12px;
+    letter-spacing: 3px;
+    padding: 12px 36px;
+    cursor: pointer;
+    text-transform: uppercase;
+    transition: all 0.2s;
+    background: transparent;
+    border-radius: 3px;
+    min-width: 200px;
+  }
+  .pgs-btn-primary {
+    border: 1px solid rgba(100,200,255,0.7);
+    color: rgba(180,240,255,1);
+  }
+  .pgs-btn-primary:hover {
+    background: rgba(100,200,255,0.12);
+    box-shadow: 0 0 18px rgba(100,200,255,0.3);
+  }
+  .pgs-btn-secondary {
+    border: 1px solid rgba(255,255,255,0.25);
+    color: rgba(255,255,255,0.65);
+  }
+  .pgs-btn-secondary:hover {
+    background: rgba(255,255,255,0.06);
+    color: rgba(255,255,255,0.9);
+  }
+
+  /* Floating toast for sync status. Fires with .visible, auto-hides. */
+  #pgsToast {
+    position: absolute;
+    bottom: 40px;
+    left: 50%;
+    transform: translateX(-50%) translateY(20px);
+    background: rgba(0, 0, 10, 0.9);
+    border: 1px solid rgba(100,200,255,0.45);
+    color: rgba(180,240,255,1);
+    font-family: 'Orbitron', monospace;
+    font-size: 11px;
+    letter-spacing: 2px;
+    padding: 10px 22px;
+    border-radius: 3px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s, transform 0.3s;
+    z-index: 40;
+    text-transform: uppercase;
+  }
+  #pgsToast.visible {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+
   #pauseBtn.visible { display: flex; }
   #pauseBtn:hover {
     background: rgba(100,200,255,0.12);
@@ -1816,9 +1949,24 @@
           <button class="toggle-opt" data-val="off">OFF</button>
         </div>
       </div>
+      <div class="settings-row" id="pgsSettingsRow">
+        <span class="settings-label">CLOUD SAVE</span>
+        <button class="settings-cloud-btn" id="pgsCloudBtn">SIGN IN</button>
+      </div>
     </div>
     <button class="pause-btn" id="settingsCloseBtn">CLOSE</button>
   </div>
+  <div id="pgsPromptOverlay">
+    <div class="pgs-prompt-inner">
+      <div class="pgs-prompt-title">Save progress across devices?</div>
+      <div class="pgs-prompt-body">Sign in with Google Play Games to back up your crystals, unlocks, and highscores. You can change this later in Settings.</div>
+      <div class="pgs-prompt-btns">
+        <button class="pgs-btn pgs-btn-primary" id="pgsPromptSignIn">SIGN IN</button>
+        <button class="pgs-btn pgs-btn-secondary" id="pgsPromptDismiss">NOT NOW</button>
+      </div>
+    </div>
+  </div>
+  <div id="pgsToast"></div>
   <div id="usernameOverlay">
     <div class="username-title">ENTER YOUR PILOT NAME</div>
     <input type="text" id="usernameInput" maxlength="20" placeholder="pilot name" autocomplete="off" spellcheck="false">
@@ -3345,19 +3493,19 @@ const ORB_DEFS = {
   },
   cosmic: {
     name: 'Phantom', desc: 'Longer ghost. Ghosts spawn more often.',
-    color: '192,132,252', cost: 50000, streakCap: 8, trail: 'cosmic', bias: 'ghost',
+    color: '192,132,252', cost: 20000, streakCap: 8, trail: 'cosmic', bias: 'ghost',
   },
   solar: {
     name: 'Inferno', desc: 'Bigger novas. Novas spawn more often.',
-    color: '251,146,60', cost: 100000, streakCap: 8, trail: 'solar', bias: 'nova',
+    color: '251,146,60', cost: 40000, streakCap: 8, trail: 'solar', bias: 'nova',
   },
   nebula: {
     name: 'Warp', desc: 'Hyperspeed stacks faster. Higher cap.',
-    color: '96,165,250', cost: 250000, streakCap: 8, trail: 'nebula', bias: 'hyperspeed',
+    color: '96,165,250', cost: 100000, streakCap: 8, trail: 'nebula', bias: 'hyperspeed',
   },
   asteroid: {
     name: 'Fortress', desc: 'Durable shields. Shields spawn more often.',
-    color: '168,162,158', cost: 350000, streakCap: 8, trail: 'asteroid', bias: 'shield',
+    color: '168,162,158', cost: 150000, streakCap: 8, trail: 'asteroid', bias: 'shield',
   },
 };
 const ORB_ORDER = ['cyan', 'cosmic', 'solar', 'nebula', 'asteroid'];
@@ -3381,12 +3529,25 @@ try {
 
 function saveCrystals() {
   try { localStorage.setItem('drift_crystals', String(Math.max(0, totalCrystals))); } catch {}
+  pgsScheduleWrite();
 }
 function saveOrb() {
   try { localStorage.setItem('drift_orb', activeOrb); } catch {}
+  pgsScheduleWrite();
 }
 function saveUnlockedOrbs() {
   try { localStorage.setItem('drift_unlocked_orbs', JSON.stringify(unlockedOrbs)); } catch {}
+  pgsScheduleWrite();
+}
+// Thin shim so save functions can fire a cloud sync without worrying about
+// TDZ on the PGS module. PGS is declared further down; this function is
+// hoisted and no-ops until PGS is initialized.
+function pgsScheduleWrite() {
+  try {
+    if (typeof PGS !== 'undefined' && PGS.isSignedIn && PGS.isSignedIn()) {
+      PGS.scheduleWrite();
+    }
+  } catch {}
 }
 function getOrbBonus() { return ORB_DEFS[activeOrb] || ORB_DEFS.cyan; }
 // Universal streak cap — all orbs share the same 8-streak ceiling. Per-orb
@@ -3397,6 +3558,199 @@ function activeOrbColor() { return getOrbBonus().color; }
 function formatCrystals(n) {
   return (n || 0).toLocaleString('en-US');
 }
+
+// --- Google Play Games Services cloud save (Android-only, opt-in) ---
+// Wraps the native PgsSavedGames plugin (see
+// android/app/src/main/java/com/selimcelem/drift/PgsSavedGamesPlugin.kt).
+// When the user is NOT signed in, this module is entirely inert — all save
+// paths continue to touch localStorage only. Snapshot name: drift_save_v1.
+const PGS = (() => {
+  const SNAPSHOT_NAME = 'drift_save_v1';
+  const SAVE_VERSION = 1;
+  const WRITE_DEBOUNCE_MS = 2000;
+
+  let authenticated = false;
+  let writePending = null;
+  let writeFailCount = 0;
+
+  function platformIsAndroid() {
+    const Cap = window.Capacitor;
+    return !!(Cap && Cap.getPlatform && Cap.getPlatform() === 'android');
+  }
+  function plugin() {
+    const Cap = window.Capacitor;
+    return Cap && Cap.Plugins && Cap.Plugins.PgsSavedGames;
+  }
+  function supported() { return platformIsAndroid() && !!plugin(); }
+
+  function buildPayload() {
+    let scores = [];
+    try { scores = JSON.parse(localStorage.getItem('drift_scores') || '[]'); } catch {}
+    return {
+      version: SAVE_VERSION,
+      crystals: Math.max(0, totalCrystals | 0),
+      activeOrb: activeOrb,
+      unlockedOrbs: Array.isArray(unlockedOrbs) ? unlockedOrbs.slice() : ['cyan'],
+      scores,
+    };
+  }
+
+  // Merge rule: take higher value per field.
+  //  - crystals: max
+  //  - unlockedOrbs: set union (validated against ORB_DEFS)
+  //  - scores: combine and keep top 5 per difficulty
+  //  - activeOrb: local wins (user's current selection on this device)
+  //  - version: remote authoritative if remote.version > local.version
+  function merge(local, remote) {
+    if (!remote) return local;
+    if ((remote.version || 0) > (local.version || 0)) {
+      console.log('[pgs] remote save version newer than local, treating remote as authoritative');
+      return {
+        version: remote.version,
+        crystals: Math.max(local.crystals | 0, remote.crystals | 0),
+        activeOrb: local.activeOrb,
+        unlockedOrbs: mergeOrbs(local.unlockedOrbs, remote.unlockedOrbs),
+        scores: mergeScores(local.scores, remote.scores),
+      };
+    }
+    return {
+      version: SAVE_VERSION,
+      crystals: Math.max(local.crystals | 0, remote.crystals | 0),
+      activeOrb: local.activeOrb,
+      unlockedOrbs: mergeOrbs(local.unlockedOrbs, remote.unlockedOrbs),
+      scores: mergeScores(local.scores, remote.scores),
+    };
+  }
+  function mergeOrbs(a, b) {
+    const set = new Set([...(a || []), ...(b || [])]);
+    set.add('cyan');
+    return Array.from(set).filter(k => ORB_DEFS[k]);
+  }
+  function mergeScores(a, b) {
+    const combined = [...(a || []), ...(b || [])];
+    const byDiff = {};
+    for (const s of combined) {
+      if (!s || typeof s.score !== 'number' || !s.difficulty) continue;
+      (byDiff[s.difficulty] = byDiff[s.difficulty] || []).push(s);
+    }
+    const kept = [];
+    for (const arr of Object.values(byDiff)) {
+      arr.sort((a, b) => b.score - a.score);
+      kept.push(...arr.slice(0, 5));
+    }
+    kept.sort((a, b) => b.score - a.score);
+    return kept;
+  }
+
+  // Apply merged payload to local state WITHOUT re-triggering PGS writes.
+  // Must not call saveCrystals/saveOrb/saveUnlockedOrbs — those would recurse.
+  function applyToLocal(payload) {
+    if (!payload) return;
+    if (typeof payload.crystals === 'number' && payload.crystals >= 0) {
+      totalCrystals = Math.max(0, Math.floor(payload.crystals));
+      try { localStorage.setItem('drift_crystals', String(totalCrystals)); } catch {}
+    }
+    if (Array.isArray(payload.unlockedOrbs)) {
+      const valid = payload.unlockedOrbs.filter(x => ORB_DEFS[x]);
+      if (!valid.includes('cyan')) valid.push('cyan');
+      unlockedOrbs = valid;
+      try { localStorage.setItem('drift_unlocked_orbs', JSON.stringify(unlockedOrbs)); } catch {}
+    }
+    if (Array.isArray(payload.scores)) {
+      try { localStorage.setItem('drift_scores', JSON.stringify(payload.scores)); } catch {}
+    }
+    // activeOrb intentionally NOT applied from remote.
+  }
+
+  async function checkAuth() {
+    if (!supported()) { authenticated = false; return false; }
+    try {
+      const res = await plugin().isAuthenticated();
+      authenticated = !!(res && res.authenticated);
+    } catch (e) {
+      authenticated = false;
+    }
+    return authenticated;
+  }
+
+  async function signIn() {
+    if (!supported()) return false;
+    try {
+      const res = await plugin().signIn();
+      authenticated = !!(res && res.authenticated);
+      if (authenticated) {
+        await syncFromRemote();
+      }
+      return authenticated;
+    } catch (e) {
+      authenticated = false;
+      if (typeof Sentry !== 'undefined') {
+        try { Sentry.captureMessage('PGS signIn failed: ' + (e && e.message), { level: 'info' }); } catch {}
+      }
+      return false;
+    }
+  }
+
+  async function readRemote() {
+    if (!supported() || !authenticated) return null;
+    try {
+      const res = await plugin().readSnapshot({ name: SNAPSHOT_NAME });
+      if (!res || !res.exists || !res.data) return null;
+      try { return JSON.parse(res.data); } catch { return null; }
+    } catch {
+      return null;
+    }
+  }
+
+  async function writeRemote(payload) {
+    if (!supported() || !authenticated) return false;
+    try {
+      await plugin().writeSnapshot({
+        name: SNAPSHOT_NAME,
+        data: JSON.stringify(payload),
+        description: 'Drift — ' + (payload.crystals | 0) + ' crystals',
+      });
+      writeFailCount = 0;
+      if (typeof refreshPgsUI === 'function') refreshPgsUI();
+      return true;
+    } catch (e) {
+      writeFailCount++;
+      if (typeof refreshPgsUI === 'function') refreshPgsUI();
+      return false;
+    }
+  }
+
+  async function syncFromRemote() {
+    if (!authenticated) return;
+    const local = buildPayload();
+    const remote = await readRemote();
+    if (!remote) {
+      await writeRemote(local);
+      return;
+    }
+    const merged = merge(local, remote);
+    applyToLocal(merged);
+    await writeRemote(merged);
+  }
+
+  function scheduleWrite() {
+    if (!authenticated) return;
+    if (writePending) clearTimeout(writePending);
+    writePending = setTimeout(() => {
+      writePending = null;
+      writeRemote(buildPayload());
+    }, WRITE_DEBOUNCE_MS);
+  }
+
+  function isSignedIn() { return authenticated; }
+  function isSupported() { return supported(); }
+  function getWriteFailCount() { return writeFailCount; }
+
+  return {
+    checkAuth, signIn, syncFromRemote,
+    scheduleWrite, isSignedIn, isSupported, getWriteFailCount,
+  };
+})();
 
 let state = 'idle', score = 0, frame = 0, planetsPassed = 0;
 let player = {}, bodies = [], trail = [], bgStars = [], deathParticles = [];
@@ -3435,7 +3789,7 @@ let runStats = { totalPassed: 0, totalDestroyed: 0, pointsFromPassing: 0, points
 // Example: TIME_DILATION = 60 → 1 real second = 60 in-game seconds for
 // progression, apocalypse triggers in ~10 real seconds.
 const TIME_DILATION = 1;
-const GAME_VERSION = '1.6.1';
+const GAME_VERSION = '1.6.2';
 try {
   const vl = document.getElementById('versionLabel');
   if (vl) vl.textContent = 'v' + GAME_VERSION;
@@ -4953,6 +5307,7 @@ function saveScore(s, d) {
   kept.sort((a,b) => b.score - a.score);
   localStorage.setItem('drift_scores', JSON.stringify(kept));
   console.log('[drift] saved scores:', JSON.stringify(kept));
+  pgsScheduleWrite();
   return kept;
 }
 
@@ -13946,6 +14301,102 @@ settingsOverlay.addEventListener('click', e => {
 });
 
 refreshSettingsUI();
+
+// --- Google Play Games Services — UI wiring + boot flow ---
+// See the PGS module declaration earlier in this file for the plugin bridge.
+// This section owns the settings button, first-launch prompt, toast, and the
+// once-per-boot auth check + merge sync.
+const PGS_PROMPTED_KEY = 'drift_pgs_prompted';
+
+function showPgsToast(msg) {
+  const t = document.getElementById('pgsToast');
+  if (!t) return;
+  t.textContent = msg;
+  t.classList.add('visible');
+  clearTimeout(t._hideTimer);
+  t._hideTimer = setTimeout(() => t.classList.remove('visible'), 2500);
+}
+
+function refreshPgsUI() {
+  const row = document.getElementById('pgsSettingsRow');
+  const btn = document.getElementById('pgsCloudBtn');
+  if (!row || !btn) return;
+  // Non-Android or plugin missing: hide the row entirely (no cloud save
+  // option is available on web browsers or future iOS builds).
+  if (!PGS.isSupported()) {
+    row.style.display = 'none';
+    return;
+  }
+  row.style.display = '';
+  if (PGS.isSignedIn()) {
+    btn.textContent = PGS.getWriteFailCount() >= 3 ? 'SIGNED IN • SYNC ERR' : 'SIGNED IN ✓';
+    btn.classList.add('signed-in');
+    btn.classList.toggle('warn', PGS.getWriteFailCount() >= 3);
+  } else {
+    btn.textContent = 'SIGN IN';
+    btn.classList.remove('signed-in');
+    btn.classList.remove('warn');
+  }
+}
+
+function showPgsPrompt() {
+  const ov = document.getElementById('pgsPromptOverlay');
+  if (ov) ov.classList.add('visible');
+}
+function hidePgsPrompt() {
+  const ov = document.getElementById('pgsPromptOverlay');
+  if (ov) ov.classList.remove('visible');
+}
+
+document.getElementById('pgsCloudBtn').addEventListener('click', async () => {
+  if (!PGS.isSupported()) return;
+  if (PGS.isSignedIn()) return; // no-op once signed in (PGS v2 has no sign-out)
+  SFX.clickSecondary();
+  const ok = await PGS.signIn();
+  refreshPgsUI();
+  if (ok) {
+    showPgsToast('Progress synced');
+    if (typeof refreshOrbBrowser === 'function') refreshOrbBrowser();
+  }
+});
+
+document.getElementById('pgsPromptSignIn').addEventListener('click', async () => {
+  SFX.clickPrimary();
+  try { localStorage.setItem(PGS_PROMPTED_KEY, '1'); } catch {}
+  hidePgsPrompt();
+  const ok = await PGS.signIn();
+  refreshPgsUI();
+  if (ok) {
+    showPgsToast('Progress synced');
+    if (typeof refreshOrbBrowser === 'function') refreshOrbBrowser();
+  }
+});
+document.getElementById('pgsPromptDismiss').addEventListener('click', () => {
+  SFX.clickSecondary();
+  try { localStorage.setItem(PGS_PROMPTED_KEY, '1'); } catch {}
+  hidePgsPrompt();
+});
+
+async function pgsBootFlow() {
+  if (!PGS.isSupported()) { refreshPgsUI(); return; }
+  const authed = await PGS.checkAuth();
+  refreshPgsUI();
+  if (authed) {
+    await PGS.syncFromRemote();
+    refreshPgsUI();
+    if (typeof refreshOrbBrowser === 'function') refreshOrbBrowser();
+    return;
+  }
+  // Not signed in — show the first-launch prompt once, ever.
+  let prompted = null;
+  try { prompted = localStorage.getItem(PGS_PROMPTED_KEY); } catch {}
+  if (!prompted) showPgsPrompt();
+}
+
+// Initial UI state + fire boot check. Boot flow is async and non-blocking;
+// the game is already playable while this runs in the background.
+refreshPgsUI();
+pgsBootFlow();
 
 // --- Play In-App Update ---
 // Only runs on Android via the @capawesome/capacitor-app-update plugin.

@@ -4,4 +4,5 @@
     <string name="title_activity_main">Drift</string>
     <string name="package_name">com.selimcelem.drift</string>
     <string name="custom_url_scheme">com.selimcelem.drift</string>
+    <string name="game_services_app_id">160265517493</string>
 </resources>
