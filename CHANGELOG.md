@@ -3,6 +3,84 @@
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+Each version header links to its GitHub release; see the release notes for full
+detail beyond the summaries here.
+
+## [1.6.2] - 2026-04-23
+
+### Added
+- Google Play Games Services cloud save (optional, opt-in). Custom Capacitor
+  plugin in Kotlin bridges the PGS v2 Snapshots API. First-launch sign-in
+  prompt + settings toggle. Single snapshot `drift_save_v1` bundles
+  `crystals`, `activeOrb`, `unlockedOrbs`, and per-difficulty scores. Merge
+  rule is max-per-field (crystals, scores top-5/difficulty, unlocked orbs as
+  set union; `activeOrb` stays local). Writes are 2 s debounced; local save
+  paths are untouched when the user is signed out
+- Privacy policy expanded with a dedicated PGS cloud-save section. New Terms
+  of Service page at the repo root (GitHub Pages)
+- `scripts/sync-version.js` version-sync script with `build.gradle` as source
+  of truth. `npm run sync` / `npm run sync:check` prevent `GAME_VERSION` drift
+
+### Changed
+- Orb costs reduced: Phantom 50k→20k, Inferno 100k→40k, Warp 250k→100k,
+  Fortress 350k→150k. Total unlock 750k → 310k (~41 % of old grind)
+- Difficulty rebalance: post-cap speed ramp softened from +0.25/min to
+  +0.10/min. Max body count ramp delayed from 2:00 to 3:00, increments per
+  90 s instead of 60 s. Minimum 80 px spawn distance (horizontal + vertical
+  AABB) prevents unfair clumping
+- Toothed planet silhouette — `ext` formula changed from `sin(a)` to
+  `(0.75 + 0.25 * |sin(a)|)` so all 8 blades stay long at horizontal angles.
+  Collision math updated to match
+- Heart top vessel trimmed: aorta width 13 → 9, tip extent reduced so the
+  vessel stays inside the body radius
+
+### Fixed
+- DPR atlas pipeline across the render stack (`starAtlases`, `ringsCanvas`,
+  `glowCanvas`, `getBgVignetteCanvas`, `getShieldRingCanvas`,
+  `buildEyeVeinSprite`, `buildSkullFaceSprite`, `buildMirrorBodySprite`,
+  `buildScreamingStaticSprite`, `buildHeartStaticSprite`, `pixiPlayerCanvas`,
+  per-body `_offscreenCanvas`) — all offscreen canvases now DPR-scaled via
+  an `atlasScale()` helper (capped at 2×). Crisp on 2×–3× DPR devices
+- Cracked-planet draw cost: `buildCrackedSprite(b)` produces a deterministic
+  static bake from `b.crackSeed` with cached gradients; ~40 per-frame strokes
+  under `shadowBlur` eliminated (shadowBlur is expensive on Android WebView).
+  Charge-up visual preserved via an alpha ramp. Cost went from ~50–150×
+  heart/screaming to roughly equivalent
+
+### Removed
+- Adreno defensive workarounds from v1.5.x: bundle splits re-enabled (smaller
+  per-device Play Store downloads), `largeHeap` removed from the manifest,
+  WebView `setOffscreenPreRaster` removed. The PixiJS migration in v1.6.0
+  already fixed the underlying Adreno mutex crash class
+
+## [1.6.1] - 2026-04-22
+
+### Added
+- Frame-rate decoupled physics — dt-scaled variable timestep against a
+  120 fps baseline. 29 Category A sites multiplied by `dtScale`, frame-count
+  spawn cadences converted to ms timestamps, `decay()` helper for exponential
+  drag patterns. Fixes the "game plays easier on 60 fps devices" bug; gameplay
+  now feels identical at 30/60/120 Hz and under Android low-power throttling
+- DEVMODE sandbox — pilot name `DEVMODE` enters a gameplay test sandbox with
+  scroll pauseable, manual body/powerup spawning, god mode, and live FPS
+  observation. Internal QA tool, not exposed to players
+- Heartbeat SFX synced to systole peaks on the heart planet
+
+### Changed
+- Body size tuning — phase 2+ minimum radii raised. Skull grows to 30 px to
+  reinforce its bone-hazard identity
+- Heart visual rework — anatomical silhouette with chamber structure,
+  coronary arteries, and muscle fibre striations (was a stylised blob)
+- Tentacle perf + polish — single quadratic Bézier per arm (was 10 discrete
+  segments), 3 suckers (was 5), visible tip indicator orbs. ~6× draw-call
+  reduction per tentacle
+- Apocalypse audio pitched up (80→160 Hz, 120→240, 180→360) and routed
+  through a `DynamicsCompressor` for mobile-speaker audibility
+
+### Fixed
+- Mirror planet input replay now horizontal-only (was applying to the vertical
+  axis too, stopping bodies mid-scroll). Reflection dot colour now matches the
+  equipped orb
 
 ## [1.6.0] - 2026-04-21
 
@@ -330,3 +408,16 @@ dashboard, draw-call optimizations, powerup rebalancing, stability hardening) in
 - Capacitor Android wrapper
 - GitHub Pages live demo
 - Source-available license
+
+[1.6.2]: https://github.com/selimcelem/drift/releases/tag/v1.6.2
+[1.6.1]: https://github.com/selimcelem/drift/releases/tag/v1.6.1
+[1.6.0]: https://github.com/selimcelem/drift/releases/tag/v1.6.0
+[1.5.6]: https://github.com/selimcelem/drift/releases/tag/v1.5.6
+[1.5.5]: https://github.com/selimcelem/drift/releases/tag/v1.5.5
+[1.5.4]: https://github.com/selimcelem/drift/releases/tag/v1.5.4
+[1.5.0]: https://github.com/selimcelem/drift/releases/tag/v1.5.0
+[1.4.0]: https://github.com/selimcelem/drift/releases/tag/v1.4.0
+[1.3.0]: https://github.com/selimcelem/drift/releases/tag/v1.3.0
+[1.2.0]: https://github.com/selimcelem/drift/releases/tag/v1.2.0
+[1.1.0]: https://github.com/selimcelem/drift/releases/tag/v1.1.0
+[1.0.0]: https://github.com/selimcelem/drift/releases/tag/v1.0.0

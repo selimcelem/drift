@@ -42,6 +42,7 @@ Top 5 scores are kept locally in `localStorage` and shown on the death screen.
 - **Dynamic space background** — real NASA space imagery (nebulae, dying stars, galaxies, supernovae) parallax-scrolls behind the playfield, blended into the cosmos with a screen composite so only the coloured light shows
 - **3 difficulties** — Normal, Hard, Extreme — with progressively faster scroll, more bodies, and more frequent powerup drops. Powerup frequency and tethered-pair spawn chance are now scaled per tier (Normal is the most generous, Extreme unchanged) so easier difficulties get more combo chains to compensate for the lower baseline pressure
 - **Resume after crash** — gameplay state is snapshotted to `localStorage` every 5 seconds. If Android kills the app mid-run (backgrounded, OOM, driver reset), the main menu shows a RESUME button with the saved difficulty / survival time / score. Clicking it plays a 3-2-1 countdown and restores the run exactly where it was
+- **Cloud save via Google Play Games** *(optional, Android)* — sign in once and your drift crystals, unlocked orbs, active orb, and per-difficulty top-5 scores sync to a single Play Games Saved Game (`drift_save_v1`) via the Snapshots API. Conflicts resolve with a max-per-field merge (higher crystal count wins, unlocked orbs union, top-5-per-difficulty scores). First-launch prompt lets you opt in; staying signed-out leaves the game 100 % local. Implemented as a custom Capacitor plugin (Kotlin) bridging `play-services-games-v2`
 - **Local + global leaderboards** — top 5 per difficulty stored locally; global top 10 served from a serverless AWS backend. Global top 10 entries are permanent (TTL attribute removed); positions 11+ expire after 7 days
 - **Loading screen + TAP TO START** — boot shows a drifting star field and a progress bar while music/SFX buffers, background imagery, planet sprites, and warm-up gradients load in parallel. The final TAP TO START button satisfies the browser's user-gesture requirement for audio playback, so the menu track begins cleanly instead of the first-tap-anywhere hack
 - **Analytics dashboard** — password-protected `/analytics` endpoint records per-run telemetry (death cause, phase reached, orb, powerups, burst count, streak, crystals earned) and serves a server-rendered HTML dashboard with overview stats, breakdowns, and per-pilot run history
@@ -53,6 +54,7 @@ Top 5 scores are kept locally in `localStorage` and shown on the death screen.
 - **HTML5 Canvas 2D** — preserved fallback path. If PIXI is unavailable (CDN blocked, WebGL disabled) the render loop falls back to the original Canvas 2D pipeline on `#c`
 - **Vanilla JS, one file** — the entire game is still one `www/index.html`. No build step, no bundler, no app framework, no TypeScript, no asset pipeline. Just a `requestAnimationFrame` loop, some trig, and PixiJS as the draw backend
 - **Capacitor 8** — wraps the web app into a native Android shell
+- **Google Play Games Services (Saved Games)** — optional cloud save via `play-services-games-v2`, bridged through a custom Kotlin Capacitor plugin (`PgsSavedGamesPlugin.kt`). Uses the Snapshots API with `RESOLUTION_POLICY_MOST_RECENTLY_MODIFIED` and a JS-side max-per-field merge
 - **Gradle / Android SDK** — for producing the APK/AAB
 
 If you want to tweak the game, open `www/index.html` in a browser and hit refresh.
@@ -149,9 +151,9 @@ Pipeline: `terraform init` → `plan` → `apply -auto-approve`
 
 ## Roadmap
 
-Post-v1.6.0 plans:
+Post-v1.6.2 plans:
 
-- **Codex** — body types unlock on first destruction with a lore entry attached to each; progression state (crystals + unlocked orbs + codex) synced to the cloud via Google Play Games so it carries across installs
+- **Codex** — body types unlock on first destruction with a lore entry attached to each. Progression state already syncs to Google Play Games cloud save (shipped in v1.6.2), so the codex will ride on the same snapshot
 - **Visual upgrades** — now that the pipeline is on WebGL, adding fragment shaders for body auras, smoother tentacle animation via per-segment interpolation, and denser particle effects
 - **Mobile audio bass fix** — low-frequency SFX (hyperspeed sustain, apocalypse rumble) currently clip on some Android speakers; re-EQ pass planned
 
