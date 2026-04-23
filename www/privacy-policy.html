@@ -10,21 +10,26 @@
     max-width: 720px;
     margin: 48px auto;
     padding: 0 24px;
-    color: #222;
+    color: #c8cedc;
     line-height: 1.6;
-    background: #fafafa;
+    background: #0a0a14;
   }
-  h1 { font-size: 28px; margin-bottom: 4px; }
-  .updated { color: #888; font-size: 14px; margin-bottom: 32px; }
-  h2 { font-size: 18px; margin-top: 28px; }
-  a { color: #3366cc; }
-  code { background: #eee; padding: 1px 5px; border-radius: 3px; font-size: 90%; }
+  h1 { font-size: 28px; margin-bottom: 4px; color: #ffffff; }
+  .updated { color: #5a6470; font-size: 14px; margin-bottom: 32px; }
+  h2 { font-size: 18px; margin-top: 28px; color: #ffffff; }
+  a { color: #7de8ff; text-decoration: none; }
+  a:hover { color: #a8eeff; text-decoration: underline; }
+  code { background: rgba(125,232,255,0.08); color: #c8cedc; padding: 1px 5px; border-radius: 3px; font-size: 90%; }
+  strong { color: #e6ebf3; }
+  .back-link { display: inline-block; margin-bottom: 24px; font-size: 14px; }
 </style>
 </head>
 <body>
 
+<a href="index.html" class="back-link">← Back to Drift</a>
+
 <h1>Privacy Policy for Drift</h1>
-<p class="updated">Last updated: 10 April 2026</p>
+<p class="updated">Last updated: 23 April 2026</p>
 
 <p>
   Drift is a free single-player mobile game developed by Selim Celem.
@@ -57,15 +62,25 @@
 </ul>
 <p>The leaderboard submission is fire-and-forget — if you are offline or the request fails, no data is sent and the game continues normally.</p>
 
+<h2>Google Play Games Services cloud save (optional)</h2>
+<p>Drift offers optional cloud save backup via Google Play Games Services (PGS). This feature is entirely opt-in — you must explicitly sign in with your Google account from the in-game menu to enable it.</p>
+<ul>
+  <li><strong>What is synced</strong> — if you sign in, the following progress data is stored in your Google Play Games Saved Games slot for Drift: your drift crystal balance, the list of orbs you have unlocked, your currently equipped orb, and your top 5 high scores for each difficulty (Normal, Hard, Extreme).</li>
+  <li><strong>Opt-in only</strong> — sign-in is not required to play. If you do not sign in, Drift stays fully local-only: no progress data leaves your device and the game works identically to before. You can stop syncing at any time by signing out from the in-game menu.</li>
+  <li><strong>You control your data</strong> — saved game data lives in your own Google Play Games account under the Drift app entry, not on any server operated by the developer. You can review and delete saved game data at any time from Google's account controls at <a href="https://myaccount.google.com/dashboard">myaccount.google.com/dashboard</a> → Play Games → Manage saved games.</li>
+  <li><strong>Scope</strong> — Drift only requests access to its own Saved Games slot. It does not read other games' data, your Google profile details, your email address, or any other account information.</li>
+</ul>
+
 <h2>Third-party services</h2>
 <p>Drift does not integrate with any third-party analytics, advertising networks, or crash reporters. The only external services used are:</p>
 <ul>
   <li><strong>AWS API Gateway + Lambda + DynamoDB</strong> — for the online leaderboard, hosted in eu-west-1 (Ireland)</li>
+  <li><strong>Google Play Games Services</strong> — only if you opt in to cloud save, as described above</li>
   <li><strong>Google Fonts</strong> — a web font loaded on first launch if a connection is available; if offline, a system fallback is used</li>
 </ul>
 
 <h2>Permissions</h2>
-<p>Drift does not request any Android runtime permissions. It does not access your camera, microphone, location, contacts, storage, or any other sensitive APIs. An internet connection is used for the leaderboard but is not required to play.</p>
+<p>Drift does not request any Android runtime permissions. It does not access your camera, microphone, location, contacts, storage, or any other sensitive APIs. An internet connection is used for the leaderboard and optional cloud save but is not required to play.</p>
 
 <h2>Children's privacy</h2>
 <p>Drift is safe for all ages. The only data collected is a self-chosen username and game scores — no personal information, no real names, no contact details. The app is compliant with COPPA and similar regulations protecting children's privacy.</p>
