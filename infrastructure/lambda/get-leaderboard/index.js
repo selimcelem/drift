@@ -13,7 +13,7 @@ const CORS_HEADERS = {
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
 };
 
-const VALID_DIFFICULTIES = ["NORMAL", "HARD", "EXTREME"];
+const VALID_DIFFICULTIES = ["NORMAL", "HARD", "EXTREME", "IMPOSSIBLE"];
 
 exports.handler = async (event) => {
   if (event.requestContext?.http?.method === "OPTIONS") {

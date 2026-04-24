@@ -15,7 +15,7 @@ const CORS_HEADERS = {
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
 };
 
-const VALID_DIFFICULTIES = ["NORMAL", "HARD", "EXTREME"];
+const VALID_DIFFICULTIES = ["NORMAL", "HARD", "EXTREME", "IMPOSSIBLE"];
 const SHORT_TTL_SECONDS = 7 * 24 * 60 * 60;
 
 exports.handler = async (event) => {

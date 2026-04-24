@@ -70,7 +70,7 @@
   @media (max-width: 380px) {
     .title-word { font-size: 52px; }
     #startBtn { font-size: 10px; }
-    .diff-btn { font-size: 8px; }
+    /* .diff-btn font-size is now driven by clamp() in the base rule. */
     .controls-hint { font-size: 9px; }
     .subtitle { font-size: 8px; }
   }
@@ -289,8 +289,17 @@
 
   #difficultySelect {
     display: flex;
-    gap: 8px;
+    gap: 6px;
     margin-bottom: 22px;
+    /* v1.6.3: IMPOSSIBLE adds a 4th button. Stretch the row to the menu
+       column width so each button gets equal flex:1 share instead of
+       overflowing at 360/412 px. max-width matches the orb browser column
+       so the layout stays visually centered. */
+    width: 100%;
+    max-width: 360px;
+    padding: 0 12px;
+    box-sizing: border-box;
+    justify-content: stretch;
   }
 
   #orbBrowser {
@@ -476,9 +485,19 @@
     border: 1px solid rgba(255,255,255,0.18);
     color: rgba(255,255,255,0.45);
     font-family: 'Orbitron', monospace;
-    font-size: 9px;
-    letter-spacing: 2px;
-    padding: 7px 14px;
+    /* v1.6.3: clamp so 4 buttons (NORMAL / HARD / EXTREME / IMPOSSIBLE)
+       fit within #difficultySelect on 360–412 px viewports without text
+       clipping. flex:1 + min-width:0 gives equal share regardless of label
+       length; font + letter-spacing scale down as viewport shrinks. */
+    font-size: clamp(7px, 2.1vw, 9px);
+    letter-spacing: clamp(1px, 0.4vw, 2px);
+    padding: 7px clamp(4px, 1.6vw, 12px);
+    flex: 1 1 0;
+    min-width: 0;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: clip;
     cursor: pointer;
     text-transform: uppercase;
     transition: all 0.25s;
@@ -1017,18 +1036,29 @@
   .lb-diff-tabs {
     display: none;
     gap: 0;
-    width: 220px;
+    /* v1.6.3: was fixed 220 px for 3 tabs; IMPOSSIBLE (10 chars) needed
+       more room per-tab. Stretch to the panel width with a cap so 4 tabs
+       share space evenly and the longest label fits. */
+    width: 100%;
+    max-width: 300px;
     margin-bottom: 4px;
   }
   .lb-diff-tab {
-    flex: 1;
+    flex: 1 1 0;
+    min-width: 0;
     background: transparent;
     border: 1px solid rgba(255,255,255,0.08);
     color: rgba(255,255,255,0.3);
     font-family: 'Space Mono', monospace;
-    font-size: 7px;
-    letter-spacing: 1px;
-    padding: 3px 0;
+    /* clamp so IMPOSSIBLE fits inside its ~75 px cell on 360 px viewports
+       while still reading at readable sizes on wider screens. */
+    font-size: clamp(6px, 1.8vw, 7.5px);
+    letter-spacing: clamp(0.5px, 0.25vw, 1px);
+    padding: 3px 2px;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: clip;
     cursor: pointer;
     text-transform: uppercase;
     transition: all 0.2s;
@@ -7512,7 +7542,17 @@ async function sendAnalytics() {
 
 function fetchLeaderboard(d, callback) {
   fetch(API_URL + '/leaderboard?difficulty=' + encodeURIComponent(d))
-    .then(r => r.json())
+    .then(async r => {
+      // v1.6.3: surface backend allowlist / validation errors in devtools
+      // so future difficulty additions don't silently render empty tabs.
+      // UI still degrades gracefully to an empty leaderboard.
+      if (!r.ok) {
+        let errBody = '';
+        try { errBody = await r.clone().text(); } catch {}
+        console.warn('[leaderboard] backend returned ' + r.status + ' for difficulty=' + d + ': ' + errBody);
+      }
+      return r.json();
+    })
     .then(data => callback(null, data.leaderboard || []))
     .catch(() => callback('unavailable', []));
 }
