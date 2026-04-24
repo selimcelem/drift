@@ -4373,8 +4373,8 @@ const TREE_DEFS = {
       dusk: {
         name: 'DUSK',
         nodes: [
-          { key: 'lingeringVeil', name: 'Lingering Veil', tier: 1, max: 3, desc: 'Single-pickup ghost +0.5s per rank (Phantom baseline 4s).', effect: r => `+${0.5*r}s ghost (${4 + 0.5*r}s total)` },
-          { key: 'eternalEmber',  name: 'Eternal Ember',  tier: 2, max: 4, desc: 'Eternal Phantom duration bonus per rank (Phantom baseline 6s).', effect: r => `+${[0.5,1,1.5,2][r-1]||0}s (${6+([0.5,1,1.5,2][r-1]||0)}s total)` },
+          { key: 'lingeringVeil', name: 'Lingering Veil', tier: 1, max: 3, desc: 'Single-pickup ghost +0.5s per rank (Phantom baseline 5s).', effect: r => `+${0.5*r}s ghost (${5 + 0.5*r}s total)` },
+          { key: 'eternalEmber',  name: 'Eternal Ember',  tier: 2, max: 4, desc: 'Eternal Phantom duration bonus per rank (Phantom baseline 7s).', effect: r => `+${[0.5,1,1.5,2][r-1]||0}s (${7+([0.5,1,1.5,2][r-1]||0)}s total)` },
           { key: 'twilightEcho',  name: 'Twilight Echo',  tier: 3, max: 3, desc: 'If ghost ends within 1s of any other combo ending, auto-refresh ghost for half its base duration. 15s cooldown.', effect: r => `${[10,25,40][r-1]||0}% chance` },
         ],
       },
@@ -4382,8 +4382,8 @@ const TREE_DEFS = {
         name: 'WRAITH',
         nodes: [
           { key: 'razorVeil',    name: 'Razor Veil',    tier: 1, max: 3, desc: 'Destroy-on-contact during ghost without needing a shield.', effect: r => `Every ${[3,2,1][r-1]||0}s` },
-          { key: 'ghostlight',   name: 'Ghostlight',    tier: 2, max: 3, desc: 'Ghost destroys spawn a 90px EMP-lite burst (no chain).', effect: r => `${[20,40,60][r-1]||0}% trigger` },
-          { key: 'phantomBlade', name: 'Phantom Blade', tier: 3, max: 3, desc: 'During ghost or Eternal Phantom, periodically spawn blades that destroy bodies within 80px.', effect: r => `Every ${[4,3,2][r-1]||0}s` },
+          { key: 'ghostlight',   name: 'Ghostlight',    tier: 2, max: 3, desc: 'Ghost destroys spawn a 90px EMP-lite burst (no chain).', effect: r => `${[30,50,70][r-1]||0}% trigger` },
+          { key: 'phantomBlade', name: 'Phantom Blade', tier: 3, max: 3, desc: 'During ghost or Eternal Phantom, periodically spawn blades that destroy bodies within 160px.', effect: r => `Every ${[3,2,1][r-1]||0}s` },
         ],
       },
       veil: {
@@ -4397,7 +4397,7 @@ const TREE_DEFS = {
     },
     capstones: [
       { key: 'shroud',     name: 'SHROUD',      desc: 'Every 30s, the next single pickup fires as a ghost pair combo.' },
-      { key: 'nightShade', name: 'NIGHT SHADE', desc: 'Every 30s of gameplay, auto-activate a 3s ghost.' },
+      { key: 'nightShade', name: 'NIGHT SHADE', desc: 'Every 20s of gameplay, auto-activate a 3s ghost.' },
     ],
   },
   solar: {
@@ -4409,7 +4409,7 @@ const TREE_DEFS = {
         nodes: [
           { key: 'kindling',      name: 'Kindling',      tier: 1, max: 3, desc: 'Single nova +1 wave per rank (Inferno baseline 4).', effect: r => `+${r} waves (${4+r} total)` },
           { key: 'conflagration', name: 'Conflagration', tier: 2, max: 2, desc: 'Supernova wave bonus (Inferno baseline 4). 15s cooldown between applications.', effect: r => `+${[1,2][r-1]||0} waves (${4+([1,2][r-1]||0)} total)` },
-          { key: 'secondFlame',   name: 'Second Flame',  tier: 3, max: 3, desc: 'Chance per nova cast to fire one free bonus wave at the end. 3s cooldown.', effect: r => `${[20,30,40][r-1]||0}% chance` },
+          { key: 'secondFlame',   name: 'Second Flame',  tier: 3, max: 3, desc: 'Chance per nova cast to fire one free bonus wave at the end. 5s cooldown.', effect: r => `${[20,30,40][r-1]||0}% chance` },
         ],
       },
       corona: {
@@ -4423,7 +4423,7 @@ const TREE_DEFS = {
       inferno: {
         name: 'INFERNO',
         nodes: [
-          { key: 'cinder',     name: 'Cinder',     tier: 1, max: 3, desc: 'Nova-killed bodies leave a 1s, 60px burn zone at the kill position (world-static, no scroll).', effect: r => `${[10,20,30][r-1]||0}% proc` },
+          { key: 'cinder',     name: 'Cinder',     tier: 1, max: 3, desc: 'Nova-killed bodies leave a 2s, 60px burn zone at the kill position (world-static, no scroll).', effect: r => `${[10,20,30][r-1]||0}% proc` },
           { key: 'firebrand',  name: 'Firebrand',  tier: 2, max: 5, desc: 'On body destroyed, chance to fire a single half-size nova ring at the body position. (3s cooldown)', effect: r => `${[2,4,6,8,10][r-1]||0}% per destroy` },
           { key: 'combustion', name: 'Combustion', tier: 3, max: 3, desc: 'Each nova cast adds +1 to a bonus-wave counter; counter consumed by the next nova cast within 2s. 15s cooldown.', effect: r => `Cap +${[1,2,3][r-1]||0} bonus waves` },
         ],
@@ -4431,7 +4431,7 @@ const TREE_DEFS = {
     },
     capstones: [
       { key: 'sunForge',     name: 'SUN FORGE',     desc: 'Supernova auto-fires every 45s.' },
-      { key: 'criticalMass', name: 'CRITICAL MASS', desc: '10+ destroys from one nova cast triggers a free 6-wave nova. 15s cooldown; kill counter paused during cooldown.' },
+      { key: 'criticalMass', name: 'CRITICAL MASS', desc: '10+ destroys from one nova cast triggers a free 6-wave nova. 20s cooldown; kill counter paused during cooldown.' },
     ],
   },
   nebula: {
@@ -4450,8 +4450,8 @@ const TREE_DEFS = {
         name: 'ENDURANCE',
         nodes: [
           { key: 'reservoir',    name: 'Reservoir',    tier: 1, max: 3, desc: 'Hyperspeed duration +0.5s per rank (3s baseline, shared timer).', effect: r => `+${0.5*r}s total (${3 + 0.5*r}s)` },
-          { key: 'overdrive',    name: 'Overdrive',    tier: 2, max: 4, desc: 'Max hyperspeed stacks +1 per rank (Warp baseline 4).', effect: r => `Cap ${4+r} stacks` },
-          { key: 'infiniteGate', name: 'Infinite Gate', tier: 3, max: 3, desc: 'At 7+ hyperspeed stacks, natural pickup extends shared timer +0.5/1/1.5s at ranks 1/2/3. 15s cooldown between triggers.', effect: r => `+${[0.5,1,1.5][r-1]||0}s at 7+ (15s CD)` },
+          { key: 'overdrive',    name: 'Overdrive',    tier: 2, max: 2, desc: 'Hyperspeed stack cap +1/+2 at ranks 1/2 (Warp baseline 4).', effect: r => `Cap ${4+r} stacks` },
+          { key: 'infiniteGate', name: 'Infinite Gate', tier: 3, max: 3, desc: 'At 5+ hyperspeed stacks, natural pickup extends shared timer +0.5/1/1.5s at ranks 1/2/3. 15s cooldown between triggers.', effect: r => `+${[0.5,1,1.5][r-1]||0}s at 5+ (15s CD)` },
         ],
       },
       drift: {
@@ -4459,12 +4459,12 @@ const TREE_DEFS = {
         nodes: [
           { key: 'smoothEntry',  name: 'Smooth Entry',  tier: 1, max: 3, desc: 'Hyperspeed forward barrier extends significantly in width — rank 3 spans the full playfield.', effect: r => `${[1.5,2.5,'full'][r-1]||0}${r===3?' screen':'x width'}` },
           { key: 'slipstream',   name: 'Slipstream',    tier: 2, max: 5, desc: 'On body destroyed, chance to grant a hyperspeed stack. (15s cooldown)', effect: r => `${[1,2,3,4,6][r-1]||0}% per destroy` },
-          { key: 'warpHarmonic', name: 'Warp Harmonic', tier: 3, max: 3, desc: 'Hyperspeed pair combos grant bonus free stacks. 15s cooldown.', effect: r => `+${r} free stacks` },
+          { key: 'warpHarmonic', name: 'Warp Harmonic', tier: 3, max: 3, desc: 'Hyperspeed pair combos grant bonus free stacks. 20s cooldown.', effect: r => `+${r} free stacks` },
         ],
       },
     },
     capstones: [
-      { key: 'superluminal', name: 'SUPERLUMINAL',  desc: 'Raises max hyperspeed stack cap to 10.' },
+      { key: 'superluminal', name: 'SUPERLUMINAL',  desc: 'Raises max hyperspeed stack cap to 8.' },
       { key: 'eventHorizon', name: 'LINGERING HORIZON', desc: 'After hyperspeed fully ends, the forward barrier lingers for 2s (player is NOT invulnerable during the echo).' },
     ],
   },
@@ -4539,11 +4539,11 @@ let beatDifficulty = { NORMAL: false, HARD: false, EXTREME: false };
 // PGS snapshot with OR-merge across devices.
 let treesUnlocked = { cyan: false, cosmic: false, solar: false, nebula: false, asteroid: false };
 const TREE_UNLOCK_COSTS = {
-  cyan:     10000,
-  cosmic:   20000,
-  solar:    30000,
-  nebula:   40000,
-  asteroid: 50000,
+  cyan:      5000, // v1.6.3: -50% (was 10000)
+  cosmic:   11000, // v1.6.3: -45% (was 20000)
+  solar:    18000, // v1.6.3: -40% (was 30000)
+  nebula:   26000, // v1.6.3: -35% (was 40000)
+  asteroid: 35000, // v1.6.3: -30% (was 50000)
 };
 
 // Cached ranks for the currently-equipped orb — refreshed in refreshActiveTreeCache().
@@ -4678,15 +4678,36 @@ function purchaseTreeUnlock(orbKey) {
   return true;
 }
 
-function nodeCost(tier, nextRank) {
+// v1.6.3: per-orb cost scaling. Nodes and capstones are priced against a
+// shared global table, then multiplied by the orb's scale factor. Rounded
+// to the nearest 500 crystals for clean display.
+const ORB_COST_SCALE = {
+  cyan:     0.50, // Drifter −50%
+  cosmic:   0.55, // Phantom  −45%
+  solar:    0.60, // Inferno  −40%
+  nebula:   0.65, // Warp     −35%
+  asteroid: 0.70, // Bulwark  −30%
+};
+function orbCostScale(orbKey) {
+  return ORB_COST_SCALE[orbKey] || 1;
+}
+function roundCrystals500(n) {
+  return Math.round(n / 500) * 500;
+}
+function nodeCost(tier, nextRank, orbKey) {
   const table = TREE_NODE_COSTS[tier];
   if (!table) return 0;
-  return table[nextRank - 1] || 0;
+  const base = table[nextRank - 1] || 0;
+  if (!base) return 0;
+  return roundCrystals500(base * orbCostScale(orbKey));
 }
-function nodeTotalCost(tier, maxRank) {
+function nodeTotalCost(tier, maxRank, orbKey) {
   let sum = 0;
-  for (let r = 1; r <= maxRank; r++) sum += nodeCost(tier, r);
+  for (let r = 1; r <= maxRank; r++) sum += nodeCost(tier, r, orbKey);
   return sum;
+}
+function capstoneCost(orbKey) {
+  return roundCrystals500(TREE_CAPSTONE_COST * orbCostScale(orbKey));
 }
 function pathPrereqMet(state, pathKey, nodeIdx) {
   // Same-path prereq: T2 requires T1 rank ≥ 1; T3 requires T2 rank ≥ 1.
@@ -4726,7 +4747,7 @@ function purchaseNodeRank(orbKey, pathKey, nodeIdx) {
   const current = state[pathKey][nodeIdx] | 0;
   if (current >= node.max) return false;
   if (!pathPrereqMet(state, pathKey, nodeIdx)) return false;
-  const cost = nodeCost(node.tier, current + 1);
+  const cost = nodeCost(node.tier, current + 1, orbKey);
   if (totalCrystals < cost) return false;
   totalCrystals = Math.max(0, totalCrystals - cost);
   state[pathKey][nodeIdx] = current + 1;
@@ -4745,8 +4766,9 @@ function purchaseCapstone(orbKey, capKey) {
   if (!cap) return false;
   if (state.capstones[capKey]) return false;
   if (!capstonePrereqMet(orbKey, capKey)) return false;
-  if (totalCrystals < TREE_CAPSTONE_COST) return false;
-  totalCrystals = Math.max(0, totalCrystals - TREE_CAPSTONE_COST);
+  const _capCost = capstoneCost(orbKey);
+  if (totalCrystals < _capCost) return false;
+  totalCrystals = Math.max(0, totalCrystals - _capCost);
   state.capstones[capKey] = true;
   saveCrystals();
   saveTreeState();
@@ -4789,7 +4811,7 @@ function capstonePrereqMet(orbKey, capKey) {
     if (capKey === 'criticalMass') return anyT3('solar');
   }
   if (orbKey === 'nebula') {
-    if (capKey === 'superluminal') return (s.endurance[1] | 0) >= 4;
+    if (capKey === 'superluminal') return (s.endurance[1] | 0) >= 2;
     if (capKey === 'eventHorizon') return anyT3('nebula');
   }
   if (orbKey === 'asteroid') {
@@ -4811,18 +4833,19 @@ function respecNode(orbKey, pathKey, nodeIdx) {
   if (totalCrystals < TREE_RESPEC_SINGLE) return false;
   totalCrystals = Math.max(0, totalCrystals - TREE_RESPEC_SINGLE);
   // Refund all rank costs spent on this node.
-  for (let r = 1; r <= current; r++) totalCrystals += nodeCost(node.tier, r);
+  for (let r = 1; r <= current; r++) totalCrystals += nodeCost(node.tier, r, orbKey);
   state[pathKey][nodeIdx] = 0;
   // Cascading capstone invalidation: if refunding this node violates any
   // purchased capstone's prereq, refund the capstone too.
+  const _capRefund = capstoneCost(orbKey);
   for (const cap of def.capstones) {
     if (state.capstones[cap.key] && !capstonePrereqMet(orbKey, cap.key)) {
       state.capstones[cap.key] = false;
-      totalCrystals += TREE_CAPSTONE_COST;
+      totalCrystals += _capRefund;
       // DEAD CENTER refund implies CALCULATED DRIFT also refunds (gated by it).
       if (cap.key === 'deadCenter' && state.capstones.calculatedDrift) {
         state.capstones.calculatedDrift = false;
-        totalCrystals += TREE_CAPSTONE_COST;
+        totalCrystals += _capRefund;
       }
     }
   }
@@ -4847,13 +4870,14 @@ function respecTree(orbKey) {
     const nodes = def.paths[pKey].nodes;
     const arr = state[pKey];
     for (let i = 0; i < nodes.length; i++) {
-      for (let r = 1; r <= (arr[i] | 0); r++) totalCrystals += nodeCost(nodes[i].tier, r);
+      for (let r = 1; r <= (arr[i] | 0); r++) totalCrystals += nodeCost(nodes[i].tier, r, orbKey);
       arr[i] = 0;
     }
   }
+  const _capRefundT = capstoneCost(orbKey);
   for (const cap of def.capstones) {
     if (state.capstones[cap.key]) {
-      totalCrystals += TREE_CAPSTONE_COST;
+      totalCrystals += _capRefundT;
       state.capstones[cap.key] = false;
     }
   }
@@ -4995,7 +5019,7 @@ function secondFlameRollForCast(source, px, py, waveCount, isSupernova) {
   if (sfRank <= 0) return;
   const chance = [0.20, 0.30, 0.40][sfRank - 1] || 0;
   if (Math.random() >= chance) return;
-  secondFlameNextFireTime = now + 3000;
+  secondFlameNextFireTime = now + 5000;
   const delayMs = Math.max(waveCount | 0, 1) * 400;
   const spawnX = px, spawnY = py;
   const id = setTimeout(() => {
@@ -5093,7 +5117,7 @@ function tickCapstoneTimers() {
       treeLog('shroud: flag armed');
     }
   }
-  // NIGHT SHADE (Phantom) v1.6.3 buff: auto-ghost 3 s every 30 s.
+  // NIGHT SHADE (Phantom) v1.6.3 buff: auto-ghost 3 s every 20 s.
   if (activeOrb === 'cosmic' && hasCapstone('nightShade')) {
     if (now >= nightShadeNextFireTime) {
       if (activeEffects.ghost <= 0) {
@@ -5103,7 +5127,7 @@ function tickCapstoneTimers() {
       } else {
         treeLog('nightShade: ghost already active, skipping');
       }
-      nightShadeNextFireTime = now + 30000;
+      nightShadeNextFireTime = now + 20000;
     }
   }
   // SUN FORGE (Inferno): auto-supernova every 15 s. Bypasses nova-overload
@@ -5215,7 +5239,7 @@ let conflagrationNextApplyTime = 0;
 let salvageBonusThisRun = 0;
 // Cinder (Inferno Inferno T1): persistent burn zones left by nova-kills.
 let burnZones = [];
-const BURN_ZONE_LIFETIME_MS = 1000;
+const BURN_ZONE_LIFETIME_MS = 2000;
 const BURN_ZONE_RADIUS = 60;
 // Second Flame (Inferno Pyre T3): setTimeouts for bonus waves — tracked so
 // we can clear on resetGame() to avoid a ghost wave firing after restart.
@@ -5240,6 +5264,9 @@ let criticalMassCooldownEnd = 0;
 // expires; the barrier-kill loop runs while Date.now() < this ts even when
 // hyperSpeedStacks === 0.
 let hyperspeedEchoEndTime = 0;
+// v1.6.3 FIX D2: echo start time is deferred past the Afterburn disc
+// launch sequence (rank * 500 ms) so the two visuals don't overlap.
+let hyperspeedEchoStartTime = 0;
 // Capstone auto-fire timers (NIGHT SHADE 60 s, SUN FORGE 15 s, AEGIS 45 s).
 // Initialised to +interval in resetTreeNodeState so first fire waits the
 // full cadence after run start.
@@ -5285,10 +5312,11 @@ function resetTreeNodeState() {
   novaCastKillCount = 0;
   criticalMassCooldownEnd = 0;
   hyperspeedEchoEndTime = 0;
+  hyperspeedEchoStartTime = 0;
   const now = Date.now();
   shroudFlagSet = false;
   shroudLastFireTime = now;
-  nightShadeNextFireTime = now + 30000;
+  nightShadeNextFireTime = now + 20000;
   sunForgeNextFireTime   = now + 45000;
   aegisNextFireTime      = now + 45000;
   for (const id of butterflyPending) clearTimeout(id);
@@ -5976,10 +6004,10 @@ const SHIELD_DURATION_MS_ASTEROID = 6000;        // 6s for asteroid orb
 const FORTRESS_SHIELD_DURATION_MS = 8000;        // 8s for shield+shield Fortress combo
 const HYPERSPEED_DURATION_MS = 3000;             // 3s base
 const HYPERSPEED_COMBO_DURATION = 3500;          // 3.5s for warp time / spectral rush
-const GHOST_DURATION_MS_DEFAULT = 2000;          // 2s (v1.6.3 nerf, was 4s)
-const GHOST_DURATION_MS_COSMIC = 4000;           // 4s for cosmic orb (v1.6.3 nerf, was 6s)
-const GHOST_ETERNAL_DURATION_DEFAULT = 4000;     // 4s Eternal Phantom (v1.6.3 nerf, was 6s)
-const GHOST_ETERNAL_DURATION_COSMIC  = 6000;     // 6s Eternal Phantom on cosmic orb (v1.6.3 nerf, was 8s)
+const GHOST_DURATION_MS_DEFAULT = 3000;          // 3s (v1.6.3 buff, was 2s)
+const GHOST_DURATION_MS_COSMIC = 5000;           // 5s for cosmic orb (v1.6.3 buff, was 4s)
+const GHOST_ETERNAL_DURATION_DEFAULT = 5000;     // 5s Eternal Phantom (v1.6.3 buff, was 4s)
+const GHOST_ETERNAL_DURATION_COSMIC  = 7000;     // 7s Eternal Phantom on cosmic orb (v1.6.3 buff, was 6s)
 const SHIELD_BLINK_MS = 1000;                    // last 1s blink
 function SHIELD_DURATION() {
   const base = activeOrb === 'asteroid' ? SHIELD_DURATION_MS_ASTEROID : SHIELD_DURATION_MS_DEFAULT;
@@ -6031,14 +6059,14 @@ let hyperspeedWhooshNodes = null; // audio nodes for sustained whoosh
 // and resets the single shared hyperspeedEndTime timer. Stacks only affect
 // peak speed multiplier; the shared timer controls total duration, and all
 // stacks clear simultaneously on expiry.
-// v1.6.3 caps: base 2 default / 4 Warp. Overdrive +1/rank (max +4).
-// SUPERLUMINAL raises the cap TO 10 (override, not additive).
+// v1.6.3 caps: base 2 default / 4 Warp. Overdrive +1/rank (max +2; 2 ranks).
+// SUPERLUMINAL raises the cap TO 8 (override, not additive). v1.6.3.
 const HYPERSPEED_MAX_STACKS_DEFAULT = 2;  // v1.6.3 nerf, was 4
 const HYPERSPEED_MAX_STACKS_NEBULA = 4;   // v1.6.3 nerf, was 6
 function HYPERSPEED_MAX_STACKS() {
-  // SUPERLUMINAL (Warp capstone) v1.6.3: absolute cap of 10 stacks —
+  // SUPERLUMINAL (Warp capstone) v1.6.3: absolute cap of 8 stacks —
   // overrides Overdrive/base. Not additive.
-  if (activeOrb === 'nebula' && hasCapstone('superluminal')) return 10;
+  if (activeOrb === 'nebula' && hasCapstone('superluminal')) return 8;
   let base = activeOrb === 'nebula' ? HYPERSPEED_MAX_STACKS_NEBULA : HYPERSPEED_MAX_STACKS_DEFAULT;
   // Skill tree: Overdrive (+1/rank), Warp-only.
   if (activeOrb === 'nebula') base += rankOf('overdrive');
@@ -10338,8 +10366,8 @@ function activateCombo(key, x, y) {
     const whRank = rankOf('warpHarmonic');
     if (whRank > 0 && Date.now() >= warpHarmonicNextFireTime) {
       for (let i = 0; i < whRank; i++) activateHyperspeed(undefined, undefined, 'warp_harmonic');
-      warpHarmonicNextFireTime = Date.now() + 15000;
-      treeLog('warpHarmonic: +' + whRank + ' bonus stacks on ' + key + ' (15s CD)');
+      warpHarmonicNextFireTime = Date.now() + 20000;
+      treeLog('warpHarmonic: +' + whRank + ' bonus stacks on ' + key + ' (20s CD)');
     }
   }
   // Keystone (Drifter Convergence T3): any pair combo rolls for a bonus
@@ -10702,7 +10730,7 @@ function activateHyperspeed(durationOverride, peakScale, source) {
   // hyperspeed pickups qualify (not combo-fired, Slipstream, Warp Harmonic,
   // or DEAD CENTER picks). Gates at 7+ stacks with a 10s cooldown. Adds
   // +0.5/1/1.5 s at ranks 1-3 to the shared timer.
-  if (activeOrb === 'nebula' && source === 'natural' && hyperSpeedStacks >= 7) {
+  if (activeOrb === 'nebula' && source === 'natural' && hyperSpeedStacks >= 5) {
     const igRank = rankOf('infiniteGate');
     if (igRank > 0 && now >= infiniteGateNextFireTime) {
       const bonusMs = [500, 1000, 1500][igRank - 1] || 0;
@@ -11202,7 +11230,7 @@ function checkCollisions() {
     const wraith = activeEffects.shield > 0;
     const rvRank = (activeOrb === 'cosmic') ? rankOf('razorVeil') : 0;
     const glRank = (activeOrb === 'cosmic') ? rankOf('ghostlight') : 0;
-    const glChance = [0.20, 0.40, 0.60][glRank - 1] || 0;
+    const glChance = [0.30, 0.50, 0.70][glRank - 1] || 0;
     for (let i = bodies.length - 1; i >= 0; i--) {
       const b = bodies[i];
       if (bodyHits(b, 0)) {
@@ -11866,18 +11894,24 @@ function update() {
       hyperspeedEndTime = 0;
       if (hyperspeedWhooshNodes) { try { hyperspeedWhooshNodes.stop(0.5); } catch {} hyperspeedWhooshNodes = null; }
       // Afterburn (Warp Velocity T2) v1.6.3 rework: launch landing discs.
+      let abRankLocal = 0;
       if (activeOrb === 'nebula') {
-        const abRank = rankOf('afterburn');
-        if (abRank > 0) {
-          scheduleAfterburnDiscs(abRank);
+        abRankLocal = rankOf('afterburn');
+        if (abRankLocal > 0) {
+          scheduleAfterburnDiscs(abRankLocal);
         }
       }
-      // LINGERING HORIZON (Warp capstone): stamp a 2 s post-hyperspeed
-      // barrier echo window. Per FIX W11, the echo uses forward-only
-      // barrier geometry (360° reserved for active hyperspeed).
+      // LINGERING HORIZON (Warp capstone): 2 s post-hyperspeed forward-
+      // only barrier. v1.6.3 FIX D2: defer the echo start until AFTER the
+      // last Afterburn disc has launched so the disc visuals don't visually
+      // drown out the echo. Each disc launches at `hyperspeedEnd + i*500ms`
+      // for i in [0..rank-1], so the sequence ends at `rank * 500ms` after
+      // hyperspeed end. Rank 0 (no Afterburn) → start immediately.
       if (activeOrb === 'nebula' && hasCapstone('eventHorizon')) {
-        hyperspeedEchoEndTime = Date.now() + 2000;
-        treeLog('lingeringHorizon: barrier echo armed 2s (was ' + endingStacks + ' stacks)');
+        const echoDelay = abRankLocal * 500;
+        hyperspeedEchoStartTime = Date.now() + echoDelay;
+        hyperspeedEchoEndTime = hyperspeedEchoStartTime + 2000;
+        treeLog('lingeringHorizon: echo armed (start +' + echoDelay + 'ms, dur 2s, was ' + endingStacks + ' stacks)');
       }
       // JUGGERNAUT: refresh shield when hyperspeed ends. Asteroid orb gets the
       // fortress-tier 8s reward, others get the default 6s.
@@ -11962,9 +11996,9 @@ function update() {
   if (activeOrb === 'cosmic' && activeEffects.ghost > 0) {
     const pbRank = rankOf('phantomBlade');
     if (pbRank > 0 && Date.now() >= phantomBladeNextTickTime) {
-      const reach = 80;
+      const reach = 160;
       const glRank = rankOf('ghostlight');
-      const glChance = [0.20, 0.40, 0.60][glRank - 1] || 0;
+      const glChance = [0.30, 0.50, 0.70][glRank - 1] || 0;
       const survivors = [];
       let killedAny = false;
       for (const b of bodies) {
@@ -11989,7 +12023,7 @@ function update() {
       }
       bodies = survivors;
       if (killedAny) SFX.phantomBladeSlash();
-      phantomBladeNextTickTime = Date.now() + (5 - pbRank) * 1000;
+      phantomBladeNextTickTime = Date.now() + (4 - pbRank) * 1000;
     }
   }
 
@@ -12241,7 +12275,7 @@ function update() {
             if (Date.now() >= criticalMassCooldownEnd) {
               novaCastKillCount++;
               if (novaCastKillCount >= 10) {
-                criticalMassCooldownEnd = Date.now() + 15000;
+                criticalMassCooldownEnd = Date.now() + 20000;
                 novaCastKillCount = 0;
                 const id = setTimeout(() => {
                   if (state !== 'playing' && state !== 'devmode') return;
@@ -12366,8 +12400,10 @@ function update() {
   //   - lingeringHorizonActive (2 s post-hyperspeed echo): FORWARD-ONLY
   //     wedge barrier, player NOT invulnerable (FIX W11 / W12).
   const hyperBarrierActive = (activeEffects.hyperspeed > 0 && hyperspeedCurrentMult > 1.05);
+  const _lhNow = Date.now();
   const lingeringHorizonActive = (activeOrb === 'nebula' && hasCapstone('eventHorizon')
-    && hyperSpeedStacks === 0 && Date.now() < hyperspeedEchoEndTime);
+    && hyperSpeedStacks === 0
+    && _lhNow >= hyperspeedEchoStartTime && _lhNow < hyperspeedEchoEndTime);
   if (hyperBarrierActive) {
     // Smooth Entry (Warp Drift T1) v1.6.3 rework: barrier horizontal length
     // scales dramatically. Rank 1 = 1.5× default (90px), rank 2 = 2.5×
@@ -15606,8 +15642,9 @@ function drawBurnZones() {
   for (const z of burnZones) {
     const age = now - (z.startTime || now);
     if (age < 0 || age > BURN_ZONE_LIFETIME_MS) continue;
-    const fade = (age > BURN_ZONE_LIFETIME_MS - 200)
-      ? Math.max(0, (BURN_ZONE_LIFETIME_MS - age) / 200)
+    // v1.6.3: fade-out window is the last 300 ms of the (now 2s) lifetime.
+    const fade = (age > BURN_ZONE_LIFETIME_MS - 300)
+      ? Math.max(0, (BURN_ZONE_LIFETIME_MS - age) / 300)
       : 1;
     const pulse = 0.75 + 0.25 * Math.sin(age * 0.02);
     // Outer dim halo.
@@ -15833,12 +15870,12 @@ function updateCapstoneCountdowns() {
     }
     set('capCdShroud', owned, progress, 'rgba(200,150,255,0.95)', primed, false);
   }
-  // NIGHT SHADE — Phantom. 30s cycle.
+  // NIGHT SHADE — Phantom. 20s cycle (v1.6.3 buff).
   {
     const owned = activeOrb === 'cosmic' && hasCapstone('nightShade');
     const fireTs = nightShadeNextFireTime || now;
-    const elapsed = 30000 - Math.max(0, fireTs - now);
-    const progress = Math.max(0, Math.min(1, elapsed / 30000));
+    const elapsed = 20000 - Math.max(0, fireTs - now);
+    const progress = Math.max(0, Math.min(1, elapsed / 20000));
     const firing = owned && (now - (capCdLastFired.nightShade || 0) < 300);
     if (owned && fireTs > 0 && fireTs <= now + 50) capCdLastFired.nightShade = now;
     set('capCdNightShade', owned, progress, 'rgba(200,150,255,0.95)', false, firing);
@@ -15956,6 +15993,10 @@ function drawLingeringHorizonEcho(tctx = ctx) {
   if (activeOrb !== 'nebula' || !hasCapstone('eventHorizon')) return;
   if (hyperSpeedStacks !== 0) return;
   const now = Date.now();
+  // v1.6.3 FIX D2: gate on the deferred start time — the echo is armed at
+  // hyperspeed end + (afterburnRank * 500ms) so disc visuals finish before
+  // the echo paints.
+  if (now < hyperspeedEchoStartTime) return;
   const remaining = hyperspeedEchoEndTime - now;
   if (remaining <= 0 || remaining > 2000) return;
   const elapsed = 2000 - remaining;
@@ -16034,13 +16075,20 @@ function drawHyperspeedBarrier(tctx = ctx) {
   ctx.quadraticCurveTo(player.x, barrierY - 18, player.x + halfW, barrierY + 15);
   ctx.stroke();
 
-  // Outer glow halo
+  // Outer glow halo. v1.6.3 FIX D1: paint the radial gradient through an
+  // arc() + fill() rather than a fillRect bounding box. The previous
+  // fillRect painted a square clip region over a circular gradient, which
+  // produced a visible rectangular halo around the player in hyperspeed
+  // (especially obvious at Smooth Entry rank 3 where barrierHalfW is
+  // huge). The radial gradient itself is circular; so should its clip.
   ctx.globalAlpha = 0.25 * intensity;
   const halo = ctx.createRadialGradient(player.x, barrierY, 0, player.x, barrierY, halfW * 1.5);
   halo.addColorStop(0, `rgba(${r},${g},${b},0.5)`);
   halo.addColorStop(1, `rgba(${r},${g},${b},0)`);
   ctx.fillStyle = halo;
-  ctx.fillRect(player.x - halfW * 1.5, barrierY - halfW, halfW * 3, halfW * 2);
+  ctx.beginPath();
+  ctx.arc(player.x, barrierY, halfW * 1.5, 0, 6.28);
+  ctx.fill();
 
   // v1.6.3 visual pass: 360° circular aura around the player so the
   // universal-invulnerability + 360° kill behaviour (FIX 10) is visible
@@ -16112,12 +16160,12 @@ function drawHyperStackText(tctx = ctx) {
   const alpha = visible ? 1 : 0.25;
 
   // v1.6.3 visual pass part 2: stack-count escalation.
-  //   7-9 stacks (Overdrive 3-4, no SUPERLUMINAL): numeric counter,
-  //     brighter color + thicker outline.
-  //   10 stacks (SUPERLUMINAL max on Warp): replace numeric counter with
+  //   7 stacks (SUPERLUMINAL stacking past Overdrive cap of 6): numeric
+  //     counter, brighter color + thicker outline.
+  //   8 stacks (SUPERLUMINAL max on Warp): replace numeric counter with
   //     "WARP CORE" label + pulsing glow animation.
   const hasSuperluminal = activeOrb === 'nebula' && hasCapstone('superluminal');
-  const coreLabel = hasSuperluminal && hyperSpeedStacks >= 10;
+  const coreLabel = hasSuperluminal && hyperSpeedStacks >= 8;
   const emphasized = hyperSpeedStacks >= 7;
   const label = coreLabel ? 'WARP CORE' : (hyperSpeedStacks + '× HYPERSPEED');
   ctx.save();
@@ -16667,6 +16715,7 @@ function applyPauseDeltaShift(pauseDelta) {
   if (aegisNextFireTime) aegisNextFireTime += pauseDelta;
   if (criticalMassCooldownEnd) criticalMassCooldownEnd += pauseDelta;
   if (hyperspeedEchoEndTime) hyperspeedEchoEndTime += pauseDelta;
+  if (hyperspeedEchoStartTime) hyperspeedEchoStartTime += pauseDelta;
   for (const c of Object.values(activeCombos)) {
     if (c && c.endTime !== undefined) c.endTime += pauseDelta;
   }
@@ -18181,7 +18230,7 @@ function buildNodePill(orbKey, pathKey, nodeIdx) {
   el.appendChild(nameEl);
   const metaEl = document.createElement('div');
   metaEl.className = 'tree-node-meta';
-  const nextCost = maxed ? 'MAX' : (formatCrystals(nodeCost(node.tier, current + 1)) + ' 💎');
+  const nextCost = maxed ? 'MAX' : (formatCrystals(nodeCost(node.tier, current + 1, orbKey)) + ' 💎');
   metaEl.textContent = locked ? 'LOCKED' : `${current}/${node.max} · ${nextCost}`;
   el.appendChild(metaEl);
   if (!locked) {
@@ -18210,7 +18259,7 @@ function buildCapstonePill(orbKey, cap) {
     ? 'UNLOCKED'
     : comingSoon
       ? 'COMING SOON'
-      : (prereqOk ? (formatCrystals(TREE_CAPSTONE_COST) + ' 💎') : 'LOCKED');
+      : (prereqOk ? (formatCrystals(capstoneCost(orbKey)) + ' 💎') : 'LOCKED');
   el.appendChild(metaEl);
   // Tap always opens the detail popup so players can read what's planned,
   // even for coming-soon capstones. The detail popup disables the Unlock
@@ -18249,11 +18298,11 @@ function renderTreeDetail() {
     let ranksHtml = '';
     for (let r = 1; r <= node.max; r++) {
       const cls = r <= current ? 'current' : (r === current + 1 ? 'next' : '');
-      ranksHtml += `<div class="rank-row ${cls}">Rank ${r}: ${node.effect(r)} · ${formatCrystals(nodeCost(node.tier, r))} 💎</div>`;
+      ranksHtml += `<div class="rank-row ${cls}">Rank ${r}: ${node.effect(r)} · ${formatCrystals(nodeCost(node.tier, r, t.orbKey))} 💎</div>`;
     }
     ranksEl.innerHTML = ranksHtml;
     const maxed = current >= node.max;
-    const nextCost = maxed ? 0 : nodeCost(node.tier, current + 1);
+    const nextCost = maxed ? 0 : nodeCost(node.tier, current + 1, t.orbKey);
     upBtn.style.display = '';
     upBtn.textContent = maxed ? 'MAXED' : `UPGRADE (${formatCrystals(nextCost)} 💎)`;
     upBtn.disabled = maxed || totalCrystals < nextCost;
@@ -18288,14 +18337,14 @@ function renderTreeDetail() {
       ? '<div class="rank-row current">Unlocked</div>'
       : comingSoon
         ? '<div class="rank-row next">Coming soon — effect ships in a future update</div>'
-        : `<div class="rank-row next">${formatCrystals(TREE_CAPSTONE_COST)} 💎</div>`;
+        : `<div class="rank-row next">${formatCrystals(capstoneCost(t.orbKey))} 💎</div>`;
     upBtn.style.display = owned ? 'none' : '';
     upBtn.textContent = owned
       ? 'UNLOCKED'
       : comingSoon
         ? 'COMING SOON'
-        : `UNLOCK (${formatCrystals(TREE_CAPSTONE_COST)} 💎)`;
-    upBtn.disabled = owned || comingSoon || totalCrystals < TREE_CAPSTONE_COST;
+        : `UNLOCK (${formatCrystals(capstoneCost(t.orbKey))} 💎)`;
+    upBtn.disabled = owned || comingSoon || totalCrystals < capstoneCost(t.orbKey);
     respecBtn.style.display = 'none';
     upBtn.onclick = () => {
       if (purchaseCapstone(t.orbKey, t.capKey)) {
