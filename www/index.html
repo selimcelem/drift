@@ -166,6 +166,57 @@
     gap: 3px;
     pointer-events: none;
   }
+  /* v1.6.3: capstone countdown rings, positioned below burst bar. */
+  #capstoneCountdowns {
+    position: absolute;
+    top: calc(var(--safe-top) + 180px);
+    left: 50%;
+    transform: translateX(-50%);
+    display: none;
+    gap: 10px;
+    pointer-events: none;
+    z-index: 6;
+  }
+  #capstoneCountdowns.visible { display: flex; }
+  .cap-cd {
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+  }
+  .cap-cd.visible { display: flex; }
+  .cap-cd-ring {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: conic-gradient(
+      var(--cap-color, rgba(200,150,255,0.95)) calc(var(--cap-progress, 0) * 360deg),
+      rgba(255,255,255,0.1) 0deg
+    );
+    position: relative;
+  }
+  .cap-cd-ring::after {
+    content: '';
+    position: absolute;
+    inset: 3px;
+    border-radius: 50%;
+    background: rgba(0,0,10,0.85);
+  }
+  .cap-cd.primed .cap-cd-ring {
+    background: var(--cap-color, rgba(200,150,255,0.95));
+    box-shadow: 0 0 10px var(--cap-color, rgba(200,150,255,0.95));
+  }
+  .cap-cd.firing .cap-cd-ring {
+    background: rgba(255,255,255,0.95);
+    box-shadow: 0 0 14px rgba(255,255,255,0.95);
+  }
+  .cap-cd-lbl {
+    font-family: 'Space Mono', monospace;
+    font-size: 7px;
+    letter-spacing: 1.5px;
+    color: rgba(220,220,240,0.75);
+    text-transform: uppercase;
+  }
   .burst-label {
     font-family: 'Space Mono', monospace;
     font-size: 8px;
@@ -1480,13 +1531,19 @@
   }
   .tree-path-title {
     font-family: 'Orbitron', monospace;
-    font-size: 10px;
-    letter-spacing: 3px;
+    /* v1.6.3 visual pass: font-size and letter-spacing scale down at narrow
+       viewports so "CONVERGENCE" (11) / "FORTIFICATION" (13) / "DEVASTATION"
+       (11) / "OPPORTUNISM" (11) fit the per-column width at 360–412px. */
+    font-size: clamp(8px, 2.4vw, 10px);
+    letter-spacing: clamp(1px, 0.7vw, 3px);
     text-align: center;
     padding: 4px 0;
     border-bottom: 1px solid rgba(255,255,255,0.12);
     margin-bottom: 4px;
     text-transform: uppercase;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: clip;
   }
   .tree-node {
     background: rgba(10,12,24,0.65);
@@ -1508,7 +1565,12 @@
        wider than the column. The node-name element's own word-break handles
        the visual wrap. */
     min-width: 0;
-    word-break: break-word;
+    /* v1.6.3 visual pass: overflow-wrap:anywhere prefers word boundaries
+       and only breaks mid-word when the word itself is wider than the
+       container. `word-break:break-word` was breaking "Restless Orb" and
+       "Gravity Well" awkwardly mid-word on 412px viewports. */
+    overflow-wrap: anywhere;
+    word-break: normal;
     /* Minimum WCAG tap target on touch. */
     min-height: 44px;
   }
@@ -1524,14 +1586,20 @@
   .tree-node.maxed   { border-color: currentColor; color: currentColor; background: rgba(30,60,45,0.55); box-shadow: 0 0 8px currentColor; }
   .tree-node-name {
     font-weight: 700;
-    font-size: 11px;
-    letter-spacing: 2px;
+    /* v1.6.3 visual pass: clamp font + letter-spacing so multi-word node
+       names ("Calculated Drift", "Chain Reaction II", "Lingering Horizon")
+       fit inside their grid cell at 360–412px. Wider names wrap between
+       words thanks to overflow-wrap:anywhere above. */
+    font-size: clamp(9.5px, 2.6vw, 11px);
+    letter-spacing: clamp(1px, 0.5vw, 2px);
     text-transform: uppercase;
+    line-height: 1.2;
   }
   .tree-node-meta {
-    font-size: 9px;
-    letter-spacing: 1.5px;
+    font-size: clamp(8px, 2.2vw, 9px);
+    letter-spacing: clamp(0.5px, 0.4vw, 1.5px);
     opacity: 0.85;
+    line-height: 1.2;
   }
   .tree-capstones {
     display: flex;
@@ -1648,6 +1716,75 @@
     display: flex;
     flex-direction: column;
     gap: 12px;
+  }
+
+  /* Generic styled-confirm modal — reused for main-menu orb tree unlock
+     and any other pre-gameplay confirmation. Mirrors #treeConfirm style
+     but lives outside the tree overlay so it can render over the menu. */
+  #styledConfirm {
+    position: absolute;
+    inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0,0,8,0.85);
+    backdrop-filter: blur(6px);
+    z-index: 42;
+    padding: 20px;
+  }
+  #styledConfirm.visible { display: flex; }
+  .styled-confirm-inner {
+    max-width: 320px;
+    background: rgba(10,12,24,0.97);
+    border: 1px solid rgba(125,232,255,0.5);
+    border-radius: 6px;
+    padding: 18px;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    font-family: 'Orbitron', monospace;
+  }
+  .styled-confirm-title {
+    color: rgba(125,232,255,0.95);
+    font-size: 12px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+  }
+  .styled-confirm-msg {
+    color: rgba(200,230,255,0.88);
+    font-size: 11px;
+    line-height: 1.5;
+    letter-spacing: 1px;
+  }
+  .styled-confirm-actions {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+  .styled-confirm-btn {
+    background: transparent;
+    border: 1px solid rgba(125,232,255,0.6);
+    color: rgba(150,240,255,1);
+    font-family: 'Orbitron', monospace;
+    font-size: 10px;
+    letter-spacing: 2px;
+    padding: 9px 18px;
+    cursor: pointer;
+    text-transform: uppercase;
+    transition: all 0.2s;
+  }
+  .styled-confirm-btn:hover {
+    background: rgba(125,232,255,0.14);
+    box-shadow: 0 0 14px rgba(125,232,255,0.25);
+  }
+  .styled-confirm-btn.cancel {
+    border-color: rgba(180,180,180,0.5);
+    color: rgba(200,200,200,0.9);
+  }
+  .styled-confirm-btn.cancel:hover {
+    background: rgba(180,180,180,0.1);
   }
 
   /* Floating toast for sync status. Fires with .visible, auto-hides. */
@@ -2254,6 +2391,16 @@
       <div class="burst-label">BURST</div>
       <div class="burst-bar-outer"><div class="burst-bar-fill" id="burstFill"></div></div>
     </div>
+    <!-- v1.6.3 visual pass: capstone countdown rings. Each shows progress
+         toward the next auto-fire for NIGHT SHADE / SUN FORGE / AEGIS or
+         the armed state of SHROUD. Visibility is toggled per-orb via the
+         updateCapstoneCountdowns() tick. -->
+    <div id="capstoneCountdowns">
+      <div class="cap-cd" id="capCdShroud"    data-cap="shroud"><div class="cap-cd-ring"></div><div class="cap-cd-lbl">SHROUD</div></div>
+      <div class="cap-cd" id="capCdNightShade" data-cap="nightShade"><div class="cap-cd-ring"></div><div class="cap-cd-lbl">NIGHT</div></div>
+      <div class="cap-cd" id="capCdSunForge"  data-cap="sunForge"><div class="cap-cd-ring"></div><div class="cap-cd-lbl">FORGE</div></div>
+      <div class="cap-cd" id="capCdAegis"     data-cap="aegis"><div class="cap-cd-ring"></div><div class="cap-cd-lbl">AEGIS</div></div>
+    </div>
     <div id="streakDisplay"></div>
     <div id="hintLeft">◀ ATTRACT</div>
     <div id="hintRight">REPEL ▶</div>
@@ -2497,6 +2644,18 @@
           <button class="tree-btn respec-full" id="treeConfirmYes">CONFIRM</button>
           <button class="tree-btn close" id="treeConfirmNo">CANCEL</button>
         </div>
+      </div>
+    </div>
+  </div>
+  <!-- v1.6.3 visual pass: generic styled confirm modal for pre-gameplay
+       prompts (orb tree unlock, etc). Replaces window.confirm(). -->
+  <div id="styledConfirm">
+    <div class="styled-confirm-inner">
+      <div class="styled-confirm-title" id="styledConfirmTitle">CONFIRM</div>
+      <div class="styled-confirm-msg" id="styledConfirmMsg"></div>
+      <div class="styled-confirm-actions">
+        <button class="styled-confirm-btn" id="styledConfirmYes">CONFIRM</button>
+        <button class="styled-confirm-btn cancel" id="styledConfirmNo">CANCEL</button>
       </div>
     </div>
   </div>
@@ -4957,7 +5116,10 @@ function checkDestroyProc(body, source) {
       const chance = [0.02, 0.05, 0.10][sRank - 1] || 0;
       if (Math.random() < chance) {
         salvageBonusThisRun++;
-        // No log spam — this procs very often and is visually silent.
+        // v1.6.3 visual pass: small cyan crystal sparkle at the destroyed
+        // body's position that drifts upward. Uses salvageSparkles (managed
+        // in update/draw + per-frame dt-scaled drift).
+        spawnSalvageSparkle(body.x, body.y);
       }
     }
   }
@@ -5679,6 +5841,15 @@ let powerups = [];
 let novaRings = [];
 let screenShake = 0;
 let pickupParticles = [];
+// v1.6.3 visual pass: Salvage (Bulwark Opportunism T1) crystal sparkles.
+// Each entry {x, y, vx, vy, startTime, maxLifeMs}; life = 1 - age/maxLife.
+let salvageSparkles = [];
+const SALVAGE_SPARKLE_CAP = 40;
+const SALVAGE_SPARKLE_LIFE_MS = 700;
+// v1.6.3 visual pass: Twilight Echo refresh cue. Pulse ring + "ECHO" text
+// float above player for 500 ms on auto-refresh fire.
+let twilightEchoVisuals = [];
+const TWILIGHT_ECHO_VISUAL_LIFE_MS = 500;
 let planetRipples = [];
 // Shield EMP rings — single expanding cyan ring spawned when a shield (or
 // wraith) destroys a planet. First planet it touches gets destroyed, but no
@@ -9192,6 +9363,65 @@ function emitPickupParticles(x, y, type) {
   trimParticles();
 }
 
+// v1.6.3 visual pass: Salvage sparkle spawner. Emits a tiny cyan diamond
+// that drifts upward and fades out over ~700 ms. Capped to avoid runaway
+// growth at high kill rates (rank-3 Salvage procs 10% per destroy).
+// v1.6.3 visual pass: Twilight Echo refresh cue — purple expanding ring
+// + "ECHO" text float. Spawned once per successful TE auto-refresh.
+function spawnTwilightEchoVisual() {
+  twilightEchoVisuals.push({
+    x: player.x,
+    y: player.y,
+    startTime: Date.now(),
+    maxLifeMs: TWILIGHT_ECHO_VISUAL_LIFE_MS,
+  });
+}
+function drawTwilightEchoVisuals() {
+  if (!twilightEchoVisuals.length) return;
+  const now = Date.now();
+  twilightEchoVisuals = twilightEchoVisuals.filter(v => now - v.startTime < v.maxLifeMs);
+  if (pixiActive && !(!pixiActive)) return; // gated — keep Canvas fallback rendering
+  for (const v of twilightEchoVisuals) {
+    const age = now - v.startTime;
+    const t = age / v.maxLifeMs; // 0 → 1
+    const r = 18 + t * 90;
+    const alpha = (1 - t) * 0.85;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.strokeStyle = 'rgba(200,150,255,0.9)';
+    ctx.lineWidth = 2.2;
+    ctx.beginPath();
+    ctx.arc(v.x, v.y, r, 0, 6.28);
+    ctx.stroke();
+    ctx.globalAlpha = alpha * 0.5;
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.arc(v.x, v.y, r * 1.25, 0, 6.28);
+    ctx.stroke();
+    // "ECHO" text floats up
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = 'rgba(220,180,255,1)';
+    ctx.font = '700 11px "Orbitron", monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('ECHO', v.x, v.y - 30 - t * 12);
+    ctx.restore();
+  }
+  ctx.globalAlpha = 1;
+}
+
+function spawnSalvageSparkle(x, y) {
+  const now = Date.now();
+  pushCapped(salvageSparkles, {
+    x: x + (Math.random() - 0.5) * 14,
+    y: y + (Math.random() - 0.5) * 8,
+    vx: (Math.random() - 0.5) * 0.6,
+    vy: -1.4 - Math.random() * 0.6,
+    startTime: now,
+    maxLifeMs: SALVAGE_SPARKLE_LIFE_MS,
+    size: 2.8 + Math.random() * 1.4,
+  }, SALVAGE_SPARKLE_CAP);
+}
+
 function emitDestroyBurst(x, y, rgb) {
   const now = Date.now();
   for (let i = 0; i < 30; i++) {
@@ -10288,6 +10518,8 @@ function resetGame() {
   novaRings = []; screenShake = 0;
   empRings = [];
   pickupParticles = [];
+  salvageSparkles = [];
+  twilightEchoVisuals = [];
   orbTrailParticles = [];
   planetRipples = [];
   destroyEffects = [];
@@ -11227,6 +11459,8 @@ function update() {
         ghostEndTime = Math.min(nowMs + refresh, nowMs + cap);
         activeEffects.ghost = ghostEndTime - nowMs;
         twilightEchoNextFireTime = nowMs + 15000;
+        // v1.6.3 visual pass: purple pulse + "ECHO" text float cue.
+        spawnTwilightEchoVisual();
         treeLog('twilightEcho: auto-refresh ghost ' + activeEffects.ghost + 'ms');
       }
     }
@@ -14957,6 +15191,55 @@ function drawPlanetRipples() {
   ctx.globalAlpha = 1;
 }
 
+// v1.6.3 visual pass: Cinder burn zone render. Each zone is a static
+// 60 px radius smouldering circle at its spawn position (world-static —
+// does NOT scroll). Inner bright core + outer dim halo + a light ember
+// drift via sine modulation. Fades in the last 200 ms of its 1 s life.
+function drawBurnZones() {
+  if (!burnZones.length) return;
+  const now = Date.now();
+  if (pixiActive && !(!pixiActive)) return;
+  for (const z of burnZones) {
+    const age = now - (z.startTime || now);
+    if (age < 0 || age > BURN_ZONE_LIFETIME_MS) continue;
+    const fade = (age > BURN_ZONE_LIFETIME_MS - 200)
+      ? Math.max(0, (BURN_ZONE_LIFETIME_MS - age) / 200)
+      : 1;
+    const pulse = 0.75 + 0.25 * Math.sin(age * 0.02);
+    // Outer dim halo.
+    ctx.save();
+    ctx.globalAlpha = 0.28 * fade;
+    const halo = ctx.createRadialGradient(z.x, z.y, 0, z.x, z.y, z.radius);
+    halo.addColorStop(0,   'rgba(255,130,40,0.55)');
+    halo.addColorStop(0.6, 'rgba(255,90,30,0.22)');
+    halo.addColorStop(1,   'rgba(255,60,20,0)');
+    ctx.fillStyle = halo;
+    ctx.beginPath(); ctx.arc(z.x, z.y, z.radius, 0, 6.28); ctx.fill();
+    // Inner bright core.
+    ctx.globalAlpha = 0.6 * fade * pulse;
+    const core = ctx.createRadialGradient(z.x, z.y, 0, z.x, z.y, z.radius * 0.45);
+    core.addColorStop(0,   'rgba(255,220,140,0.85)');
+    core.addColorStop(0.5, 'rgba(255,160,60,0.45)');
+    core.addColorStop(1,   'rgba(255,120,40,0)');
+    ctx.fillStyle = core;
+    ctx.beginPath(); ctx.arc(z.x, z.y, z.radius * 0.45, 0, 6.28); ctx.fill();
+    // Sparse ember ticks around the edge (deterministic from startTime so
+    // they're stable-looking across frames, cheap to compute).
+    ctx.globalAlpha = 0.7 * fade;
+    ctx.fillStyle = 'rgba(255,200,100,1)';
+    for (let i = 0; i < 5; i++) {
+      const seed = (z.startTime | 0) + i * 17;
+      const ang = ((seed % 628) / 100) + age * 0.003 * ((i % 2) ? 1 : -1);
+      const rr = z.radius * (0.55 + (((seed >> 3) % 40) / 100));
+      const ex = z.x + Math.cos(ang) * rr;
+      const ey = z.y + Math.sin(ang) * rr - age * 0.02;
+      ctx.fillRect(ex - 1, ey - 1, 2, 2);
+    }
+    ctx.restore();
+  }
+  ctx.globalAlpha = 1;
+}
+
 function drawEmpRings() {
   if (pixiActive) return;
   if (!empRings.length) return;
@@ -15027,6 +15310,37 @@ function drawEmpRings() {
   ctx.globalAlpha = 1;
 }
 
+// v1.6.3 visual pass: Salvage sparkle update + draw. Called from the same
+// per-frame bucket as pickupParticles so it stays in sync with pause/
+// resume and reset paths. Draws a small cyan diamond that rises and fades.
+function drawSalvageSparkles() {
+  if (!salvageSparkles.length) return;
+  const nowSS = Date.now();
+  for (const s of salvageSparkles) {
+    s.life = Math.max(0, 1 - (nowSS - s.startTime) / s.maxLifeMs);
+    s.x += s.vx;
+    s.y += s.vy;
+    s.vy *= 0.97; // gentle deceleration
+  }
+  salvageSparkles = salvageSparkles.filter(s => s.life > 0.05);
+  if (pixiActive) return; // pixi path draws from array directly if wired
+  for (const s of salvageSparkles) {
+    const alpha = s.life * 0.9;
+    const r = s.size * s.life;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.translate(s.x, s.y);
+    ctx.rotate(Math.PI / 4); // diamond
+    ctx.fillStyle = `rgba(170,230,255,${alpha})`;
+    ctx.fillRect(-r, -r, r * 2, r * 2);
+    ctx.globalAlpha = alpha * 0.6;
+    ctx.fillStyle = 'rgba(255,255,255,0.8)';
+    ctx.fillRect(-r * 0.4, -r * 0.4, r * 0.8, r * 0.8);
+    ctx.restore();
+  }
+  ctx.globalAlpha = 1;
+}
+
 function drawPickupParticles() {
   const nowPP = Date.now();
   for (const p of pickupParticles) {
@@ -15079,6 +15393,72 @@ const ptFillEl = document.getElementById('ptFill');
 const ptComboEl = document.getElementById('ptCombo');
 const burstFillEl = document.getElementById('burstFill');
 const burstBarEl = document.getElementById('burstBar');
+
+// v1.6.3 visual pass: capstone countdown rings tick. Per-orb visibility
+// gates on hasCapstone(); only shows rings for the currently-equipped orb
+// so the HUD doesn't flood. Ring fill is a conic-gradient driven by a
+// CSS custom property (--cap-progress in [0,1]).
+let capCdLastFired = { shroud: 0, nightShade: 0, sunForge: 0, aegis: 0 };
+function updateCapstoneCountdowns() {
+  const container = document.getElementById('capstoneCountdowns');
+  if (!container) return;
+  const visible = (state === 'playing' || state === 'paused');
+  container.classList.toggle('visible', visible);
+  if (!visible) return;
+  const now = Date.now();
+  const set = (id, shown, progress, color, primed, firing) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.classList.toggle('visible', shown);
+    if (!shown) return;
+    const ring = el.querySelector('.cap-cd-ring');
+    if (ring) ring.style.setProperty('--cap-progress', String(Math.max(0, Math.min(1, progress))));
+    el.style.setProperty('--cap-color', color);
+    el.classList.toggle('primed', !!primed);
+    el.classList.toggle('firing', !!firing);
+  };
+  // SHROUD — Phantom. Either counting up to flag-arm or flashing PRIMED.
+  {
+    const owned = activeOrb === 'cosmic' && hasCapstone('shroud');
+    let progress = 0;
+    let primed = false;
+    if (owned) {
+      if (shroudFlagSet) { primed = true; progress = 1; }
+      else progress = Math.max(0, Math.min(1, (now - shroudLastFireTime) / 30000));
+    }
+    set('capCdShroud', owned, progress, 'rgba(200,150,255,0.95)', primed, false);
+  }
+  // NIGHT SHADE — Phantom. 30s cycle.
+  {
+    const owned = activeOrb === 'cosmic' && hasCapstone('nightShade');
+    const fireTs = nightShadeNextFireTime || now;
+    const elapsed = 30000 - Math.max(0, fireTs - now);
+    const progress = Math.max(0, Math.min(1, elapsed / 30000));
+    const firing = owned && (now - (capCdLastFired.nightShade || 0) < 300);
+    if (owned && fireTs > 0 && fireTs <= now + 50) capCdLastFired.nightShade = now;
+    set('capCdNightShade', owned, progress, 'rgba(200,150,255,0.95)', false, firing);
+  }
+  // SUN FORGE — Inferno. 45s cycle.
+  {
+    const owned = activeOrb === 'solar' && hasCapstone('sunForge');
+    const fireTs = sunForgeNextFireTime || now;
+    const elapsed = 45000 - Math.max(0, fireTs - now);
+    const progress = Math.max(0, Math.min(1, elapsed / 45000));
+    const firing = owned && (now - (capCdLastFired.sunForge || 0) < 300);
+    if (owned && fireTs > 0 && fireTs <= now + 50) capCdLastFired.sunForge = now;
+    set('capCdSunForge', owned, progress, 'rgba(255,180,80,0.95)', false, firing);
+  }
+  // AEGIS — Bulwark. 45s cycle.
+  {
+    const owned = activeOrb === 'asteroid' && hasCapstone('aegis');
+    const fireTs = aegisNextFireTime || now;
+    const elapsed = 45000 - Math.max(0, fireTs - now);
+    const progress = Math.max(0, Math.min(1, elapsed / 45000));
+    const firing = owned && (now - (capCdLastFired.aegis || 0) < 300);
+    if (owned && fireTs > 0 && fireTs <= now + 50) capCdLastFired.aegis = now;
+    set('capCdAegis', owned, progress, 'rgba(120,230,255,0.95)', false, firing);
+  }
+}
 
 function updateBurstBar() {
   if (!burstBarEl || !burstFillEl) return;
@@ -15163,6 +15543,48 @@ function hyperStackTint(stacks) {
   return                  { r: 255, g: 220, b: 60,  edgeR: 255, edgeG: 240, edgeB: 120 };
 }
 
+// v1.6.3 visual pass: Lingering Horizon echo — dimmer forward wedge for
+// 2 s after hyperspeed ends. Forward-only per FIX W11, no 360° aura. Pulses
+// at ~2 Hz and fades out in the last 300 ms of the window.
+function drawLingeringHorizonEcho(tctx = ctx) {
+  const _ctx = tctx;
+  if (activeOrb !== 'nebula' || !hasCapstone('eventHorizon')) return;
+  if (hyperSpeedStacks !== 0) return;
+  const now = Date.now();
+  const remaining = hyperspeedEchoEndTime - now;
+  if (remaining <= 0 || remaining > 2000) return;
+  const elapsed = 2000 - remaining;
+  // Pulse once per 500ms.
+  const pulse = 0.6 + 0.4 * Math.sin(elapsed * (Math.PI * 2) / 500);
+  // Fade in the last 300ms.
+  const fade = remaining > 300 ? 1 : (remaining / 300);
+  const baseAlpha = 0.70 * fade * pulse;
+  const halfW = 60;
+  const barrierY = player.y - 60;
+  const r = 255, g = 200, b = 100; // Warp echo tone
+  _ctx.save();
+  _ctx.globalAlpha = baseAlpha * 0.6;
+  const grd = _ctx.createLinearGradient(player.x, barrierY - 15, player.x, barrierY + 20);
+  grd.addColorStop(0,   `rgba(${r},${g},${b},0)`);
+  grd.addColorStop(0.5, `rgba(${r},${g},${b},0.55)`);
+  grd.addColorStop(1,   `rgba(${r},${Math.round(g*0.8)},${Math.round(b*0.5)},0)`);
+  _ctx.fillStyle = grd;
+  _ctx.beginPath();
+  _ctx.moveTo(player.x - halfW, barrierY + 15);
+  _ctx.quadraticCurveTo(player.x, barrierY - 18, player.x + halfW, barrierY + 15);
+  _ctx.quadraticCurveTo(player.x, barrierY + 5, player.x - halfW, barrierY + 15);
+  _ctx.fill();
+  _ctx.globalAlpha = baseAlpha * 0.85;
+  _ctx.strokeStyle = `rgba(255,220,150,${0.9 * fade})`;
+  _ctx.lineWidth = 1.8;
+  _ctx.beginPath();
+  _ctx.moveTo(player.x - halfW, barrierY + 15);
+  _ctx.quadraticCurveTo(player.x, barrierY - 18, player.x + halfW, barrierY + 15);
+  _ctx.stroke();
+  _ctx.restore();
+  _ctx.globalAlpha = 1;
+}
+
 function drawHyperspeedBarrier(tctx = ctx) {
   const ctx = tctx;
   if (activeEffects.hyperspeed <= 0 || hyperspeedCurrentMult <= 1.05) return;
@@ -15214,6 +15636,35 @@ function drawHyperspeedBarrier(tctx = ctx) {
   halo.addColorStop(1, `rgba(${r},${g},${b},0)`);
   ctx.fillStyle = halo;
   ctx.fillRect(player.x - halfW * 1.5, barrierY - halfW, halfW * 3, halfW * 2);
+
+  // v1.6.3 visual pass: 360° circular aura around the player so the
+  // universal-invulnerability + 360° kill behaviour (FIX 10) is visible
+  // on all orbs. Uses barrierHalfW as the radius; Smooth Entry scaling on
+  // Warp extends it so the circle matches the wider kill zone.
+  let auraR = halfW;
+  if (activeOrb === 'nebula') {
+    const seRank = rankOf('smoothEntry');
+    if (seRank === 1) auraR = 60 * 1.5;
+    else if (seRank === 2) auraR = 60 * 2.5;
+    else if (seRank >= 3) auraR = (typeof W === 'number' ? W / 2 : 200);
+  }
+  const pulse360 = 0.85 + 0.15 * Math.sin(frame * 0.2);
+  ctx.globalAlpha = 0.30 * intensity * pulse360;
+  const aura = ctx.createRadialGradient(player.x, player.y, auraR * 0.2, player.x, player.y, auraR);
+  aura.addColorStop(0,   `rgba(${r},${g},${b},0.0)`);
+  aura.addColorStop(0.75, `rgba(${r},${g},${b},0.35)`);
+  aura.addColorStop(1,   `rgba(${r},${Math.round(g*0.75)},${Math.round(b*0.4)},0)`);
+  ctx.fillStyle = aura;
+  ctx.beginPath();
+  ctx.arc(player.x, player.y, auraR, 0, 6.28);
+  ctx.fill();
+  // Edge highlight
+  ctx.globalAlpha = 0.45 * intensity * pulse360;
+  ctx.strokeStyle = `rgba(${eR},${eG},${eB},${0.7 * intensity})`;
+  ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  ctx.arc(player.x, player.y, auraR, 0, 6.28);
+  ctx.stroke();
 
   ctx.restore();
   ctx.globalAlpha = 1;
@@ -15413,6 +15864,7 @@ function render() {
   }
 
   if (state==='playing'||state==='dead'||state==='paused'||state==='apocalypse'||state==='devmode') {
+    drawBurnZones();
     drawPowerups();
     drawNovaRings();
     drawEmpRings();
@@ -15422,9 +15874,12 @@ function render() {
     if (state==='playing'||state==='paused'||state==='apocalypse') {
       // Step 6: hyperspeed barrier on pixi overlay when active.
       if (!pixiActive) drawHyperspeedBarrier();
+      if (!pixiActive) drawLingeringHorizonEcho();
       if (!pixiActive) drawPlayer();
     }
     drawPickupParticles();
+    drawSalvageSparkles();
+    drawTwilightEchoVisuals();
     drawDestroyEffects();
     drawDeathShards();
     drawDeathParticles();
@@ -15445,6 +15900,7 @@ function render() {
 
   updatePowerupTimer();
   updateBurstBar();
+  updateCapstoneCountdowns();
   updateFps();
   ctx.restore();
 }
@@ -15852,6 +16308,8 @@ function goToMainMenu() {
   novaRings = [];
   empRings = [];
   pickupParticles = [];
+  salvageSparkles = [];
+  twilightEchoVisuals = [];
   orbTrailParticles = [];
   planetRipples = [];
   destroyEffects = [];
@@ -16055,6 +16513,34 @@ document.addEventListener('backbutton', e => {
   }
 });
 
+// v1.6.3 visual pass: reusable styled confirm modal for pre-gameplay
+// prompts. Same visual as the tree-overlay's #treeConfirm but scoped to
+// the main overlay so it can render over the menu. Returns nothing — use
+// the onConfirm callback. Pressing CANCEL simply closes the dialog.
+let styledConfirmAction = null;
+function showStyledConfirm(title, message, confirmLabel, cancelLabel, onConfirm) {
+  document.getElementById('styledConfirmTitle').textContent = title || 'CONFIRM';
+  document.getElementById('styledConfirmMsg').textContent = message || '';
+  document.getElementById('styledConfirmYes').textContent = confirmLabel || 'CONFIRM';
+  document.getElementById('styledConfirmNo').textContent = cancelLabel || 'CANCEL';
+  styledConfirmAction = typeof onConfirm === 'function' ? onConfirm : null;
+  document.getElementById('styledConfirm').classList.add('visible');
+}
+function closeStyledConfirm() {
+  styledConfirmAction = null;
+  document.getElementById('styledConfirm').classList.remove('visible');
+}
+document.getElementById('styledConfirmYes').addEventListener('click', () => {
+  SFX.clickPrimary();
+  const fn = styledConfirmAction;
+  closeStyledConfirm();
+  if (fn) { try { fn(); } catch (e) { console.error(e); } }
+});
+document.getElementById('styledConfirmNo').addEventListener('click', () => {
+  SFX.clickSecondary();
+  closeStyledConfirm();
+});
+
 // v1.6.3: gate IMPOSSIBLE difficulty + leaderboard tab behind
 // beatDifficulty.EXTREME. Called on menu refresh / orb browser refresh.
 function refreshImpossibleVisibility() {
@@ -16193,19 +16679,20 @@ function refreshOrbBrowser() {
         setTimeout(() => { btn.textContent = orig; }, 1200);
         return;
       }
-      if (typeof confirmTreeAction === 'function') {
-        // Open the tree overlay briefly-hidden so confirmTreeAction's dialog
-        // renders over the main menu (the dialog lives inside #treeOverlay).
-        // Easier: ensure openTreeOverlay happens only on success.
-      }
-      // Use a simple native confirm path so we don't rely on the tree
-      // overlay's internal confirm (which is scoped to the open overlay).
-      const ok = window.confirm(`Unlock ${def.name} skill tree for ${formatCrystals(cost)} 💎?`);
-      if (!ok) return;
-      if (purchaseTreeUnlock(key)) {
-        openTreeOverlay(key);
-        refreshOrbBrowser();
-      }
+      // v1.6.3 visual pass: use the styled confirm modal (matches tree
+      // overlay's confirm dialog aesthetic) instead of window.confirm.
+      showStyledConfirm(
+        'UNLOCK SKILL TREE',
+        `Unlock ${def.name} skill tree for ${formatCrystals(cost)} 💎?`,
+        'UNLOCK',
+        'CANCEL',
+        () => {
+          if (purchaseTreeUnlock(key)) {
+            openTreeOverlay(key);
+            refreshOrbBrowser();
+          }
+        }
+      );
     });
   }
 
