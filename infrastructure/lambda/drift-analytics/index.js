@@ -38,6 +38,20 @@ const CORS_HEADERS = {
 
 const TTL_SECONDS = 90 * 24 * 60 * 60;
 
+// Display-only mapping for the orb code keys stored in DynamoDB. Storage
+// keys ('asteroid', etc.) are preserved as-is — only the rendered HTML
+// label is swapped. 'asteroid' → 'Bulwark' per the v1.6.3 orb rename.
+const ORB_LABELS = {
+  cyan: "Drifter",
+  cosmic: "Phantom",
+  solar: "Inferno",
+  nebula: "Warp",
+  asteroid: "Bulwark",
+};
+function orbLabel(key) {
+  return ORB_LABELS[key] || key || "";
+}
+
 exports.handler = async (event) => {
   const method = event.requestContext?.http?.method || "GET";
 
@@ -360,7 +374,7 @@ function dashboardHtml(items) {
     .sort((a, b) => b[1] - a[1])
     .map(
       ([o, n]) =>
-        `<tr><td>${escapeHtml(o)}</td><td>${n}</td><td>${percent(n, deathTotal)}</td></tr>`
+        `<tr><td>${escapeHtml(orbLabel(o))}</td><td>${n}</td><td>${percent(n, deathTotal)}</td></tr>`
     )
     .join("");
 
@@ -409,7 +423,7 @@ function dashboardHtml(items) {
             it.score || 0
           }</td><td>${fmtTime(it.timeSurvived)}</td><td>${escapeHtml(
             it.deathCause || "unknown"
-          )}</td><td>${escapeHtml(it.orb || "")}</td><td>${
+          )}</td><td>${escapeHtml(orbLabel(it.orb))}</td><td>${
             it.phaseReached || 1
           }</td></tr>`;
         })
