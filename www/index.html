@@ -4150,8 +4150,8 @@ const TREE_DEFS = {
       dusk: {
         name: 'DUSK',
         nodes: [
-          { key: 'lingeringVeil', name: 'Lingering Veil', tier: 1, max: 3, desc: 'Single-pickup ghost +0.5s per rank (Cosmic baseline 6s).', effect: r => `+${0.5*r}s ghost (${6 + 0.5*r}s total)` },
-          { key: 'eternalEmber',  name: 'Eternal Ember',  tier: 2, max: 4, desc: 'Eternal Phantom duration +1s per rank (Cosmic baseline 8s).', effect: r => `+${r}s (${8+r}s total)` },
+          { key: 'lingeringVeil', name: 'Lingering Veil', tier: 1, max: 3, desc: 'Single-pickup ghost +0.5s per rank (Cosmic baseline 4s).', effect: r => `+${0.5*r}s ghost (${4 + 0.5*r}s total)` },
+          { key: 'eternalEmber',  name: 'Eternal Ember',  tier: 2, max: 4, desc: 'Eternal Phantom duration +1s per rank (Cosmic baseline 6s).', effect: r => `+${r}s (${6+r}s total)` },
           { key: 'twilightEcho',  name: 'Twilight Echo',  tier: 3, max: 3, desc: 'If ghost ends within 3s of any other combo ending, auto-refresh ghost for half its base duration.', effect: r => `${[33,66,100][r-1]||0}% chance` },
         ],
       },
@@ -4184,8 +4184,8 @@ const TREE_DEFS = {
       pyre: {
         name: 'PYRE',
         nodes: [
-          { key: 'kindling',      name: 'Kindling',      tier: 1, max: 3, desc: 'Single nova +1 wave per rank (Inferno baseline 6).', effect: r => `+${r} waves (${6+r} total)` },
-          { key: 'conflagration', name: 'Conflagration', tier: 2, max: 3, desc: 'Supernova +1 wave per rank (Inferno baseline 6).', effect: r => `+${r} waves (${6+r} total)` },
+          { key: 'kindling',      name: 'Kindling',      tier: 1, max: 3, desc: 'Single nova +1 wave per rank (Inferno baseline 4).', effect: r => `+${r} waves (${4+r} total)` },
+          { key: 'conflagration', name: 'Conflagration', tier: 2, max: 3, desc: 'Supernova +1 wave per rank (Inferno baseline 4).', effect: r => `+${r} waves (${4+r} total)` },
           { key: 'secondFlame',   name: 'Second Flame',  tier: 3, max: 3, desc: 'Chance to fire one free extra wave after a nova finishes. 3s cooldown; Firebrand-sourced novas excluded.', effect: r => `${[30,40,50][r-1]||0}% chance` },
         ],
       },
@@ -4193,7 +4193,7 @@ const TREE_DEFS = {
         name: 'CORONA',
         nodes: [
           { key: 'solarFlare',  name: 'Solar Flare',  tier: 1, max: 3, desc: 'Nova ring lethal radius +15% per rank (360px baseline).', effect: r => `+${15*r}% radius` },
-          { key: 'halo',        name: 'Halo',         tier: 2, max: 3, desc: 'Supernova radiusMult step coefficient boosted (0.15 → 0.183/0.217/0.25).', effect: r => `+${(3.3*r).toFixed(1)}% step` },
+          { key: 'halo',        name: 'Halo',         tier: 2, max: 3, desc: 'Supernova radiusMult step coefficient boosted (0.10 → 0.133/0.167/0.20).', effect: r => `+${(3.3*r).toFixed(1)}% step` },
           { key: 'coronalHold', name: 'Coronal Hold', tier: 3, max: 3, desc: 'Supernova kills reduce burst cooldown. Cap 6s per cast.', effect: r => `-${[0.2,0.3,0.5][r-1]||0}s per kill` },
         ],
       },
@@ -4227,7 +4227,7 @@ const TREE_DEFS = {
         name: 'ENDURANCE',
         nodes: [
           { key: 'reservoir',    name: 'Reservoir',    tier: 1, max: 3, desc: 'Per-stack duration +0.5s per rank (3s baseline).', effect: r => `+${0.5*r}s stack (${3 + 0.5*r}s)` },
-          { key: 'overdrive',    name: 'Overdrive',    tier: 2, max: 4, desc: 'Max hyperspeed stacks +1 per rank (Nebula baseline 6).', effect: r => `Cap ${6+r} stacks` },
+          { key: 'overdrive',    name: 'Overdrive',    tier: 2, max: 4, desc: 'Max hyperspeed stacks +1 per rank (Nebula baseline 4).', effect: r => `Cap ${4+r} stacks` },
           { key: 'infiniteGate', name: 'Infinite Gate', tier: 3, max: 3, desc: 'At 10+ stacks, each pickup adds time to every live stack.', effect: r => `+${r}s per pickup at 10+` },
         ],
       },
@@ -4612,6 +4612,12 @@ let lastFirebrandProc = 0;
 // Second Flame (Inferno Pyre T3) v1.6.3: internal 3 s cooldown between
 // bonus-wave triggers — prevents nova→Second Flame→Firebrand-style chains.
 let secondFlameNextFireTime = 0;
+// Soulbound (Phantom Veil T2) v1.6.3: per-proc 3 s cooldown — stops the
+// "ghost pinned at cap ceiling" loop at high kill rates.
+let soulboundNextProcTime = 0;
+// Slipstream (Warp Drift T2) v1.6.3: per-proc 1 s cooldown — breaks the
+// barrier-kills → Slipstream → Infinite Gate self-sustaining chain.
+let slipstreamNextProcTime = 0;
 
 function spawnDestroyProcFlash(powerupType) {
   if (!POWERUP_COLORS || !POWERUP_COLORS[powerupType]) return;
@@ -4647,13 +4653,17 @@ function siphonProc() {
 }
 
 function soulboundProc() {
+  const now = Date.now();
+  // v1.6.3: 3 s per-proc cooldown. Prevents Soulbound from rewriting ghost
+  // to the cap ceiling every frame at high kill rates.
+  if (now < soulboundNextProcTime) { treeLog('soulbound: cooldown-blocked'); return; }
   const base = GHOST_DURATION();
   const cap = ghostDurationCap();
-  const now = Date.now();
   if (!activeEffects.ghost || activeEffects.ghost <= 0) {
     ghostEndTime = now + base;
     activeEffects.ghost = base;
     spawnDestroyProcFlash('ghost');
+    soulboundNextProcTime = now + 3000;
     treeLog('soulbound: fresh ghost (' + base + 'ms)');
     return;
   }
@@ -4666,6 +4676,7 @@ function soulboundProc() {
   ghostEndTime = now + newRemaining;
   activeEffects.ghost = newRemaining;
   spawnDestroyProcFlash('ghost');
+  soulboundNextProcTime = now + 3000;
   treeLog('soulbound: extended ghost → ' + newRemaining + 'ms (cap ' + cap + ')');
 }
 
@@ -4693,9 +4704,14 @@ function firebrandProc() {
 }
 
 function slipstreamProc() {
+  const now = Date.now();
+  // v1.6.3: 1 s per-proc cooldown. Without this, barrier auto-kills + 10%
+  // per-kill rate feed Infinite Gate unbounded and Warp becomes AFK-winnable.
+  if (now < slipstreamNextProcTime) { treeLog('slipstream: cooldown-blocked'); return; }
   activateHyperspeed();
   if (activeOrb === 'nebula') activateHyperspeed();
   spawnDestroyProcFlash('hyperspeed');
+  slipstreamNextProcTime = now + 1000;
   treeLog('slipstream: +' + (activeOrb === 'nebula' ? 2 : 1) + ' stack');
 }
 
@@ -4869,8 +4885,14 @@ let criticalMassCooldownEnd = 0;
 // Coronal Hold (Inferno Corona T3) v1.6.3 rework: per-cast burst-cooldown
 // reduction accumulator. Each supernova body kill adds 0.2/0.3/0.5 s per
 // rank, capped at 6 s total reduction. Reset on each new supernova cast.
+// v1.6.3 rolling cap: additional 12 s/60 s rolling ceiling across ALL
+// supernova casts — log-and-prune history list so multi-cast runs can't
+// stack 30+ seconds of burst-CD reduction per minute.
 let coronalHoldReductionMs = 0;
+let coronalHoldReductionHistory = [];
 const CORONAL_HOLD_CAP_MS = 6000;
+const CORONAL_HOLD_ROLLING_WINDOW_MS = 60000;
+const CORONAL_HOLD_ROLLING_CAP_MS = 12000;
 // LINGERING HORIZON (Warp capstone, v1.6.3 rework of EVENT HORIZON):
 // 2 s post-hyperspeed barrier echo. Stamped when the last hyperspeed stack
 // expires; the barrier-kill loop runs while Date.now() < this ts even when
@@ -4910,10 +4932,13 @@ function resetTreeNodeState() {
   secondFlamePending = [];
   secondFlameNextFireTime = 0;
   lastFirebrandProc = 0;
+  soulboundNextProcTime = 0;
+  slipstreamNextProcTime = 0;
   // Capstone state.
   novaCastKillCount = 0;
   criticalMassCooldownEnd = 0;
   coronalHoldReductionMs = 0;
+  coronalHoldReductionHistory = [];
   hyperspeedEchoEndTime = 0;
   const now = Date.now();
   shroudFlagSet = false;
@@ -5564,10 +5589,10 @@ const SHIELD_DURATION_MS_ASTEROID = 6000;        // 6s for asteroid orb
 const FORTRESS_SHIELD_DURATION_MS = 8000;        // 8s for shield+shield Fortress combo
 const HYPERSPEED_DURATION_MS = 3000;             // 3s base
 const HYPERSPEED_COMBO_DURATION = 3500;          // 3.5s for warp time / spectral rush
-const GHOST_DURATION_MS_DEFAULT = 4000;          // 4s
-const GHOST_DURATION_MS_COSMIC = 6000;           // 6s for cosmic orb
-const GHOST_ETERNAL_DURATION_DEFAULT = 6000;     // 6s Eternal Phantom
-const GHOST_ETERNAL_DURATION_COSMIC  = 8000;     // 8s Eternal Phantom on cosmic orb
+const GHOST_DURATION_MS_DEFAULT = 2000;          // 2s (v1.6.3 nerf, was 4s)
+const GHOST_DURATION_MS_COSMIC = 4000;           // 4s for cosmic orb (v1.6.3 nerf, was 6s)
+const GHOST_ETERNAL_DURATION_DEFAULT = 4000;     // 4s Eternal Phantom (v1.6.3 nerf, was 6s)
+const GHOST_ETERNAL_DURATION_COSMIC  = 6000;     // 6s Eternal Phantom on cosmic orb (v1.6.3 nerf, was 8s)
 const SHIELD_BLINK_MS = 1000;                    // last 1s blink
 function SHIELD_DURATION() {
   const base = activeOrb === 'asteroid' ? SHIELD_DURATION_MS_ASTEROID : SHIELD_DURATION_MS_DEFAULT;
@@ -5594,7 +5619,8 @@ function GHOST_ETERNAL_DURATION() {
 // v1.6.3: absolute ceiling for ghostEndTime, shared across all ghost-extension
 // sites (Shadow Regen stack, Soulbound proc, Twilight Echo refresh, Eternal
 // Ember combo). Cap = 2 × base single-pickup duration — so Cosmic caps at
-// 12 s, non-Cosmic at 8 s. Callers apply Math.min(proposedEnd, now + cap).
+// 8 s, non-Cosmic at 4 s (post-nerf). Callers apply Math.min(proposedEnd,
+// now + cap).
 function ghostDurationCap() {
   return 2 * GHOST_DURATION();
 }
@@ -5610,20 +5636,21 @@ let hyperspeedPeakMult = 1;       // this instance's peak multiplier
 let hyperspeedActiveDuration = HYPERSPEED_DURATION_MS; // duration used for deceleration curve (ms)
 let hyperspeedWhooshNodes = null; // audio nodes for sustained whoosh
 // --- Stacking hyperspeed ---
-// Each pickup adds 1 stack (max 4) and pushes its own independent 6s timer
-// onto hyperSpeedTimers. When a timer expires, hyperSpeedStacks decrements by
+// Each pickup adds 1 stack (cap per HYPERSPEED_MAX_STACKS) and pushes its
+// own independent 3s-base timer (Reservoir extends per rank) onto
+// hyperSpeedTimers. When a timer expires, hyperSpeedStacks decrements by
 // one — speed steps down level by level. peakHyperSpeedStacks tracks the
 // highest stack count reached this session so the final landing pull scales
 // with how aggressive the run was.
-const HYPERSPEED_MAX_STACKS_DEFAULT = 4;
-const HYPERSPEED_MAX_STACKS_NEBULA = 6;
+const HYPERSPEED_MAX_STACKS_DEFAULT = 2;  // v1.6.3 nerf, was 4
+const HYPERSPEED_MAX_STACKS_NEBULA = 4;   // v1.6.3 nerf, was 6
 function HYPERSPEED_MAX_STACKS() {
   let base = activeOrb === 'nebula' ? HYPERSPEED_MAX_STACKS_NEBULA : HYPERSPEED_MAX_STACKS_DEFAULT;
   // Skill tree: Overdrive (+1/rank), Warp-only.
   if (activeOrb === 'nebula') base += rankOf('overdrive');
   // SUPERLUMINAL (Warp capstone) v1.6.3: raises the cap by +10 over the
-  // Overdrive-boosted base (was: removes cap entirely). Nebula base 6 +
-  // Overdrive rank 4 (+4) + SUPERLUMINAL (+10) = 20 absolute max.
+  // Overdrive-boosted base (was: removes cap entirely). v1.6.3: Nebula base
+  // 4 + Overdrive rank 4 (+4) + SUPERLUMINAL (+10) = 18 absolute max.
   if (activeOrb === 'nebula' && hasCapstone('superluminal')) base += 10;
   return base;
 }
@@ -7069,12 +7096,11 @@ function normalScrollSpeed() {
   // framerate. elapsedRunSeconds() returns 0 before resetGame is called.
   const t = Math.min(elapsedRunSeconds() / d.speedCapScore, 1);
   const baseSpeed = d.startSpeed + (d.maxSpeed - d.startSpeed) * t;
-  const postCapMinutes = Math.max(0, (elapsedRunSeconds() - d.speedCapScore) / 60);
-  // v1.7.4 tuning: softened from 0.25 → 0.15 px/frame per minute. Late-game
-  // Extreme was unwinnable beyond 4–5 minutes; gentler ramp keeps the
-  // post-cap tension curve without the unavoidable-corridor problem.
-  const postCapBonus = postCapMinutes * 0.10;
-  return baseSpeed + postCapBonus;
+  // v1.6.3: post-cap speed growth removed. Speed locks at d.maxSpeed after
+  // d.speedCapScore seconds (3:00 on all difficulties). The v1.7.4
+  // +0.10/min post-cap bonus that used to apply here is retired — late-game
+  // pressure now comes from body-count ramp only.
+  return baseSpeed;
 }
 
 function scrollSpeed() {
@@ -9439,9 +9465,9 @@ function activateCombo(key, x, y) {
       if (activeEffects.shield <= 0) { shieldEndTime = Date.now() + SHIELD_DURATION(); activeEffects.shield = SHIELD_DURATION(); shieldBroken = false; }
       syncComboDurations('ghost', 'shield');
     } else if (key === 'ghost_ghost') {
-      // Eternal Phantom refresh: always reset to the full 16s ghost duration
-      // when a fresh ghost pickup arrives, never downgrade to the shorter
-      // single-ghost timer. v1.6.3: clamped to ghostDurationCap().
+      // Eternal Phantom refresh: reset to GHOST_ETERNAL_DURATION when a
+      // fresh ghost pickup arrives, never downgrade to the shorter single-
+      // ghost timer. v1.6.3: clamped to ghostDurationCap().
       {
         const _now = Date.now();
         const _cap = ghostDurationCap();
@@ -9484,12 +9510,13 @@ function activateCombo(key, x, y) {
     // Skill tree:
     //   - Conflagration +1/rank to supernova wave count (Inferno-only)
     //   - Combustion carries +1 wave per nova-kill within 3 s, rank-capped
-    //   - Halo scales the step coefficient 0.15 → +0.033/rank
+    //   - Halo scales the step coefficient 0.10 → +0.033/rank (v1.6.3)
     // CRITICAL MASS: fresh cast resets the kill counter.
     novaCastKillCount = 0;
     // Coronal Hold v1.6.3: reset per-cast reduction accumulator.
     coronalHoldReductionMs = 0;
-    let supernovaWaves = activeOrb === 'solar' ? 6 : 4;
+    // v1.6.3: supernova wave count nerfed from 4→3 default, 6→4 Inferno.
+    let supernovaWaves = activeOrb === 'solar' ? 4 : 3;
     if (activeOrb === 'solar') supernovaWaves += rankOf('conflagration');
     // Combustion (Inferno T3) v1.6.3: 5 s cooldown between consumption
     // events. If still on cooldown, the counter keeps accumulating and the
@@ -9506,14 +9533,20 @@ function activateCombo(key, x, y) {
         combustionNextConsumeTime = Date.now() + 5000;
       }
     }
-    const stepCoef = 0.15 + ((activeOrb === 'solar') ? 0.033 * rankOf('halo') : 0);
+    // v1.6.3: step coefficient nerfed from 0.15 → 0.10 (per-wave +10%
+    // growth instead of +15%). Halo still adds +0.033/rank on top.
+    const stepCoef = 0.10 + ((activeOrb === 'solar') ? 0.033 * rankOf('halo') : 0);
     for (let i = 0; i < supernovaWaves; i++) {
       pendingNovaTimeouts.push(setTimeout(() => {
         if (state !== 'playing' && state !== 'devmode') return;
+        // v1.6.3: supernova first wave is 10% smaller (sizeMult 0.9) so
+        // wave 0 matches a regular single nova's size. radiusMult grows
+        // from that at the +10%/wave rate.
         pushCapped(novaRings, {
           x: player.x, y: player.y, radius: 0, life: 1, prevR: 0,
           radiusMult: 1 + i * stepCoef,
           supernova: true,
+          sizeMult: 0.9,
           startTime: Date.now(),
         }, NOVA_RINGS_CAP);
         screenShake = Math.max(screenShake, 10 + i);
@@ -9534,7 +9567,7 @@ function activateCombo(key, x, y) {
         secondFlameNextFireTime = Date.now() + 3000;
         const id = setTimeout(() => {
           if (state === 'playing' || state === 'devmode') {
-            pushCapped(novaRings, { x: player.x, y: player.y, radius: 0, life: 1, prevR: 0, supernova: true, startTime: Date.now() }, NOVA_RINGS_CAP);
+            pushCapped(novaRings, { x: player.x, y: player.y, radius: 0, life: 1, prevR: 0, supernova: true, sizeMult: 0.9, startTime: Date.now() }, NOVA_RINGS_CAP);
             screenShake = Math.max(screenShake, 6);
             SFX.pickup('nova');
             treeLog('secondFlame: bonus wave fired (source=supernova)');
@@ -9588,7 +9621,7 @@ function activateCombo(key, x, y) {
     syncComboDurations('ghost', 'shield');
     activeCombos[key] = { def, deps: ['ghost'] };
   } else if (key === 'ghost_ghost') {
-    // ETERNAL PHANTOM: 16s ghost. v1.6.3: clamped to ghostDurationCap().
+    // ETERNAL PHANTOM: extended ghost state. v1.6.3: clamped to ghostDurationCap().
     {
       const _now = Date.now();
       const _cap = ghostDurationCap();
@@ -9708,12 +9741,17 @@ function rawActivate(type, x, y) {
 function fireTripleNova(px, py, source) {
   // CRITICAL MASS: fresh cast resets the kill counter.
   novaCastKillCount = 0;
-  pushCapped(novaRings, { x: px, y: py, radius: 0, life: 1, prevR: 0, startTime: Date.now() }, NOVA_RINGS_CAP);
+  // v1.6.3: single-nova ring initial-radius factor reduced 10% (nova feels
+  // slightly tighter); pushCapped reads .radius so the rings grow from a
+  // smaller seed. The ring expansion math elsewhere treats radius relative
+  // to its per-ring start, so the 0.9 seed carries through the lifecycle.
+  pushCapped(novaRings, { x: px, y: py, radius: 0, life: 1, prevR: 0, startTime: Date.now(), sizeMult: 0.9 }, NOVA_RINGS_CAP);
   screenShake = Math.max(screenShake, 10);
   // Skill tree:
   //   - Kindling +1/rank to single-nova wave count (Inferno-only)
   //   - Combustion carries +1 wave per nova-kill within 3 s, rank-capped
-  let waves = activeOrb === 'solar' ? 6 : 3;
+  // v1.6.3: base single-nova waves nerfed from 3→2 default, 6→4 Inferno.
+  let waves = activeOrb === 'solar' ? 4 : 2;
   if (activeOrb === 'solar') waves += rankOf('kindling');
   // Combustion (Inferno T3) v1.6.3: 5 s cooldown between consumption
   // events. Single-nova path mirrors the supernova path.
@@ -9734,7 +9772,7 @@ function fireTripleNova(px, py, source) {
     const shake = Math.max(3, 10 - i * 1.5);
     pendingNovaTimeouts.push(setTimeout(() => {
       if (state === 'playing' || state === 'devmode') {
-        pushCapped(novaRings, { x: player.x, y: player.y, radius: 0, life, prevR: 0, startTime: Date.now() }, NOVA_RINGS_CAP);
+        pushCapped(novaRings, { x: player.x, y: player.y, radius: 0, life, prevR: 0, startTime: Date.now(), sizeMult: 0.9 }, NOVA_RINGS_CAP);
         screenShake = Math.max(screenShake, shake);
         SFX.pickup('nova');
       }
@@ -9762,7 +9800,7 @@ function fireTripleNova(px, py, source) {
       secondFlameNextFireTime = Date.now() + 3000;
       const id = setTimeout(() => {
         if (state === 'playing' || state === 'devmode') {
-          pushCapped(novaRings, { x: player.x, y: player.y, radius: 0, life: 1, prevR: 0, startTime: Date.now() }, NOVA_RINGS_CAP);
+          pushCapped(novaRings, { x: player.x, y: player.y, radius: 0, life: 1, prevR: 0, startTime: Date.now(), sizeMult: 0.9 }, NOVA_RINGS_CAP);
           screenShake = Math.max(screenShake, 6);
           SFX.pickup('nova');
           treeLog('secondFlame: bonus wave fired (source=' + (source || 'player') + ')');
@@ -9847,8 +9885,9 @@ function computeHyperspeedPeakMult(stacks, peakScale) {
   return basePeak * (peakScale || 1);
 }
 
-// Each pickup adds a 6s timer (or the combo override, in ms) and bumps stacks
-// up to HYPERSPEED_MAX_STACKS. At max we refresh the soonest-expiring timer
+// Each pickup adds a HYPERSPEED_DURATION() timer (or the combo override, in
+// ms) and bumps stacks up to HYPERSPEED_MAX_STACKS. At max we refresh the
+// soonest-expiring timer
 // instead of growing the array. The whoosh restarts so the engine pitch can
 // shift up. hyperSpeedTimers stores absolute end timestamps (Date.now() + ms).
 function activateHyperspeed(durationOverride, peakScale) {
@@ -9876,7 +9915,16 @@ function activateHyperspeed(durationOverride, peakScale) {
     if (igRank > 0) {
       const bonusMs = igRank * 1000;
       for (let i = 0; i < hyperSpeedTimers.length; i++) hyperSpeedTimers[i] += bonusMs;
-      treeLog('infiniteGate: +' + bonusMs + 'ms to all ' + hyperSpeedTimers.length + ' stacks (>=10)');
+      // v1.6.3: per-stack timer cap at 3× base HYPERSPEED_DURATION so each
+      // stack can't be held indefinitely via Slipstream / Infinite Gate.
+      // With Reservoir rank 3 (base 4.5 s) → stack cap = 13.5 s; without
+      // Reservoir → 9 s. Applied after the bonus add so the cap is the
+      // final ceiling.
+      const igCeiling = Date.now() + 3 * HYPERSPEED_DURATION();
+      for (let i = 0; i < hyperSpeedTimers.length; i++) {
+        hyperSpeedTimers[i] = Math.min(hyperSpeedTimers[i], igCeiling);
+      }
+      treeLog('infiniteGate: +' + bonusMs + 'ms to all ' + hyperSpeedTimers.length + ' stacks (>=10, clamped to 3× base)');
     }
   }
   if (hyperSpeedStacks > peakHyperSpeedStacks) peakHyperSpeedStacks = hyperSpeedStacks;
@@ -11311,7 +11359,10 @@ function update() {
     const live = [];
     for (const r of novaRings) {
       r.prevR = r.radius;
-      r.radius = (nowMs2 - (r.startTime || nowMs2)) / 1000 * 420;
+      // v1.6.3: sizeMult lets single-nova + supernova rings grow 10% smaller
+      // while keeping the baseline 420 px/s growth math readable.
+      const sm = r.sizeMult || 1;
+      r.radius = (nowMs2 - (r.startTime || nowMs2)) / 1000 * 420 * sm;
       const rm = r.radiusMult || 1;
       // Skill tree: Solar Flare + Coronal Hold scale the lifecycle thresholds
       // (320 decay-start, 400 alive-cap). A scale of 1.5 makes the ring reach
@@ -11356,15 +11407,33 @@ function update() {
           // supernova cast, each body kill reduces burst cooldown by
           // 0.2/0.3/0.5 s per rank, capped at 6 s per cast. Applied
           // immediately by shifting burstCooldownEnd back.
+          // v1.6.3 rolling cap: additionally bounded to 12 s total reduction
+          // across any 60 s window (history list, prune-then-sum). Blocks
+          // the "3-5 supernovas/min = 30 s burst-CD shaved off" stack.
           if (activeOrb === 'solar' && r.supernova && activeCombos.nova_nova) {
             const chRank = rankOf('coronalHold');
             if (chRank > 0 && coronalHoldReductionMs < CORONAL_HOLD_CAP_MS) {
-              const per = [200, 300, 500][chRank - 1] || 0;
-              const room = CORONAL_HOLD_CAP_MS - coronalHoldReductionMs;
-              const reduce = Math.min(per, room);
-              coronalHoldReductionMs += reduce;
-              if (burstCooldownEnd > Date.now()) {
-                burstCooldownEnd = Math.max(Date.now(), burstCooldownEnd - reduce);
+              const nowCH = Date.now();
+              const cutoff = nowCH - CORONAL_HOLD_ROLLING_WINDOW_MS;
+              while (coronalHoldReductionHistory.length && coronalHoldReductionHistory[0].time < cutoff) {
+                coronalHoldReductionHistory.shift();
+              }
+              let rollingTotal = 0;
+              for (const e of coronalHoldReductionHistory) rollingTotal += e.amount;
+              if (rollingTotal >= CORONAL_HOLD_ROLLING_CAP_MS) {
+                treeLog('coronalHold: rolling cap reached (' + rollingTotal + '/' + CORONAL_HOLD_ROLLING_CAP_MS + ' in window)');
+              } else {
+                const per = [200, 300, 500][chRank - 1] || 0;
+                const castRoom = CORONAL_HOLD_CAP_MS - coronalHoldReductionMs;
+                const rollingRoom = CORONAL_HOLD_ROLLING_CAP_MS - rollingTotal;
+                const reduce = Math.min(per, castRoom, rollingRoom);
+                if (reduce > 0) {
+                  coronalHoldReductionMs += reduce;
+                  coronalHoldReductionHistory.push({ time: nowCH, amount: reduce });
+                  if (burstCooldownEnd > nowCH) {
+                    burstCooldownEnd = Math.max(nowCH, burstCooldownEnd - reduce);
+                  }
+                }
               }
             }
           }
@@ -15387,6 +15456,8 @@ function applyPauseDeltaShift(pauseDelta) {
   if (combustionNextConsumeTime) combustionNextConsumeTime += pauseDelta;
   if (secondFlameNextFireTime) secondFlameNextFireTime += pauseDelta;
   if (lastFirebrandProc) lastFirebrandProc += pauseDelta;
+  if (soulboundNextProcTime) soulboundNextProcTime += pauseDelta;
+  if (slipstreamNextProcTime) slipstreamNextProcTime += pauseDelta;
   if (lastComboEndTime) lastComboEndTime += pauseDelta;
   if (twilightEchoNextFireTime) twilightEchoNextFireTime += pauseDelta;
   if (lastSingleTime) lastSingleTime += pauseDelta;
@@ -15397,6 +15468,7 @@ function applyPauseDeltaShift(pauseDelta) {
   if (aegisNextFireTime) aegisNextFireTime += pauseDelta;
   if (criticalMassCooldownEnd) criticalMassCooldownEnd += pauseDelta;
   if (hyperspeedEchoEndTime) hyperspeedEchoEndTime += pauseDelta;
+  for (const e of coronalHoldReductionHistory) e.time += pauseDelta;
   for (const c of Object.values(activeCombos)) {
     if (c && c.endTime !== undefined) c.endTime += pauseDelta;
   }
