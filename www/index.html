@@ -5850,6 +5850,18 @@ const SALVAGE_SPARKLE_LIFE_MS = 700;
 // float above player for 500 ms on auto-refresh fire.
 let twilightEchoVisuals = [];
 const TWILIGHT_ECHO_VISUAL_LIFE_MS = 500;
+// v1.6.3 visual pass part 2: Phantom Blade blade graphic — elongated
+// purple diamond that spins 180° over 200 ms on each tick kill.
+let phantomBlades = [];
+const PHANTOM_BLADE_LIFE_MS = 350;
+// v1.6.3 visual pass part 2: Beyond afterimage. Single active entry while
+// afterimage window is open; stores spawn time + rank-derived max life so
+// the trail fades out over the correct window duration.
+let beyondAfterimage = null;
+// v1.6.3 visual pass part 2: Afterburn disc visuals are driven directly
+// off the existing afterburnDiscs[] kill-loop entries — no parallel array
+// needed. drawAfterburnDiscs reads launchTime/originX/originY/endpointRadius
+// from those same entries.
 let planetRipples = [];
 // Shield EMP rings — single expanding cyan ring spawned when a shield (or
 // wraith) destroys a planet. First planet it touches gets destroyed, but no
@@ -6686,6 +6698,72 @@ const SFX = (function() {
     return null;
   }
 
+  // v1.6.3 visual pass part 2: new SFX helpers for Phantom Blade slash,
+  // Beyond afterimage echo, and Afterburn disc whoosh. All use the existing
+  // Web Audio pipeline (no external libs) and gate on safeSfx / sfxEnabled.
+  function phantomBladeSlash() {
+    safeSfx(t => {
+      // Brief high-pitched pitch sweep 800 → 400 Hz, 150 ms, sawtooth for
+      // the sharp edge. Volume kept low (0.18) since it procs frequently.
+      chipSweep('sawtooth', 800, 400, t, 0.15, 0.18);
+      // Overlay a quick noise chirp for the "slash" transient.
+      const n = ctx.createBufferSource();
+      n.buffer = noiseBuffer(0.08, x => Math.pow(1 - x, 2));
+      const f = ctx.createBiquadFilter();
+      f.type = 'highpass';
+      f.frequency.value = 2500;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(0.10, t + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
+      n.connect(f); f.connect(g); g.connect(sfxGain);
+      n.start(t); n.stop(t + 0.1);
+      killOnEnd(n, f, g);
+    });
+  }
+  function beyondEcho() {
+    safeSfx(t => {
+      // Soft purple "echo" tone — sine 440 → 660 Hz over 300 ms with a
+      // feedback-delay tail built from two re-triggers 80 ms apart.
+      const voices = [0, 0.08, 0.16];
+      voices.forEach((offset, i) => {
+        const vol = 0.18 * Math.pow(0.55, i);
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.type = 'sine';
+        o.frequency.setValueAtTime(440, t + offset);
+        o.frequency.exponentialRampToValueAtTime(660, t + offset + 0.3);
+        g.gain.setValueAtTime(0, t + offset);
+        g.gain.linearRampToValueAtTime(vol, t + offset + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.001, t + offset + 0.3);
+        o.connect(g); g.connect(sfxGain);
+        o.start(t + offset); o.stop(t + offset + 0.32);
+        killOnEnd(o, g);
+      });
+    });
+  }
+  function afterburnWhoosh() {
+    safeSfx(t => {
+      // Pitched downward sweep 600 → 200 Hz over 400 ms, sawtooth with a
+      // bandpass for the "whoosh" body + a noise layer for air movement.
+      chipSweep('sawtooth', 600, 200, t, 0.4, 0.18);
+      const n = ctx.createBufferSource();
+      n.buffer = noiseBuffer(0.42, x => (1 - x) * (1 - x));
+      const f = ctx.createBiquadFilter();
+      f.type = 'bandpass';
+      f.Q.value = 1.0;
+      f.frequency.setValueAtTime(1500, t);
+      f.frequency.exponentialRampToValueAtTime(500, t + 0.4);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(0.14, t + 0.04);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
+      n.connect(f); f.connect(g); g.connect(sfxGain);
+      n.start(t); n.stop(t + 0.42);
+      killOnEnd(n, f, g);
+    });
+  }
+
   // Deep sustained rumble for the 10-minute apocalypse sequence. Two sine
   // layers at 35hz (fundamental) + 70hz (2nd harmonic @ 0.3x). Caller controls
   // the master amplitude via setVolume so we can smoothly build the dread.
@@ -7331,6 +7409,7 @@ const SFX = (function() {
     comboActivate, comboDestroySound, startHyperspeedWhoosh,
     startApocalypseRumble, playApocalypseImpact, screamShriek, startVoidHum,
     playSfxBuffer,
+    phantomBladeSlash, beyondEcho, afterburnWhoosh,
     playTrack, pauseMusic, resumeMusic,
     crossfadeGameplayPhase, stopAllGameplayTracks,
     clickPrimary, clickSecondary,
@@ -9380,7 +9459,9 @@ function drawTwilightEchoVisuals() {
   if (!twilightEchoVisuals.length) return;
   const now = Date.now();
   twilightEchoVisuals = twilightEchoVisuals.filter(v => now - v.startTime < v.maxLifeMs);
-  if (pixiActive && !(!pixiActive)) return; // gated — keep Canvas fallback rendering
+  // v1.6.3 visual pass part 2: renders to #c (z-index 0) which sits ABOVE
+  // the pixi stage (#pixiCanvas at z-index -1). No pixi port required —
+  // Canvas 2D draws are visible in both render modes.
   for (const v of twilightEchoVisuals) {
     const age = now - v.startTime;
     const t = age / v.maxLifeMs; // 0 → 1
@@ -9404,6 +9485,153 @@ function drawTwilightEchoVisuals() {
     ctx.font = '700 11px "Orbitron", monospace';
     ctx.textAlign = 'center';
     ctx.fillText('ECHO', v.x, v.y - 30 - t * 12);
+    ctx.restore();
+  }
+  ctx.globalAlpha = 1;
+}
+
+// v1.6.3 visual pass part 2: Phantom Blade blade visual. Elongated purple
+// diamond (~20 × 40 px) that spins 180° over 200 ms then fades out.
+function spawnPhantomBlade(x, y) {
+  phantomBlades.push({
+    x, y,
+    startTime: Date.now(),
+    maxLifeMs: PHANTOM_BLADE_LIFE_MS,
+    startAngle: Math.random() * Math.PI * 2,
+  });
+}
+// v1.6.3 visual pass part 2: Beyond afterimage trail. Renders a purple
+// ghost-duplicate orb 40–60 px behind the player's movement direction,
+// fading from 50% → 0% opacity over the rank-specific duration.
+// v1.6.3 visual pass part 2: Gravity Well attract lines. Thin shield-cyan
+// lines from each nearby body toward player during active shield on
+// Bulwark + Gravity Well owned. Opacity scales with inverse distance.
+// Cap at 8 lines per frame to bound draw cost.
+function drawGravityWellLines() {
+  if (activeOrb !== 'asteroid') return;
+  if (activeEffects.shield <= 0) return;
+  const gwRank = rankOf('gravityWell');
+  if (gwRank <= 0) return;
+  if (!bodies || !bodies.length) return;
+  // Cheapest: sort by distance with a quick partial-sort / just iterate
+  // and track the 8 nearest. Use a simple insertion pattern to cap cost.
+  const MAX_LINES = 8;
+  const MAX_DIST = 260; // don't draw lines for distant bodies
+  const nearest = [];
+  for (const b of bodies) {
+    const dx = player.x - b.x, dy = player.y - b.y;
+    const d = Math.hypot(dx, dy);
+    if (d > MAX_DIST) continue;
+    if (nearest.length < MAX_LINES) {
+      nearest.push({ b, d });
+    } else {
+      // Find the farthest in nearest and replace if this is closer.
+      let fi = 0;
+      for (let i = 1; i < nearest.length; i++) if (nearest[i].d > nearest[fi].d) fi = i;
+      if (d < nearest[fi].d) nearest[fi] = { b, d };
+    }
+  }
+  if (!nearest.length) return;
+  ctx.save();
+  ctx.lineCap = 'round';
+  for (const ent of nearest) {
+    const { b, d } = ent;
+    // Opacity: 0 at MAX_DIST, 0.85 at 0. Fade near contact so the line
+    // isn't drawn on top of the actual impact burst.
+    const tNear = Math.max(0, Math.min(1, 1 - d / MAX_DIST));
+    const contactFade = Math.max(0, Math.min(1, (d - 20) / 40)); // 0 at d<=20, 1 at d>=60
+    const alpha = 0.75 * tNear * contactFade;
+    if (alpha < 0.05) continue;
+    ctx.globalAlpha = alpha;
+    ctx.strokeStyle = 'rgba(140,220,255,0.95)';
+    ctx.lineWidth = 1 + 0.8 * tNear;
+    ctx.beginPath();
+    ctx.moveTo(b.x, b.y);
+    ctx.lineTo(player.x, player.y);
+    ctx.stroke();
+  }
+  ctx.restore();
+  ctx.globalAlpha = 1;
+}
+
+function drawBeyondAfterimage() {
+  if (!beyondAfterimage) return;
+  const now = Date.now();
+  const age = now - beyondAfterimage.startTime;
+  if (age >= beyondAfterimage.maxLifeMs) { beyondAfterimage = null; return; }
+  const t = age / beyondAfterimage.maxLifeMs;
+  const alpha = 0.5 * (1 - t);
+  // Direction: opposite of movement. Default to "behind" (downward in
+  // portrait) if velocity is near zero.
+  const vmag = Math.hypot(player.vx || 0, player.vy || 0);
+  let dx = 0, dy = 1;
+  if (vmag > 0.1) { dx = -(player.vx || 0) / vmag; dy = -(player.vy || 0) / vmag; }
+  const offset = 40 + 20 * t; // 40 → 60 px
+  const gx = player.x + dx * offset;
+  const gy = player.y + dy * offset;
+  ctx.save();
+  // Halo first (under the disc).
+  ctx.globalAlpha = alpha * 0.6;
+  const halo = ctx.createRadialGradient(gx, gy, 0, gx, gy, PLAYER_R * 4);
+  halo.addColorStop(0, 'rgba(200,140,255,0.55)');
+  halo.addColorStop(1, 'rgba(200,140,255,0)');
+  ctx.fillStyle = halo;
+  ctx.beginPath(); ctx.arc(gx, gy, PLAYER_R * 4, 0, 6.28); ctx.fill();
+  // Ghost orb.
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = 'rgba(200,140,255,0.9)';
+  ctx.beginPath(); ctx.arc(gx, gy, PLAYER_R, 0, 6.28); ctx.fill();
+  // Outer ring.
+  ctx.globalAlpha = alpha * 0.8;
+  ctx.strokeStyle = 'rgba(220,180,255,0.95)';
+  ctx.lineWidth = 1.4;
+  ctx.beginPath(); ctx.arc(gx, gy, PLAYER_R * 1.6, 0, 6.28); ctx.stroke();
+  ctx.restore();
+  ctx.globalAlpha = 1;
+}
+
+function drawPhantomBlades() {
+  if (!phantomBlades.length) return;
+  const now = Date.now();
+  phantomBlades = phantomBlades.filter(b => now - b.startTime < b.maxLifeMs);
+  for (const b of phantomBlades) {
+    const age = now - b.startTime;
+    const t = age / b.maxLifeMs; // 0 → 1
+    // Spin 180° over the first 200 ms, hold, then fade.
+    const spinT = Math.min(1, age / 200);
+    const angle = b.startAngle + spinT * Math.PI;
+    // Fade: full from 0–150 ms, then linear to 0 by maxLife.
+    const fade = age < 150 ? 1 : Math.max(0, 1 - (age - 150) / (b.maxLifeMs - 150));
+    ctx.save();
+    ctx.translate(b.x, b.y);
+    ctx.rotate(angle);
+    ctx.globalAlpha = 0.9 * fade;
+    // Outer shard — elongated diamond.
+    ctx.fillStyle = 'rgba(170,110,235,0.85)';
+    ctx.beginPath();
+    ctx.moveTo(0, -20);
+    ctx.lineTo(10, 0);
+    ctx.lineTo(0, 20);
+    ctx.lineTo(-10, 0);
+    ctx.closePath();
+    ctx.fill();
+    // Inner bright streak.
+    ctx.globalAlpha = fade;
+    ctx.fillStyle = 'rgba(230,200,255,0.95)';
+    ctx.beginPath();
+    ctx.moveTo(0, -14);
+    ctx.lineTo(4, 0);
+    ctx.lineTo(0, 14);
+    ctx.lineTo(-4, 0);
+    ctx.closePath();
+    ctx.fill();
+    // Glow halo.
+    ctx.globalAlpha = 0.25 * fade;
+    const halo = ctx.createRadialGradient(0, 0, 0, 0, 0, 28);
+    halo.addColorStop(0, 'rgba(200,150,255,0.6)');
+    halo.addColorStop(1, 'rgba(170,110,235,0)');
+    ctx.fillStyle = halo;
+    ctx.beginPath(); ctx.arc(0, 0, 28, 0, 6.28); ctx.fill();
     ctx.restore();
   }
   ctx.globalAlpha = 1;
@@ -10241,21 +10469,113 @@ function clearPendingNovaTimeouts() {
 //   • Kill flashes use nova-color; real disc visual TBD
 const AFTERBURN_DISC_TRAVEL_SPEED = 720; // px/s upward
 const AFTERBURN_DISC_LIFE_MS = 1200;
+// v1.6.3 visual pass part 2: per-rank endpoint widths used by the visual
+// draw. Rank 1 = 120 px end width, rank 2 adds a 180 px disc, rank 3 adds a
+// full-playfield-width disc as the third. Scales feed directly into disc
+// radius growth so each disc's travel matches its intended final size.
+function afterburnDiscEndpointPx(index) {
+  if (index === 0) return 120;
+  if (index === 1) return 180;
+  return (typeof W === 'number' ? W : 400); // rank 3 third disc
+}
 function scheduleAfterburnDiscs(rank) {
   const baseX = player.x;
   const baseY = player.y;
   const now = Date.now();
   for (let i = 0; i < rank; i++) {
+    const launchTime = now + i * 500;
+    const endpoint = afterburnDiscEndpointPx(i);
     afterburnDiscs.push({
-      launchTime: now + i * 500,
+      launchTime,
       originX: baseX,
       originY: baseY,
-      // Later discs are visually bigger (index 0 = smallest, rank-1 = biggest).
+      // discIndex drives per-rank endpoint size for the visual.
+      discIndex: i,
+      endpointRadius: endpoint / 2,
+      // Later discs are visually bigger (preserved for legacy kill loop).
       sizeScale: 1 + i * 0.35,
       consumed: false,
+      soundPlayed: false,
     });
   }
   treeLog('afterburn: scheduled ' + rank + ' disc(s) from ' + Math.round(baseX) + ',' + Math.round(baseY));
+}
+
+// v1.6.3 visual pass part 2: Afterburn disc render. Reads from the existing
+// afterburnDiscs[] array and renders three phases per disc:
+//   1) Pre-launch charge-up (100 ms before launchTime) — hot yellow-white
+//      radial gradient expanding 0 → 60 px at player's origin.
+//   2) Traveling arc — semi-transparent wedge moving upward, expanding to
+//      the rank-specific endpoint radius.
+//   3) Fade-out once the disc reaches the top of the screen or max life.
+// Also fires the whoosh SFX exactly once per disc at launch.
+function drawAfterburnDiscs() {
+  if (!afterburnDiscs.length) return;
+  const now = Date.now();
+  for (const d of afterburnDiscs) {
+    // Charge-up window: 100 ms before launch.
+    const preMs = d.launchTime - now;
+    if (preMs > 0) {
+      if (preMs <= 100) {
+        const cT = 1 - (preMs / 100); // 0 → 1 over the charge window
+        const cR = 60 * cT;
+        ctx.save();
+        ctx.globalAlpha = 0.75 * cT;
+        const glow = ctx.createRadialGradient(d.originX, d.originY, 0, d.originX, d.originY, Math.max(1, cR));
+        glow.addColorStop(0,   'rgba(255,240,180,0.9)');
+        glow.addColorStop(0.6, 'rgba(255,200,100,0.5)');
+        glow.addColorStop(1,   'rgba(255,160,60,0)');
+        ctx.fillStyle = glow;
+        ctx.beginPath(); ctx.arc(d.originX, d.originY, Math.max(1, cR), 0, 6.28); ctx.fill();
+        ctx.restore();
+      }
+      continue;
+    }
+    // Launch SFX, once per disc.
+    if (!d.soundPlayed) {
+      SFX.afterburnWhoosh();
+      d.soundPlayed = true;
+    }
+    // Traveling phase.
+    const age = now - d.launchTime;
+    if (age > AFTERBURN_DISC_LIFE_MS) continue;
+    const tT = age / AFTERBURN_DISC_LIFE_MS; // 0 → 1
+    const travelY = d.originY - (age / 1000) * AFTERBURN_DISC_TRAVEL_SPEED;
+    // Radius grows from 30 → endpointRadius linearly over the life.
+    const r = 30 + (d.endpointRadius - 30) * tT;
+    // Fade: full for first 80%, then linear to 0.
+    const fade = tT < 0.8 ? 1 : Math.max(0, (1 - tT) / 0.2);
+    ctx.save();
+    // Body — semi-transparent wedge that mirrors hyperspeed barrier hue.
+    ctx.globalAlpha = 0.6 * fade;
+    const grd = ctx.createLinearGradient(d.originX, travelY - 14, d.originX, travelY + 18);
+    grd.addColorStop(0,   'rgba(255,220,90,0)');
+    grd.addColorStop(0.5, 'rgba(255,180,40,0.75)');
+    grd.addColorStop(1,   'rgba(255,130,30,0)');
+    ctx.fillStyle = grd;
+    ctx.beginPath();
+    ctx.moveTo(d.originX - r, travelY + 14);
+    ctx.quadraticCurveTo(d.originX, travelY - 22, d.originX + r, travelY + 14);
+    ctx.quadraticCurveTo(d.originX, travelY + 4, d.originX - r, travelY + 14);
+    ctx.fill();
+    // Bright edge line.
+    ctx.globalAlpha = 0.9 * fade;
+    ctx.strokeStyle = 'rgba(255,240,160,' + (0.95 * fade) + ')';
+    ctx.lineWidth = 2.2;
+    ctx.beginPath();
+    ctx.moveTo(d.originX - r, travelY + 14);
+    ctx.quadraticCurveTo(d.originX, travelY - 22, d.originX + r, travelY + 14);
+    ctx.stroke();
+    // Outer halo.
+    ctx.globalAlpha = 0.22 * fade;
+    const halo = ctx.createRadialGradient(d.originX, travelY, 0, d.originX, travelY, r * 1.3);
+    halo.addColorStop(0, 'rgba(255,200,90,0.5)');
+    halo.addColorStop(1, 'rgba(255,160,60,0)');
+    ctx.fillStyle = halo;
+    ctx.fillRect(d.originX - r * 1.3, travelY - r * 0.8, r * 2.6, r * 1.6);
+    ctx.restore();
+  }
+  ctx.globalAlpha = 1;
 }
 
 function spawnEmpRing(x, y, isChain, depth) {
@@ -10520,6 +10840,8 @@ function resetGame() {
   pickupParticles = [];
   salvageSparkles = [];
   twilightEchoVisuals = [];
+  phantomBlades = [];
+  beyondAfterimage = null;
   orbTrailParticles = [];
   planetRipples = [];
   destroyEffects = [];
@@ -11472,6 +11794,9 @@ function update() {
         // v1.6.3 nerf: 0.33/0.66/1s (was 1/1.5/2s).
         const dur = [330, 660, 1000][beRank - 1] || 0;
         beyondEndTime = nowMs + dur;
+        // v1.6.3 visual pass part 2: afterimage indicator + echo SFX.
+        beyondAfterimage = { startTime: nowMs, maxLifeMs: dur };
+        SFX.beyondEcho();
         treeLog('beyond: afterimage ' + dur + 'ms');
       }
     }
@@ -11601,6 +11926,7 @@ function update() {
       const glRank = rankOf('ghostlight');
       const glChance = [0.20, 0.40, 0.60][glRank - 1] || 0;
       const survivors = [];
+      let killedAny = false;
       for (const b of bodies) {
         if (dist(player, b) < reach + b.radius) {
           emitDestroyBurst(b.x, b.y, POWERUP_COLORS.ghost.rgb);
@@ -11612,11 +11938,17 @@ function update() {
             ghostlightBurst(b.x, b.y);
             addDestroyPoints();
           }
+          // v1.6.3 visual pass part 2: spawn a spinning purple blade visual
+          // on top of the destroyed body so Phantom Blade reads as distinct
+          // from Razor Veil ghost kills.
+          spawnPhantomBlade(b.x, b.y);
+          killedAny = true;
           releaseBodyCanvases(b);
           treeLog('phantomBlade: tick kill at ' + Math.round(b.x) + ',' + Math.round(b.y));
         } else survivors.push(b);
       }
       bodies = survivors;
+      if (killedAny) SFX.phantomBladeSlash();
       phantomBladeNextTickTime = Date.now() + (5 - pbRank) * 1000;
     }
   }
@@ -12080,9 +12412,12 @@ function update() {
       if (abNow < d.launchTime) { discSurvivors.push(d); continue; }
       const elapsed = (abNow - d.launchTime) / 1000;
       const travelY = d.originY - elapsed * AFTERBURN_DISC_TRAVEL_SPEED;
-      // Radius grows linearly from 40 → 140 over 1.2 s, scaled by sizeScale.
-      const baseR = 40 + Math.min(100, elapsed * 100);
-      const discR = baseR * d.sizeScale;
+      // v1.6.3 visual pass part 2: kill radius matches the visual —
+      // grows 30 → endpointRadius linearly over AFTERBURN_DISC_LIFE_MS
+      // (1.2 s). endpointRadius is set per-disc in scheduleAfterburnDiscs.
+      const lifeT = Math.min(1, (abNow - d.launchTime) / AFTERBURN_DISC_LIFE_MS);
+      const endR = (typeof d.endpointRadius === 'number') ? d.endpointRadius : 120;
+      const discR = 30 + (endR - 30) * lifeT;
       d.currentY = travelY;
       d.currentRadius = discR;
       // Body kill pass (done once across all discs).
@@ -12091,9 +12426,10 @@ function update() {
           let killed = false;
           for (const d2 of afterburnDiscs) {
             if (abNow < d2.launchTime) continue;
-            const el = (abNow - d2.launchTime) / 1000;
-            const tY = d2.originY - el * AFTERBURN_DISC_TRAVEL_SPEED;
-            const bR = (40 + Math.min(100, el * 100)) * d2.sizeScale;
+            const life2 = Math.min(1, (abNow - d2.launchTime) / AFTERBURN_DISC_LIFE_MS);
+            const tY = d2.originY - ((abNow - d2.launchTime) / 1000) * AFTERBURN_DISC_TRAVEL_SPEED;
+            const end2 = (typeof d2.endpointRadius === 'number') ? d2.endpointRadius : 120;
+            const bR = 30 + (end2 - 30) * life2;
             const dx = b.x - d2.originX, dy = b.y - tY;
             if (dx*dx + dy*dy < (bR + b.radius) * (bR + b.radius)) {
               killed = true;
@@ -14892,6 +15228,33 @@ function drawPlayer(tctx = ctx) {
       -SHIELD_RING_CANVAS_SIZE / 2, -SHIELD_RING_CANVAS_SIZE / 2,
       SHIELD_RING_CANVAS_SIZE, SHIELD_RING_CANVAS_SIZE
     );
+    // v1.6.3 visual pass part 2: Bastion stack escalation at 5/6/7+ hits.
+    // Atlas caps at 4 hits; we layer additional glowing rings + color
+    // saturation on top so Bastion (cap +3/rank) reads visually distinct.
+    const rawHits = shieldHits | 0;
+    if (rawHits >= 5) {
+      const extra = Math.min(rawHits - 4, 3); // 1..3
+      const pulse1Hz = (rawHits >= 7)
+        ? (0.75 + 0.25 * Math.sin(Date.now() * 0.00628)) // ~1Hz brightness pulse
+        : 1;
+      ctx.globalAlpha = shieldVis * 0.7 * pulse1Hz;
+      // Outer glow ring at PLAYER_R * 4.2 (matches atlas outer edge).
+      const ringR = PLAYER_R * 4.2 + 2;
+      ctx.strokeStyle = rawHits >= 6
+        ? 'rgba(200,250,255,0.95)' // saturated blue-white at 6+
+        : 'rgba(140,230,255,0.85)';
+      ctx.lineWidth = 2 + extra * 0.6;
+      ctx.shadowColor = rawHits >= 6 ? 'rgba(180,240,255,1)' : 'rgba(140,230,255,0.8)';
+      ctx.shadowBlur = 10 + extra * 3;
+      ctx.beginPath(); ctx.arc(0, 0, ringR, 0, 6.28); ctx.stroke();
+      // Second outer wisp for rank-6/7, thinner.
+      if (rawHits >= 6) {
+        ctx.globalAlpha = shieldVis * 0.45 * pulse1Hz;
+        ctx.lineWidth = 1.2;
+        ctx.beginPath(); ctx.arc(0, 0, ringR + 5, 0, 6.28); ctx.stroke();
+      }
+      ctx.shadowBlur = 0;
+    }
     ctx.globalAlpha = 1;
   }
   // PHANTOM BLAST: red/orange damage aura around player
@@ -15198,7 +15561,8 @@ function drawPlanetRipples() {
 function drawBurnZones() {
   if (!burnZones.length) return;
   const now = Date.now();
-  if (pixiActive && !(!pixiActive)) return;
+  // Renders to #c (z-index 0) above the pixi stage. Canvas 2D only — no
+  // pixi port needed because the overlay canvas already layers above pixi.
   for (const z of burnZones) {
     const age = now - (z.startTime || now);
     if (age < 0 || age > BURN_ZONE_LIFETIME_MS) continue;
@@ -15323,7 +15687,8 @@ function drawSalvageSparkles() {
     s.vy *= 0.97; // gentle deceleration
   }
   salvageSparkles = salvageSparkles.filter(s => s.life > 0.05);
-  if (pixiActive) return; // pixi path draws from array directly if wired
+  // Renders to #c (z-index 0) above the pixi stage — Canvas 2D draws are
+  // visible in both render modes without a dedicated Pixi.Graphics port.
   for (const s of salvageSparkles) {
     const alpha = s.life * 0.9;
     const r = s.size * s.life;
@@ -15701,22 +16066,40 @@ function drawHyperStackText(tctx = ctx) {
   let blinkPeriod = 20;
   if (hyperSpeedStacks === 3) blinkPeriod = 15;
   else if (hyperSpeedStacks === 4) blinkPeriod = 10;
+  else if (hyperSpeedStacks >= 7) blinkPeriod = 8;
   // On the visible half of the blink cycle, fully draw; otherwise dim.
   const visible = Math.floor(frame / blinkPeriod) % 2 === 0;
   const alpha = visible ? 1 : 0.25;
 
-  const label = hyperSpeedStacks + '× HYPERSPEED';
+  // v1.6.3 visual pass part 2: stack-count escalation.
+  //   7-9 stacks (Overdrive 3-4, no SUPERLUMINAL): numeric counter,
+  //     brighter color + thicker outline.
+  //   10 stacks (SUPERLUMINAL max on Warp): replace numeric counter with
+  //     "WARP CORE" label + pulsing glow animation.
+  const hasSuperluminal = activeOrb === 'nebula' && hasCapstone('superluminal');
+  const coreLabel = hasSuperluminal && hyperSpeedStacks >= 10;
+  const emphasized = hyperSpeedStacks >= 7;
+  const label = coreLabel ? 'WARP CORE' : (hyperSpeedStacks + '× HYPERSPEED');
   ctx.save();
-  ctx.font = '700 13px "Space Mono", monospace';
+  ctx.font = coreLabel
+    ? '700 15px "Space Mono", monospace'
+    : '700 13px "Space Mono", monospace';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
   ctx.globalAlpha = alpha;
-  // Glow
+  // Glow — deeper on emphasized / core states.
+  const basePulse = 1 + 0.15 * Math.sin(frame * 0.25);
   ctx.shadowColor = `rgba(${tint.r},${tint.g},${tint.b},0.95)`;
-  ctx.shadowBlur = 12;
+  ctx.shadowBlur = coreLabel ? 22 * basePulse : (emphasized ? 18 : 12);
   ctx.fillStyle = tint.white
     ? `rgba(255,${230 + Math.round(Math.sin(frame * 0.4) * 25)},${230 + Math.round(Math.sin(frame * 0.4) * 25)},1)`
     : `rgba(${tint.r},${tint.g},${tint.b},1)`;
+  if (emphasized && !coreLabel) {
+    // Thicker outline via stroke-then-fill.
+    ctx.strokeStyle = `rgba(${tint.edgeR},${tint.edgeG},${tint.edgeB},0.9)`;
+    ctx.lineWidth = 2.6;
+    ctx.strokeText(label, W / 2, 50 + safeAreaTop);
+  }
   ctx.fillText(label, W / 2, 50 + safeAreaTop);
   ctx.restore();
   ctx.globalAlpha = 1;
@@ -15865,6 +16248,7 @@ function render() {
 
   if (state==='playing'||state==='dead'||state==='paused'||state==='apocalypse'||state==='devmode') {
     drawBurnZones();
+    drawGravityWellLines();
     drawPowerups();
     drawNovaRings();
     drawEmpRings();
@@ -15880,6 +16264,9 @@ function render() {
     drawPickupParticles();
     drawSalvageSparkles();
     drawTwilightEchoVisuals();
+    drawPhantomBlades();
+    drawBeyondAfterimage();
+    drawAfterburnDiscs();
     drawDestroyEffects();
     drawDeathShards();
     drawDeathParticles();
@@ -16310,6 +16697,8 @@ function goToMainMenu() {
   pickupParticles = [];
   salvageSparkles = [];
   twilightEchoVisuals = [];
+  phantomBlades = [];
+  beyondAfterimage = null;
   orbTrailParticles = [];
   planetRipples = [];
   destroyEffects = [];
