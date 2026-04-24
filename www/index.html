@@ -234,6 +234,7 @@
   }
   .hs-diff.HARD { color: rgba(255,180,80,0.7); }
   .hs-diff.EXTREME { color: rgba(255,90,120,0.85); }
+  .hs-diff.IMPOSSIBLE { color: rgba(235,130,255,0.9); }
 
   #difficultySelect {
     display: flex;
@@ -344,6 +345,13 @@
     margin-top: 10px;
     min-height: 34px;
   }
+  .orb-btn-row {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+  .orb-btn-row .orb-btn { padding: 9px 14px; font-size: 9px; letter-spacing: 2px; }
   .orb-btn {
     background: transparent;
     border: 1px solid rgba(100,200,255,0.5);
@@ -445,6 +453,16 @@
     color: rgba(255,120,150,1);
     background: rgba(255,90,120,0.1);
     box-shadow: 0 0 16px rgba(255,90,120,0.3);
+  }
+  .diff-btn[data-diff="IMPOSSIBLE"] {
+    color: rgba(200,80,255,0.8);
+    border-color: rgba(200,80,255,0.4);
+  }
+  .diff-btn.selected[data-diff="IMPOSSIBLE"] {
+    border-color: rgba(220,100,255,0.95);
+    color: rgba(235,130,255,1);
+    background: rgba(200,80,255,0.12);
+    box-shadow: 0 0 18px rgba(220,100,255,0.35);
   }
 
   #overlay {
@@ -943,6 +961,7 @@
   .rs-diff.NORMAL { color: rgba(100,200,255,0.8); }
   .rs-diff.HARD { color: rgba(255,180,80,0.8); }
   .rs-diff.EXTREME { color: rgba(255,90,120,0.85); }
+  .rs-diff.IMPOSSIBLE { color: rgba(235,130,255,0.9); }
 
   .lb-diff-tabs {
     display: none;
@@ -980,6 +999,11 @@
     color: rgba(255,120,150,0.9);
     border-color: rgba(255,90,120,0.4);
     background: rgba(255,90,120,0.06);
+  }
+  .lb-diff-tab.active[data-diff="IMPOSSIBLE"] {
+    color: rgba(235,130,255,0.9);
+    border-color: rgba(220,100,255,0.4);
+    background: rgba(200,80,255,0.07);
   }
 
   #deathScore {
@@ -1853,6 +1877,7 @@
   }
   .gs-diff.HARD { color: rgba(255,180,80,0.7); }
   .gs-diff.EXTREME { color: rgba(255,90,120,0.85); }
+  .gs-diff.IMPOSSIBLE { color: rgba(235,130,255,0.9); }
   .gs-status {
     font-family: 'Space Mono', monospace;
     font-size: 10px;
@@ -2242,6 +2267,7 @@
       <button class="diff-btn selected" data-diff="NORMAL">NORMAL</button>
       <button class="diff-btn" data-diff="HARD">HARD</button>
       <button class="diff-btn" data-diff="EXTREME">EXTREME</button>
+      <button class="diff-btn" data-diff="IMPOSSIBLE" id="diffBtnImpossible" style="display:none">IMPOSSIBLE</button>
     </div>
     <div id="orbCrystalBalance">💎 0</div>
     <div id="orbBrowser">
@@ -2267,6 +2293,7 @@
       <button class="lb-diff-tab" data-diff="NORMAL">NORMAL</button>
       <button class="lb-diff-tab" data-diff="HARD">HARD</button>
       <button class="lb-diff-tab" data-diff="EXTREME">EXTREME</button>
+      <button class="lb-diff-tab" data-diff="IMPOSSIBLE" id="lbDiffTabImpossible" style="display:none">IMPOSSIBLE</button>
     </div>
     <div id="highscores"></div>
     <div id="globalScores"></div>
@@ -2280,7 +2307,6 @@
     <button id="startBtn">ENTER THE VOID</button>
     <button id="guideBtn">GUIDE</button>
     <button id="leaderboardBtn">LEADERBOARD</button>
-    <button id="skillTreesBtn">SKILL TREES</button>
     <button id="leaderboardReturnBtn">RETURN</button>
     <div id="deathActions">
       <button id="shopBtn">SHOP</button>
@@ -2440,7 +2466,11 @@
       <div class="tree-title" id="treeTitle">SKILL TREES</div>
       <div class="tree-crystals" id="treeCrystals">💎 0</div>
     </div>
-    <div class="tree-tabs" id="treeTabs"></div>
+    <!-- v1.6.3: tree tab picker removed. Overlay opens to a single orb's
+         tree (the one clicked in the orb browser). #treeTabs kept as empty
+         container so existing JS references don't throw; it's never
+         populated now. -->
+    <div class="tree-tabs" id="treeTabs" style="display:none"></div>
     <div class="tree-paths" id="treePaths"></div>
     <div class="tree-capstones" id="treeCapstones"></div>
     <div class="tree-footer">
@@ -3980,9 +4010,13 @@ const FORCE = 0.18;
 
 // --- Difficulty ---
 const DIFFICULTIES = {
-  NORMAL:  { startSpeed: 1.2, maxSpeed: 2.5, speedCapScore: 180, maxBodies: 3, maxBodiesCap: 5, bodySpacing: 180, powerupFrequency: 2.0,  pairSpawnChance: 0.16, crystalMult: 0.75 },
-  HARD:    { startSpeed: 1.6, maxSpeed: 3.5, speedCapScore: 180, maxBodies: 4, maxBodiesCap: 6, bodySpacing: 180, powerupFrequency: 1.7,  pairSpawnChance: 0.13, crystalMult: 1.0 },
-  EXTREME: { startSpeed: 2.0, maxSpeed: 4.0, speedCapScore: 180, maxBodies: 4, maxBodiesCap: 7, bodySpacing: 180, powerupFrequency: 1.44, pairSpawnChance: 0.10, crystalMult: 1.25 },
+  NORMAL:     { startSpeed: 1.2, maxSpeed: 2.5, speedCapScore: 180, maxBodies: 3, maxBodiesCap: 5, bodySpacing: 180, powerupFrequency: 2.0,  pairSpawnChance: 0.16, crystalMult: 0.75 },
+  HARD:       { startSpeed: 1.6, maxSpeed: 3.5, speedCapScore: 180, maxBodies: 4, maxBodiesCap: 6, bodySpacing: 180, powerupFrequency: 1.7,  pairSpawnChance: 0.13, crystalMult: 1.0 },
+  EXTREME:    { startSpeed: 2.0, maxSpeed: 4.0, speedCapScore: 180, maxBodies: 4, maxBodiesCap: 7, bodySpacing: 180, powerupFrequency: 1.44, pairSpawnChance: 0.10, crystalMult: 1.25 },
+  // v1.6.3 IMPOSSIBLE: Extreme's numbers but cap hit in 60s instead of
+  // 180s, then +10%/min post-cap speed growth and +1 body every 2 min
+  // post-cap. Gated by beatDifficulty.EXTREME in the UI.
+  IMPOSSIBLE: { startSpeed: 2.0, maxSpeed: 4.0, speedCapScore: 60,  maxBodies: 4, maxBodiesCap: 7, bodySpacing: 180, powerupFrequency: 1.44, pairSpawnChance: 0.10, crystalMult: 1.5 },
 };
 let difficulty = 'NORMAL';
 if (typeof Sentry !== 'undefined') Sentry.setTag('difficulty', difficulty);
@@ -4160,13 +4194,13 @@ const TREE_DEFS = {
         nodes: [
           { key: 'razorVeil',    name: 'Razor Veil',    tier: 1, max: 3, desc: 'Destroy-on-contact during ghost without needing a shield.', effect: r => `Every ${[3,2,1][r-1]||0}s` },
           { key: 'ghostlight',   name: 'Ghostlight',    tier: 2, max: 3, desc: 'Ghost destroys spawn a 90px EMP-lite burst (no chain).', effect: r => `${[20,40,60][r-1]||0}% trigger` },
-          { key: 'phantomBlade', name: 'Phantom Blade', tier: 3, max: 3, desc: 'During ghost or Eternal Phantom, periodically spawn blades that destroy bodies within 80px.', effect: r => `Every ${[6,5,4][r-1]||0}s` },
+          { key: 'phantomBlade', name: 'Phantom Blade', tier: 3, max: 3, desc: 'During ghost or Eternal Phantom, periodically spawn blades that destroy bodies within 80px.', effect: r => `Every ${[4,3,2][r-1]||0}s` },
         ],
       },
       veil: {
         name: 'VEIL',
         nodes: [
-          { key: 'shadowRegen', name: 'Shadow Regen', tier: 1, max: 3, desc: 'Ghost pickups stack additively rather than refreshing. Cap: 2× base duration.', effect: r => `${[5,10,15][r-1]||0}% additive` },
+          { key: 'shadowRegen', name: 'Shadow Regen', tier: 1, max: 3, desc: 'Ghost pickups stack additively rather than refreshing. Cap: 2× base duration.', effect: r => `${[10,15,20][r-1]||0}% additive` },
           { key: 'soulbound',   name: 'Soulbound',    tier: 2, max: 5, desc: 'On body destroyed, chance to extend ghost by +1s. 5s cooldown. Cap: 2× base ghost duration.', effect: r => `${[2,4,6,8,10][r-1]||0}% per destroy` },
           { key: 'beyond',      name: 'Beyond',       tier: 3, max: 3, desc: 'When ghost ends, remain invulnerable for an afterimage window.', effect: r => `${[0.33,0.66,1][r-1]||0}s afterimage` },
         ],
@@ -4174,7 +4208,7 @@ const TREE_DEFS = {
     },
     capstones: [
       { key: 'shroud',     name: 'SHROUD',      desc: 'Every 30s, the next single pickup fires as a ghost pair combo.' },
-      { key: 'nightShade', name: 'NIGHT SHADE', desc: 'Every 60s of gameplay, auto-activate a 2s ghost.' },
+      { key: 'nightShade', name: 'NIGHT SHADE', desc: 'Every 30s of gameplay, auto-activate a 3s ghost.' },
     ],
   },
   solar: {
@@ -4228,20 +4262,20 @@ const TREE_DEFS = {
         nodes: [
           { key: 'reservoir',    name: 'Reservoir',    tier: 1, max: 3, desc: 'Hyperspeed duration +0.5s per rank (3s baseline, shared timer).', effect: r => `+${0.5*r}s total (${3 + 0.5*r}s)` },
           { key: 'overdrive',    name: 'Overdrive',    tier: 2, max: 4, desc: 'Max hyperspeed stacks +1 per rank (Warp baseline 4).', effect: r => `Cap ${4+r} stacks` },
-          { key: 'infiniteGate', name: 'Infinite Gate', tier: 3, max: 3, desc: 'Natural hyperspeed pickups at 7+ stacks extend the shared timer. 10s cooldown.', effect: r => `+${[0.5,1,1.5][r-1]||0}s per pickup at 7+` },
+          { key: 'infiniteGate', name: 'Infinite Gate', tier: 3, max: 3, desc: 'At 7+ hyperspeed stacks, natural pickup extends shared timer +0.5/1/1.5s at ranks 1/2/3. 15s cooldown between triggers.', effect: r => `+${[0.5,1,1.5][r-1]||0}s at 7+ (15s CD)` },
         ],
       },
       drift: {
         name: 'DRIFT',
         nodes: [
           { key: 'smoothEntry',  name: 'Smooth Entry',  tier: 1, max: 3, desc: 'Hyperspeed forward barrier extends significantly in width — rank 3 spans the full playfield.', effect: r => `${[1.5,2.5,'full'][r-1]||0}${r===3?' screen':'x width'}` },
-          { key: 'slipstream',   name: 'Slipstream',    tier: 2, max: 5, desc: 'On body destroyed, chance to grant a hyperspeed stack. (10s cooldown)', effect: r => `${[1,2,3,4,6][r-1]||0}% per destroy` },
+          { key: 'slipstream',   name: 'Slipstream',    tier: 2, max: 5, desc: 'On body destroyed, chance to grant a hyperspeed stack. (15s cooldown)', effect: r => `${[1,2,3,4,6][r-1]||0}% per destroy` },
           { key: 'warpHarmonic', name: 'Warp Harmonic', tier: 3, max: 3, desc: 'Hyperspeed pair combos grant bonus free stacks. 15s cooldown.', effect: r => `+${r} free stacks` },
         ],
       },
     },
     capstones: [
-      { key: 'superluminal', name: 'SUPERLUMINAL',  desc: 'Raises the hyperspeed stack cap by +10.' },
+      { key: 'superluminal', name: 'SUPERLUMINAL',  desc: 'Raises max hyperspeed stack cap to 10.' },
       { key: 'eventHorizon', name: 'LINGERING HORIZON', desc: 'After hyperspeed fully ends, the forward barrier lingers for 2s (player is NOT invulnerable during the echo).' },
     ],
   },
@@ -4304,8 +4338,24 @@ let orbTrees = {
 };
 
 // Difficulty-beat flags. Set to true when the player dies from the apocalypse
-// sequence on that difficulty (i.e., reached the 10-min mark).
+// sequence on that difficulty (i.e., reached the 10-min mark). NORMAL and
+// HARD used to gate skill tree access; v1.6.3 moves tree unlock to a direct
+// per-orb crystal purchase (see treesUnlocked below). EXTREME is retained
+// because it gates the IMPOSSIBLE difficulty.
 let beatDifficulty = { NORMAL: false, HARD: false, EXTREME: false };
+
+// v1.6.3: per-orb skill-tree unlock, paid with crystals. Independent of
+// orb-unlock (player buys the orb first, then pays again to access its
+// skill tree). Persists to localStorage 'drift_trees_unlocked' and to the
+// PGS snapshot with OR-merge across devices.
+let treesUnlocked = { cyan: false, cosmic: false, solar: false, nebula: false, asteroid: false };
+const TREE_UNLOCK_COSTS = {
+  cyan:     10000,
+  cosmic:   20000,
+  solar:    30000,
+  nebula:   40000,
+  asteroid: 50000,
+};
 
 // Cached ranks for the currently-equipped orb — refreshed in refreshActiveTreeCache().
 // Gameplay hot paths read from these globals instead of walking the orbTrees
@@ -4364,6 +4414,36 @@ function loadTreeState() {
     beatDifficulty.HARD = h === '1';
     beatDifficulty.EXTREME = e === '1';
   } catch {}
+  // v1.6.3: load per-orb skill-tree unlock state. First-run migration from
+  // pre-v1.6.3 difficulty-gate unlocks: if beatDifficulty.NORMAL was true,
+  // auto-unlock Drifter + Phantom trees (matching the old gate). HARD adds
+  // Inferno + Warp. EXTREME adds Bulwark. One-shot migration on first load
+  // after the upgrade; `drift_trees_unlocked` is present only after the
+  // first save with the new key, so the migration only fires once.
+  try {
+    const raw = localStorage.getItem('drift_trees_unlocked');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      for (const k of Object.keys(treesUnlocked)) {
+        treesUnlocked[k] = !!(parsed && parsed[k]);
+      }
+    } else {
+      // Migration path (first boot after v1.6.3 feature pass).
+      if (beatDifficulty.NORMAL || beatDifficulty.HARD || beatDifficulty.EXTREME) {
+        treesUnlocked.cyan = true;
+        treesUnlocked.cosmic = true;
+      }
+      if (beatDifficulty.HARD || beatDifficulty.EXTREME) {
+        treesUnlocked.solar = true;
+        treesUnlocked.nebula = true;
+      }
+      if (beatDifficulty.EXTREME) {
+        treesUnlocked.asteroid = true;
+      }
+      // Persist the migrated state so next boot reads it directly.
+      saveTreesUnlocked();
+    }
+  } catch {}
   refreshActiveTreeCache();
 }
 function saveTreeState() {
@@ -4379,15 +4459,34 @@ function saveBeatFlags() {
   pgsScheduleWrite();
 }
 
-// Unlock gating: which orbs' trees are available for investment right now.
+// v1.6.3: tree unlock gate reads from treesUnlocked[], which is set by
+// per-orb crystal purchase (see FIX C3 UI flow). The old difficulty-beat
+// gate is replaced by a direct paywall.
 function treeUnlocked(orbKey) {
-  if (orbKey === 'cyan' || orbKey === 'cosmic') return beatDifficulty.NORMAL || beatDifficulty.HARD || beatDifficulty.EXTREME;
-  if (orbKey === 'solar' || orbKey === 'nebula') return beatDifficulty.HARD || beatDifficulty.EXTREME;
-  if (orbKey === 'asteroid') return beatDifficulty.EXTREME;
-  return false;
+  return !!(treesUnlocked && treesUnlocked[orbKey]);
 }
 function anyTreeUnlocked() {
-  return beatDifficulty.NORMAL || beatDifficulty.HARD || beatDifficulty.EXTREME;
+  for (const k of Object.keys(treesUnlocked)) {
+    if (treesUnlocked[k]) return true;
+  }
+  return false;
+}
+function saveTreesUnlocked() {
+  try { localStorage.setItem('drift_trees_unlocked', JSON.stringify(treesUnlocked)); } catch {}
+  pgsScheduleWrite();
+}
+// Attempt to unlock the given orb's skill tree. Returns true if the
+// purchase succeeded (enough crystals, not already unlocked).
+function purchaseTreeUnlock(orbKey) {
+  if (!TREE_UNLOCK_COSTS[orbKey]) return false;
+  if (treesUnlocked[orbKey]) return false;
+  const cost = TREE_UNLOCK_COSTS[orbKey];
+  if (totalCrystals < cost) return false;
+  totalCrystals = Math.max(0, totalCrystals - cost);
+  treesUnlocked[orbKey] = true;
+  saveCrystals();
+  saveTreesUnlocked();
+  return true;
 }
 
 function nodeCost(tier, nextRank) {
@@ -4763,8 +4862,8 @@ function slipstreamProc() {
   activateHyperspeed(undefined, undefined, 'slipstream');
   if (activeOrb === 'nebula') activateHyperspeed(undefined, undefined, 'slipstream');
   spawnDestroyProcFlash('hyperspeed');
-  slipstreamNextProcTime = now + 10000;
-  treeLog('slipstream: +' + (activeOrb === 'nebula' ? 2 : 1) + ' stack (10s CD)');
+  slipstreamNextProcTime = now + 15000;
+  treeLog('slipstream: +' + (activeOrb === 'nebula' ? 2 : 1) + ' stack (15s CD)');
 }
 
 function bastion2Proc() {
@@ -4805,18 +4904,17 @@ function tickCapstoneTimers() {
       treeLog('shroud: flag armed');
     }
   }
-  // NIGHT SHADE (Phantom): auto-ghost 2 s every 60 s. Skip if ghost already
-  // active; still reschedule so we don't spam-check.
+  // NIGHT SHADE (Phantom) v1.6.3 buff: auto-ghost 3 s every 30 s.
   if (activeOrb === 'cosmic' && hasCapstone('nightShade')) {
     if (now >= nightShadeNextFireTime) {
       if (activeEffects.ghost <= 0) {
-        ghostEndTime = now + 2000;
-        activeEffects.ghost = 2000;
-        treeLog('nightShade: auto-ghost 2s');
+        ghostEndTime = now + 3000;
+        activeEffects.ghost = 3000;
+        treeLog('nightShade: auto-ghost 3s');
       } else {
         treeLog('nightShade: ghost already active, skipping');
       }
-      nightShadeNextFireTime = now + 60000;
+      nightShadeNextFireTime = now + 30000;
     }
   }
   // SUN FORGE (Inferno): auto-supernova every 15 s. Bypasses nova-overload
@@ -4998,7 +5096,7 @@ function resetTreeNodeState() {
   const now = Date.now();
   shroudFlagSet = false;
   shroudLastFireTime = now;
-  nightShadeNextFireTime = now + 60000;
+  nightShadeNextFireTime = now + 30000;
   sunForgeNextFireTime   = now + 45000;
   aegisNextFireTime      = now + 45000;
   for (const id of butterflyPending) clearTimeout(id);
@@ -5242,6 +5340,13 @@ const PGS = (() => {
         HARD:    !!beatDifficulty.HARD,
         EXTREME: !!beatDifficulty.EXTREME,
       },
+      treesUnlocked: {
+        cyan:     !!treesUnlocked.cyan,
+        cosmic:   !!treesUnlocked.cosmic,
+        solar:    !!treesUnlocked.solar,
+        nebula:   !!treesUnlocked.nebula,
+        asteroid: !!treesUnlocked.asteroid,
+      },
     };
   }
 
@@ -5263,6 +5368,7 @@ const PGS = (() => {
         scores: mergeScores(local.scores, remote.scores),
         orbTrees: mergeTrees(local.orbTrees, remote.orbTrees),
         beatDifficulty: mergeBeat(local.beatDifficulty, remote.beatDifficulty),
+        treesUnlocked: mergeTreesUnlocked(local.treesUnlocked, remote.treesUnlocked),
       };
     }
     return {
@@ -5273,6 +5379,7 @@ const PGS = (() => {
       scores: mergeScores(local.scores, remote.scores),
       orbTrees: mergeTrees(local.orbTrees, remote.orbTrees),
       beatDifficulty: mergeBeat(local.beatDifficulty, remote.beatDifficulty),
+      treesUnlocked: mergeTreesUnlocked(local.treesUnlocked, remote.treesUnlocked),
     };
   }
   // Tree state merge: per-orb, max-per-rank across node arrays; union of
@@ -5306,6 +5413,17 @@ const PGS = (() => {
       NORMAL:  !!(a.NORMAL  || b.NORMAL),
       HARD:    !!(a.HARD    || b.HARD),
       EXTREME: !!(a.EXTREME || b.EXTREME),
+    };
+  }
+  // v1.6.3: per-orb tree-unlock merge — OR across devices.
+  function mergeTreesUnlocked(a, b) {
+    a = a || {}; b = b || {};
+    return {
+      cyan:     !!(a.cyan     || b.cyan),
+      cosmic:   !!(a.cosmic   || b.cosmic),
+      solar:    !!(a.solar    || b.solar),
+      nebula:   !!(a.nebula   || b.nebula),
+      asteroid: !!(a.asteroid || b.asteroid),
     };
   }
   function mergeOrbs(a, b) {
@@ -5364,6 +5482,12 @@ const PGS = (() => {
         localStorage.setItem('drift_beat_hard',    beatDifficulty.HARD    ? '1' : '0');
         localStorage.setItem('drift_beat_extreme', beatDifficulty.EXTREME ? '1' : '0');
       } catch {}
+    }
+    if (payload.treesUnlocked && typeof payload.treesUnlocked === 'object') {
+      for (const k of Object.keys(treesUnlocked)) {
+        treesUnlocked[k] = !!payload.treesUnlocked[k];
+      }
+      try { localStorage.setItem('drift_trees_unlocked', JSON.stringify(treesUnlocked)); } catch {}
     }
     // activeOrb intentionally NOT applied from remote.
   }
@@ -5695,17 +5819,16 @@ let hyperspeedWhooshNodes = null; // audio nodes for sustained whoosh
 // peak speed multiplier; the shared timer controls total duration, and all
 // stacks clear simultaneously on expiry.
 // v1.6.3 caps: base 2 default / 4 Warp. Overdrive +1/rank (max +4).
-// SUPERLUMINAL +10 → Warp absolute max = 4 + 4 + 10 = 18.
+// SUPERLUMINAL raises the cap TO 10 (override, not additive).
 const HYPERSPEED_MAX_STACKS_DEFAULT = 2;  // v1.6.3 nerf, was 4
 const HYPERSPEED_MAX_STACKS_NEBULA = 4;   // v1.6.3 nerf, was 6
 function HYPERSPEED_MAX_STACKS() {
+  // SUPERLUMINAL (Warp capstone) v1.6.3: absolute cap of 10 stacks —
+  // overrides Overdrive/base. Not additive.
+  if (activeOrb === 'nebula' && hasCapstone('superluminal')) return 10;
   let base = activeOrb === 'nebula' ? HYPERSPEED_MAX_STACKS_NEBULA : HYPERSPEED_MAX_STACKS_DEFAULT;
   // Skill tree: Overdrive (+1/rank), Warp-only.
   if (activeOrb === 'nebula') base += rankOf('overdrive');
-  // SUPERLUMINAL (Warp capstone) v1.6.3: raises the cap by +10 over the
-  // Overdrive-boosted base (was: removes cap entirely). v1.6.3: Nebula base
-  // 4 + Overdrive rank 4 (+4) + SUPERLUMINAL (+10) = 18 absolute max.
-  if (activeOrb === 'nebula' && hasCapstone('superluminal')) base += 10;
   return base;
 }
 function HYPERSPEED_DURATION() {
@@ -7149,13 +7272,16 @@ function normalScrollSpeed() {
   // Ramp is wall-clock based — frame count drifts under hitches, but players
   // should feel a consistent "it's been 5 minutes, top speed" regardless of
   // framerate. elapsedRunSeconds() returns 0 before resetGame is called.
-  const t = Math.min(elapsedRunSeconds() / d.speedCapScore, 1);
-  const baseSpeed = d.startSpeed + (d.maxSpeed - d.startSpeed) * t;
-  // v1.6.3: post-cap speed growth removed. Speed locks at d.maxSpeed after
-  // d.speedCapScore seconds (3:00 on all difficulties). The v1.7.4
-  // +0.10/min post-cap bonus that used to apply here is retired — late-game
-  // pressure now comes from body-count ramp only.
-  return baseSpeed;
+  const elapsed = elapsedRunSeconds();
+  const t = Math.min(elapsed / d.speedCapScore, 1);
+  let speed = d.startSpeed + (d.maxSpeed - d.startSpeed) * t;
+  // v1.6.3: IMPOSSIBLE is the only difficulty with post-cap growth.
+  // +10 % per minute of maxSpeed once the ramp has finished (1:00).
+  if (difficulty === 'IMPOSSIBLE' && elapsed > d.speedCapScore) {
+    const postMin = (elapsed - d.speedCapScore) / 60;
+    speed += d.maxSpeed * 0.10 * postMin;
+  }
+  return speed;
 }
 
 function scrollSpeed() {
@@ -8868,7 +8994,17 @@ function effectiveMaxBodies() {
   // 60s). Caps are unchanged. Gives the player a full minute of steady
   // density after the main speed cap hits before the board starts to thicken.
   const ramped = d.maxBodies + Math.max(0, Math.floor((elapsedProgressionSeconds() - 180) / 90));
-  return Math.min(ramped, d.maxBodiesCap);
+  let capped = Math.min(ramped, d.maxBodiesCap);
+  // v1.6.3 IMPOSSIBLE post-cap body growth: +1 every 120 s after 1:00.
+  // Bypasses maxBodiesCap — density keeps climbing alongside speed.
+  if (difficulty === 'IMPOSSIBLE') {
+    const elapsed = elapsedProgressionSeconds();
+    if (elapsed > d.speedCapScore) {
+      const extra = Math.floor((elapsed - d.speedCapScore) / 120);
+      capped = Math.max(capped, Math.min(d.maxBodiesCap + extra, d.maxBodies + 10));
+    }
+  }
+  return capped;
 }
 
 // Spawn spacing scales inversely with effectiveMaxBodies so the screen is
@@ -9771,7 +9907,7 @@ function rawActivate(type, x, y) {
     const add = GHOST_DURATION();
     const srRank = (activeOrb === 'cosmic') ? rankOf('shadowRegen') : 0;
     if (srRank > 0 && ghostEndTime > now) {
-      const frac = [0.05, 0.10, 0.15][srRank - 1] || 0;
+      const frac = [0.10, 0.15, 0.20][srRank - 1] || 0;
       const addMs = Math.floor(add * frac);
       // v1.6.3: apply the shared ghost duration cap so stacks can't exceed
       // 2× base duration (also prevents Shadow Regen + Soulbound/Eternal
@@ -9981,8 +10117,8 @@ function activateHyperspeed(durationOverride, peakScale, source) {
     if (igRank > 0 && now >= infiniteGateNextFireTime) {
       const bonusMs = [500, 1000, 1500][igRank - 1] || 0;
       hyperspeedEndTime += bonusMs;
-      infiniteGateNextFireTime = now + 10000;
-      treeLog('infiniteGate: +' + bonusMs + 'ms shared timer (stacks ' + hyperSpeedStacks + ', 10s CD)');
+      infiniteGateNextFireTime = now + 15000;
+      treeLog('infiniteGate: +' + bonusMs + 'ms shared timer (stacks ' + hyperSpeedStacks + ', 15s CD)');
     }
   }
   if (hyperSpeedStacks > peakHyperSpeedStacks) peakHyperSpeedStacks = hyperSpeedStacks;
@@ -11247,7 +11383,7 @@ function update() {
         } else survivors.push(b);
       }
       bodies = survivors;
-      phantomBladeNextTickTime = Date.now() + (7 - pbRank) * 1000;
+      phantomBladeNextTickTime = Date.now() + (5 - pbRank) * 1000;
     }
   }
 
@@ -12285,7 +12421,7 @@ function triggerDeath() {
     document.getElementById('guideBtn').style.display = 'none';
     document.getElementById('leaderboardBtn').style.display = 'none';
     document.getElementById('leaderboardReturnBtn').style.display = 'none';
-    document.getElementById('skillTreesBtn').style.display = 'none';
+    // #skillTreesBtn was removed in v1.6.3 feature pass.
     // Resume snapshot was already cleared in triggerDeath; sync the DOM.
     document.getElementById('resumeRunBtn').style.display = 'none';
     document.getElementById('resumeRunInfo').style.display = 'none';
@@ -15485,11 +15621,13 @@ document.getElementById('startBtn').addEventListener('click', ()=>{
     for (const orb of Object.keys(orbTrees)) {
       orbTrees[orb] = freshOrbTreeState(orb);
     }
+    // v1.6.3: also mark every orb's skill tree as unlocked (new state).
+    for (const k of Object.keys(treesUnlocked)) treesUnlocked[k] = true;
     saveCrystals();       // localStorage + PGS schedule
     saveBeatFlags();      // localStorage + PGS schedule
     saveTreeState();      // localStorage + PGS schedule
+    saveTreesUnlocked();  // localStorage + PGS schedule
     refreshActiveTreeCache();
-    refreshSkillTreesBtn();
     console.log('[TREETEST] Crystals granted, all trees unlocked, tree state reset');
     // Fall through — the run starts normally so the tester can play a round.
   }
@@ -15506,6 +15644,8 @@ document.getElementById('startBtn').addEventListener('click', ()=>{
     for (const orb of Object.keys(orbTrees)) {
       orbTrees[orb] = freshOrbTreeState(orb);
     }
+    // v1.6.3: reset per-orb tree unlock state alongside beat flags.
+    for (const k of Object.keys(treesUnlocked)) treesUnlocked[k] = false;
     unlockedOrbs = ['cyan'];
     activeOrb = 'cyan';
     try { localStorage.removeItem('drift_scores'); } catch {}
@@ -15513,12 +15653,13 @@ document.getElementById('startBtn').addEventListener('click', ()=>{
     saveCrystals();
     saveBeatFlags();
     saveTreeState();
+    saveTreesUnlocked();
     saveUnlockedOrbs();
     saveOrb();
     pgsScheduleWrite();
     refreshActiveTreeCache();
-    refreshSkillTreesBtn();
     if (typeof refreshOrbBrowser === 'function') { try { refreshOrbBrowser(); } catch {} }
+    if (typeof refreshImpossibleVisibility === 'function') refreshImpossibleVisibility();
     console.log('[DRIFTRESET] All progress wiped');
     // Fall through — run starts normally on the now-reset profile.
   }
@@ -15775,10 +15916,10 @@ function goToMainMenu() {
   document.getElementById('guideBtn').style.display = '';
   document.getElementById('leaderboardBtn').style.display = '';
   document.getElementById('leaderboardReturnBtn').style.display = 'none';
-  document.getElementById('skillTreesBtn').style.display = '';
-  refreshSkillTreesBtn();
+  // #skillTreesBtn removed in v1.6.3; tree access is per-orb now.
   document.getElementById('startBtn').style.display = '';
   document.getElementById('difficultySelect').style.display = '';
+  refreshImpossibleVisibility();
   leaderboardFromMenu = false;
   runStartTime = 0; updateRunTimerDisplay();
   refreshOrbBrowser();
@@ -15914,6 +16055,24 @@ document.addEventListener('backbutton', e => {
   }
 });
 
+// v1.6.3: gate IMPOSSIBLE difficulty + leaderboard tab behind
+// beatDifficulty.EXTREME. Called on menu refresh / orb browser refresh.
+function refreshImpossibleVisibility() {
+  const show = !!beatDifficulty.EXTREME;
+  const diffBtn = document.getElementById('diffBtnImpossible');
+  if (diffBtn) diffBtn.style.display = show ? '' : 'none';
+  const lbTab = document.getElementById('lbDiffTabImpossible');
+  if (lbTab) lbTab.style.display = show ? '' : 'none';
+  // If the selected difficulty is IMPOSSIBLE but it's no longer available
+  // (e.g. DRIFTRESET wiped beatDifficulty), fall back to NORMAL.
+  if (!show && difficulty === 'IMPOSSIBLE') {
+    difficulty = 'NORMAL';
+    document.querySelectorAll('.diff-btn').forEach(b => {
+      b.classList.toggle('selected', b.dataset.diff === 'NORMAL');
+    });
+  }
+}
+
 // Difficulty selection
 document.querySelectorAll('.diff-btn').forEach(btn => {
   btn.addEventListener('click', () => {
@@ -15963,27 +16122,20 @@ function refreshOrbBrowser() {
     `<div class="orb-dot${i === orbBrowserIndex ? ' active' : ''}"></div>`
   ).join('');
 
-  // Action button
+  // Action area — v1.6.3: per-orb button pair.
+  //   Locked orb:                    [UNLOCK — N 💎]
+  //   Unlocked, not equipped:        [EQUIP]  [UPGRADE]
+  //   Equipped:                      [EQUIPPED ✓]  [UPGRADE]
+  //   Tree not unlocked yet:         UPGRADE shows "🔒 UPGRADE — N 💎"
   const action = document.getElementById('orbAction');
-  if (equipped) {
-    action.innerHTML = '<button class="orb-btn equipped" disabled>EQUIPPED</button>';
-  } else if (!locked) {
-    action.innerHTML = '<button class="orb-btn" id="orbEquipBtn">EQUIP</button>';
-    document.getElementById('orbEquipBtn').addEventListener('click', () => {
-      SFX.clickPrimary();
-      activeOrb = key;
-      saveOrb();
-      refreshActiveTreeCache();
-      refreshOrbBrowser();
-    });
-  } else {
+  if (locked) {
     action.innerHTML = `<button class="orb-btn unlock" id="orbUnlockBtn">UNLOCK — ${formatCrystals(def.cost)} 💎</button>`;
     document.getElementById('orbUnlockBtn').addEventListener('click', () => {
       SFX.clickSecondary();
       const btn = document.getElementById('orbUnlockBtn');
       if (totalCrystals < def.cost) {
         btn.classList.remove('flash-err');
-        void btn.offsetWidth; // restart animation
+        void btn.offsetWidth;
         btn.classList.add('flash-err');
         const orig = btn.textContent;
         btn.textContent = 'NOT ENOUGH 💎';
@@ -15998,6 +16150,62 @@ function refreshOrbBrowser() {
       saveOrb();
       refreshActiveTreeCache();
       refreshOrbBrowser();
+    });
+  } else {
+    const treeOk = treeUnlocked(key);
+    const upgradeLabel = treeOk
+      ? 'UPGRADE'
+      : `🔒 UPGRADE — ${formatCrystals(TREE_UNLOCK_COSTS[key])} 💎`;
+    const equipHtml = equipped
+      ? '<button class="orb-btn equipped" disabled>EQUIPPED ✓</button>'
+      : '<button class="orb-btn" id="orbEquipBtn">EQUIP</button>';
+    action.innerHTML = `
+      <div class="orb-btn-row">
+        ${equipHtml}
+        <button class="orb-btn" id="orbUpgradeBtn">${upgradeLabel}</button>
+      </div>
+    `;
+    if (!equipped) {
+      document.getElementById('orbEquipBtn').addEventListener('click', () => {
+        SFX.clickPrimary();
+        activeOrb = key;
+        saveOrb();
+        refreshActiveTreeCache();
+        refreshOrbBrowser();
+      });
+    }
+    document.getElementById('orbUpgradeBtn').addEventListener('click', () => {
+      SFX.clickSecondary();
+      if (treeOk) {
+        // Tree already unlocked — open the overlay directly to this orb.
+        openTreeOverlay(key);
+        return;
+      }
+      // Tree locked — confirm purchase.
+      const cost = TREE_UNLOCK_COSTS[key];
+      if (totalCrystals < cost) {
+        const btn = document.getElementById('orbUpgradeBtn');
+        btn.classList.remove('flash-err');
+        void btn.offsetWidth;
+        btn.classList.add('flash-err');
+        const orig = btn.textContent;
+        btn.textContent = `NOT ENOUGH 💎 (have ${formatCrystals(totalCrystals)})`;
+        setTimeout(() => { btn.textContent = orig; }, 1200);
+        return;
+      }
+      if (typeof confirmTreeAction === 'function') {
+        // Open the tree overlay briefly-hidden so confirmTreeAction's dialog
+        // renders over the main menu (the dialog lives inside #treeOverlay).
+        // Easier: ensure openTreeOverlay happens only on success.
+      }
+      // Use a simple native confirm path so we don't rely on the tree
+      // overlay's internal confirm (which is scoped to the open overlay).
+      const ok = window.confirm(`Unlock ${def.name} skill tree for ${formatCrystals(cost)} 💎?`);
+      if (!ok) return;
+      if (purchaseTreeUnlock(key)) {
+        openTreeOverlay(key);
+        refreshOrbBrowser();
+      }
     });
   }
 
@@ -16270,7 +16478,7 @@ function openLeaderboardFromMenu() {
   document.getElementById('startBtn').style.display = 'none';
   document.getElementById('guideBtn').style.display = 'none';
   document.getElementById('leaderboardBtn').style.display = 'none';
-  document.getElementById('skillTreesBtn').style.display = 'none';
+  // #skillTreesBtn removed in v1.6.3.
   document.getElementById('difficultySelect').style.display = 'none';
   document.getElementById('deathActions').style.display = 'none';
   // Leaderboard view uses centered layout, not the menu's column-flex rules.
@@ -16969,18 +17177,13 @@ let treeUiCurrentOrb = 'cyan';
 let treeDetailCurrent = null; // { kind: 'node'|'cap', pathKey, nodeIdx, capKey }
 let treeConfirmAction = null; // function called if user confirms
 
-function refreshSkillTreesBtn() {
-  const btn = document.getElementById('skillTreesBtn');
-  if (!btn) return;
-  btn.classList.toggle('visible', anyTreeUnlocked());
-}
-
-function openTreeOverlay() {
-  if (!anyTreeUnlocked()) return;
-  // Default to first unlocked orb if current is locked.
-  if (!treeUnlocked(treeUiCurrentOrb)) {
-    treeUiCurrentOrb = ORB_ORDER.find(o => treeUnlocked(o)) || 'cyan';
+// v1.6.3: opened per-orb from the orb browser UPGRADE button. An orbKey
+// can be passed to open a specific tree; default keeps treeUiCurrentOrb.
+function openTreeOverlay(orbKey) {
+  if (orbKey && ORB_DEFS[orbKey]) {
+    treeUiCurrentOrb = orbKey;
   }
+  if (!treeUnlocked(treeUiCurrentOrb)) return;
   renderTreeOverlay();
   document.getElementById('treeOverlay').classList.add('visible');
 }
@@ -17007,21 +17210,8 @@ function renderTreeOverlay() {
   document.getElementById('treeTitle').style.color = `rgba(${color},1)`;
   document.getElementById('treeCrystals').textContent = '💎 ' + formatCrystals(totalCrystals);
 
-  // Tabs
-  const tabsEl = document.getElementById('treeTabs');
-  tabsEl.innerHTML = '';
-  for (const o of ORB_ORDER) {
-    const odef = TREE_DEFS[o];
-    const unlocked = treeUnlocked(o);
-    const btn = document.createElement('button');
-    btn.className = 'tree-tab' + (o === orbKey ? ' active' : '') + (unlocked ? '' : ' locked');
-    btn.textContent = odef.name;
-    btn.style.color = `rgba(${odef.color},${o === orbKey ? 1 : 0.55})`;
-    if (unlocked) {
-      btn.addEventListener('click', () => { treeUiCurrentOrb = o; renderTreeOverlay(); });
-    }
-    tabsEl.appendChild(btn);
-  }
+  // v1.6.3: tab picker removed. Each tree is accessed directly from the
+  // orb browser UPGRADE button; #treeTabs is hidden in the markup.
 
   // Paths
   const pathsEl = document.getElementById('treePaths');
@@ -17212,10 +17402,9 @@ function closeTreeConfirm() {
   document.getElementById('treeConfirm').classList.remove('visible');
 }
 
-document.getElementById('skillTreesBtn').addEventListener('click', () => {
-  SFX.clickSecondary();
-  openTreeOverlay();
-});
+// v1.6.3: main-menu #skillTreesBtn removed. Tree overlay is now opened
+// per-orb from the orb browser UPGRADE button (see openTreeOverlay calls
+// in refreshOrbBrowser).
 document.getElementById('treeCloseBtn').addEventListener('click', () => { SFX.clickSecondary(); closeTreeOverlay(); });
 document.getElementById('treeDetailCloseBtn').addEventListener('click', () => { SFX.clickSecondary(); closeTreeDetail(); });
 document.getElementById('treeRespecFullBtn').addEventListener('click', () => {
@@ -17238,7 +17427,7 @@ document.getElementById('treeConfirmYes').addEventListener('click', () => {
 });
 document.getElementById('treeConfirmNo').addEventListener('click', () => { SFX.clickSecondary(); closeTreeConfirm(); });
 
-refreshSkillTreesBtn();
+// v1.6.3: #skillTreesBtn removed; per-orb UPGRADE buttons gate tree access.
 
 // --- DEAD CENTER radial menu: quadrant tap handlers ---
 // Each quadrant directly resolves the overlay with its mapped powerup type.
