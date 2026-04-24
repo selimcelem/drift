@@ -9455,9 +9455,12 @@ function activateCombo(key, x, y) {
       }
       syncComboDurations('hyperspeed', 'ghost');
     } else if (key === 'hyperspeed_shield') {
-      if (activeEffects.hyperspeed <= 0) activateHyperspeed();
+      // v1.6.3 cadence fix: Juggernaut refresh path mirrors the activation
+      // path — hyperspeed uses HYPERSPEED_COMBO_DURATION, no syncComboDurations
+      // extension to shield's 6s. Keeps re-casts at the same cadence as
+      // fresh casts.
+      if (activeEffects.hyperspeed <= 0) activateHyperspeed(HYPERSPEED_COMBO_DURATION);
       if (activeEffects.shield <= 0) { shieldEndTime = Date.now() + SHIELD_DURATION(); activeEffects.shield = SHIELD_DURATION(); shieldBroken = false; }
-      syncComboDurations('hyperspeed', 'shield');
     } else if (key === 'ghost_shield') {
       // Wraith refresh wasn't previously handled — make sure both halves
       // come up to whichever timer is longest so the combo doesn't die mid-effect.
@@ -9608,10 +9611,14 @@ function activateCombo(key, x, y) {
     syncComboDurations('hyperspeed', 'ghost');
     activeCombos[key] = { def, deps: ['hyperspeed', 'ghost'] };
   } else if (key === 'hyperspeed_shield') {
-    // JUGGERNAUT: barrier + shield + refresh shield on hyperspeed end
-    if (activeEffects.hyperspeed <= 0) activateHyperspeed();
+    // JUGGERNAUT: barrier + shield + refresh shield on hyperspeed end.
+    // v1.6.3 cadence fix: hyperspeed uses HYPERSPEED_COMBO_DURATION (3.5s)
+    // to match Warp Time / Spectral Rush. The previous syncComboDurations
+    // call stretched hyperspeed up to shield's 6s baseline, making the
+    // combo feel ~70% longer than the other two. Signature mechanic (the
+    // juggernautPendingShieldRefresh post-landing refresh) is preserved.
+    if (activeEffects.hyperspeed <= 0) activateHyperspeed(HYPERSPEED_COMBO_DURATION);
     if (activeEffects.shield <= 0) { shieldEndTime = Date.now() + SHIELD_DURATION(); activeEffects.shield = SHIELD_DURATION(); shieldBroken = false; }
-    syncComboDurations('hyperspeed', 'shield');
     juggernautPendingShieldRefresh = true;
     activeCombos[key] = { def, deps: ['hyperspeed'] };
   } else if (key === 'ghost_shield') {
