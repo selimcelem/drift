@@ -4007,7 +4007,7 @@ const ORB_DEFS = {
     color: '96,165,250', cost: 100000, streakCap: 8, trail: 'nebula', bias: 'hyperspeed',
   },
   asteroid: {
-    name: 'Fortress', desc: 'Durable shields. Shields spawn more often.',
+    name: 'Bulwark', desc: 'Durable shields. Shields spawn more often.',
     color: '168,162,158', cost: 150000, streakCap: 8, trail: 'asteroid', bias: 'shield',
   },
 };
@@ -4116,7 +4116,7 @@ const TREE_DEFS = {
         name: 'CHANCE',
         nodes: [
           { key: 'loadedDice',    name: 'Loaded Dice',     tier: 1, max: 3, desc: 'Burst reroll if rolled powerup type is already active.', effect: r => `${[33,66,100][r-1]||0}% reroll chance` },
-          { key: 'fortuneFavors', name: 'Fortune Favors',  tier: 2, max: 3, desc: 'Burst biased toward your longest-expired powerup type.', effect: r => `${[25,50,75][r-1]||0}% bias strength` },
+          { key: 'fortuneFavors', name: 'Fortune Favors',  tier: 2, max: 3, desc: 'Natural single-pickup spawns biased toward your longest-expired type; chance to spawn a second extra pickup.', effect: r => `${[25,50,75][r-1]||0}% bias, ${[10,20,30][r-1]||0}% extra` },
           { key: 'doubleNothing', name: 'Double or Nothing', tier: 3, max: 3, desc: 'After burst fires, chance to immediately fire a second random single powerup.', effect: r => `${[30,60,90][r-1]||0}% second-fire chance` },
         ],
       },
@@ -4133,7 +4133,7 @@ const TREE_DEFS = {
         nodes: [
           { key: 'oracleEdge', name: 'Oracle Edge', tier: 1, max: 3, desc: 'Pair spawn chance +1.5 percentage points per rank.', effect: r => `+${(1.5*r).toFixed(1)}% pair spawn` },
           { key: 'siphon',     name: 'Siphon',      tier: 2, max: 5, desc: 'On body destroyed, chance to grant a random powerup. (0.5s global cooldown)', effect: r => `${[2,4,6,8,10][r-1]||0}% per destroy` },
-          { key: 'keystone',   name: 'Keystone',    tier: 3, max: 3, desc: 'Two simultaneous single pickups within a window register as a pair combo.', effect: r => `${[0.3,0.6,1.0][r-1]||0}s window` },
+          { key: 'keystone',   name: 'Keystone',    tier: 3, max: 3, desc: 'Pair combos have a chance to also grant a random bonus single powerup of a different type.', effect: r => `${[10,20,30][r-1]||0}% bonus chance` },
         ],
       },
     },
@@ -4159,21 +4159,21 @@ const TREE_DEFS = {
         name: 'WRAITH',
         nodes: [
           { key: 'razorVeil',    name: 'Razor Veil',    tier: 1, max: 3, desc: 'Destroy-on-contact during ghost without needing a shield.', effect: r => `Every ${[3,2,1][r-1]||0}s` },
-          { key: 'ghostlight',   name: 'Ghostlight',    tier: 2, max: 3, desc: 'Ghost destroys spawn a 90px EMP-lite burst (no chain).', effect: r => `${[33,66,100][r-1]||0}% trigger` },
-          { key: 'phantomBlade', name: 'Phantom Blade', tier: 3, max: 3, desc: 'Permanent Phantom-Blast aura while ghost is active.', effect: r => `${[30,45,60][r-1]||0}px radius` },
+          { key: 'ghostlight',   name: 'Ghostlight',    tier: 2, max: 3, desc: 'Ghost destroys spawn a 90px EMP-lite burst (no chain).', effect: r => `${[20,40,60][r-1]||0}% trigger` },
+          { key: 'phantomBlade', name: 'Phantom Blade', tier: 3, max: 3, desc: 'Phantom-Blast aura active during Eternal Phantom only.', effect: r => `${[30,45,60][r-1]||0}px radius` },
         ],
       },
       veil: {
         name: 'VEIL',
         nodes: [
-          { key: 'shadowRegen', name: 'Shadow Regen', tier: 1, max: 3, desc: 'Ghost pickups stack additively rather than refreshing.', effect: r => `${[50,75,100][r-1]||0}% additive` },
+          { key: 'shadowRegen', name: 'Shadow Regen', tier: 1, max: 3, desc: 'Ghost pickups stack additively rather than refreshing. Cap: 2× base duration.', effect: r => `${[20,30,40][r-1]||0}% additive` },
           { key: 'soulbound',   name: 'Soulbound',    tier: 2, max: 5, desc: 'On body destroyed, chance to grant a ghost powerup. (Cap: 2× base ghost duration)', effect: r => `${[2,4,6,8,10][r-1]||0}% per destroy` },
           { key: 'beyond',      name: 'Beyond',       tier: 3, max: 3, desc: 'When ghost ends, remain invulnerable for an afterimage window.', effect: r => `${[1,1.5,2][r-1]||0}s afterimage` },
         ],
       },
     },
     capstones: [
-      { key: 'shroud',     name: 'SHROUD',      desc: 'Two ghost pickups within 3s auto-trigger Eternal Phantom.' },
+      { key: 'shroud',     name: 'SHROUD',      desc: 'Every 15s, the next single pickup fires as a ghost pair combo.' },
       { key: 'nightShade', name: 'NIGHT SHADE', desc: 'Every 60s of gameplay, auto-activate a 2s ghost.' },
     ],
   },
@@ -4186,7 +4186,7 @@ const TREE_DEFS = {
         nodes: [
           { key: 'kindling',      name: 'Kindling',      tier: 1, max: 3, desc: 'Single nova +1 wave per rank (Inferno baseline 6).', effect: r => `+${r} waves (${6+r} total)` },
           { key: 'conflagration', name: 'Conflagration', tier: 2, max: 3, desc: 'Supernova +1 wave per rank (Inferno baseline 6).', effect: r => `+${r} waves (${6+r} total)` },
-          { key: 'secondFlame',   name: 'Second Flame',  tier: 3, max: 3, desc: 'Chance to fire one free extra wave after a nova finishes.', effect: r => `${[30,60,90][r-1]||0}% chance` },
+          { key: 'secondFlame',   name: 'Second Flame',  tier: 3, max: 3, desc: 'Chance to fire one free extra wave after a nova finishes. 3s cooldown; Firebrand-sourced novas excluded.', effect: r => `${[30,40,50][r-1]||0}% chance` },
         ],
       },
       corona: {
@@ -4194,21 +4194,21 @@ const TREE_DEFS = {
         nodes: [
           { key: 'solarFlare',  name: 'Solar Flare',  tier: 1, max: 3, desc: 'Nova ring lethal radius +15% per rank (360px baseline).', effect: r => `+${15*r}% radius` },
           { key: 'halo',        name: 'Halo',         tier: 2, max: 3, desc: 'Supernova radiusMult step coefficient boosted (0.15 → 0.183/0.217/0.25).', effect: r => `+${(3.3*r).toFixed(1)}% step` },
-          { key: 'coronalHold', name: 'Coronal Hold', tier: 3, max: 3, desc: 'Supernova wave lethal window duration +50% per rank.', effect: r => `+${50*r}% window` },
+          { key: 'coronalHold', name: 'Coronal Hold', tier: 3, max: 3, desc: 'Supernova kills reduce burst cooldown. Cap 6s per cast.', effect: r => `-${[0.2,0.3,0.5][r-1]||0}s per kill` },
         ],
       },
       inferno: {
         name: 'INFERNO',
         nodes: [
           { key: 'cinder',     name: 'Cinder',     tier: 1, max: 3, desc: 'Nova-killed bodies leave a 1s, 60px burn zone.', effect: r => `${[20,40,60][r-1]||0}% proc` },
-          { key: 'firebrand',  name: 'Firebrand',  tier: 2, max: 5, desc: 'On body destroyed, chance to fire a nova. (1.0s global cooldown)', effect: r => `${[2,4,6,8,10][r-1]||0}% per destroy` },
-          { key: 'combustion', name: 'Combustion', tier: 3, max: 3, desc: 'Each nova-kill adds +1 wave to the next nova within 3s.', effect: r => `Cap +${[2,3,5][r-1]||0} bonus waves` },
+          { key: 'firebrand',  name: 'Firebrand',  tier: 2, max: 5, desc: 'On body destroyed, chance to fire a nova. (3.0s global cooldown)', effect: r => `${[2,4,6,8,10][r-1]||0}% per destroy` },
+          { key: 'combustion', name: 'Combustion', tier: 3, max: 3, desc: 'Each nova-kill adds +1 wave to the next nova within 3s. 5s cooldown between consumptions.', effect: r => `Cap +${[2,3,5][r-1]||0} bonus waves` },
         ],
       },
     },
     capstones: [
       { key: 'sunForge',     name: 'SUN FORGE',     desc: 'Supernova auto-fires every 15s.' },
-      { key: 'criticalMass', name: 'CRITICAL MASS', desc: '10+ destroys from one nova cast triggers a free 6-wave supernova. 5s cooldown.' },
+      { key: 'criticalMass', name: 'CRITICAL MASS', desc: '10+ destroys from one nova cast triggers a free 6-wave supernova. 15s cooldown.' },
     ],
   },
   nebula: {
@@ -4228,7 +4228,7 @@ const TREE_DEFS = {
         nodes: [
           { key: 'reservoir',    name: 'Reservoir',    tier: 1, max: 3, desc: 'Per-stack duration +0.5s per rank (3s baseline).', effect: r => `+${0.5*r}s stack (${3 + 0.5*r}s)` },
           { key: 'overdrive',    name: 'Overdrive',    tier: 2, max: 4, desc: 'Max hyperspeed stacks +1 per rank (Nebula baseline 6).', effect: r => `Cap ${6+r} stacks` },
-          { key: 'infiniteGate', name: 'Infinite Gate', tier: 3, max: 3, desc: 'At max stacks, each pickup adds time to every live stack.', effect: r => `+${r}s per pickup at max` },
+          { key: 'infiniteGate', name: 'Infinite Gate', tier: 3, max: 3, desc: 'At 10+ stacks, each pickup adds time to every live stack.', effect: r => `+${r}s per pickup at 10+` },
         ],
       },
       drift: {
@@ -4241,12 +4241,12 @@ const TREE_DEFS = {
       },
     },
     capstones: [
-      { key: 'superluminal', name: 'SUPERLUMINAL',  desc: 'Removes the hyperspeed stack cap entirely.' },
-      { key: 'eventHorizon', name: 'EVENT HORIZON', desc: 'At 6+ stacks, bodies within 30px destroyed on proximity.' },
+      { key: 'superluminal', name: 'SUPERLUMINAL',  desc: 'Raises the hyperspeed stack cap by +10.' },
+      { key: 'eventHorizon', name: 'LINGERING HORIZON', desc: 'After hyperspeed fully ends, the 360° barrier lingers for 2s.' },
     ],
   },
   asteroid: {
-    name: 'FORTRESS',
+    name: 'BULWARK',
     color: '168,162,158',
     paths: {
       fortification: {
@@ -4609,6 +4609,9 @@ loadTreeState();
 const TREE_PROC_CHANCES = [0.02, 0.04, 0.06, 0.08, 0.10];
 let lastSiphonProc = 0;
 let lastFirebrandProc = 0;
+// Second Flame (Inferno Pyre T3) v1.6.3: internal 3 s cooldown between
+// bonus-wave triggers — prevents nova→Second Flame→Firebrand-style chains.
+let secondFlameNextFireTime = 0;
 
 function spawnDestroyProcFlash(powerupType) {
   if (!POWERUP_COLORS || !POWERUP_COLORS[powerupType]) return;
@@ -4645,7 +4648,7 @@ function siphonProc() {
 
 function soulboundProc() {
   const base = GHOST_DURATION();
-  const cap = base * 2;
+  const cap = ghostDurationCap();
   const now = Date.now();
   if (!activeEffects.ghost || activeEffects.ghost <= 0) {
     ghostEndTime = now + base;
@@ -4668,7 +4671,8 @@ function soulboundProc() {
 
 function firebrandProc() {
   const now = Date.now();
-  if (now - lastFirebrandProc < 1000) { treeLog('firebrand: cooldown-blocked'); return; }
+  // v1.6.3: cooldown raised from 1 s → 3 s to limit chain-break frequency.
+  if (now - lastFirebrandProc < 3000) { treeLog('firebrand: cooldown-blocked'); return; }
   // Nova-overload guard: mirrors the single-powerup-spawn suppression so
   // Firebrand doesn't double up on existing nova-flavored effects.
   const novaActive = novaRings.length > 0
@@ -4677,7 +4681,10 @@ function firebrandProc() {
     || activeCombos.nova_ghost
     || activeCombos.nova_shield;
   if (novaActive) { treeLog('firebrand: suppressed (nova-overload)'); return; }
-  fireTripleNova(player.x, player.y);
+  // v1.6.3: tag the firebrand-fired nova with source='firebrand_proc' so
+  // Second Flame's bonus-wave roll excludes it (blocks kill→firebrand→
+  // second_flame kill-chain).
+  fireTripleNova(player.x, player.y, 'firebrand_proc');
   recentNovaEndTime = now + 1500;
   recentNovaFrames = 1500;
   lastFirebrandProc = now;
@@ -4720,6 +4727,16 @@ function bastion2Proc() {
 // pauses or DEAD CENTER overlay. Called once per update() tick.
 function tickCapstoneTimers() {
   const now = Date.now();
+  // SHROUD (Phantom) v1.6.3: arm the flag 15 s after the last fire. Flag
+  // stays armed until consumed by the next single pickup — the interval
+  // does not reset on re-tick, so a 30 s gap between pickups still yields
+  // one armed fire.
+  if (activeOrb === 'cosmic' && hasCapstone('shroud')) {
+    if (!shroudFlagSet && now - shroudLastFireTime >= 15000) {
+      shroudFlagSet = true;
+      treeLog('shroud: flag armed');
+    }
+  }
   // NIGHT SHADE (Phantom): auto-ghost 2 s every 60 s. Skip if ghost already
   // active; still reschedule so we don't spam-check.
   if (activeOrb === 'cosmic' && hasCapstone('nightShade')) {
@@ -4810,6 +4827,9 @@ let lastSingleTime = 0;
 // Twilight Echo (Phantom Dusk T3): timestamp of most recent combo end.
 // Ghost-end logic checks this against 3 s to decide whether to auto-refresh.
 let lastComboEndTime = 0;
+// Twilight Echo v1.6.3: internal 15 s cooldown gate between refresh triggers
+// so the ghost loop can't infinitely stack. Stamped on fire.
+let twilightEchoNextFireTime = 0;
 // Beyond (Phantom Veil T3): post-ghost invulnerability window.
 let beyondEndTime = 0;
 // Edge-detect flag for ghost-active → inactive transition.
@@ -4819,8 +4839,11 @@ let prevGhostActive = false;
 let razorVeilNextArmTime = 0;
 // Combustion (Inferno Inferno T3): kills tallied during nova casts — applied
 // as bonus wave count to the NEXT nova within the 3 s carryover window.
+// v1.6.3: 5 s cooldown between consumption events; if blocked, the bonus
+// isn't consumed and the counter keeps accumulating.
 let combustionBonus = 0;
 let combustionBonusExpiry = 0;
+let combustionNextConsumeTime = 0;
 // Salvage (Fortress Opportunism T1): crystals accumulated mid-run, added to
 // the post-death crystal payout on the same run.
 let salvageBonusThisRun = 0;
@@ -4831,13 +4854,28 @@ const BURN_ZONE_RADIUS = 60;
 // Second Flame (Inferno Pyre T3): setTimeouts for bonus waves — tracked so
 // we can clear on resetGame() to avoid a ghost wave firing after restart.
 let secondFlamePending = [];
-// SHROUD (Phantom capstone): timestamp of the last single-ghost pickup,
-// used to auto-combo two rapid ghost pickups into Eternal Phantom.
-let lastGhostSingleTime = 0;
+// SHROUD (Phantom capstone) v1.6.3: armed-flag state. A timer in
+// tickCapstoneTimers sets shroudFlagSet 15 s after the last fire; the next
+// single pickup consumes the flag and fires as a ghost pair combo. Timer
+// resets on consumption, NOT on flag set — if the player doesn't grab a
+// pickup for 30 s after the flag is set, the flag stays armed that entire
+// time. Legacy lastGhostSingleTime field removed with the rework.
+let shroudFlagSet = false;
+let shroudLastFireTime = 0;
 // CRITICAL MASS (Inferno capstone): kills tallied within the current nova
-// cast. 10+ triggers a free supernova on 5 s cooldown.
+// cast. 10+ triggers a free supernova on 15 s cooldown (v1.6.3).
 let novaCastKillCount = 0;
 let criticalMassCooldownEnd = 0;
+// Coronal Hold (Inferno Corona T3) v1.6.3 rework: per-cast burst-cooldown
+// reduction accumulator. Each supernova body kill adds 0.2/0.3/0.5 s per
+// rank, capped at 6 s total reduction. Reset on each new supernova cast.
+let coronalHoldReductionMs = 0;
+const CORONAL_HOLD_CAP_MS = 6000;
+// LINGERING HORIZON (Warp capstone, v1.6.3 rework of EVENT HORIZON):
+// 2 s post-hyperspeed barrier echo. Stamped when the last hyperspeed stack
+// expires; the barrier-kill loop runs while Date.now() < this ts even when
+// hyperSpeedStacks === 0.
+let hyperspeedEchoEndTime = 0;
 // Capstone auto-fire timers (NIGHT SHADE 60 s, SUN FORGE 15 s, AEGIS 45 s).
 // Initialised to +interval in resetTreeNodeState so first fire waits the
 // full cadence after run start.
@@ -4859,20 +4897,27 @@ function resetTreeNodeState() {
   lastSingleType = null;
   lastSingleTime = 0;
   lastComboEndTime = 0;
+  twilightEchoNextFireTime = 0;
   beyondEndTime = 0;
   prevGhostActive = false;
   razorVeilNextArmTime = 0;
   combustionBonus = 0;
   combustionBonusExpiry = 0;
+  combustionNextConsumeTime = 0;
   salvageBonusThisRun = 0;
   burnZones = [];
   for (const id of secondFlamePending) clearTimeout(id);
   secondFlamePending = [];
+  secondFlameNextFireTime = 0;
+  lastFirebrandProc = 0;
   // Capstone state.
-  lastGhostSingleTime = 0;
   novaCastKillCount = 0;
   criticalMassCooldownEnd = 0;
+  coronalHoldReductionMs = 0;
+  hyperspeedEchoEndTime = 0;
   const now = Date.now();
+  shroudFlagSet = false;
+  shroudLastFireTime = now;
   nightShadeNextFireTime = now + 60000;
   sunForgeNextFireTime   = now + 15000;
   aegisNextFireTime      = now + 45000;
@@ -4882,16 +4927,12 @@ function resetTreeNodeState() {
   if (deadCenterActive) closeDeadCenterOverlay(false);
 }
 
-// Helper: combined nova-radius scale for Solar Flare + Coronal Hold.
-// Solar Flare scales every nova ring on Inferno; Coronal Hold additionally
-// scales supernova rings. Returns a >= 1 multiplier applied to the three
-// radius thresholds (320 decay-start, 360 lethal-cap, 400 alive-cap) so the
-// ring's lifecycle stretches proportionally — bigger + lethal longer.
+// Helper: nova-radius scale for Solar Flare (Inferno T1). Coronal Hold's
+// old radius-scaling was removed in v1.6.3 — it now reduces burst cooldown
+// per supernova kill instead.
 function novaScale(r) {
   if (activeOrb !== 'solar') return 1;
-  let s = 1 + 0.15 * rankOf('solarFlare');
-  if (r && r.supernova) s *= (1 + 0.5 * rankOf('coronalHold'));
-  return s;
+  return 1 + 0.15 * rankOf('solarFlare');
 }
 
 // Razor Veil rearm cooldown ms by rank.
@@ -5021,6 +5062,26 @@ function closeDeadCenterOverlay(resumePlay) {
   if (resumePlay) state = 'playing';
 }
 
+// Keystone (Drifter Convergence T3) v1.6.3 rework: on any pair combo
+// activation, roll 10/20/30% per rank to ALSO grant a random single pickup
+// effect of a type different from both pair members. Called once per
+// activateCombo() on pair keys (after the combo resolves).
+function maybeKeystoneBonus(comboKey) {
+  if (activeOrb !== 'cyan') return;
+  const ksRank = rankOf('keystone');
+  if (ksRank <= 0) return;
+  const chance = [0.10, 0.20, 0.30][ksRank - 1] || 0;
+  if (Math.random() >= chance) return;
+  const parts = comboKey.split('_');
+  if (parts.length !== 2) return;
+  const all = ['shield', 'nova', 'hyperspeed', 'ghost'];
+  const candidates = all.filter(t => t !== parts[0] && t !== parts[1]);
+  if (candidates.length === 0) return;
+  const pick = candidates[Math.floor(Math.random() * candidates.length)];
+  activatePowerup(pick, player.x, player.y);
+  treeLog('keystone: bonus ' + pick + ' on ' + comboKey);
+}
+
 // BUTTERFLY EFFECT (Drifter capstone): on a qualifying pickup event, roll
 // 15 % to spawn a mirror pickup of the same type ~1 s later, at a random
 // x ± 80 px offset above the player. One roll per pair-pickup event (the
@@ -5029,9 +5090,13 @@ function maybeButterflyEffect(type, srcX, srcY) {
   if (Math.random() >= 0.15) return;
   const dx = (Math.random() - 0.5) * 160; // ±80 px
   const spawnX = Math.max(60, Math.min(W - 60, player.x + dx));
-  const spawnY = Math.max(-30, player.y - 80);
   const id = setTimeout(() => {
     if (state !== 'playing' && state !== 'devmode') return;
+    // v1.6.3: spawn offscreen-top where natural pickups come from (matches
+    // spawnPowerup's y formula) so the mirror scrolls in — player has to
+    // intercept it, not receive it overhead.
+    const topBodyY = bodies.length ? Math.min(...bodies.map(b => b.y)) : -100;
+    const spawnY = Math.min(-30, topBodyY - 60 - Math.random() * 80);
     powerups.push({
       type,
       x: spawnX, y: spawnY,
@@ -5526,6 +5591,13 @@ function GHOST_ETERNAL_DURATION() {
   if (activeOrb === 'cosmic') base += 1000 * rankOf('eternalEmber');
   return base;
 }
+// v1.6.3: absolute ceiling for ghostEndTime, shared across all ghost-extension
+// sites (Shadow Regen stack, Soulbound proc, Twilight Echo refresh, Eternal
+// Ember combo). Cap = 2 × base single-pickup duration — so Cosmic caps at
+// 12 s, non-Cosmic at 8 s. Callers apply Math.min(proposedEnd, now + cap).
+function ghostDurationCap() {
+  return 2 * GHOST_DURATION();
+}
 // Absolute end timestamps for the primary effects. activeEffects.shield /
 // .ghost are recomputed each frame as `max(0, endTime - Date.now())`.
 let shieldEndTime = 0;
@@ -5546,14 +5618,13 @@ let hyperspeedWhooshNodes = null; // audio nodes for sustained whoosh
 const HYPERSPEED_MAX_STACKS_DEFAULT = 4;
 const HYPERSPEED_MAX_STACKS_NEBULA = 6;
 function HYPERSPEED_MAX_STACKS() {
-  // SUPERLUMINAL (Warp capstone): removes the cap entirely. 999 used as a
-  // practical infinity — all downstream math (peak mult, timer array)
-  // handles the larger values gracefully; visual clamping lives in the
-  // visual-escalation pass.
-  if (activeOrb === 'nebula' && hasCapstone('superluminal')) return 999;
   let base = activeOrb === 'nebula' ? HYPERSPEED_MAX_STACKS_NEBULA : HYPERSPEED_MAX_STACKS_DEFAULT;
   // Skill tree: Overdrive (+1/rank), Warp-only.
   if (activeOrb === 'nebula') base += rankOf('overdrive');
+  // SUPERLUMINAL (Warp capstone) v1.6.3: raises the cap by +10 over the
+  // Overdrive-boosted base (was: removes cap entirely). Nebula base 6 +
+  // Overdrive rank 4 (+4) + SUPERLUMINAL (+10) = 20 absolute max.
+  if (activeOrb === 'nebula' && hasCapstone('superluminal')) base += 10;
   return base;
 }
 function HYPERSPEED_DURATION() {
@@ -8786,6 +8857,28 @@ function spawnPowerup() {
     return;
   }
   let type = POWERUP_TYPES[Math.floor(Math.random() * POWERUP_TYPES.length)];
+  // Fortune Favors (Drifter Chance T2) v1.6.3 rework: on each natural spawn,
+  // rank-specific chance to override the random roll with the longest-expired
+  // type. Uses powerupLastActivated timestamps (also set by activatePowerup).
+  let ffBiased = false;
+  if (activeOrb === 'cyan') {
+    const ffRank = rankOf('fortuneFavors');
+    if (ffRank > 0) {
+      const biasChance = [0.25, 0.50, 0.75][ffRank - 1] || 0;
+      if (Math.random() < biasChance) {
+        const nowFF = Date.now();
+        let bestType = null, bestAge = -1;
+        for (const t of POWERUP_TYPES) {
+          const age = nowFF - (powerupLastActivated[t] || 0);
+          if (age > bestAge) { bestAge = age; bestType = t; }
+        }
+        if (bestType) {
+          type = bestType;
+          ffBiased = true;
+        }
+      }
+    }
+  }
   // Nova overload guard: don't drop a nova if any nova-flavored effect is
   // already running (in-flight rings or nova-based combo). Reroll to a
   // non-nova type so the spawn slot stays useful.
@@ -8808,6 +8901,44 @@ function spawnPowerup() {
     pulse: Math.random() * 6.28,
     collected: false,
   });
+  if (ffBiased) treeLog('fortuneFavors: biased spawn → ' + type);
+  // Fortune Favors extra-spawn roll: rank-specific chance to spawn a second
+  // pickup at a slightly offset x/y alongside this one. Picks a random type
+  // (with the same nova-overload guard) independent of the biased type.
+  if (activeOrb === 'cyan') {
+    const ffRank = rankOf('fortuneFavors');
+    if (ffRank > 0) {
+      const extraChance = [0.10, 0.20, 0.30][ffRank - 1] || 0;
+      if (Math.random() < extraChance) {
+        let extraType = POWERUP_TYPES[Math.floor(Math.random() * POWERUP_TYPES.length)];
+        if (extraType === 'nova') {
+          const novaActive = novaRings.length > 0
+            || activeCombos.nova_nova
+            || activeCombos.nova_hyperspeed
+            || activeCombos.nova_ghost
+            || activeCombos.nova_shield;
+          if (novaActive) {
+            const alt = ['shield', 'ghost', 'hyperspeed'];
+            extraType = alt[Math.floor(Math.random() * alt.length)];
+          }
+        }
+        const lastIdx = powerups.length - 1;
+        const baseX = powerups[lastIdx].x;
+        const baseY = powerups[lastIdx].y;
+        const dx = (Math.random() < 0.5 ? -1 : 1) * (30 + Math.random() * 30);
+        const dy = (Math.random() - 0.5) * 40;
+        powerups.push({
+          type: extraType,
+          x: Math.max(60, Math.min(W - 60, baseX + dx)),
+          y: baseY + dy,
+          radius: 13,
+          pulse: Math.random() * 6.28,
+          collected: false,
+        });
+        treeLog('fortuneFavors: extra ' + extraType + ' spawned');
+      }
+    }
+  }
 }
 
 function trimParticles() {
@@ -9310,9 +9441,13 @@ function activateCombo(key, x, y) {
     } else if (key === 'ghost_ghost') {
       // Eternal Phantom refresh: always reset to the full 16s ghost duration
       // when a fresh ghost pickup arrives, never downgrade to the shorter
-      // single-ghost timer.
-      ghostEndTime = Date.now() + GHOST_ETERNAL_DURATION();
-      activeEffects.ghost = GHOST_ETERNAL_DURATION();
+      // single-ghost timer. v1.6.3: clamped to ghostDurationCap().
+      {
+        const _now = Date.now();
+        const _cap = ghostDurationCap();
+        ghostEndTime = Math.min(_now + GHOST_ETERNAL_DURATION(), _now + _cap);
+        activeEffects.ghost = ghostEndTime - _now;
+      }
     } else if (key === 'shield_shield') {
       // Fortress refresh. Asteroid gets an instant 4-hit fortress (direct set)
       // so the pair is always a guaranteed full stack. Other orbs add +2
@@ -9352,16 +9487,25 @@ function activateCombo(key, x, y) {
     //   - Halo scales the step coefficient 0.15 → +0.033/rank
     // CRITICAL MASS: fresh cast resets the kill counter.
     novaCastKillCount = 0;
+    // Coronal Hold v1.6.3: reset per-cast reduction accumulator.
+    coronalHoldReductionMs = 0;
     let supernovaWaves = activeOrb === 'solar' ? 6 : 4;
     if (activeOrb === 'solar') supernovaWaves += rankOf('conflagration');
-    if (activeOrb === 'solar' && rankOf('combustion') > 0 && Date.now() < combustionBonusExpiry) {
+    // Combustion (Inferno T3) v1.6.3: 5 s cooldown between consumption
+    // events. If still on cooldown, the counter keeps accumulating and the
+    // bonus waves aren't applied to this cast.
+    if (activeOrb === 'solar' && rankOf('combustion') > 0 && Date.now() < combustionBonusExpiry
+        && Date.now() >= combustionNextConsumeTime) {
       const cap = [2, 3, 5][rankOf('combustion') - 1] || 0;
       const add = Math.min(combustionBonus, cap);
       supernovaWaves += add;
-      if (add > 0) treeLog('combustion: +' + add + ' supernova waves');
+      if (add > 0) {
+        treeLog('combustion: +' + add + ' supernova waves');
+        combustionBonus = 0;
+        combustionBonusExpiry = 0;
+        combustionNextConsumeTime = Date.now() + 5000;
+      }
     }
-    combustionBonus = 0;
-    combustionBonusExpiry = 0;
     const stepCoef = 0.15 + ((activeOrb === 'solar') ? 0.033 * rankOf('halo') : 0);
     for (let i = 0; i < supernovaWaves; i++) {
       pendingNovaTimeouts.push(setTimeout(() => {
@@ -9384,9 +9528,10 @@ function activateCombo(key, x, y) {
     // callable from the bonus wave (which is a raw ring push) so the
     // guard is preventive.
     const sfRankCombo = (activeOrb === 'solar') ? rankOf('secondFlame') : 0;
-    if (sfRankCombo > 0) {
-      const chanceC = [0.30, 0.60, 0.90][sfRankCombo - 1] || 0;
+    if (sfRankCombo > 0 && Date.now() >= secondFlameNextFireTime) {
+      const chanceC = [0.30, 0.40, 0.50][sfRankCombo - 1] || 0;
       if (Math.random() < chanceC) {
+        secondFlameNextFireTime = Date.now() + 3000;
         const id = setTimeout(() => {
           if (state === 'playing' || state === 'devmode') {
             pushCapped(novaRings, { x: player.x, y: player.y, radius: 0, life: 1, prevR: 0, supernova: true, startTime: Date.now() }, NOVA_RINGS_CAP);
@@ -9443,9 +9588,13 @@ function activateCombo(key, x, y) {
     syncComboDurations('ghost', 'shield');
     activeCombos[key] = { def, deps: ['ghost'] };
   } else if (key === 'ghost_ghost') {
-    // ETERNAL PHANTOM: 16s ghost
-    ghostEndTime = Date.now() + GHOST_ETERNAL_DURATION();
-    activeEffects.ghost = GHOST_ETERNAL_DURATION();
+    // ETERNAL PHANTOM: 16s ghost. v1.6.3: clamped to ghostDurationCap().
+    {
+      const _now = Date.now();
+      const _cap = ghostDurationCap();
+      ghostEndTime = Math.min(_now + GHOST_ETERNAL_DURATION(), _now + _cap);
+      activeEffects.ghost = ghostEndTime - _now;
+    }
     activeCombos[key] = { def, deps: ['ghost'] };
   } else if (key === 'shield_shield') {
     // FORTRESS SHIELD. Asteroid: direct set to the hit cap (Bastion rank
@@ -9473,6 +9622,9 @@ function activateCombo(key, x, y) {
       treeLog('warpHarmonic: +' + whRank + ' bonus stacks on ' + key);
     }
   }
+  // Keystone (Drifter Convergence T3): any pair combo rolls for a bonus
+  // random single pickup of a type different from both pair members.
+  maybeKeystoneBonus(key);
 }
 
 function activatePair(a, b) {
@@ -9532,14 +9684,18 @@ function rawActivate(type, x, y) {
     const add = GHOST_DURATION();
     const srRank = (activeOrb === 'cosmic') ? rankOf('shadowRegen') : 0;
     if (srRank > 0 && ghostEndTime > now) {
-      const frac = [0.5, 0.75, 1.0][srRank - 1] || 0;
+      const frac = [0.20, 0.30, 0.40][srRank - 1] || 0;
       const addMs = Math.floor(add * frac);
-      ghostEndTime = ghostEndTime + addMs;
+      // v1.6.3: apply the shared ghost duration cap so stacks can't exceed
+      // 2× base duration (also prevents Shadow Regen + Soulbound/Eternal
+      // Ember/Twilight Echo from cascading past the ceiling).
+      const cap = ghostDurationCap();
+      ghostEndTime = Math.min(ghostEndTime + addMs, now + cap);
       activeEffects.ghost = ghostEndTime - now;
-      treeLog('shadowRegen: +' + addMs + 'ms stacked (total remaining ' + activeEffects.ghost + 'ms)');
+      treeLog('shadowRegen: +' + addMs + 'ms stacked (total remaining ' + activeEffects.ghost + 'ms, cap ' + cap + ')');
     } else {
-      ghostEndTime = now + add;
-      activeEffects.ghost = add;
+      ghostEndTime = Math.min(now + add, now + ghostDurationCap());
+      activeEffects.ghost = ghostEndTime - now;
     }
   } else if (type === 'nova') {
     fireTripleNova(player.x, player.y);
@@ -9559,14 +9715,20 @@ function fireTripleNova(px, py, source) {
   //   - Combustion carries +1 wave per nova-kill within 3 s, rank-capped
   let waves = activeOrb === 'solar' ? 6 : 3;
   if (activeOrb === 'solar') waves += rankOf('kindling');
-  if (activeOrb === 'solar' && rankOf('combustion') > 0 && Date.now() < combustionBonusExpiry) {
+  // Combustion (Inferno T3) v1.6.3: 5 s cooldown between consumption
+  // events. Single-nova path mirrors the supernova path.
+  if (activeOrb === 'solar' && rankOf('combustion') > 0 && Date.now() < combustionBonusExpiry
+      && Date.now() >= combustionNextConsumeTime) {
     const cap = [2, 3, 5][rankOf('combustion') - 1] || 0;
     const add = Math.min(combustionBonus, cap);
     waves += add;
-    if (add > 0) treeLog('combustion: +' + add + ' single-nova waves');
+    if (add > 0) {
+      treeLog('combustion: +' + add + ' single-nova waves');
+      combustionBonus = 0;
+      combustionBonusExpiry = 0;
+      combustionNextConsumeTime = Date.now() + 5000;
+    }
   }
-  combustionBonus = 0;
-  combustionBonusExpiry = 0;
   for (let i = 1; i < waves; i++) {
     const life = Math.max(0.4, 1 - i * 0.1);
     const shake = Math.max(3, 10 - i * 1.5);
@@ -9592,9 +9754,12 @@ function fireTripleNova(px, py, source) {
   //     bonus-wave implementation is a direct ring-push and does not
   //     re-enter fireTripleNova, so the guard is preventive).
   const sfRank = (activeOrb === 'solar') ? rankOf('secondFlame') : 0;
-  if (sfRank > 0 && source !== 'second_flame_proc') {
-    const chance = [0.30, 0.60, 0.90][sfRank - 1] || 0;
+  // v1.6.3: Second Flame excludes both its own bonus path AND firebrand-
+  // sourced novas, and is gated by a 3 s internal cooldown.
+  if (sfRank > 0 && source !== 'second_flame_proc' && source !== 'firebrand_proc' && Date.now() >= secondFlameNextFireTime) {
+    const chance = [0.30, 0.40, 0.50][sfRank - 1] || 0;
     if (Math.random() < chance) {
+      secondFlameNextFireTime = Date.now() + 3000;
       const id = setTimeout(() => {
         if (state === 'playing' || state === 'devmode') {
           pushCapped(novaRings, { x: player.x, y: player.y, radius: 0, life: 1, prevR: 0, startTime: Date.now() }, NOVA_RINGS_CAP);
@@ -9702,13 +9867,16 @@ function activateHyperspeed(durationOverride, peakScale) {
       if (hyperSpeedTimers[i] < hyperSpeedTimers[minIdx]) minIdx = i;
     }
     if (newEnd > hyperSpeedTimers[minIdx]) hyperSpeedTimers[minIdx] = newEnd;
-    // Infinite Gate (Warp Endurance T3): at max stacks, each new pickup adds
-    // bonus seconds to EVERY live stack's timer — +1/+2/+3 s per rank.
-    const igRank = (activeOrb === 'nebula') ? rankOf('infiniteGate') : 0;
+  }
+  // Infinite Gate (Warp Endurance T3) v1.6.3: triggers at 10+ active stacks
+  // (not "at max") — SUPERLUMINAL lifts the cap so "at max" became unreliable.
+  // Each new pickup adds +1/+2/+3 s per rank to EVERY live stack timer.
+  if (activeOrb === 'nebula' && hyperSpeedStacks >= 10) {
+    const igRank = rankOf('infiniteGate');
     if (igRank > 0) {
       const bonusMs = igRank * 1000;
       for (let i = 0; i < hyperSpeedTimers.length; i++) hyperSpeedTimers[i] += bonusMs;
-      treeLog('infiniteGate: +' + bonusMs + 'ms to all ' + hyperSpeedTimers.length + ' stacks');
+      treeLog('infiniteGate: +' + bonusMs + 'ms to all ' + hyperSpeedTimers.length + ' stacks (>=10)');
     }
   }
   if (hyperSpeedStacks > peakHyperSpeedStacks) peakHyperSpeedStacks = hyperSpeedStacks;
@@ -9743,34 +9911,21 @@ function activatePowerup(type, x, y) {
   // must see the previous pickup, not this one.
   let key = detectCombo(type);
 
-  // Keystone (Drifter Convergence T3): if no natural combo formed and the
-  // previous single pickup landed within the Keystone window, upgrade the
-  // two singles into their pair combo. Rank caps at a 1.0 s window.
-  if (!key && activeOrb === 'cyan') {
-    const ksRank = rankOf('keystone');
-    if (ksRank > 0 && lastSingleType && lastSingleType !== type) {
-      const win = [300, 600, 1000][ksRank - 1] || 0;
-      if (Date.now() - lastSingleTime < win) {
-        const ksKey = comboKey(type, lastSingleType);
-        if (ksKey) {
-          key = ksKey;
-          treeLog('keystone: paired ' + lastSingleType + ' + ' + type + ' → ' + ksKey);
-        }
-      }
+  // Keystone (Drifter Convergence T3): reworked in v1.6.3 — now fires on
+  // pair combos rather than coalescing singles. See maybeKeystoneBonus()
+  // hooked from activateCombo() / activatePair().
+  // SHROUD (Phantom capstone) v1.6.3 rework: an armed flag (set every 15 s
+  // via tickCapstoneTimers) consumes the next single pickup — it fires as
+  // a ghost pair combo (or Eternal Phantom for a ghost pickup). Only fires
+  // when no natural combo is already forming; natural combos take priority.
+  if (!key && activeOrb === 'cosmic' && hasCapstone('shroud') && shroudFlagSet) {
+    const shroudKey = (type === 'ghost') ? 'ghost_ghost' : comboKey(type, 'ghost');
+    if (shroudKey) {
+      key = shroudKey;
+      shroudFlagSet = false;
+      shroudLastFireTime = Date.now();
+      treeLog('shroud: flag consumed → ' + shroudKey);
     }
-  }
-  // SHROUD (Phantom capstone): two single-ghost pickups within 3 s auto-combo
-  // into Eternal Phantom, even if the first ghost effect has expired between
-  // them (which detectCombo's effect-active path would miss).
-  if (!key && activeOrb === 'cosmic' && hasCapstone('shroud') && type === 'ghost') {
-    if (lastGhostSingleTime > 0 && Date.now() - lastGhostSingleTime < 3000) {
-      key = 'ghost_ghost';
-      lastGhostSingleTime = 0; // consumed — next window starts fresh
-      treeLog('shroud: paired ghost → eternal phantom');
-    }
-  }
-  if (activeOrb === 'cosmic' && hasCapstone('shroud') && type === 'ghost' && key !== 'ghost_ghost') {
-    lastGhostSingleTime = Date.now();
   }
 
   // The new pickup always activates its own individual effect timer, and
@@ -9782,7 +9937,11 @@ function activatePowerup(type, x, y) {
   // Record this pickup as the most-recently-gained event.
   lastGainedEffects = [type];
   lastGainedTimestamp = frame;
-  // Keystone-specific single-pickup tracking.
+  // Fortune Favors (Drifter Chance T2) timestamp tracking — used by the
+  // reworked natural-spawn bias to find the longest-expired type.
+  powerupLastActivated[type] = Date.now();
+  // Keystone-specific single-pickup tracking (retained for possible future
+  // use; the v1.6.3 Keystone rework no longer consults these fields).
   lastSingleType = type;
   lastSingleTime = Date.now();
   // BUTTERFLY EFFECT (Drifter capstone): 15 % chance to spawn a mirror
@@ -10185,11 +10344,20 @@ function checkCollisions() {
   // ends. Short-circuits both walls and body collisions — player is
   // effectively ghosted but without the passthrough visual.
   if (Date.now() < beyondEndTime) return false;
+  // v1.6.3: universal hyperspeed invulnerability — during any active
+  // hyperspeed stack, player is immune to body contact. Applies to ALL
+  // orbs (not just Warp/nebula). Borders are still lethal (handled below).
+  const hyperInvuln = activeEffects.hyperspeed > 0 && hyperSpeedStacks >= 1;
   // Borders are always lethal — shield/ghost only protect against bodies
   if (player.x < PLAYER_R+3) { lastDeathCause = 'wall_left'; return true; }
   if (player.x > W-PLAYER_R-3) { lastDeathCause = 'wall_right'; return true; }
   if (player.y < -50) { lastDeathCause = 'wall_top'; return true; }
   if (player.y > H+50) { lastDeathCause = 'wall_bottom'; return true; }
+
+  // v1.6.3: during any active hyperspeed stack, body contact is not lethal
+  // for ANY orb. Borders above still lethal; shield/ghost/wraith logic
+  // below is bypassed (the barrier kill loop handles body clears now).
+  if (hyperInvuln) return false;
 
   // GHOST: pass through bodies, emit a shimmer ripple when clipping one.
   // WRAITH (ghost + shield active): destroy on contact during ghost.
@@ -10199,7 +10367,7 @@ function checkCollisions() {
     const wraith = activeEffects.shield > 0;
     const rvRank = (activeOrb === 'cosmic') ? rankOf('razorVeil') : 0;
     const glRank = (activeOrb === 'cosmic') ? rankOf('ghostlight') : 0;
-    const glChance = [0.33, 0.66, 1.0][glRank - 1] || 0;
+    const glChance = [0.20, 0.40, 0.60][glRank - 1] || 0;
     for (let i = bodies.length - 1; i >= 0; i--) {
       const b = bodies[i];
       if (bodyHits(b, 0)) {
@@ -10321,28 +10489,10 @@ function executeBurst() {
     }
     const types = ['shield','nova','hyperspeed','ghost'];
     const ldRank = rankOf('loadedDice');
-    const ffRank = rankOf('fortuneFavors');
     const donRank = rankOf('doubleNothing');
-    let type;
-    // Fortune Favors: weight the roll toward the longest-expired powerup
-    // type. Weight = (msSinceLastActivation) so fresher types get lower
-    // relative weight; bias strength scales 25/50/75% per rank.
-    if (ffRank > 0) {
-      const now = Date.now();
-      const ages = types.map(t => now - (powerupLastActivated[t] || 0));
-      const maxAge = Math.max(1, ...ages);
-      const bias = [0.25, 0.5, 0.75][ffRank - 1] || 0;
-      const weights = ages.map(a => 1 + bias * (a / maxAge));
-      const total = weights.reduce((a, b) => a + b, 0);
-      let pick = Math.random() * total;
-      for (let i = 0; i < types.length; i++) {
-        pick -= weights[i];
-        if (pick <= 0) { type = types[i]; break; }
-      }
-      if (!type) type = types[types.length - 1];
-    } else {
-      type = types[Math.floor(Math.random() * types.length)];
-    }
+    // Fortune Favors' burst bias was removed in v1.6.3 — it now biases
+    // natural playfield spawns instead (see spawnPowerup).
+    let type = types[Math.floor(Math.random() * types.length)];
     // Loaded Dice: if rolled type is already active, reroll (rank-gated
     // chance) to an unused type. Keeps bursts from wasting on a redundant
     // roll. At rank 3 the reroll is guaranteed.
@@ -10827,13 +10977,16 @@ function update() {
   //   collision-kill gate).
   if (prevGhostActive && activeEffects.ghost <= 0 && activeOrb === 'cosmic') {
     const teRank = rankOf('twilightEcho');
-    if (teRank > 0 && nowMs - lastComboEndTime < 3000) {
+    if (teRank > 0 && nowMs - lastComboEndTime < 3000 && nowMs >= twilightEchoNextFireTime) {
       const chance = [0.33, 0.66, 1.0][teRank - 1] || 0;
       if (Math.random() < chance) {
         const refresh = Math.floor(GHOST_DURATION() / 2);
-        ghostEndTime = nowMs + refresh;
-        activeEffects.ghost = refresh;
-        treeLog('twilightEcho: auto-refresh ghost ' + refresh + 'ms');
+        // v1.6.3: all ghost-extension sites clamp to the absolute cap.
+        const cap = ghostDurationCap();
+        ghostEndTime = Math.min(nowMs + refresh, nowMs + cap);
+        activeEffects.ghost = ghostEndTime - nowMs;
+        twilightEchoNextFireTime = nowMs + 15000;
+        treeLog('twilightEcho: auto-refresh ghost ' + activeEffects.ghost + 'ms');
       }
     }
     // Beyond fires on every real ghost-end, even when Twilight Echo didn't
@@ -10896,6 +11049,14 @@ function update() {
       hyperSpeedTimers = [];
       peakHyperSpeedStacks = 0;
       if (hyperspeedWhooshNodes) { try { hyperspeedWhooshNodes.stop(0.5); } catch {} hyperspeedWhooshNodes = null; }
+      // LINGERING HORIZON (Warp capstone, v1.6.3): stamp a 2 s post-
+      // hyperspeed barrier echo window. The 360° barrier kill loop runs
+      // until this ts even though stacks are at 0; player collision
+      // reverts to normal (only the barrier is active).
+      if (activeOrb === 'nebula' && hasCapstone('eventHorizon')) {
+        hyperspeedEchoEndTime = Date.now() + 2000;
+        treeLog('lingeringHorizon: barrier echo armed 2s');
+      }
       // JUGGERNAUT: refresh shield when hyperspeed ends. Asteroid orb gets the
       // fortress-tier 8s reward, others get the default 6s.
       if (juggernautPendingShieldRefresh) {
@@ -10953,11 +11114,11 @@ function update() {
     }
   }
   // Phantom Blast: damage aura around player while ghost is active.
-  // Phantom Blade (Phantom Wraith T3) extends this mechanic — it keeps the
-  // aura ON whenever ghost is active, using its own rank-based radius when
-  // Phantom Blast itself isn't live. When both fire, radius is the max of
-  // the two so ranks don't nerf the combo path.
-  const pbladeR = phantomBladeRadius();
+  // Phantom Blade (Phantom Wraith T3) v1.6.3 rework: aura now gated on
+  // Eternal Phantom (ghost_ghost combo active) rather than plain ghost —
+  // so Razor Veil keeps its baseline ghost-offense role and Phantom Blade
+  // becomes a mega-buff specifically during Eternal Phantom.
+  const pbladeR = (activeCombos.ghost_ghost) ? phantomBladeRadius() : 0;
   const pbActive = Date.now() < phantomBlastEndTime;
   if (activeEffects.ghost > 0 && (pbActive || pbladeR > 0)) {
     const auraR = Math.max(pbActive ? 120 : 0, pbladeR);
@@ -11012,30 +11173,9 @@ function update() {
   }
   updateBodyTypes(spd);
   updateCrackFragments(spd);
-  // EVENT HORIZON (Warp capstone): at 6+ hyperspeed stacks, bodies within
-  // 30 px of the player are destroyed on proximity (no contact required).
-  // 0.3 s spawn-grace via a per-body _ehSeenAt timestamp so freshly-visible
-  // bodies aren't instantly killed when they enter the radius.
-  if (activeOrb === 'nebula' && hasCapstone('eventHorizon') && hyperSpeedStacks >= 6) {
-    const ehSurvivors = [];
-    const ehNow = Date.now();
-    for (const b of bodies) {
-      if (!b._ehSeenAt) b._ehSeenAt = ehNow;
-      if (ehNow - b._ehSeenAt < 300) { ehSurvivors.push(b); continue; }
-      if (dist(player, b) < 30 + b.radius) {
-        emitDestroyBurst(b.x, b.y, POWERUP_COLORS.hyperspeed.rgb);
-        emitDestroyEffects(b, 'barrier');
-        addDestroyPoints();
-        SFX.planetDestroyed('barrier');
-        checkDestroyProc(b, 'nova');
-        releaseBodyCanvases(b);
-        treeLog('eventHorizon: proximity kill');
-        continue;
-      }
-      ehSurvivors.push(b);
-    }
-    bodies = ehSurvivors;
-  }
+  // EVENT HORIZON's 30 px proximity-kill was replaced in v1.6.3 by
+  // LINGERING HORIZON — see the hyperspeed-expiry branch above and the
+  // 360 ° barrier-kill loop in the hyperspeed barrier section.
   // Cinder burn zones: scroll with world, expire after lifetime, destroy any
   // body whose collision sphere intersects.
   if (burnZones.length) {
@@ -11212,14 +11352,31 @@ function update() {
             combustionBonus++;
             combustionBonusExpiry = Date.now() + 3000;
           }
+          // Coronal Hold (Inferno Corona T3) v1.6.3 rework: during a
+          // supernova cast, each body kill reduces burst cooldown by
+          // 0.2/0.3/0.5 s per rank, capped at 6 s per cast. Applied
+          // immediately by shifting burstCooldownEnd back.
+          if (activeOrb === 'solar' && r.supernova && activeCombos.nova_nova) {
+            const chRank = rankOf('coronalHold');
+            if (chRank > 0 && coronalHoldReductionMs < CORONAL_HOLD_CAP_MS) {
+              const per = [200, 300, 500][chRank - 1] || 0;
+              const room = CORONAL_HOLD_CAP_MS - coronalHoldReductionMs;
+              const reduce = Math.min(per, room);
+              coronalHoldReductionMs += reduce;
+              if (burstCooldownEnd > Date.now()) {
+                burstCooldownEnd = Math.max(Date.now(), burstCooldownEnd - reduce);
+              }
+            }
+          }
           // CRITICAL MASS (Inferno capstone): 10+ kills in one cast triggers
-          // a free 6-wave supernova at player. 5 s internal cooldown prevents
-          // the free supernova from re-triggering CRITICAL MASS mid-cast.
+          // a free 6-wave supernova at player. 15 s internal cooldown (v1.6.3)
+          // prevents the free supernova from re-triggering CRITICAL MASS
+          // mid-cast and caps the capstone's DPS ceiling.
           // Deferred via setTimeout to avoid mutating novaRings mid-iteration.
           if (activeOrb === 'solar' && hasCapstone('criticalMass')) {
             novaCastKillCount++;
             if (novaCastKillCount >= 10 && Date.now() >= criticalMassCooldownEnd) {
-              criticalMassCooldownEnd = Date.now() + 5000;
+              criticalMassCooldownEnd = Date.now() + 15000;
               novaCastKillCount = 0;
               const id = setTimeout(() => {
                 if (state !== 'playing' && state !== 'devmode') return;
@@ -11337,38 +11494,45 @@ function update() {
     }
   }
 
-  // Hyperspeed barrier: destroy planets touching the wedge in front of the player.
-  // Skill tree: Smooth Entry (Warp Drift T1) widens the barrier +20 %/rank.
-  if (activeEffects.hyperspeed > 0 && hyperspeedCurrentMult > 1.05) {
-    const barrierY = player.y - 60;
+  // v1.6.3: universal 360° hyperspeed barrier — kills any body/fragment
+  // within barrierHalfW of the player during active hyperspeed (paired with
+  // the universal invulnerability). Applies to ALL orbs; Warp's Smooth Entry
+  // scales the radius. LINGERING HORIZON (Warp capstone) extends the
+  // barrier-kill window ~2 s after all stacks expire.
+  const hyperBarrierActive = (activeEffects.hyperspeed > 0 && hyperspeedCurrentMult > 1.05);
+  const lingeringHorizonActive = (activeOrb === 'nebula' && hasCapstone('eventHorizon')
+    && hyperSpeedStacks === 0 && Date.now() < hyperspeedEchoEndTime);
+  if (hyperBarrierActive || lingeringHorizonActive) {
     let barrierHalfW = 60;
-    if (activeOrb === 'nebula') barrierHalfW *= (1 + 0.20 * rankOf('smoothEntry'));
+    // Smooth Entry only scales the active-hyperspeed barrier; the 2 s
+    // lingering echo uses the baseline width (post-hyperspeed ghost).
+    if (hyperBarrierActive && activeOrb === 'nebula') {
+      barrierHalfW *= (1 + 0.20 * rankOf('smoothEntry'));
+    }
+    const barrierR2 = barrierHalfW * barrierHalfW;
     const bSurvivors = [];
     for (const b of bodies) {
-      // Check if body center is within barrier zone
-      if (b.y < barrierY + b.radius + 20 && b.y > barrierY - 30 &&
-          Math.abs(b.x - player.x) < barrierHalfW + b.radius) {
+      const dxB = b.x - player.x, dyB = b.y - player.y;
+      const d2 = dxB * dxB + dyB * dyB;
+      const reach = barrierHalfW + b.radius;
+      if (d2 < reach * reach) {
         emitDestroyBurst(b.x, b.y, POWERUP_COLORS.hyperspeed.rgb);
         emitDestroyEffects(b, 'barrier');
         addDestroyPoints();
         SFX.planetDestroyed('barrier');
-        // Hyperspeed barrier kills now feed the destroy-proc pipeline so
-        // Slipstream (Warp destroy-to-hyperspeed) can fire on barrier hits.
-        // Tagged 'nova' because it's a player-action offensive kill (not a
-        // shield/EMP/ghost-contact kill); source set kept simple.
         checkDestroyProc(b, 'nova');
       } else {
         bSurvivors.push(b);
       }
     }
     bodies = bSurvivors;
-    // Fragments clipping the barrier wedge die silently (barrier sfx at lower
-    // volume to avoid stacking with bigger body hits).
+    // Fragments within the circular barrier die silently.
     let barrierAteFragment = false;
     for (let i = crackFragments.length - 1; i >= 0; i--) {
       const f = crackFragments[i];
-      if (f.y < barrierY + f.radius + 20 && f.y > barrierY - 30 &&
-          Math.abs(f.x - player.x) < barrierHalfW + f.radius) {
+      const dxF = f.x - player.x, dyF = f.y - player.y;
+      const reachF = barrierHalfW + f.radius;
+      if (dxF * dxF + dyF * dyF < reachF * reachF) {
         crackFragments.splice(i, 1);
         barrierAteFragment = true;
       }
@@ -15220,14 +15384,19 @@ function applyPauseDeltaShift(pauseDelta) {
   if (beyondEndTime) beyondEndTime += pauseDelta;
   if (razorVeilNextArmTime) razorVeilNextArmTime += pauseDelta;
   if (combustionBonusExpiry) combustionBonusExpiry += pauseDelta;
+  if (combustionNextConsumeTime) combustionNextConsumeTime += pauseDelta;
+  if (secondFlameNextFireTime) secondFlameNextFireTime += pauseDelta;
+  if (lastFirebrandProc) lastFirebrandProc += pauseDelta;
   if (lastComboEndTime) lastComboEndTime += pauseDelta;
-  if (lastGhostSingleTime) lastGhostSingleTime += pauseDelta;
+  if (twilightEchoNextFireTime) twilightEchoNextFireTime += pauseDelta;
   if (lastSingleTime) lastSingleTime += pauseDelta;
   // v1.6.3 capstone timers.
+  if (shroudLastFireTime) shroudLastFireTime += pauseDelta;
   if (nightShadeNextFireTime) nightShadeNextFireTime += pauseDelta;
   if (sunForgeNextFireTime) sunForgeNextFireTime += pauseDelta;
   if (aegisNextFireTime) aegisNextFireTime += pauseDelta;
   if (criticalMassCooldownEnd) criticalMassCooldownEnd += pauseDelta;
+  if (hyperspeedEchoEndTime) hyperspeedEchoEndTime += pauseDelta;
   for (const c of Object.values(activeCombos)) {
     if (c && c.endTime !== undefined) c.endTime += pauseDelta;
   }
@@ -16354,7 +16523,7 @@ function drawGuideOrbs(ctx, t) {
     { name: 'PHANTOM',  rgb: '192,132,252', unlocked: false },
     { name: 'INFERNO',  rgb: '251,146,60',  unlocked: false },
     { name: 'WARP',     rgb: '96,165,250',  unlocked: false },
-    { name: 'FORTRESS', rgb: '168,162,158', unlocked: false },
+    { name: 'BULWARK', rgb: '168,162,158', unlocked: false },
   ];
   const gap = W / (orbs.length + 1);
   const cy = 90;
