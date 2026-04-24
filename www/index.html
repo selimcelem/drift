@@ -15493,6 +15493,35 @@ document.getElementById('startBtn').addEventListener('click', ()=>{
     console.log('[TREETEST] Crystals granted, all trees unlocked, tree state reset');
     // Fall through — the run starts normally so the tester can play a round.
   }
+  // DEV cheat: pilot name "DRIFTRESET" (case-insensitive) wipes ALL local
+  // progress — crystals, difficulty-beat flags, every orb tree's ranks +
+  // capstones, unlocked-orbs set (back to Drifter only), active orb, top-5
+  // scores per difficulty, and the resume-after-crash snapshot. Run
+  // proceeds normally so the tester can start fresh immediately.
+  if (getUsername().toUpperCase() === 'DRIFTRESET') {
+    totalCrystals = 0;
+    beatDifficulty.NORMAL = false;
+    beatDifficulty.HARD = false;
+    beatDifficulty.EXTREME = false;
+    for (const orb of Object.keys(orbTrees)) {
+      orbTrees[orb] = freshOrbTreeState(orb);
+    }
+    unlockedOrbs = ['cyan'];
+    activeOrb = 'cyan';
+    try { localStorage.removeItem('drift_scores'); } catch {}
+    clearResumeState();
+    saveCrystals();
+    saveBeatFlags();
+    saveTreeState();
+    saveUnlockedOrbs();
+    saveOrb();
+    pgsScheduleWrite();
+    refreshActiveTreeCache();
+    refreshSkillTreesBtn();
+    if (typeof refreshOrbBrowser === 'function') { try { refreshOrbBrowser(); } catch {} }
+    console.log('[DRIFTRESET] All progress wiped');
+    // Fall through — run starts normally on the now-reset profile.
+  }
   // Sentry fire-test cheat: pilot name "SENTRY" triggers a tagged test event
   // on start so a tester can verify the crash-reporting pipeline end-to-end.
   // flush() waits up to 2s for the beacon to actually leave the device.
