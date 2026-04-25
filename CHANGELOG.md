@@ -6,6 +6,114 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Each version header links to its GitHub release; see the release notes for full
 detail beyond the summaries here.
 
+## [1.6.3] - 2026-04-25
+
+### Added
+- **Per-orb skill trees**. Each orb has a three-path tree (T1 / T2 / T3)
+  plus 2-3 capstones. Tree state persists in `localStorage` and syncs
+  to the PGS cloud-save snapshot. ~30 nodes + 11 capstones across the
+  five orbs. Trees unlock for a flat per-orb crystal cost
+  (3k / 6k / 9k / 12k / 15k from Drifter to Bulwark) instead of the
+  earlier difficulty-gated unlock model
+- **IMPOSSIBLE difficulty** — unlocked by beating EXTREME's apocalypse.
+  Speed cap reached at 1:00 (vs 3:00 on N/H/E), then ramps +10 %/min
+  speed and +1 max body every 2 minutes post-cap. 1.5× crystal payout.
+  Backend score-allowlist updated to accept the new difficulty
+- **Difficulty ramp adjustment** — speed cap on Normal/Hard/Extreme
+  pushed from 2:00 to 3:00 with no post-cap growth. Impossible owns the
+  endurance test now
+- **DRIFTRESET cheat** for full progress wipe (dev only — typed in the
+  pilot-name field; not exposed in any public UI). Wipes crystals,
+  unlocked orbs, beat-difficulty flags, tree state, and tree unlocks
+- **Styled confirm modal** replaces `window.confirm` for tree-respec,
+  DRIFTRESET, and shop confirmation so dialogs stay in the game's
+  visual language
+- **Visual pass** for the tree mechanics: HUD capstone countdown rings
+  (SHROUD / NIGHT SHADE / SUN FORGE / AEGIS / LINGERING HORIZON), Cinder
+  burn zones, Phantom Blade spinning-blade visual, Beyond afterimage,
+  Afterburn discs, hyperspeed stack escalation (gold→orange→red→white,
+  "WARP CORE" label past cap), Salvage crystal sparkle, Twilight Echo
+  ring + text, Gravity Well attract lines, Smooth Entry ring, Butterfly
+  Effect split, destroy-to-powerup proc cues
+- **Main menu UI rework** — per-orb EQUIP / UPGRADE buttons replace the
+  bottom-of-menu SKILL TREES button; the tree overlay tab picker is
+  gone (each orb has its own tree screen). Tooltip orb-name audit:
+  Cyan/Cosmic/Solar/Nebula references replaced with Drifter / Phantom /
+  Inferno / Warp / Bulwark display names
+
+### Changed
+- **Hyperspeed architectural rewrite** — single shared `hyperspeedEndTime`
+  drives all hyperspeed timing. Each pickup increments
+  `hyperSpeedStacks` (capped) and resets the shared end time. Stacks
+  affect peak multiplier; duration is shared. Removes the old
+  per-pickup independent timers and the cascade-of-overlapping-stacks
+  bookkeeping that came with them. Stack cap default 4 → up to 8 with
+  Overdrive 2 + SUPERLUMINAL
+- **Pricing overhaul (pass 2)**. Node costs scaled down per orb:
+  Drifter −65 % (`ORB_COST_SCALE` 0.35), Phantom −60 %, Inferno −55 %,
+  Warp −50 %, Bulwark −45 %. Capstones get a separate, less-aggressive
+  scale (`ORB_CAPSTONE_COST_SCALE` 0.70 / 0.75 / 0.80 / 0.85 / 0.90)
+  so a player can fill out the nodes cheaply but capstones remain
+  long-term goals. Drifter T1 R1 went 7 000 → 2 500; Drifter capstone
+  went 14 000 → 19 500 — nodes ~30 % cheaper overall, capstones
+  intentionally rose
+- **Tree unlock costs reduced** — 5k/11k/18k/26k/35k → 3k/6k/9k/12k/15k.
+  Cheap to enter (1-3 runs each)
+- **Drifter node reworks**:
+  - Loaded Dice → "Each burst has a chance to instantly reset burst
+    cooldown" (2 / 5 / 10 %, 15 s internal cooldown). Was a combo-bias
+    reroll that became redundant once DEAD CENTER let players pick the
+    combo manually
+  - Fortune Favors → adds 10 s cooldown to the second-pickup proc only;
+    the longest-expired-type bias still rolls every spawn (no cooldown)
+  - Butterfly Effect (capstone) → 10 s cooldown after a successful
+    proc, plus a top-of-screen split visual + chime when the duplicate
+    spawns. Was a 1 s deferred mirror-pickup with no cooldown
+- **Phantom node reworks**:
+  - Phantom Blade — tick-based 160 px destroy zone every 3/2/1 s
+    (was permanent aura)
+  - Eternal Ember, Twilight Echo, Soulbound, Beyond, Shadow Regen, Razor
+    Veil — new rank scaling and procs to match shipped capstones
+  - Beyond duration buffed 0.33/0.66/1 s → 0.5/1/1.5 s
+  - Ghostlight buffed 30/50/70 % → 40/60/80 % chance, radius 90 →
+    120 px. Now explicitly triggers from Razor Veil and Phantom Blade
+    kills (matches existing source-flag wiring)
+- **Inferno node reworks** — Solar Flare, Cinder, Firebrand,
+  Combustion, Conflagration, Second Flame, Coronal Hold (now reduces
+  burst cooldown on nova kills), Critical Mass, SUN FORGE (15 s → 45 s
+  cycle to match the buffed nova power). Cinder burn zones are
+  world-static (no scroll) and last 2 s with 60 px lethal radius
+- **Warp node reworks**:
+  - Smooth Entry → "destroy radius around player on natural pickup
+    activation" 80 / 140 / 200 px (was a wider forward barrier)
+  - Slipstream — 15 s cooldown
+  - Warp Harmonic — 20 s cooldown, +1/+2/+3 free stacks
+  - Reservoir, Overdrive, Infinite Gate, SUPERLUMINAL — rewired around
+    the shared-timer architecture
+  - LINGERING HORIZON (capstone) → "Every 90 s, full-stacked hyperspeed
+    auto-fires" with HUD countdown ring (was a 2 s post-hyperspeed
+    forward barrier echo)
+- **Bulwark node reworks** — Salvage 1/2/3 % → 2/5/10 %, Bastion II
+  1/2/4/6/8 % per destroy with EMP-source exclusion guard
+- **Backend allowlists** updated for IMPOSSIBLE — Lambda's score
+  validation accepts the new difficulty in the score-submit and
+  leaderboard-fetch paths
+
+### Fixed
+- **Impossible visibility refresh** — calling `refreshImpossibleVisibility`
+  is hooked into the boot path and the PGS sync handler in addition to
+  the main-menu path, so the IMPOSSIBLE button + leaderboard tab appear
+  immediately on app launch (was previously hidden until the user
+  finished a run or opened the upgrade tab)
+- Square visual bug at the player during hyperspeed — old fillRect halo
+  + rank-scaled aura collapsed to a circular geometry; aura radius is
+  now constant regardless of Smooth Entry rank
+- Diff selector overflow + leaderboard warning copy
+- Text overflow fixes across the tree node tooltips
+- Pixi / Canvas 2D parity for new visuals — every new draw lives on
+  the Canvas 2D overlay above the Pixi stage so it renders identically
+  in both modes
+
 ## [1.6.2] - 2026-04-23
 
 ### Added
@@ -409,6 +517,7 @@ dashboard, draw-call optimizations, powerup rebalancing, stability hardening) in
 - GitHub Pages live demo
 - Source-available license
 
+[1.6.3]: https://github.com/selimcelem/drift/releases/tag/v1.6.3
 [1.6.2]: https://github.com/selimcelem/drift/releases/tag/v1.6.2
 [1.6.1]: https://github.com/selimcelem/drift/releases/tag/v1.6.1
 [1.6.0]: https://github.com/selimcelem/drift/releases/tag/v1.6.0

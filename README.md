@@ -26,21 +26,22 @@ Top 5 scores are kept locally in `localStorage` and shown on the death screen.
 
 ## Features
 
-- **Orb system with crystal progression** — five unlockable orbs (Cyan/Drifter, Cosmic/Phantom, Solar/Inferno, Nebula/Warp, Asteroid/Fortress), each with its own passive bonus and a unique burst ability. Runs earn 💎 Drift Crystals (score × difficulty multiplier, persisted in `localStorage`) that are spent in the shop to unlock new orbs
+- **Orb system with crystal progression** — five unlockable orbs (Drifter, Phantom, Inferno, Warp, Bulwark), each with its own passive bonus and a unique burst ability. Runs earn 💎 Drift Crystals (score × difficulty multiplier, persisted in `localStorage`) that are spent in the shop to unlock new orbs
+- **Per-orb skill trees (v1.6.3)** — every orb has a three-path tree (e.g. Drifter's Chance / Cadence / Convergence) with three tiers per path plus 2-3 capstones. Trees unlock for a flat per-orb crystal cost (3k–15k) — no longer gated behind beating each difficulty. Pricing is structured as cheap nodes (2.5k–29k per rank) and aspirational capstones (19.5k–25k each) so the early grind is fast but capstones remain long-term goals. Respec costs 4k for a single node or 1.4k × ranks for a full-tree wipe
 - **Burst mechanic** — press both sides at once to fire the equipped orb's signature burst ability on a 20-second cooldown. Every orb's burst resolves differently (instant powerup grant, chain destruction, shield refresh, stacked hyperspeed, etc.)
 - **9 progressive planet types** — the pool rotates every 2 minutes through four phases: classic stars/planets/black holes → toothed + eye + cracked → tentacle + screaming + void → heart + mirror + skull. Several types carry dynamic hitboxes that match their animation (toothed spike tips, extending tentacles, pulsing hearts)
 - **Apocalypse sequence** — survive 10 minutes and the world stops spawning, the player is pulled to the centre, and a giant sun descends for a cinematic end-of-run death
 - **Phase-based music + backgrounds** — four gameplay tracks crossfade between phases so the soundtrack evolves with the threat level, and NASA space imagery is parallax-scrolled in sync with the current phase's mood
 - **Tutorial/guide** — a six-page in-game guide (controls, powerups, scoring, burst, timer, orbs) accessible from the main menu
 - **Combo system** — 9 powerup combinations (Supernova, Warp Time, Phantom Blast, Pulsar, Spectral Rush, Juggernaut, Wraith, Eternal Phantom, Fortress Shield), each with its own mechanics and visual identity
-- **Pair spawning** — 1 in 5 powerup spawns is a tethered pair connected by a cosmic energy beam; grabbing either one triggers the matching combo instantly
-- **Stacking hyperspeed** — pick up hyperspeed up to four times for a 4x speed run, with step-down expiry, gold/orange/red/white stack tints, and a blinking stack counter
-- **Streak + time-bonus scoring** — destroy a planet via Nova, Hyperspeed barrier, or Phantom Blast and your next destroy is worth more (streak × 4 flat, cap 8); survive longer and a time bonus adds a score-proportional payout every 30 seconds
+- **Pair spawning** — natural pickups occasionally arrive as a tethered pair connected by a cosmic energy beam (per-difficulty rate); grabbing either one triggers the matching combo instantly
+- **Stacking hyperspeed** — single shared timer; each pickup adds a stack and resets the duration. Default cap 4, raised to 6 with Warp's Overdrive node and 8 with the SUPERLUMINAL capstone. Stack tints escalate gold → orange → red → white, and the HUD swaps to a "WARP CORE" label past the cap
+- **Streak + time-bonus scoring** — destroy a planet via Nova, Hyperspeed barrier, or Phantom Blast and your next destroy is worth more (streak × 4 flat, cap 8 — Drifter's Prime Mover raises this to 12); survive longer and a time bonus adds a score-proportional payout every 30 seconds (15s with Drifter's Tempo at rank 3)
 - **Run timer with danger zones** — HUD timer progresses white → orange → red, with visible danger-zone effects after the 3-minute mark
 - **Real-time timer refactor** — every game timer is driven by wall-clock milliseconds instead of frame counters, so gameplay feels identical at 30, 60, and 120 Hz
 - **Run summary on death** — full breakdown of planets passed, planets destroyed, longest streak, powerups used, and points from each source
 - **Dynamic space background** — real NASA space imagery (nebulae, dying stars, galaxies, supernovae) parallax-scrolls behind the playfield, blended into the cosmos with a screen composite so only the coloured light shows
-- **3 difficulties** — Normal, Hard, Extreme — with progressively faster scroll, more bodies, and more frequent powerup drops. Powerup frequency and tethered-pair spawn chance are now scaled per tier (Normal is the most generous, Extreme unchanged) so easier difficulties get more combo chains to compensate for the lower baseline pressure
+- **4 difficulties** — Normal, Hard, Extreme, and **Impossible** (unlocked by beating Extreme's apocalypse). Speed cap is reached at 3:00 across the first three; Impossible hits cap at 1:00 and continues ramping +10%/min and +1 max body every 2 minutes post-cap, with a stricter backend score allowlist
 - **Resume after crash** — gameplay state is snapshotted to `localStorage` every 5 seconds. If Android kills the app mid-run (backgrounded, OOM, driver reset), the main menu shows a RESUME button with the saved difficulty / survival time / score. Clicking it plays a 3-2-1 countdown and restores the run exactly where it was
 - **Cloud save via Google Play Games** *(optional, Android)* — sign in once and your drift crystals, unlocked orbs, active orb, and per-difficulty top-5 scores sync to a single Play Games Saved Game (`drift_save_v1`) via the Snapshots API. Conflicts resolve with a max-per-field merge (higher crystal count wins, unlocked orbs union, top-5-per-difficulty scores). First-launch prompt lets you opt in; staying signed-out leaves the game 100 % local. Implemented as a custom Capacitor plugin (Kotlin) bridging `play-services-games-v2`
 - **Local + global leaderboards** — top 5 per difficulty stored locally; global top 10 served from a serverless AWS backend. Global top 10 entries are permanent (TTL attribute removed); positions 11+ expire after 7 days
@@ -151,10 +152,10 @@ Pipeline: `terraform init` → `plan` → `apply -auto-approve`
 
 ## Roadmap
 
-Post-v1.6.2 plans:
+Post-v1.6.3 plans:
 
-- **Codex** — body types unlock on first destruction with a lore entry attached to each. Progression state already syncs to Google Play Games cloud save (shipped in v1.6.2), so the codex will ride on the same snapshot
-- **Visual upgrades** — now that the pipeline is on WebGL, adding fragment shaders for body auras, smoother tentacle animation via per-segment interpolation, and denser particle effects
+- **Codex** — body types unlock on first destruction with a lore entry attached to each. Progression state syncs to Google Play Games cloud save (shipped in v1.6.2), so the codex will ride on the same snapshot
+- **Visual upgrades** — fragment shaders for body auras, smoother tentacle animation via per-segment interpolation, denser particle effects on top of the WebGL pipeline
 - **Mobile audio bass fix** — low-frequency SFX (hyperspeed sustain, apocalypse rumble) currently clip on some Android speakers; re-EQ pass planned
 
 ## License
