@@ -2430,6 +2430,7 @@
       <div class="cap-cd" id="capCdNightShade" data-cap="nightShade"><div class="cap-cd-ring"></div><div class="cap-cd-lbl">NIGHT</div></div>
       <div class="cap-cd" id="capCdSunForge"  data-cap="sunForge"><div class="cap-cd-ring"></div><div class="cap-cd-lbl">FORGE</div></div>
       <div class="cap-cd" id="capCdAegis"     data-cap="aegis"><div class="cap-cd-ring"></div><div class="cap-cd-lbl">AEGIS</div></div>
+      <div class="cap-cd" id="capCdEventHorizon" data-cap="eventHorizon"><div class="cap-cd-ring"></div><div class="cap-cd-lbl">HORIZON</div></div>
     </div>
     <div id="streakDisplay"></div>
     <div id="hintLeft">◀ ATTRACT</div>
@@ -4338,8 +4339,8 @@ const TREE_DEFS = {
       chance: {
         name: 'CHANCE',
         nodes: [
-          { key: 'loadedDice',    name: 'Loaded Dice',     tier: 1, max: 3, desc: 'Burst reroll if rolled powerup type is already active.', effect: r => `${[33,66,100][r-1]||0}% reroll chance` },
-          { key: 'fortuneFavors', name: 'Fortune Favors',  tier: 2, max: 3, desc: 'Natural single-pickup spawns biased toward your longest-expired type; chance to spawn a second extra pickup.', effect: r => `${[25,50,75][r-1]||0}% bias, ${[10,20,30][r-1]||0}% extra` },
+          { key: 'loadedDice',    name: 'Loaded Dice',     tier: 1, max: 3, desc: 'Each burst has a chance to instantly reset burst cooldown.', effect: r => `${[2,5,10][r-1]||0}% chance, 15s cooldown` },
+          { key: 'fortuneFavors', name: 'Fortune Favors',  tier: 2, max: 3, desc: 'Natural single-pickup spawns biased toward your longest-expired type; chance to spawn a second extra pickup. (10s cooldown on extra)', effect: r => `${[25,50,75][r-1]||0}% bias, ${[10,20,30][r-1]||0}% extra (10s CD)` },
           { key: 'doubleNothing', name: 'Double or Nothing', tier: 3, max: 3, desc: 'After burst fires, chance to immediately fire a second random single powerup.', effect: r => `${[30,60,90][r-1]||0}% second-fire chance` },
         ],
       },
@@ -4363,7 +4364,7 @@ const TREE_DEFS = {
     capstones: [
       { key: 'deadCenter',       name: 'DEAD CENTER',       desc: 'Tap burst to pause and pick a powerup from a radial menu.' },
       { key: 'calculatedDrift',  name: 'CALCULATED DRIFT',  desc: 'DEAD CENTER picks fire as pair combos instead of single powerups.' },
-      { key: 'butterfly',        name: 'BUTTERFLY EFFECT',  desc: '15% chance on any pickup to spawn a mirror pickup 1s later.' },
+      { key: 'butterfly',        name: 'BUTTERFLY EFFECT',  desc: 'Chance to duplicate pickups when grabbed. 10s cooldown. 15% chance, splits visibly at top of screen.' },
     ],
   },
   cosmic: {
@@ -4382,7 +4383,7 @@ const TREE_DEFS = {
         name: 'WRAITH',
         nodes: [
           { key: 'razorVeil',    name: 'Razor Veil',    tier: 1, max: 3, desc: 'Destroy-on-contact during ghost without needing a shield.', effect: r => `Every ${[3,2,1][r-1]||0}s` },
-          { key: 'ghostlight',   name: 'Ghostlight',    tier: 2, max: 3, desc: 'Ghost destroys spawn a 90px EMP-lite burst (no chain).', effect: r => `${[30,50,70][r-1]||0}% trigger` },
+          { key: 'ghostlight',   name: 'Ghostlight',    tier: 2, max: 3, desc: 'All ghost-flavored kills (ghost aura, Razor Veil, Phantom Blade) have a chance to spawn a 120px EMP-lite burst (no chain).', effect: r => `${[40,60,80][r-1]||0}% trigger` },
           { key: 'phantomBlade', name: 'Phantom Blade', tier: 3, max: 3, desc: 'During ghost or Eternal Phantom, periodically spawn blades that destroy bodies within 160px.', effect: r => `Every ${[3,2,1][r-1]||0}s` },
         ],
       },
@@ -4391,7 +4392,7 @@ const TREE_DEFS = {
         nodes: [
           { key: 'shadowRegen', name: 'Shadow Regen', tier: 1, max: 3, desc: 'Ghost pickups stack additively rather than refreshing. Cap: 2× base duration.', effect: r => `${[10,15,20][r-1]||0}% additive` },
           { key: 'soulbound',   name: 'Soulbound',    tier: 2, max: 5, desc: 'On body destroyed, chance to extend ghost by +1s. 5s cooldown. Cap: 2× base ghost duration.', effect: r => `${[2,4,6,8,10][r-1]||0}% per destroy` },
-          { key: 'beyond',      name: 'Beyond',       tier: 3, max: 3, desc: 'When ghost ends, remain invulnerable for an afterimage window.', effect: r => `${[0.33,0.66,1][r-1]||0}s afterimage` },
+          { key: 'beyond',      name: 'Beyond',       tier: 3, max: 3, desc: 'When ghost ends, remain invulnerable for an afterimage window.', effect: r => `${[0.5,1,1.5][r-1]||0}s afterimage` },
         ],
       },
     },
@@ -4457,7 +4458,7 @@ const TREE_DEFS = {
       drift: {
         name: 'DRIFT',
         nodes: [
-          { key: 'smoothEntry',  name: 'Smooth Entry',  tier: 1, max: 3, desc: 'Hyperspeed forward barrier extends significantly in width — rank 3 spans the full playfield.', effect: r => `${[1.5,2.5,'full'][r-1]||0}${r===3?' screen':'x width'}` },
+          { key: 'smoothEntry',  name: 'Smooth Entry',  tier: 1, max: 3, desc: 'Each natural hyperspeed pickup destroys bodies in a radius around the player on activation.', effect: r => `${[80,140,200][r-1]||0}px radius` },
           { key: 'slipstream',   name: 'Slipstream',    tier: 2, max: 5, desc: 'On body destroyed, chance to grant a hyperspeed stack. (15s cooldown)', effect: r => `${[1,2,3,4,6][r-1]||0}% per destroy` },
           { key: 'warpHarmonic', name: 'Warp Harmonic', tier: 3, max: 3, desc: 'Hyperspeed pair combos grant bonus free stacks. 20s cooldown.', effect: r => `+${r} free stacks` },
         ],
@@ -4465,7 +4466,7 @@ const TREE_DEFS = {
     },
     capstones: [
       { key: 'superluminal', name: 'SUPERLUMINAL',  desc: 'Raises max hyperspeed stack cap to 8.' },
-      { key: 'eventHorizon', name: 'LINGERING HORIZON', desc: 'After hyperspeed fully ends, the forward barrier lingers for 2s (player is NOT invulnerable during the echo).' },
+      { key: 'eventHorizon', name: 'LINGERING HORIZON', desc: 'Every 90s, gain full-stacked hyperspeed automatically.' },
     ],
   },
   asteroid: {
@@ -4539,11 +4540,11 @@ let beatDifficulty = { NORMAL: false, HARD: false, EXTREME: false };
 // PGS snapshot with OR-merge across devices.
 let treesUnlocked = { cyan: false, cosmic: false, solar: false, nebula: false, asteroid: false };
 const TREE_UNLOCK_COSTS = {
-  cyan:      5000, // v1.6.3: -50% (was 10000)
-  cosmic:   11000, // v1.6.3: -45% (was 20000)
-  solar:    18000, // v1.6.3: -40% (was 30000)
-  nebula:   26000, // v1.6.3: -35% (was 40000)
-  asteroid: 35000, // v1.6.3: -30% (was 50000)
+  cyan:      3000, // v1.6.3 pricing pass 2: cheap to enter (1-3 runs).
+  cosmic:    6000,
+  solar:     9000,
+  nebula:   12000,
+  asteroid: 15000,
 };
 
 // Cached ranks for the currently-equipped orb — refreshed in refreshActiveTreeCache().
@@ -4682,11 +4683,20 @@ function purchaseTreeUnlock(orbKey) {
 // shared global table, then multiplied by the orb's scale factor. Rounded
 // to the nearest 500 crystals for clean display.
 const ORB_COST_SCALE = {
-  cyan:     0.50, // Drifter −50%
-  cosmic:   0.55, // Phantom  −45%
-  solar:    0.60, // Inferno  −40%
-  nebula:   0.65, // Warp     −35%
-  asteroid: 0.70, // Bulwark  −30%
+  cyan:     0.35, // Drifter −65% (v1.6.3 pricing pass 2)
+  cosmic:   0.40, // Phantom  −60%
+  solar:    0.45, // Inferno  −55%
+  nebula:   0.50, // Warp     −50%
+  asteroid: 0.55, // Bulwark  −45%
+};
+// Capstones use a separate, less-aggressive scale so they remain
+// long-term aspirations even after node grind is cheap.
+const ORB_CAPSTONE_COST_SCALE = {
+  cyan:     0.70, // Drifter capstone −30%
+  cosmic:   0.75, // Phantom capstone −25%
+  solar:    0.80, // Inferno capstone −20%
+  nebula:   0.85, // Warp capstone    −15%
+  asteroid: 0.90, // Bulwark capstone −10%
 };
 function orbCostScale(orbKey) {
   return ORB_COST_SCALE[orbKey] || 1;
@@ -4707,7 +4717,8 @@ function nodeTotalCost(tier, maxRank, orbKey) {
   return sum;
 }
 function capstoneCost(orbKey) {
-  return roundCrystals500(TREE_CAPSTONE_COST * orbCostScale(orbKey));
+  const scale = ORB_CAPSTONE_COST_SCALE[orbKey] || 1;
+  return roundCrystals500(TREE_CAPSTONE_COST * scale);
 }
 function pathPrereqMet(state, pathKey, nodeIdx) {
   // Same-path prereq: T2 requires T1 rank ≥ 1; T3 requires T2 rank ≥ 1.
@@ -5152,6 +5163,23 @@ function tickCapstoneTimers() {
       aegisNextFireTime = now + 45000;
     }
   }
+  // LINGERING HORIZON (Warp capstone) v1.6.3 rework: every 90 s, grant a
+  // fully stacked hyperspeed activation. Source flag 'lingeringHorizon'
+  // keeps Smooth Entry's destroy-radius and Infinite Gate's bonus-time
+  // gate from re-triggering off the auto-fire (both gate on
+  // source === 'natural'). Stacks are jumped straight to cap-1 so the
+  // single activateHyperspeed call lands at max stacks (one whoosh
+  // restart + one Sentry breadcrumb instead of N).
+  if (activeOrb === 'nebula' && hasCapstone('eventHorizon')) {
+    if (now >= lingeringHorizonNextFireTime) {
+      const cap = HYPERSPEED_MAX_STACKS();
+      hyperSpeedStacks = Math.max(hyperSpeedStacks, cap - 1);
+      activateHyperspeed(undefined, undefined, 'lingeringHorizon');
+      lingeringHorizonLastFireTime = now;
+      lingeringHorizonNextFireTime = now + 90000;
+      treeLog('lingeringHorizon: auto full-stack hyperspeed (stacks ' + hyperSpeedStacks + ')');
+    }
+  }
 }
 
 // Entry point called from every body-destroy site. `source` tag gates certain
@@ -5260,22 +5288,35 @@ let criticalMassCooldownEnd = 0;
 // reduction. No accumulator/caps/history — the rank % of BURST_COOLDOWN_MS
 // is subtracted directly from burstCooldownEnd on each nova kill.
 // LINGERING HORIZON (Warp capstone, v1.6.3 rework of EVENT HORIZON):
-// 2 s post-hyperspeed barrier echo. Stamped when the last hyperspeed stack
-// expires; the barrier-kill loop runs while Date.now() < this ts even when
-// hyperSpeedStacks === 0.
-let hyperspeedEchoEndTime = 0;
-// v1.6.3 FIX D2: echo start time is deferred past the Afterburn disc
-// launch sequence (rank * 500 ms) so the two visuals don't overlap.
-let hyperspeedEchoStartTime = 0;
+// every 90 s of gameplay, automatically grant a fully-stacked hyperspeed
+// activation. Auto-fires use a non-natural source flag so they cannot
+// re-trigger Smooth Entry / Infinite Gate. ts is stamped on fire and
+// shifted by applyPauseDeltaShift so pause time doesn't bleed into the
+// cycle.
+let lingeringHorizonNextFireTime = 0;
+// Visual flash latch — set on auto-fire, read by the HUD ring tick to
+// flash the ring briefly (mirrors capCdLastFired pattern for other
+// capstones).
+let lingeringHorizonLastFireTime = 0;
 // Capstone auto-fire timers (NIGHT SHADE 60 s, SUN FORGE 15 s, AEGIS 45 s).
 // Initialised to +interval in resetTreeNodeState so first fire waits the
 // full cadence after run start.
 let nightShadeNextFireTime = 0;
 let sunForgeNextFireTime   = 0;
 let aegisNextFireTime      = 0;
-// BUTTERFLY EFFECT (Drifter capstone): setTimeouts for deferred mirror-
-// pickup spawns. Tracked for cleanup on run restart so a ghost pickup
-// can't spawn into a fresh run.
+// BUTTERFLY EFFECT (Drifter capstone) v1.6.3 rework: 10 s cooldown
+// gate on successful procs. Failed rolls do NOT stamp the cooldown.
+let butterflyEffectNextProcTime = 0;
+// Loaded Dice (Drifter Chance T1) v1.6.3 rework: 15 s cooldown gate on
+// the burst-cooldown-reset proc. Failed rolls do NOT stamp the cooldown.
+let loadedDiceNextProcTime = 0;
+// Fortune Favors (Drifter Chance T2) v1.6.3 rework: 10 s cooldown gate
+// on the second-pickup proc only. The longest-expired type bias has no
+// cooldown.
+let fortuneFavorsNextProcTime = 0;
+// Legacy state — old butterfly used setTimeouts; current path schedules
+// inline via spawnButterflyEffectSplit. Kept (and cleared on reset) in
+// case any external path still queues into it.
 let butterflyPending = [];
 // DEAD CENTER (Drifter capstone): radial-menu overlay state.
 let deadCenterActive = false;
@@ -5311,9 +5352,9 @@ function resetTreeNodeState() {
   // Capstone state.
   novaCastKillCount = 0;
   criticalMassCooldownEnd = 0;
-  hyperspeedEchoEndTime = 0;
-  hyperspeedEchoStartTime = 0;
   const now = Date.now();
+  lingeringHorizonNextFireTime = now + 90000;
+  lingeringHorizonLastFireTime = 0;
   shroudFlagSet = false;
   shroudLastFireTime = now;
   nightShadeNextFireTime = now + 20000;
@@ -5321,6 +5362,10 @@ function resetTreeNodeState() {
   aegisNextFireTime      = now + 45000;
   for (const id of butterflyPending) clearTimeout(id);
   butterflyPending = [];
+  butterflyEffectNextProcTime = 0;
+  butterflyEffectVisuals = [];
+  loadedDiceNextProcTime = 0;
+  fortuneFavorsNextProcTime = 0;
   // If a DEAD CENTER overlay was mid-show during restart, hide it cleanly.
   if (deadCenterActive) closeDeadCenterOverlay(false);
 }
@@ -5339,20 +5384,6 @@ function novaScale(r) {
 function razorVeilRearmMs() {
   const r = rankOf('razorVeil');
   return [3000, 2000, 1000][r - 1] || 0;
-}
-
-// Is the effect type "active" for the Loaded Dice reroll check?
-// Shields/ghost: timer active. Hyperspeed: at cap. Nova: any nova-flavored
-// combo or rings in flight.
-function effectActiveForBurstReroll(type) {
-  if (type === 'shield') return activeEffects.shield > 0;
-  if (type === 'ghost') return activeEffects.ghost > 0;
-  if (type === 'hyperspeed') return hyperSpeedStacks >= HYPERSPEED_MAX_STACKS();
-  if (type === 'nova') {
-    return novaRings.length > 0 || activeCombos.nova_nova ||
-      activeCombos.nova_hyperspeed || activeCombos.nova_ghost || activeCombos.nova_shield;
-  }
-  return false;
 }
 
 // DEAD CENTER (Drifter capstone) overlay lifecycle. Called from executeBurst
@@ -5476,40 +5507,55 @@ function maybeKeystoneBonus(comboKey) {
 }
 
 // BUTTERFLY EFFECT (Drifter capstone): on a qualifying pickup event, roll
-// 15 % to spawn a mirror pickup of the same type ~1 s later, at a random
-// x ± 80 px offset above the player. One roll per pair-pickup event (the
-// roll is done at the pair call-site, not per tethered piece).
+// v1.6.3 rework: 15 % chance per pickup grab to spawn a duplicate at the
+// top of the screen, with a brief split visual + SFX. 10 s cooldown on
+// successful procs (failed rolls do NOT stamp the cooldown). One roll
+// per pair-pickup event (the roll is done at the pair call-site, not
+// per tethered piece).
 function maybeButterflyEffect(type, srcX, srcY) {
+  if (Date.now() < butterflyEffectNextProcTime) return;
   if (Math.random() >= 0.15) return;
+  butterflyEffectNextProcTime = Date.now() + 10000;
+  // Spawn the duplicate offscreen-top so the player has to intercept
+  // it. Position is biased toward the player's current x to keep the
+  // duplicate within easy reach.
+  const topBodyY = bodies.length ? Math.min(...bodies.map(b => b.y)) : -100;
+  const spawnY = Math.min(-30, topBodyY - 60 - Math.random() * 80);
   const dx = (Math.random() - 0.5) * 160; // ±80 px
   const spawnX = Math.max(60, Math.min(W - 60, player.x + dx));
-  const id = setTimeout(() => {
-    if (state !== 'playing' && state !== 'devmode') return;
-    // v1.6.3: spawn offscreen-top where natural pickups come from (matches
-    // spawnPowerup's y formula) so the mirror scrolls in — player has to
-    // intercept it, not receive it overhead.
-    const topBodyY = bodies.length ? Math.min(...bodies.map(b => b.y)) : -100;
-    const spawnY = Math.min(-30, topBodyY - 60 - Math.random() * 80);
-    powerups.push({
-      type,
-      x: spawnX, y: spawnY,
-      radius: 13,
-      pulse: Math.random() * 6.28,
-      collected: false,
-    });
-    treeLog('butterfly: mirror ' + type + ' spawned');
-  }, 1000);
-  butterflyPending.push(id);
+  spawnButterflyEffectSplit(spawnX, spawnY, type);
+}
+
+// v1.6.3 visual pass: Butterfly Effect split — pushes the duplicate
+// pickup, queues a brief expanding-ring + particle-burst animation at
+// the spawn site, and plays a soft mirror chime. Reuses
+// emitPickupParticles for the burst and butterflyEffectVisuals for the
+// ring (drawn from drawButterflyEffectVisuals).
+function spawnButterflyEffectSplit(x, y, type) {
+  powerups.push({
+    type, x, y, radius: 13,
+    pulse: Math.random() * 6.28,
+    collected: false,
+  });
+  butterflyEffectVisuals.push({
+    x, y, type,
+    startTime: Date.now(),
+    maxLifeMs: BUTTERFLY_EFFECT_VISUAL_LIFE_MS,
+  });
+  emitPickupParticles(x, y, type);
+  try { SFX.playSfxBuffer('mirror', 0.18); } catch {}
+  treeLog('butterfly: split spawned ' + type + ' (10s CD)');
 }
 
 // Ghostlight burst: spawn a small harmless EMP-lite burst at (x, y) that
 // visually references the shield-EMP but doesn't kill bodies or chain.
 // Reuses emitDestroyBurst for the ring flash + kills any crack fragments
 // in range (design: "kills fragments, +1 streak").
+// v1.6.3 buff: radius 90 → 120 px.
 function ghostlightBurst(x, y) {
   emitDestroyBurst(x, y, POWERUP_COLORS.ghost.rgb);
-  // Clean out any crack fragments in the 90 px radius.
-  const r2 = 90 * 90;
+  // Clean out any crack fragments in the 120 px radius.
+  const r2 = 120 * 120;
   for (let i = crackFragments.length - 1; i >= 0; i--) {
     const f = crackFragments[i];
     const dx = f.x - x, dy = f.y - y;
@@ -5701,6 +5747,12 @@ const PGS = (() => {
         localStorage.setItem('drift_beat_normal',  beatDifficulty.NORMAL  ? '1' : '0');
         localStorage.setItem('drift_beat_hard',    beatDifficulty.HARD    ? '1' : '0');
         localStorage.setItem('drift_beat_extreme', beatDifficulty.EXTREME ? '1' : '0');
+      } catch {}
+      // PGS sync may unlock Impossible asynchronously after the initial
+      // menu has rendered; refresh visibility so the button + leaderboard
+      // tab appear without requiring a menu re-show.
+      try {
+        if (typeof refreshImpossibleVisibility === 'function') refreshImpossibleVisibility();
       } catch {}
     }
     if (payload.treesUnlocked && typeof payload.treesUnlocked === 'object') {
@@ -5908,6 +5960,10 @@ const SALVAGE_SPARKLE_LIFE_MS = 700;
 // float above player for 500 ms on auto-refresh fire.
 let twilightEchoVisuals = [];
 const TWILIGHT_ECHO_VISUAL_LIFE_MS = 500;
+// v1.6.3 visual pass: Butterfly Effect split. Brief ring + glow at the
+// duplicate-pickup spawn site (top of screen). 400 ms life.
+let butterflyEffectVisuals = [];
+const BUTTERFLY_EFFECT_VISUAL_LIFE_MS = 400;
 // v1.6.3 visual pass part 2: Phantom Blade blade graphic — elongated
 // purple diamond that spins 180° over 200 ms on each tick kill.
 let phantomBlades = [];
@@ -5921,6 +5977,15 @@ let beyondAfterimage = null;
 // needed. drawAfterburnDiscs reads launchTime/originX/originY/endpointRadius
 // from those same entries.
 let planetRipples = [];
+// v1.6.3 Smooth Entry rework: one-shot expanding ring at the player on
+// natural-pickup destroy-radius fires. Each entry { x, y, maxR, startTime }.
+// Lives 200 ms; ring radius eases from 0 → maxR over the lifespan.
+let smoothEntryRings = [];
+const SMOOTH_ENTRY_RING_LIFE_MS = 200;
+const SMOOTH_ENTRY_RING_CAP = 6;
+function spawnSmoothEntryRing(x, y, maxR) {
+  pushCapped(smoothEntryRings, { x, y, maxR, startTime: Date.now() }, SMOOTH_ENTRY_RING_CAP);
+}
 // Shield EMP rings — single expanding cyan ring spawned when a shield (or
 // wraith) destroys a planet. First planet it touches gets destroyed, but no
 // chain reaction. Capped at EMP_RINGS_CAP.
@@ -9440,7 +9505,10 @@ function spawnPowerup() {
   // Fortune Favors extra-spawn roll: rank-specific chance to spawn a second
   // pickup at a slightly offset x/y alongside this one. Picks a random type
   // (with the same nova-overload guard) independent of the biased type.
-  if (activeOrb === 'cyan') {
+  // v1.6.3 rework: 10 s cooldown on successful procs only. Failed rolls
+  // do NOT stamp the cooldown. The longest-expired-type bias above has
+  // no cooldown.
+  if (activeOrb === 'cyan' && Date.now() >= fortuneFavorsNextProcTime) {
     const ffRank = rankOf('fortuneFavors');
     if (ffRank > 0) {
       const extraChance = [0.10, 0.20, 0.30][ffRank - 1] || 0;
@@ -9470,7 +9538,8 @@ function spawnPowerup() {
           pulse: Math.random() * 6.28,
           collected: false,
         });
-        treeLog('fortuneFavors: extra ' + extraType + ' spawned');
+        fortuneFavorsNextProcTime = Date.now() + 10000;
+        treeLog('fortuneFavors: extra ' + extraType + ' spawned (10s CD)');
       }
     }
   }
@@ -9553,6 +9622,36 @@ function drawTwilightEchoVisuals() {
     ctx.font = '700 11px "Orbitron", monospace';
     ctx.textAlign = 'center';
     ctx.fillText('ECHO', v.x, v.y - 30 - t * 12);
+    ctx.restore();
+  }
+  ctx.globalAlpha = 1;
+}
+
+// v1.6.3 visual pass: Butterfly Effect split — expanding ring + small
+// "+1" glyph at the duplicate spawn site, in the type's powerup color.
+function drawButterflyEffectVisuals() {
+  if (!butterflyEffectVisuals.length) return;
+  const now = Date.now();
+  butterflyEffectVisuals = butterflyEffectVisuals.filter(v => now - v.startTime < v.maxLifeMs);
+  for (const v of butterflyEffectVisuals) {
+    const age = now - v.startTime;
+    const t = age / v.maxLifeMs; // 0 → 1
+    const ease = 1 - (1 - t) * (1 - t); // ease-out
+    const rad = 8 + ease * 38;
+    const alpha = (1 - t) * 0.9;
+    const rgb = (POWERUP_COLORS[v.type] && POWERUP_COLORS[v.type].rgb) || '255,255,255';
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.strokeStyle = `rgba(${rgb},1)`;
+    ctx.lineWidth = 2.2;
+    ctx.beginPath();
+    ctx.arc(v.x, v.y, rad, 0, 6.28);
+    ctx.stroke();
+    ctx.globalAlpha = alpha * 0.45;
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.arc(v.x, v.y, rad * 1.4, 0, 6.28);
+    ctx.stroke();
     ctx.restore();
   }
   ctx.globalAlpha = 1;
@@ -10751,6 +10850,35 @@ function activateHyperspeed(durationOverride, peakScale, source) {
   // Restart the sustained whoosh at the new stack-scaled pitch.
   if (hyperspeedWhooshNodes) { try { hyperspeedWhooshNodes.stop(0.1); } catch {} }
   hyperspeedWhooshNodes = SFX.startHyperspeedWhoosh(hyperSpeedStacks);
+
+  // Smooth Entry (Warp Drift T1) v1.6.3 rework: only natural hyperspeed
+  // pickups trigger a one-shot destroy radius around the player at
+  // activation. Slipstream / Warp Harmonic / combo / Lingering Horizon
+  // auto-fires are excluded by the source flag.
+  if (activeOrb === 'nebula' && source === 'natural') {
+    const seRank = rankOf('smoothEntry');
+    if (seRank > 0) {
+      const seRadius = [80, 140, 200][seRank - 1] || 0;
+      if (seRadius > 0) {
+        const seR2 = seRadius * seRadius;
+        const seSurv = [];
+        for (const b of bodies) {
+          const dx = b.x - player.x, dy = b.y - player.y;
+          if (dx * dx + dy * dy < seR2) {
+            emitDestroyBurst(b.x, b.y, POWERUP_COLORS.hyperspeed.rgb);
+            emitDestroyEffects(b, 'barrier');
+            addDestroyPoints();
+            SFX.planetDestroyed('barrier');
+            checkDestroyProc(b, 'nova');
+          } else {
+            seSurv.push(b);
+          }
+        }
+        bodies = seSurv;
+        spawnSmoothEntryRing(player.x, player.y, seRadius);
+      }
+    }
+  }
 }
 
 function activatePowerup(type, x, y) {
@@ -10908,10 +11036,12 @@ function resetGame() {
   pickupParticles = [];
   salvageSparkles = [];
   twilightEchoVisuals = [];
+  butterflyEffectVisuals = [];
   phantomBlades = [];
   beyondAfterimage = null;
   orbTrailParticles = [];
   planetRipples = [];
+  smoothEntryRings = [];
   destroyEffects = [];
   deathShards = [];
   crackFragments = [];
@@ -11230,7 +11360,8 @@ function checkCollisions() {
     const wraith = activeEffects.shield > 0;
     const rvRank = (activeOrb === 'cosmic') ? rankOf('razorVeil') : 0;
     const glRank = (activeOrb === 'cosmic') ? rankOf('ghostlight') : 0;
-    const glChance = [0.30, 0.50, 0.70][glRank - 1] || 0;
+    // v1.6.3 buff: 30/50/70% → 40/60/80%.
+    const glChance = [0.40, 0.60, 0.80][glRank - 1] || 0;
     for (let i = bodies.length - 1; i >= 0; i--) {
       const b = bodies[i];
       if (bodyHits(b, 0)) {
@@ -11351,24 +11482,10 @@ function executeBurst() {
       return true;
     }
     const types = ['shield','nova','hyperspeed','ghost'];
-    const ldRank = rankOf('loadedDice');
     const donRank = rankOf('doubleNothing');
     // Fortune Favors' burst bias was removed in v1.6.3 — it now biases
     // natural playfield spawns instead (see spawnPowerup).
-    let type = types[Math.floor(Math.random() * types.length)];
-    // Loaded Dice: if rolled type is already active, reroll (rank-gated
-    // chance) to an unused type. Keeps bursts from wasting on a redundant
-    // roll. At rank 3 the reroll is guaranteed.
-    if (ldRank > 0 && effectActiveForBurstReroll(type)) {
-      const chance = [0.33, 0.66, 1.0][ldRank - 1] || 0;
-      if (Math.random() < chance) {
-        const alt = types.filter(t => !effectActiveForBurstReroll(t));
-        if (alt.length > 0) {
-          type = alt[Math.floor(Math.random() * alt.length)];
-          treeLog('loadedDice: rerolled to ' + type);
-        }
-      }
-    }
+    const type = types[Math.floor(Math.random() * types.length)];
     activatePowerup(type, player.x, player.y);
     powerupLastActivated[type] = Date.now();
     // Double or Nothing: chance to immediately fire a second random single
@@ -11802,6 +11919,21 @@ function update() {
     executeBurst();
     burstCooldownDuration = BURST_COOLDOWN();
     burstCooldownEnd = Date.now() + burstCooldownDuration;
+    // Loaded Dice (Drifter Chance T1) v1.6.3 rework: each burst has a
+    // chance to instantly reset the burst cooldown to 0 (burst available
+    // immediately again). 15 s internal cooldown. Failed rolls do NOT
+    // stamp the cooldown — player keeps rolling on subsequent bursts.
+    if (activeOrb === 'cyan') {
+      const ldRank = rankOf('loadedDice');
+      if (ldRank > 0 && Date.now() >= loadedDiceNextProcTime) {
+        const chance = [0.02, 0.05, 0.10][ldRank - 1] || 0;
+        if (Math.random() < chance) {
+          burstCooldownEnd = Date.now();
+          loadedDiceNextProcTime = Date.now() + 15000;
+          treeLog('loadedDice: burst CD reset (15s CD)');
+        }
+      }
+    }
   }
   burstTriggered = false;
 
@@ -11859,8 +11991,8 @@ function update() {
     if (activeEffects.ghost <= 0) {
       const beRank = rankOf('beyond');
       if (beRank > 0) {
-        // v1.6.3 nerf: 0.33/0.66/1s (was 1/1.5/2s).
-        const dur = [330, 660, 1000][beRank - 1] || 0;
+        // v1.6.3 buff: 0.5/1/1.5s (was 0.33/0.66/1s).
+        const dur = [500, 1000, 1500][beRank - 1] || 0;
         beyondEndTime = nowMs + dur;
         // v1.6.3 visual pass part 2: afterimage indicator + echo SFX.
         beyondAfterimage = { startTime: nowMs, maxLifeMs: dur };
@@ -11901,18 +12033,9 @@ function update() {
           scheduleAfterburnDiscs(abRankLocal);
         }
       }
-      // LINGERING HORIZON (Warp capstone): 2 s post-hyperspeed forward-
-      // only barrier. v1.6.3 FIX D2: defer the echo start until AFTER the
-      // last Afterburn disc has launched so the disc visuals don't visually
-      // drown out the echo. Each disc launches at `hyperspeedEnd + i*500ms`
-      // for i in [0..rank-1], so the sequence ends at `rank * 500ms` after
-      // hyperspeed end. Rank 0 (no Afterburn) → start immediately.
-      if (activeOrb === 'nebula' && hasCapstone('eventHorizon')) {
-        const echoDelay = abRankLocal * 500;
-        hyperspeedEchoStartTime = Date.now() + echoDelay;
-        hyperspeedEchoEndTime = hyperspeedEchoStartTime + 2000;
-        treeLog('lingeringHorizon: echo armed (start +' + echoDelay + 'ms, dur 2s, was ' + endingStacks + ' stacks)');
-      }
+      // v1.6.3 Lingering Horizon rework: the 2 s post-hyperspeed forward
+      // barrier echo was replaced by a 90 s auto full-stack hyperspeed.
+      // See tickCapstoneTimers for the new behaviour.
       // JUGGERNAUT: refresh shield when hyperspeed ends. Asteroid orb gets the
       // fortress-tier 8s reward, others get the default 6s.
       if (juggernautPendingShieldRefresh) {
@@ -11998,7 +12121,8 @@ function update() {
     if (pbRank > 0 && Date.now() >= phantomBladeNextTickTime) {
       const reach = 160;
       const glRank = rankOf('ghostlight');
-      const glChance = [0.30, 0.50, 0.70][glRank - 1] || 0;
+      // v1.6.3 buff: 30/50/70% → 40/60/80%.
+      const glChance = [0.40, 0.60, 0.80][glRank - 1] || 0;
       const survivors = [];
       let killedAny = false;
       for (const b of bodies) {
@@ -12394,27 +12518,16 @@ function update() {
     }
   }
 
-  // v1.6.3 hyperspeed barrier split into two modes:
-  //   - hyperBarrierActive (active hyperspeed): 360° barrier kill + player
-  //     invulnerability (handled in checkCollisions).
-  //   - lingeringHorizonActive (2 s post-hyperspeed echo): FORWARD-ONLY
-  //     wedge barrier, player NOT invulnerable (FIX W11 / W12).
+  // v1.6.3 hyperspeed barrier: active during hyperspeed only — 360° kill
+  // + player invulnerability (handled in checkCollisions). The Lingering
+  // Horizon 2 s forward-only echo was removed in v1.6.3 (capstone now
+  // auto-fires a full-stacked hyperspeed every 90 s instead).
   const hyperBarrierActive = (activeEffects.hyperspeed > 0 && hyperspeedCurrentMult > 1.05);
-  const _lhNow = Date.now();
-  const lingeringHorizonActive = (activeOrb === 'nebula' && hasCapstone('eventHorizon')
-    && hyperSpeedStacks === 0
-    && _lhNow >= hyperspeedEchoStartTime && _lhNow < hyperspeedEchoEndTime);
   if (hyperBarrierActive) {
-    // Smooth Entry (Warp Drift T1) v1.6.3 rework: barrier horizontal length
-    // scales dramatically. Rank 1 = 1.5× default (90px), rank 2 = 2.5×
-    // (150px), rank 3 = full playfield (W/2 each side). Baseline 60px.
-    let barrierHalfW = 60;
-    if (activeOrb === 'nebula') {
-      const seRank = rankOf('smoothEntry');
-      if (seRank === 1) barrierHalfW = 60 * 1.5;
-      else if (seRank === 2) barrierHalfW = 60 * 2.5;
-      else if (seRank >= 3) barrierHalfW = W / 2;
-    }
+    // v1.6.3 Smooth Entry rework: barrier kill radius is the baseline 60 px
+    // regardless of Smooth Entry rank. Smooth Entry now fires a one-shot
+    // destroy radius on natural pickup activation (see activateHyperspeed).
+    const barrierHalfW = 60;
     const bSurvivors = [];
     for (const b of bodies) {
       const dxB = b.x - player.x, dyB = b.y - player.y;
@@ -12442,37 +12555,6 @@ function update() {
       }
     }
     if (barrierAteFragment) SFX.playSfxBuffer('hyperspeedBarrier', 0.3);
-  } else if (lingeringHorizonActive) {
-    // FIX W11: forward-only wedge during the 2 s echo. Uses the same
-    // forward-wedge geometry as the pre-v1.6.3 barrier (body.y slightly
-    // above player, |x-player.x| within barrierHalfW). No Smooth Entry
-    // scaling on the echo (design: baseline-width ghost of the barrier).
-    const barrierHalfW = 60;
-    const barrierY = player.y - 60;
-    const bSurvivors = [];
-    for (const b of bodies) {
-      if (b.y < barrierY + b.radius + 20 && b.y > barrierY - 30 &&
-          Math.abs(b.x - player.x) < barrierHalfW + b.radius) {
-        emitDestroyBurst(b.x, b.y, POWERUP_COLORS.hyperspeed.rgb);
-        emitDestroyEffects(b, 'barrier');
-        addDestroyPoints();
-        SFX.planetDestroyed('barrier');
-        checkDestroyProc(b, 'nova');
-      } else {
-        bSurvivors.push(b);
-      }
-    }
-    bodies = bSurvivors;
-    let fragAte = false;
-    for (let i = crackFragments.length - 1; i >= 0; i--) {
-      const f = crackFragments[i];
-      if (f.y < barrierY + f.radius + 20 && f.y > barrierY - 30 &&
-          Math.abs(f.x - player.x) < barrierHalfW + f.radius) {
-        crackFragments.splice(i, 1);
-        fragAte = true;
-      }
-    }
-    if (fragAte) SFX.playSfxBuffer('hyperspeedBarrier', 0.3);
   }
 
   // Afterburn discs (Warp Velocity T2 v1.6.3 rework): per-frame update +
@@ -15630,6 +15712,40 @@ function drawPlanetRipples() {
   ctx.globalAlpha = 1;
 }
 
+// v1.6.3 Smooth Entry rework: one-shot expanding ring at the player on
+// natural-pickup destroy-radius fires. Hyperspeed yellow/cyan family.
+function drawSmoothEntryRings(tctx = ctx) {
+  if (!smoothEntryRings.length) return;
+  const _ctx = tctx;
+  const now = Date.now();
+  const live = [];
+  for (const r of smoothEntryRings) {
+    const age = now - r.startTime;
+    if (age >= SMOOTH_ENTRY_RING_LIFE_MS) continue;
+    live.push(r);
+    if (pixiActive) continue;
+    const t = age / SMOOTH_ENTRY_RING_LIFE_MS;
+    const radius = r.maxR * (1 - (1 - t) * (1 - t));
+    const alpha = 1 - t;
+    _ctx.save();
+    _ctx.globalAlpha = 0.85 * alpha;
+    _ctx.strokeStyle = `rgba(255,220,80,${alpha})`;
+    _ctx.lineWidth = 3;
+    _ctx.beginPath();
+    _ctx.arc(r.x, r.y, radius, 0, 6.28);
+    _ctx.stroke();
+    _ctx.globalAlpha = 0.45 * alpha;
+    _ctx.strokeStyle = `rgba(120,230,255,${alpha})`;
+    _ctx.lineWidth = 1.5;
+    _ctx.beginPath();
+    _ctx.arc(r.x, r.y, radius * 1.08, 0, 6.28);
+    _ctx.stroke();
+    _ctx.restore();
+  }
+  smoothEntryRings = live;
+  _ctx.globalAlpha = 1;
+}
+
 // v1.6.3 visual pass: Cinder burn zone render. Each zone is a static
 // 60 px radius smouldering circle at its spawn position (world-static —
 // does NOT scroll). Inner bright core + outer dim halo + a light ember
@@ -15840,7 +15956,7 @@ const burstBarEl = document.getElementById('burstBar');
 // gates on hasCapstone(); only shows rings for the currently-equipped orb
 // so the HUD doesn't flood. Ring fill is a conic-gradient driven by a
 // CSS custom property (--cap-progress in [0,1]).
-let capCdLastFired = { shroud: 0, nightShade: 0, sunForge: 0, aegis: 0 };
+let capCdLastFired = { shroud: 0, nightShade: 0, sunForge: 0, aegis: 0, eventHorizon: 0 };
 function updateCapstoneCountdowns() {
   const container = document.getElementById('capstoneCountdowns');
   if (!container) return;
@@ -15899,6 +16015,17 @@ function updateCapstoneCountdowns() {
     const firing = owned && (now - (capCdLastFired.aegis || 0) < 300);
     if (owned && fireTs > 0 && fireTs <= now + 50) capCdLastFired.aegis = now;
     set('capCdAegis', owned, progress, 'rgba(120,230,255,0.95)', false, firing);
+  }
+  // LINGERING HORIZON — Warp. 90 s cycle. Auto full-stack hyperspeed.
+  {
+    const owned = activeOrb === 'nebula' && hasCapstone('eventHorizon');
+    const fireTs = lingeringHorizonNextFireTime || now;
+    const elapsed = 90000 - Math.max(0, fireTs - now);
+    const progress = Math.max(0, Math.min(1, elapsed / 90000));
+    const firing = owned && lingeringHorizonLastFireTime > 0
+      && (now - lingeringHorizonLastFireTime < 300);
+    if (owned && firing) capCdLastFired.eventHorizon = lingeringHorizonLastFireTime;
+    set('capCdEventHorizon', owned, progress, 'rgba(255,200,80,0.95)', false, firing);
   }
 }
 
@@ -15985,52 +16112,6 @@ function hyperStackTint(stacks) {
   return                  { r: 255, g: 220, b: 60,  edgeR: 255, edgeG: 240, edgeB: 120 };
 }
 
-// v1.6.3 visual pass: Lingering Horizon echo — dimmer forward wedge for
-// 2 s after hyperspeed ends. Forward-only per FIX W11, no 360° aura. Pulses
-// at ~2 Hz and fades out in the last 300 ms of the window.
-function drawLingeringHorizonEcho(tctx = ctx) {
-  const _ctx = tctx;
-  if (activeOrb !== 'nebula' || !hasCapstone('eventHorizon')) return;
-  if (hyperSpeedStacks !== 0) return;
-  const now = Date.now();
-  // v1.6.3 FIX D2: gate on the deferred start time — the echo is armed at
-  // hyperspeed end + (afterburnRank * 500ms) so disc visuals finish before
-  // the echo paints.
-  if (now < hyperspeedEchoStartTime) return;
-  const remaining = hyperspeedEchoEndTime - now;
-  if (remaining <= 0 || remaining > 2000) return;
-  const elapsed = 2000 - remaining;
-  // Pulse once per 500ms.
-  const pulse = 0.6 + 0.4 * Math.sin(elapsed * (Math.PI * 2) / 500);
-  // Fade in the last 300ms.
-  const fade = remaining > 300 ? 1 : (remaining / 300);
-  const baseAlpha = 0.70 * fade * pulse;
-  const halfW = 60;
-  const barrierY = player.y - 60;
-  const r = 255, g = 200, b = 100; // Warp echo tone
-  _ctx.save();
-  _ctx.globalAlpha = baseAlpha * 0.6;
-  const grd = _ctx.createLinearGradient(player.x, barrierY - 15, player.x, barrierY + 20);
-  grd.addColorStop(0,   `rgba(${r},${g},${b},0)`);
-  grd.addColorStop(0.5, `rgba(${r},${g},${b},0.55)`);
-  grd.addColorStop(1,   `rgba(${r},${Math.round(g*0.8)},${Math.round(b*0.5)},0)`);
-  _ctx.fillStyle = grd;
-  _ctx.beginPath();
-  _ctx.moveTo(player.x - halfW, barrierY + 15);
-  _ctx.quadraticCurveTo(player.x, barrierY - 18, player.x + halfW, barrierY + 15);
-  _ctx.quadraticCurveTo(player.x, barrierY + 5, player.x - halfW, barrierY + 15);
-  _ctx.fill();
-  _ctx.globalAlpha = baseAlpha * 0.85;
-  _ctx.strokeStyle = `rgba(255,220,150,${0.9 * fade})`;
-  _ctx.lineWidth = 1.8;
-  _ctx.beginPath();
-  _ctx.moveTo(player.x - halfW, barrierY + 15);
-  _ctx.quadraticCurveTo(player.x, barrierY - 18, player.x + halfW, barrierY + 15);
-  _ctx.stroke();
-  _ctx.restore();
-  _ctx.globalAlpha = 1;
-}
-
 function drawHyperspeedBarrier(tctx = ctx) {
   const ctx = tctx;
   if (activeEffects.hyperspeed <= 0 || hyperspeedCurrentMult <= 1.05) return;
@@ -16076,11 +16157,8 @@ function drawHyperspeedBarrier(tctx = ctx) {
   ctx.stroke();
 
   // Outer glow halo. v1.6.3 FIX D1: paint the radial gradient through an
-  // arc() + fill() rather than a fillRect bounding box. The previous
-  // fillRect painted a square clip region over a circular gradient, which
-  // produced a visible rectangular halo around the player in hyperspeed
-  // (especially obvious at Smooth Entry rank 3 where barrierHalfW is
-  // huge). The radial gradient itself is circular; so should its clip.
+  // arc() + fill() rather than a fillRect bounding box (fillRect over a
+  // radial gradient previously produced a visible rectangular halo).
   ctx.globalAlpha = 0.25 * intensity;
   const halo = ctx.createRadialGradient(player.x, barrierY, 0, player.x, barrierY, halfW * 1.5);
   halo.addColorStop(0, `rgba(${r},${g},${b},0.5)`);
@@ -16092,15 +16170,10 @@ function drawHyperspeedBarrier(tctx = ctx) {
 
   // v1.6.3 visual pass: 360° circular aura around the player so the
   // universal-invulnerability + 360° kill behaviour (FIX 10) is visible
-  // on all orbs. Uses barrierHalfW as the radius; Smooth Entry scaling on
-  // Warp extends it so the circle matches the wider kill zone.
-  let auraR = halfW;
-  if (activeOrb === 'nebula') {
-    const seRank = rankOf('smoothEntry');
-    if (seRank === 1) auraR = 60 * 1.5;
-    else if (seRank === 2) auraR = 60 * 2.5;
-    else if (seRank >= 3) auraR = (typeof W === 'number' ? W / 2 : 200);
-  }
+  // on all orbs. v1.6.3 Smooth Entry rework: aura radius matches the
+  // baseline barrier width; rank-based extension was removed when Smooth
+  // Entry switched to a one-shot pickup destroy radius.
+  const auraR = halfW;
   const pulse360 = 0.85 + 0.15 * Math.sin(frame * 0.2);
   ctx.globalAlpha = 0.30 * intensity * pulse360;
   const aura = ctx.createRadialGradient(player.x, player.y, auraR * 0.2, player.x, player.y, auraR);
@@ -16341,17 +16414,18 @@ function render() {
     drawNovaRings();
     drawEmpRings();
     drawPlanetRipples();
+    drawSmoothEntryRings();
     // Step 4: trail + player live on pixi when active.
     if (!pixiActive) drawTrail();
     if (state==='playing'||state==='paused'||state==='apocalypse') {
       // Step 6: hyperspeed barrier on pixi overlay when active.
       if (!pixiActive) drawHyperspeedBarrier();
-      if (!pixiActive) drawLingeringHorizonEcho();
       if (!pixiActive) drawPlayer();
     }
     drawPickupParticles();
     drawSalvageSparkles();
     drawTwilightEchoVisuals();
+    drawButterflyEffectVisuals();
     drawPhantomBlades();
     drawBeyondAfterimage();
     drawAfterburnDiscs();
@@ -16452,6 +16526,7 @@ function loop() {
         novaRings = [];
         empRings = [];
         planetRipples = [];
+        smoothEntryRings = [];
         destroyEffects = [];
         deathShards = [];
         orbTrailParticles = [];
@@ -16714,8 +16789,14 @@ function applyPauseDeltaShift(pauseDelta) {
   if (sunForgeNextFireTime) sunForgeNextFireTime += pauseDelta;
   if (aegisNextFireTime) aegisNextFireTime += pauseDelta;
   if (criticalMassCooldownEnd) criticalMassCooldownEnd += pauseDelta;
-  if (hyperspeedEchoEndTime) hyperspeedEchoEndTime += pauseDelta;
-  if (hyperspeedEchoStartTime) hyperspeedEchoStartTime += pauseDelta;
+  if (lingeringHorizonNextFireTime) lingeringHorizonNextFireTime += pauseDelta;
+  if (lingeringHorizonLastFireTime) lingeringHorizonLastFireTime += pauseDelta;
+  if (loadedDiceNextProcTime) loadedDiceNextProcTime += pauseDelta;
+  if (fortuneFavorsNextProcTime) fortuneFavorsNextProcTime += pauseDelta;
+  if (butterflyEffectNextProcTime) butterflyEffectNextProcTime += pauseDelta;
+  for (const v of butterflyEffectVisuals) {
+    if (v.startTime !== undefined) v.startTime += pauseDelta;
+  }
   for (const c of Object.values(activeCombos)) {
     if (c && c.endTime !== undefined) c.endTime += pauseDelta;
   }
@@ -16786,10 +16867,12 @@ function goToMainMenu() {
   pickupParticles = [];
   salvageSparkles = [];
   twilightEchoVisuals = [];
+  butterflyEffectVisuals = [];
   phantomBlades = [];
   beyondAfterimage = null;
   orbTrailParticles = [];
   planetRipples = [];
+  smoothEntryRings = [];
   destroyEffects = [];
   deathShards = [];
   crackFragments = [];
@@ -17294,6 +17377,14 @@ try {
 }
 debugLog('BOOT refreshResumeButton');
 refreshResumeButton();
+// FIX 1 (v1.6.3): on initial app load the main menu is rendered before
+// goToMainMenu() ever runs, so the Impossible button + leaderboard tab
+// were left hidden until something else re-rendered the menu. Run the
+// visibility refresh once at boot now that beatDifficulty has been
+// hydrated from localStorage above.
+try {
+  if (typeof refreshImpossibleVisibility === 'function') refreshImpossibleVisibility();
+} catch {}
 
 document.getElementById('shopBtn').addEventListener('click', () => {
   SFX.clickSecondary();
@@ -19165,6 +19256,7 @@ function exitDevMode() {
   deathParticles = [];
   orbTrailParticles = [];
   planetRipples = [];
+  smoothEntryRings = [];
   destroyEffects = [];
   deathShards = [];
   crackFragments = [];
