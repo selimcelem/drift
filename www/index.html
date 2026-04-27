@@ -5224,7 +5224,8 @@ function secondFlameRollForCast(source, px, py, waveCount, isSupernova) {
       supernova: !!isSupernova,
       sizeMult: 0.9,
     }, NOVA_RINGS_CAP);
-    screenShake = Math.max(screenShake, 6);
+    // v1.7.0: spawn-site shake removed; the kills from this ring drive
+    // shake via shakeMassDestroy in the standard nova-ring sweep loop.
     SFX.pickup('nova');
     treeLog('secondFlame: bonus wave fired (source=' + source + ', at ' + Math.round(spawnX) + ',' + Math.round(spawnY) + ')');
   }, delayMs);
@@ -5247,7 +5248,8 @@ function firebrandProc(bodyX, bodyY) {
     x: px, y: py, radius: 0, life: 1, prevR: 0,
     startTime: now, sizeMult: 0.5,
   }, NOVA_RINGS_CAP);
-  screenShake = Math.max(screenShake, 4);
+  // v1.7.0: spawn-site shake removed; kills from this ring drive shake via
+  // shakeMassDestroy in the standard nova-ring sweep loop.
   SFX.pickup('nova');
   // Second Flame post-cast roll (reuses the Pyre T3 roller, per-cast, with
   // firebrand origin coords so the bonus wave also fires at the body).
@@ -5308,6 +5310,7 @@ function tickCapstoneTimers() {
   if (activeOrb === 'cosmic' && hasCapstone('shroud')) {
     if (!shroudFlagSet && now - shroudLastFireTime >= 30000) {
       shroudFlagSet = true;
+      shakeCapstone('shroud');
       treeLog('shroud: flag armed');
     }
   }
@@ -5317,6 +5320,7 @@ function tickCapstoneTimers() {
       if (activeEffects.ghost <= 0) {
         ghostEndTime = now + 3000;
         activeEffects.ghost = 3000;
+        shakeCapstone('nightShade');
         treeLog('nightShade: auto-ghost 3s');
       } else {
         treeLog('nightShade: ghost already active, skipping');
@@ -5329,6 +5333,8 @@ function tickCapstoneTimers() {
   if (activeOrb === 'solar' && hasCapstone('sunForge')) {
     if (now >= sunForgeNextFireTime) {
       activateCombo('nova_nova', player.x, player.y);
+      shakeCapstone('sunForge');
+      triggerHitstop(50);
       treeLog('sunForge: auto-supernova');
       sunForgeNextFireTime = now + 45000;
     }
@@ -5339,6 +5345,8 @@ function tickCapstoneTimers() {
     if (now >= aegisNextFireTime) {
       if (!activeCombos.shield_shield) {
         activateCombo('shield_shield', player.x, player.y);
+        shakeCapstone('aegis');
+        triggerHitstop(40);
         treeLog('aegis: auto Fortress Shield');
       } else {
         treeLog('aegis: Fortress already active, skipping');
@@ -5358,6 +5366,7 @@ function tickCapstoneTimers() {
       const cap = HYPERSPEED_MAX_STACKS();
       hyperSpeedStacks = Math.max(hyperSpeedStacks, cap - 1);
       activateHyperspeed(undefined, undefined, 'lingeringHorizon');
+      shakeCapstone('lingeringHorizon');
       lingeringHorizonLastFireTime = now;
       lingeringHorizonNextFireTime = now + 90000;
       treeLog('lingeringHorizon: auto full-stack hyperspeed (stacks ' + hyperSpeedStacks + ')');
@@ -5665,7 +5674,7 @@ function resolveDeadCenter(pickedType) {
     activatePowerup(pickedType, player.x, player.y);
     treeLog('deadCenter: ' + pickedType);
   }
-  screenShake = Math.max(screenShake, 6);
+  shakeCapstone('deadCenter');
   runBurstCount++;
 }
 
@@ -5726,6 +5735,7 @@ function maybeButterflyEffect(type, srcX, srcY) {
   const dx = (Math.random() - 0.5) * 160; // ±80 px
   const spawnX = Math.max(60, Math.min(W - 60, player.x + dx));
   spawnButterflyEffectSplit(spawnX, spawnY, type);
+  shakeCapstone('butterflyEffect');
 }
 
 // v1.6.3 visual pass: Butterfly Effect split — pushes the duplicate
@@ -6305,7 +6315,96 @@ const POWERUP_COLORS = {
 };
 let powerups = [];
 let novaRings = [];
+// =====================================================================
+// v1.7.0 game-feel polish: screen shake + hitstop architecture.
+//
+// Shake redesign goal: body destruction is the main game event, powerup
+// pickups are quiet, mass destruction fires ONE proportional shake (not
+// per-kill stacking), capstones get distinctive punctuation, player death
+// gets a hard impact spike, apocalypse ramp is preserved.
+//
+// All callers route through addShake() which enforces a hard cap of 40 to
+// prevent runaway stacking. Decay migrated to wall-clock (60/sec, matching
+// the previous 60fps-per-frame feel) so duration is stable across framerates.
+//
+// Hitstop primitive: triggerHitstop(ms) gates the physics tick in update()
+// for ms milliseconds. Render keeps drawing so visuals continue. Used at
+// satisfying-impact moments (player death, big-event activations).
+// =====================================================================
 let screenShake = 0;
+const SCREEN_SHAKE_CAP = 40;
+const SCREEN_SHAKE_DECAY_PER_SEC = 60; // matches the old 60fps frame-counter
+function addShake(value) {
+  if (value <= 0) return;
+  screenShake = Math.min(SCREEN_SHAKE_CAP, Math.max(screenShake, value));
+}
+function shakeKill(b) {
+  // Per-body destruction shake. Tiny → tier 1, large/special → tier 4.
+  if (!b || typeof b.radius !== 'number') return;
+  const r = b.radius;
+  let v;
+  if (r >= 31) v = 4;       // heart, skull, mirror, void, screaming, etc.
+  else if (r >= 23) v = 3;
+  else if (r >= 16) v = 2;
+  else v = 1;
+  addShake(v);
+}
+function shakeMassDestroy(count) {
+  // Single shake for nova ring sweeps, EMP chains, hyperspeed barrier
+  // sweeps, ghostlight bursts. Replaces per-kill stacking from those
+  // sources so a 10-body sweep produces ONE punch, not 10 stacked.
+  if (count <= 0) return;
+  const v = (count >= 8) ? 7 : (count >= 4) ? 5 : 3;
+  addShake(v);
+}
+function shakeBurst(orb) {
+  // Per-orb tuning so each burst feels distinct. Bulwark heaviest, Phantom
+  // ghostly. Default is Drifter's value if orb is unrecognized.
+  const v = orb === 'asteroid' ? 8
+          : orb === 'solar'    ? 7
+          : orb === 'cosmic'   ? 4
+          : orb === 'nebula'   ? 5
+          : 5;
+  addShake(v);
+}
+function shakeCombo(_comboKey, isFresh) {
+  // Fresh activation gets a gentle thump; refresh is almost silent — the
+  // combo's downstream effects (supernova waves, etc.) bring their own
+  // appropriate shakes via shakeMassDestroy on kill loops.
+  addShake(isFresh ? 5 : 1);
+}
+function shakeCapstone(capstone) {
+  switch (capstone) {
+    case 'deadCenter':       addShake(5); break;
+    case 'butterflyEffect':  addShake(4); break;
+    case 'shroud':           addShake(3); break;
+    case 'nightShade':       addShake(4); break;
+    case 'sunForge':         addShake(6); break;
+    case 'criticalMass':     addShake(6); break;
+    case 'aegis':            addShake(8); break;
+    case 'lingeringHorizon': addShake(5); break;
+    // SUPERLUMINAL is a passive cap raise — no shake event.
+    // PHALANX EMP cascade is covered by shakeMassDestroy at chain end.
+  }
+}
+function shakePlayerDeath(cause) {
+  // Hard impact spike on death. Apocalypse impact is bigger because it's
+  // the climactic end-of-run event; standard wall/body deaths are 14.
+  const v = (cause === 'apocalypse') ? 35 : 14;
+  addShake(v);
+}
+
+// Hitstop primitive — physics gate. update() returns early while
+// `Date.now() < hitstopUntil`; render() keeps drawing so the screen
+// doesn't black out, just freezes. 200ms cooldown between triggers
+// prevents cascading hitstops from compounding into noticeable stutter.
+let hitstopUntil = 0;
+function triggerHitstop(ms) {
+  if (!ms || ms <= 0) return;
+  if (Date.now() < hitstopUntil + 200) return;
+  hitstopUntil = Date.now() + ms;
+}
+
 let pickupParticles = [];
 // v1.6.3 visual pass: Salvage (Bulwark Opportunism T1) crystal sparkles.
 // Each entry {x, y, vx, vy, startTime, maxLifeMs}; life = 1 - age/maxLife.
@@ -8897,8 +8996,15 @@ function updatePixiParticleLayer() {
   dpg.clear();
   if (deathParticles.length) {
     for (const p of deathParticles) {
-      const hue = 185 + (1 - p.life) * 80;
-      const colorInt = hslToHex(hue, 100, 72);
+      // v1.7.0: orb-tinted RGB captured at spawn (was hardcoded cyan HSL).
+      let colorInt;
+      if (p.rgb) {
+        const [r8, g8, b8] = p.rgb.split(',').map(n => parseInt(n, 10));
+        colorInt = (r8 << 16) | (g8 << 8) | b8;
+      } else {
+        const hue = 185 + (1 - p.life) * 80;
+        colorInt = hslToHex(hue, 100, 72);
+      }
       dpg.beginFill(colorInt, p.life);
       dpg.drawCircle(p.x, p.y, p.size * p.life);
       dpg.endFill();
@@ -8910,9 +9016,15 @@ function updatePixiParticleLayer() {
   dsg.clear();
   if (deathShards.length) {
     for (const s of deathShards) {
+      // v1.7.0: orb-tinted shard color (was hardcoded cyan family).
+      let colorInt = 0x8CE6FF;
+      if (s.rgb) {
+        const [r8, g8, b8] = s.rgb.split(',').map(n => parseInt(n, 10));
+        colorInt = (r8 << 16) | (g8 << 8) | b8;
+      }
       // Trail
       if (s.trail.length > 1) {
-        dsg.lineStyle({ width: 1.6, color: 0x8CE6FF, alpha: s.life * 0.4, cap: 'round' });
+        dsg.lineStyle({ width: 1.6, color: colorInt, alpha: s.life * 0.4, cap: 'round' });
         dsg.moveTo(s.trail[0].x, s.trail[0].y);
         for (let i = 1; i < s.trail.length; i++) dsg.lineTo(s.trail[i].x, s.trail[i].y);
         dsg.lineStyle();
@@ -8925,8 +9037,8 @@ function updatePixiParticleLayer() {
         poly.push(s.x + v.x * cosR - v.y * sinR);
         poly.push(s.y + v.x * sinR + v.y * cosR);
       }
-      dsg.lineStyle({ width: 1.4, color: 0x78DCFF, alpha: s.life });
-      dsg.beginFill(0xDCFAFF, s.life);
+      dsg.lineStyle({ width: 1.4, color: colorInt, alpha: s.life });
+      dsg.beginFill(colorInt, s.life * 0.85);
       dsg.drawPolygon(poly);
       dsg.endFill();
       dsg.lineStyle();
@@ -10701,11 +10813,12 @@ function activateCombo(key, x, y) {
     // Eternal Phantom takes precedence over Spectral Rush for the label — its
     // ghost timer is longer and defines the dominant effect.
     lastComboLabel = (key === 'hyperspeed_ghost' && activeCombos.ghost_ghost) ? 'ghost_ghost' : key;
-    screenShake = Math.max(screenShake, 6);
+    shakeCombo(key, false); // refresh — almost silent
     return;
   }
   lastComboLabel = (key === 'hyperspeed_ghost' && activeCombos.ghost_ghost) ? 'ghost_ghost' : key;
-  screenShake = Math.max(screenShake, 8);
+  shakeCombo(key, true);    // fresh activation
+  triggerHitstop(30);        // brief pause so the combo lands with weight
   SFX.comboActivate(key);
 
   if (key === 'nova_nova') {
@@ -10755,6 +10868,12 @@ function activateCombo(key, x, y) {
     // v1.6.3: step coefficient nerfed from 0.15 → 0.10 (per-wave +10%
     // growth instead of +15%). Halo still adds +0.033/rank on top.
     const stepCoef = 0.10 + ((activeOrb === 'solar') ? 0.033 * rankOf('halo') : 0);
+    // v1.7.0: punctuation shake at supernova start (one-shot, value 7).
+    // The previous per-wave 10+i stacking dominated the screen for the
+    // entire 1.6-2.4s wave sequence. The kill loops in update() now drive
+    // shake via shakeMassDestroy on each ring sweep, which scales with
+    // bodies actually destroyed instead of wave count.
+    addShake(7);
     for (let i = 0; i < supernovaWaves; i++) {
       pendingNovaTimeouts.push(setTimeout(() => {
         if (state !== 'playing' && state !== 'devmode') return;
@@ -10768,7 +10887,6 @@ function activateCombo(key, x, y) {
           sizeMult: 0.9,
           startTime: Date.now(),
         }, NOVA_RINGS_CAP);
-        screenShake = Math.max(screenShake, 10 + i);
         SFX.pickup('nova');
       }, i * 400));
     }
@@ -10950,7 +11068,10 @@ function fireTripleNova(px, py, source, waveOverride) {
   // smaller seed. The ring expansion math elsewhere treats radius relative
   // to its per-ring start, so the 0.9 seed carries through the lifecycle.
   pushCapped(novaRings, { x: px, y: py, radius: 0, life: 1, prevR: 0, startTime: Date.now(), sizeMult: 0.9 }, NOVA_RINGS_CAP);
-  screenShake = Math.max(screenShake, 10);
+  // v1.7.0: nova-cast shake removed from spawn site. Shake is now driven by
+  // the kill loop (shakeMassDestroy on the per-ring kill count) so it scales
+  // with how many bodies the nova actually destroys, not with how many
+  // waves were cast. Empty-screen casts no longer rattle the screen.
   // Skill tree:
   //   - Kindling +1/rank to single-nova wave count (Inferno-only)
   //   - Combustion carries +1 wave per nova cast (v1.6.3 per-cast model)
@@ -10990,11 +11111,10 @@ function fireTripleNova(px, py, source, waveOverride) {
   }
   for (let i = 1; i < waves; i++) {
     const life = Math.max(0.4, 1 - i * 0.1);
-    const shake = Math.max(3, 10 - i * 1.5);
     pendingNovaTimeouts.push(setTimeout(() => {
       if (state === 'playing' || state === 'devmode') {
         pushCapped(novaRings, { x: player.x, y: player.y, radius: 0, life, prevR: 0, startTime: Date.now(), sizeMult: 0.9 }, NOVA_RINGS_CAP);
-        screenShake = Math.max(screenShake, shake);
+        // v1.7.0: per-wave shake removed; kill-driven shake replaces it.
         SFX.pickup('nova');
       }
     }, i * 400));
@@ -11397,6 +11517,7 @@ function resetGame() {
   document.getElementById('streakDisplay').classList.remove('visible');
   powerups = [];
   novaRings = []; screenShake = 0;
+  hitstopUntil = 0;
   empRings = [];
   pickupParticles = [];
   salvageSparkles = [];
@@ -11752,6 +11873,7 @@ function checkCollisions() {
             ghostlightBurst(b.x, b.y);
             addDestroyPoints(); // +1 streak per Ghostlight design
           }
+          shakeKill(b); // per-body shake for Razor Veil / Wraith contact kill
           releaseBodyCanvases(b);
           bodies.splice(i, 1);
           checkDestroyProc(b, 'ghost');
@@ -11780,6 +11902,11 @@ function checkCollisions() {
         SFX.planetDestroyed('shield');
         addDestroyPoints();
         spawnEmpRing(bodies[i].x, bodies[i].y);
+        // v1.7.0: shield-break = EMP burst → satisfying impact. Body kill
+        // shake + EMP burst hitstop signal "you survived but your shield
+        // popped" with weight.
+        shakeKill(bodies[i]);
+        triggerHitstop(40);
         releaseBodyCanvases(bodies[i]);
         bodies.splice(i, 1);
         checkDestroyProc(_shieldVictim, 'shield');
@@ -11905,7 +12032,7 @@ function executeBurst() {
     activeCombos.shield_shield = { def, deps: ['shield'] };
     lastComboLabel = 'shield_shield';
   }
-  screenShake = Math.max(screenShake, 6);
+  shakeBurst(activeOrb);
   runBurstCount++;
   return true;
 }
@@ -12257,6 +12384,10 @@ function deepCleanup() {
 
 // --- Update ---
 function update() {
+  // v1.7.0 hitstop: brief physics pause for satisfying impacts. Render keeps
+  // drawing so the visuals don't black out. Skipped during apocalypse +
+  // tutorial since those run their own tick paths and aren't impact-gated.
+  if (Date.now() < hitstopUntil && state !== 'apocalypse' && state !== 'tutorial') return;
   if (state === 'apocalypse') { frame++; updateApocalypse(); return; }
   // v1.6.4: tutorial runs its own minimal physics tick so the player can
   // move + grab powerups while the rest of the world stays inert. No body
@@ -12495,6 +12626,7 @@ function update() {
       const glChance = [0.40, 0.60, 0.80][glRank - 1] || 0;
       const survivors = [];
       let killedAny = false;
+      let pbKillCount = 0;
       for (const b of bodies) {
         if (dist(player, b) < reach + b.radius) {
           emitDestroyBurst(b.x, b.y, POWERUP_COLORS.ghost.rgb);
@@ -12511,12 +12643,16 @@ function update() {
           // from Razor Veil ghost kills.
           spawnPhantomBlade(b.x, b.y);
           killedAny = true;
+          pbKillCount++;
           releaseBodyCanvases(b);
           treeLog('phantomBlade: tick kill at ' + Math.round(b.x) + ',' + Math.round(b.y));
         } else survivors.push(b);
       }
       bodies = survivors;
       if (killedAny) SFX.phantomBladeSlash();
+      // v1.7.0: ONE shake for the whole tick (multi-kill or single).
+      if (pbKillCount === 1) shakeKill({ radius: 22 });
+      else if (pbKillCount > 1) shakeMassDestroy(pbKillCount);
       phantomBladeNextTickTime = Date.now() + (4 - pbRank) * 1000;
     }
   }
@@ -12726,6 +12862,7 @@ function update() {
   }
   if (novaRings.length) {
     const survivors = [];
+    let novaKillCount = 0;
     for (const b of bodies) {
       let killed = false;
       for (const r of novaRings) {
@@ -12778,6 +12915,8 @@ function update() {
                 const id = setTimeout(() => {
                   if (state !== 'playing' && state !== 'devmode') return;
                   fireTripleNova(player.x, player.y, 'critical_mass', 6);
+                  shakeCapstone('criticalMass');
+                  triggerHitstop(50);
                   treeLog('criticalMass: free 6-wave nova triggered');
                 }, 100);
                 pendingNovaTimeouts.push(id);
@@ -12799,12 +12938,15 @@ function update() {
             }
           }
           checkDestroyProc(b, 'nova');
+          novaKillCount++;
           break;
         }
       }
       if (!killed) survivors.push(b);
     }
     bodies = survivors;
+    // v1.7.0: ONE shake proportional to total kills this frame, not per-kill.
+    if (novaKillCount > 0) shakeMassDestroy(novaKillCount);
     // Crack fragments swept by nova rings die silently — no points / streak.
     for (let i = crackFragments.length - 1; i >= 0; i--) {
       const f = crackFragments[i];
@@ -12835,6 +12977,7 @@ function update() {
     empRings = live;
     if (empRings.length) {
       const survivors = [];
+      let empKillCount = 0;
       // Track positions where primary rings landed a kill so we can spawn
       // secondaries AFTER the body sweep completes (avoid mutating empRings
       // while iterating it).
@@ -12869,12 +13012,15 @@ function update() {
             if ((r.depth || 1) < maxDepth) {
               secondarySpawns.push({ x: b.x, y: b.y, depth: (r.depth || 1) + 1 });
             }
+            empKillCount++;
             break;
           }
         }
         if (!killed) survivors.push(b);
       }
       bodies = survivors;
+      // v1.7.0: ONE shake per frame for the entire EMP cascade kill set.
+      if (empKillCount > 0) shakeMassDestroy(empKillCount);
       for (const s of secondarySpawns) spawnEmpRing(s.x, s.y, true, s.depth);
       // EMP rings also wipe out crack fragments they sweep over. No chain
       // EMP, no points, no streak — just clear the hazard.
@@ -12906,6 +13052,7 @@ function update() {
     // instead of barrier expansion.
     const barrierHalfW = 60;
     const bSurvivors = [];
+    let barrierKillCount = 0;
     for (const b of bodies) {
       const dxB = b.x - player.x, dyB = b.y - player.y;
       const d2 = dxB * dxB + dyB * dyB;
@@ -12916,11 +13063,14 @@ function update() {
         addDestroyPoints();
         SFX.planetDestroyed('barrier');
         checkDestroyProc(b, 'nova');
+        barrierKillCount++;
       } else {
         bSurvivors.push(b);
       }
     }
     bodies = bSurvivors;
+    // v1.7.0: ONE shake per frame proportional to barrier kills this frame.
+    if (barrierKillCount > 0) shakeMassDestroy(barrierKillCount);
     let barrierAteFragment = false;
     for (let i = crackFragments.length - 1; i >= 0; i--) {
       const f = crackFragments[i];
@@ -13474,6 +13624,13 @@ function resetApocalypse() {
 
 function triggerDeath() {
   if (typeof Sentry !== 'undefined') Sentry.addBreadcrumb({ category: 'death', message: 'died at score ' + score, level: 'info' });
+  // v1.7.0 game-feel: hard impact spike on death — scaled by cause. The
+  // apocalypse path delivers a bigger shake (35) on top of the existing
+  // ramp; standard deaths get 14. Hitstop is similar — 150ms on the sun
+  // landing for a satisfying punctuation, 100ms on regular deaths.
+  const _wasApocalypse = !!apocalypseDeathFlag;
+  shakePlayerDeath(_wasApocalypse ? 'apocalypse' : (lastDeathCause || 'body'));
+  triggerHitstop(_wasApocalypse ? 150 : 100);
   // The run ended — no more resume offering for this snapshot.
   clearResumeState();
   state = 'dead';
@@ -13539,9 +13696,14 @@ function triggerDeath() {
     deathParticles = [];
     const deathCount = Math.min(50, DEATH_PART_CAP);
     const nowDpSpawn = Date.now();
+    // v1.7.0: tint death particles with the equipped orb's primary color so
+    // a Phantom-orb death produces purple debris, an Inferno death is
+    // orange, etc. Captured at spawn time so a post-death orb change won't
+    // retro-tint the existing burst.
+    const deathRgb = activeOrbColor();
     for (let i = 0; i < deathCount; i++) {
       const a = Math.random()*Math.PI*2, s = Math.random()*3.5+0.8;
-      pushCapped(deathParticles, { x: player.x, y: player.y, vx: Math.cos(a)*s, vy: Math.sin(a)*s, life: 1, startTime: nowDpSpawn, maxLifeMs: DEATH_PART_LIFE_MS, size: Math.random()*2.5+0.8 }, DEATH_PART_CAP);
+      pushCapped(deathParticles, { x: player.x, y: player.y, vx: Math.cos(a)*s, vy: Math.sin(a)*s, life: 1, startTime: nowDpSpawn, maxLifeMs: DEATH_PART_LIFE_MS, size: Math.random()*2.5+0.8, rgb: deathRgb }, DEATH_PART_CAP);
     }
   }, 1200);
   // Submit score online (fire and forget). Devmode runs do NOT submit or
@@ -16673,8 +16835,12 @@ function drawDeathParticles() {
   }
   if (pixiActive) return;
   for (const p of deathParticles) {
-    ctx.globalAlpha=p.life; ctx.fillStyle=`hsl(${185+(1-p.life)*80},100%,72%)`;
-    ctx.beginPath(); ctx.arc(p.x,p.y,p.size*p.life,0,6.28); ctx.fill();
+    ctx.globalAlpha = p.life;
+    // v1.7.0: orb-tinted RGB captured at spawn (was a hardcoded HSL cyan).
+    // Fallback to the legacy HSL if the particle was created pre-fix.
+    if (p.rgb) ctx.fillStyle = `rgba(${p.rgb},1)`;
+    else ctx.fillStyle = `hsl(${185+(1-p.life)*80},100%,72%)`;
+    ctx.beginPath(); ctx.arc(p.x, p.y, p.size * p.life, 0, 6.28); ctx.fill();
   }
   ctx.globalAlpha=1;
 }
@@ -16737,13 +16903,20 @@ function spawnDeathShards(x, y) {
   deathShards = [];
   const count = 6 + Math.floor(Math.random() * 3);
   const now = Date.now();
+  // v1.7.0: capture the equipped orb color at shatter time so the polygon
+  // shards match the player's current orb instead of the legacy hardcoded
+  // cyan. Stored on the shard so the canvas draw + pixi draw both consume it.
+  const shardRgb = activeOrbColor();
   for (let i = 0; i < count; i++) {
     const a = Math.random() * Math.PI * 2;
     const sp = 1.6 + Math.random() * 2.4;
     // 3-4 vertices forming a small irregular polygon.
     const vCount = 3 + Math.floor(Math.random() * 2);
     const verts = [];
-    const baseR = 5 + Math.random() * 7; // 5..12px
+    // v1.7.0: shard size shrunk from 5-12 px to 3-5 px so debris reads as
+    // debris rather than orb-sized boulders. PLAYER_R is ~6 px, so the new
+    // upper bound stays below player size.
+    const baseR = 3 + Math.random() * 2;
     for (let v = 0; v < vCount; v++) {
       const va = (v / vCount) * Math.PI * 2 + Math.random() * 0.6;
       const vr = baseR * (0.6 + Math.random() * 0.7);
@@ -16759,7 +16932,8 @@ function spawnDeathShards(x, y) {
       life: 1,           // 1 → 0
       startTime: now, maxLifeMs: SHARD_LIFE_MS,
       age: 0,            // age in ms, updated each draw
-      trail: [],         // recent {x,y} positions for the brief cyan tail
+      trail: [],         // recent {x,y} positions for the brief tail
+      rgb: shardRgb,     // v1.7.0: orb-tinted color
     });
   }
 }
@@ -16800,23 +16974,24 @@ function drawDeathShards() {
   if (pixiActive) return;
   // --- Canvas 2D fallback ---
   for (const s of deathShards) {
-    // Cyan trail behind the shard.
+    const rgb = s.rgb || '140,230,255';
+    // Trail behind the shard, tinted by orb.
     if (s.trail.length > 1) {
       ctx.globalAlpha = s.life * 0.4;
-      ctx.strokeStyle = 'rgba(140,230,255,1)';
+      ctx.strokeStyle = `rgba(${rgb},1)`;
       ctx.lineWidth = 1.6;
       ctx.beginPath();
       ctx.moveTo(s.trail[0].x, s.trail[0].y);
       for (let i = 1; i < s.trail.length; i++) ctx.lineTo(s.trail[i].x, s.trail[i].y);
       ctx.stroke();
     }
-    // Polygon shard in cyan/white with a glow stroke.
+    // Polygon shard with orb-tinted fill + glow stroke.
     ctx.save();
     ctx.translate(s.x, s.y);
     ctx.rotate(s.rot);
     ctx.globalAlpha = s.life;
-    ctx.fillStyle = 'rgba(220,250,255,1)';
-    ctx.strokeStyle = 'rgba(120,220,255,1)';
+    ctx.fillStyle = `rgba(${rgb},0.95)`;
+    ctx.strokeStyle = `rgba(${rgb},1)`;
     ctx.lineWidth = 1.4;
     ctx.beginPath();
     ctx.moveTo(s.verts[0].x, s.verts[0].y);
@@ -16845,7 +17020,12 @@ function render() {
     } else {
       ctx.translate(sx, sy);
     }
-    screenShake--;
+    // v1.7.0 wall-clock decay (was: screenShake-- per frame). Keeps shake
+    // duration stable across 30/60/120 fps. frameDt is in ms, capped at
+    // 32ms upstream, so a stale background tab won't dump the value in one
+    // frame. SCREEN_SHAKE_DECAY_PER_SEC = 60 matches the old 60fps feel.
+    screenShake = Math.max(0, screenShake - SCREEN_SHAKE_DECAY_PER_SEC * (frameDt / 1000));
+    if (screenShake < 0.05) screenShake = 0;
   } else if (pixiActive && pixiApp && pixiApp.stage) {
     if (pixiApp.stage.x !== 0 || pixiApp.stage.y !== 0) {
       pixiApp.stage.x = 0;
@@ -17967,6 +18147,8 @@ function goToMainMenu() {
   lastSpawnZone = -1;
   powerups = [];
   novaRings = [];
+  screenShake = 0;
+  hitstopUntil = 0;
   empRings = [];
   pickupParticles = [];
   salvageSparkles = [];
