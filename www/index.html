@@ -542,10 +542,21 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    background: rgba(0,0,5,0.88);
-    backdrop-filter: blur(8px);
+    background: rgba(0,0,5,0.95);
+    /* v1.6.4: dropped backdrop-filter blur — was a per-frame GPU composite
+       cost on top of an unchanging canvas underneath. Bumped opacity from
+       0.88 → 0.95 so the canvas still reads as "behind glass" without the
+       per-frame blur recomposite. */
     border-radius: 4px;
     transition: opacity 0.6s;
+    /* Safe-area padding lives on the base rule so every overlay state
+       (death/summary, leaderboard, main menu) reserves room for the
+       Android gesture pill / iOS home indicator. The +24px floor keeps
+       a usable gap even when env() resolves to 0 (e.g. Android builds
+       without edge-to-edge insets wired through). */
+    padding: calc(env(safe-area-inset-top, 0px) + 12px) 16px calc(env(safe-area-inset-bottom, 0px) + 24px);
+    overflow-y: auto;
+    box-sizing: border-box;
   }
 
   /* Main-menu layout. Scoped via .menu-mode so the death screen + leaderboard
@@ -556,9 +567,7 @@
      (thumb reach) instead of clipping the DRIFT logo off the top. */
   #overlay.menu-mode {
     justify-content: flex-start;
-    padding: calc(env(safe-area-inset-top, 0px) + 12px) 16px calc(env(safe-area-inset-bottom, 0px) + 12px);
     gap: clamp(6px, 1.6vh, 18px);
-    box-sizing: border-box;
     /* 100dvh accounts for mobile browser chrome auto-hide; 100vh falls back
        on desktop. min-height not height — content shorter than viewport
        still centers via margin:auto on the first/last flex items in the
@@ -568,7 +577,6 @@
        915 px on the S20 FE, clipping the DRIFT title above and the
        SKILL TREES button below. */
     min-height: 100dvh;
-    overflow-y: auto;
     overflow-x: hidden;
     /* Smooth momentum scrolling on iOS/Android WebView. */
     -webkit-overflow-scrolling: touch;
@@ -839,10 +847,13 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: rgba(0,0,5,0.92);
-    backdrop-filter: blur(8px);
+    background: rgba(0,0,5,0.96);
+    /* v1.6.4: backdrop-filter blur removed — see #overlay rationale. */
     z-index: 50;
     transition: opacity 0.25s;
+    padding: calc(env(safe-area-inset-top, 0px) + 12px) 16px calc(env(safe-area-inset-bottom, 0px) + 24px);
+    overflow-y: auto;
+    box-sizing: border-box;
   }
   #guideOverlay.hidden {
     opacity: 0;
@@ -1152,8 +1163,8 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    background: rgba(0,0,5,0.92);
-    backdrop-filter: blur(8px);
+    background: rgba(0,0,5,0.96);
+    /* v1.6.4: backdrop-filter blur removed — see #overlay rationale. */
     border-radius: 4px;
     z-index: 28;
     padding: calc(env(safe-area-inset-top, 0px) + 20px) 16px
@@ -1208,6 +1219,33 @@
     background: rgba(100,200,255,0.18);
     color: rgba(180,240,255,1);
     box-shadow: 0 0 10px rgba(100,200,255,0.25);
+  }
+  /* v1.6.4: stacked settings row — label/control on top, helper text below.
+     Used by FRAME RATE so the 3-button group + the explanatory caption fit
+     on narrow phones without horizontal squeeze. */
+  .settings-row-stack {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .settings-row-stack > .settings-label {
+    align-self: flex-start;
+  }
+  .settings-row-stack > .settings-toggle {
+    align-self: stretch;
+  }
+  .settings-toggle-3 .toggle-opt {
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 6px 6px;
+    text-align: center;
+  }
+  .settings-help {
+    font-family: 'Space Mono', monospace;
+    font-size: 9px;
+    line-height: 1.45;
+    letter-spacing: 0.5px;
+    color: rgba(160,200,230,0.55);
   }
 
   /* Cloud-save button inside the settings overlay. Reuses toggle border/font
@@ -1465,8 +1503,8 @@
     flex-direction: column;
     align-items: stretch;
     justify-content: flex-start;
-    background: rgba(0,0,8,0.96);
-    backdrop-filter: blur(10px);
+    background: rgba(0,0,8,0.98);
+    /* v1.6.4: backdrop-filter blur removed — see #overlay rationale. */
     z-index: 35;
     /* env(safe-area-inset-*) keeps the top/bottom chrome padding when the
        overlay falls behind a notch or gesture bar. padding-x is clamped so
@@ -1613,6 +1651,16 @@
     cursor: not-allowed;
   }
   .tree-node.partial { border-color: rgba(220,200,80,0.7); color: rgba(240,220,120,0.95); }
+  /* v1.6.4: frozen = owned (current > 0) but prereq tier was refunded.
+     Ranks still apply in gameplay; further ranks can't be purchased until
+     the prereq is restored. Defined AFTER .partial because a frozen node
+     is also partial — we want the orange frozen tint to win. The pill
+     stays clickable so the player can open detail. */
+  .tree-node.frozen {
+    border-color: rgba(255,170,90,0.55);
+    color: rgba(255,200,140,0.92);
+    opacity: 0.78;
+  }
   .tree-node.maxed   { border-color: currentColor; color: currentColor; background: rgba(30,60,45,0.55); box-shadow: 0 0 8px currentColor; }
   .tree-node-name {
     font-weight: 700;
@@ -1820,7 +1868,7 @@
   /* Floating toast for sync status. Fires with .visible, auto-hides. */
   #pgsToast {
     position: absolute;
-    bottom: 40px;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 40px);
     left: 50%;
     transform: translateX(-50%) translateY(20px);
     background: rgba(0, 0, 10, 0.9);
@@ -1857,8 +1905,8 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    background: rgba(0,0,5,0.88);
-    backdrop-filter: blur(8px);
+    background: rgba(0,0,5,0.95);
+    /* v1.6.4: backdrop-filter blur removed — see #overlay rationale. */
     border-radius: 4px;
     z-index: 20;
     padding: calc(env(safe-area-inset-top, 0px) + 20px) 16px
@@ -1917,6 +1965,97 @@
     text-transform: uppercase;
   }
 
+  /* v1.6.4 tutorial overlay. Pointer-events:none on the container so canvas
+     touches still register (player needs to ATTRACT/REPEL during steps).
+     #tutorialText is the only child that wants pointer events — it owns the
+     tap-to-continue handler. */
+  #tutorialOverlay {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    display: none;
+    pointer-events: none;
+    z-index: 25;
+  }
+  #tutorialOverlay.visible { display: block; }
+  /* Bottom 1/3 text box. Solid-ish background so it reads cleanly against
+     any canvas content. Tap anywhere in this box advances the step (when
+     the step's task is complete). */
+  #tutorialText {
+    position: absolute;
+    left: 0; right: 0; bottom: 0;
+    padding: 20px 24px calc(env(safe-area-inset-bottom, 0px) + 28px);
+    background: linear-gradient(to top, rgba(0,0,8,0.96) 70%, rgba(0,0,8,0.7) 92%, rgba(0,0,8,0) 100%);
+    text-align: center;
+    pointer-events: auto;
+    cursor: pointer;
+  }
+  #tutorialTitle {
+    font-family: 'Orbitron', monospace;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 4px;
+    color: rgba(180,240,255,1);
+    margin-bottom: 10px;
+    text-transform: uppercase;
+  }
+  #tutorialBody {
+    font-family: 'Space Mono', monospace;
+    font-size: 12px;
+    line-height: 1.5;
+    letter-spacing: 1px;
+    color: rgba(220,235,250,0.92);
+    max-width: 320px;
+    margin: 0 auto 14px;
+  }
+  #tutorialContinue {
+    font-family: 'Orbitron', monospace;
+    font-size: 9px;
+    letter-spacing: 3px;
+    color: rgba(100,200,255,0.7);
+    text-transform: uppercase;
+    animation: tutContinuePulse 1.4s ease-in-out infinite;
+  }
+  #tutorialContinue.hidden { visibility: hidden; }
+  @keyframes tutContinuePulse {
+    0%,100% { opacity: 0.5; }
+    50%     { opacity: 1; }
+  }
+  /* Pulsing left/right arrows for ATTRACT / REPEL hints. Sit on the
+     vertical midline of the play area, off-screen until activated. */
+  .tut-arrow {
+    position: absolute;
+    top: 38%;
+    width: 64px;
+    height: 64px;
+    line-height: 64px;
+    text-align: center;
+    font-size: 40px;
+    font-family: 'Orbitron', monospace;
+    color: rgba(100,220,255,0.95);
+    text-shadow: 0 0 18px rgba(100,200,255,0.7);
+    display: none;
+    animation: tutArrowPulse 1s ease-in-out infinite;
+  }
+  .tut-arrow.visible { display: block; }
+  #tutorialArrowLeft { left: 6%; }
+  #tutorialArrowRight { right: 6%; color: rgba(255,140,90,0.95); text-shadow: 0 0 18px rgba(255,120,80,0.7); }
+  @keyframes tutArrowPulse {
+    0%,100% { transform: scale(1); opacity: 0.55; }
+    50%     { transform: scale(1.18); opacity: 1; }
+  }
+  /* Downward-pointing arrow for HUD pointers (streak meter, etc). The
+     position is set inline by the step machine since the streak display
+     position is dynamic. */
+  .tut-hud-arrow {
+    position: absolute;
+    font-size: 22px;
+    color: rgba(255,210,90,0.95);
+    text-shadow: 0 0 14px rgba(255,180,60,0.7);
+    display: none;
+    animation: tutArrowPulse 1s ease-in-out infinite;
+  }
+  .tut-hud-arrow.visible { display: block; }
+
   /* Username prompt overlay */
   #usernameOverlay {
     position: absolute;
@@ -1925,10 +2064,13 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    background: rgba(0,0,5,0.94);
-    backdrop-filter: blur(10px);
+    background: rgba(0,0,5,0.97);
+    /* v1.6.4: backdrop-filter blur removed — see #overlay rationale. */
     border-radius: 4px;
     z-index: 30;
+    padding: calc(env(safe-area-inset-top, 0px) + 12px) 16px calc(env(safe-area-inset-bottom, 0px) + 24px);
+    overflow-y: auto;
+    box-sizing: border-box;
   }
   #usernameOverlay.visible { display: flex; }
   .username-title {
@@ -2508,6 +2650,21 @@
     <div id="resumeCountdownNumber">3</div>
     <div id="resumeCountdownLabel">RESUMING</div>
   </div>
+  <!-- v1.6.4 first-time tutorial overlay. Hidden by default; shown only
+       while state === 'tutorial'. The arrow span uses CSS transforms +
+       a keyframe animation to pulse toward the indicated half (or HUD
+       element). The text box sits at the bottom 1/3 with TAP TO CONTINUE
+       under the body text. -->
+  <div id="tutorialOverlay">
+    <div id="tutorialArrowLeft" class="tut-arrow">◀</div>
+    <div id="tutorialArrowRight" class="tut-arrow">▶</div>
+    <div id="tutorialHudArrow" class="tut-hud-arrow">▼</div>
+    <div id="tutorialText">
+      <div id="tutorialTitle"></div>
+      <div id="tutorialBody"></div>
+      <div id="tutorialContinue">TAP TO CONTINUE</div>
+    </div>
+  </div>
   <button id="settingsBtn" aria-label="Settings">⚙</button>
   <button id="pauseBtn" aria-label="Pause">❚❚</button>
   <div id="fpsCounter">60 FPS</div>
@@ -2601,6 +2758,15 @@
       <div class="settings-row" id="pgsSettingsRow">
         <span class="settings-label">CLOUD SAVE</span>
         <button class="settings-cloud-btn" id="pgsCloudBtn">SIGN IN</button>
+      </div>
+      <div class="settings-row settings-row-stack">
+        <span class="settings-label">FRAME RATE</span>
+        <div class="settings-toggle settings-toggle-3" data-setting="fps">
+          <button class="toggle-opt" data-val="60">60</button>
+          <button class="toggle-opt" data-val="120">120</button>
+          <button class="toggle-opt" data-val="0">ADAPT</button>
+        </div>
+        <div class="settings-help">60 saves battery. 120 is smoother on capable displays. ADAPT matches your screen.</div>
       </div>
     </div>
     <button class="pause-btn" id="settingsCloseBtn">CLOSE</button>
@@ -4200,9 +4366,9 @@ const FORCE = 0.18;
 
 // --- Difficulty ---
 const DIFFICULTIES = {
-  NORMAL:     { startSpeed: 1.2, maxSpeed: 2.5, speedCapScore: 180, maxBodies: 3, maxBodiesCap: 5, bodySpacing: 180, powerupFrequency: 2.0,  pairSpawnChance: 0.16, crystalMult: 0.75 },
-  HARD:       { startSpeed: 1.6, maxSpeed: 3.5, speedCapScore: 180, maxBodies: 4, maxBodiesCap: 6, bodySpacing: 180, powerupFrequency: 1.7,  pairSpawnChance: 0.13, crystalMult: 1.0 },
-  EXTREME:    { startSpeed: 2.0, maxSpeed: 4.0, speedCapScore: 180, maxBodies: 4, maxBodiesCap: 7, bodySpacing: 180, powerupFrequency: 1.44, pairSpawnChance: 0.10, crystalMult: 1.25 },
+  NORMAL:     { startSpeed: 1.2, maxSpeed: 2.5, speedCapScore: 120, maxBodies: 3, maxBodiesCap: 5, bodySpacing: 180, powerupFrequency: 2.0,  pairSpawnChance: 0.16, crystalMult: 0.75 },
+  HARD:       { startSpeed: 1.6, maxSpeed: 3.5, speedCapScore: 120, maxBodies: 4, maxBodiesCap: 6, bodySpacing: 180, powerupFrequency: 1.7,  pairSpawnChance: 0.13, crystalMult: 1.0 },
+  EXTREME:    { startSpeed: 2.0, maxSpeed: 4.0, speedCapScore: 120, maxBodies: 4, maxBodiesCap: 7, bodySpacing: 180, powerupFrequency: 1.44, pairSpawnChance: 0.10, crystalMult: 1.25 },
   // v1.6.3 IMPOSSIBLE: Extreme's numbers but cap hit in 60s instead of
   // 180s, then +10%/min post-cap speed growth and +1 body every 2 min
   // post-cap. Gated by beatDifficulty.EXTREME in the UI.
@@ -4339,7 +4505,7 @@ const TREE_DEFS = {
       chance: {
         name: 'CHANCE',
         nodes: [
-          { key: 'loadedDice',    name: 'Loaded Dice',     tier: 1, max: 3, desc: 'Each burst has a chance to instantly reset burst cooldown.', effect: r => `${[2,5,10][r-1]||0}% chance, 15s cooldown` },
+          { key: 'loadedDice',    name: 'Loaded Dice',     tier: 1, max: 3, desc: 'Each burst has a chance to instantly reset burst cooldown.', effect: r => `${[10,20,30][r-1]||0}% chance, 20s cooldown` },
           { key: 'fortuneFavors', name: 'Fortune Favors',  tier: 2, max: 3, desc: 'Natural single-pickup spawns biased toward your longest-expired type; chance to spawn a second extra pickup. (10s cooldown on extra)', effect: r => `${[25,50,75][r-1]||0}% bias, ${[10,20,30][r-1]||0}% extra (10s CD)` },
           { key: 'doubleNothing', name: 'Double or Nothing', tier: 3, max: 3, desc: 'After burst fires, chance to immediately fire a second random single powerup.', effect: r => `${[30,60,90][r-1]||0}% second-fire chance` },
         ],
@@ -4347,7 +4513,7 @@ const TREE_DEFS = {
       cadence: {
         name: 'CADENCE',
         nodes: [
-          { key: 'restlessOrb', name: 'Restless Orb', tier: 1, max: 3, desc: 'Burst cooldown reduced by 5% per rank.', effect: r => `-${5*r}% burst CD` },
+          { key: 'restlessOrb', name: 'Restless Orb', tier: 1, max: 3, desc: 'Burst cooldown reduced by 10% per rank.', effect: r => `-${10*r}% burst CD` },
           { key: 'primeMover',  name: 'Prime Mover',  tier: 2, max: 4, desc: 'Streak cap +1 per rank. Max pts per kill rises from 32 to (8+rank)×4.', effect: r => `Streak cap ${8+r} (${(8+r)*4} pts/kill)` },
           { key: 'tempo',       name: 'Tempo',        tier: 3, max: 3, desc: 'Time bonus interval shrinks from 30s.', effect: r => `${30 - [5,10,15][r-1]}s interval` },
         ],
@@ -4376,7 +4542,7 @@ const TREE_DEFS = {
         nodes: [
           { key: 'lingeringVeil', name: 'Lingering Veil', tier: 1, max: 3, desc: 'Single-pickup ghost +0.5s per rank (Phantom baseline 5s).', effect: r => `+${0.5*r}s ghost (${5 + 0.5*r}s total)` },
           { key: 'eternalEmber',  name: 'Eternal Ember',  tier: 2, max: 4, desc: 'Eternal Phantom duration bonus per rank (Phantom baseline 7s).', effect: r => `+${[0.5,1,1.5,2][r-1]||0}s (${7+([0.5,1,1.5,2][r-1]||0)}s total)` },
-          { key: 'twilightEcho',  name: 'Twilight Echo',  tier: 3, max: 3, desc: 'If ghost ends within 1s of any other combo ending, auto-refresh ghost for half its base duration. 15s cooldown.', effect: r => `${[10,25,40][r-1]||0}% chance` },
+          { key: 'twilightEcho',  name: 'Twilight Echo',  tier: 3, max: 3, desc: 'If ghost ends within 2s of any other combo ending, auto-refresh ghost for half its base duration. 15s cooldown.', effect: r => `${[10,25,40][r-1]||0}% chance` },
         ],
       },
       wraith: {
@@ -4390,7 +4556,7 @@ const TREE_DEFS = {
       veil: {
         name: 'VEIL',
         nodes: [
-          { key: 'shadowRegen', name: 'Shadow Regen', tier: 1, max: 3, desc: 'Ghost pickups stack additively rather than refreshing. Cap: 2× base duration.', effect: r => `${[10,15,20][r-1]||0}% additive` },
+          { key: 'shadowRegen', name: 'Shadow Regen', tier: 1, max: 3, desc: 'Ghost pickups stack additively rather than refreshing. Cap: 2× base duration.', effect: r => `${[15,20,25][r-1]||0}% additive` },
           { key: 'soulbound',   name: 'Soulbound',    tier: 2, max: 5, desc: 'On body destroyed, chance to extend ghost by +1s. 5s cooldown. Cap: 2× base ghost duration.', effect: r => `${[2,4,6,8,10][r-1]||0}% per destroy` },
           { key: 'beyond',      name: 'Beyond',       tier: 3, max: 3, desc: 'When ghost ends, remain invulnerable for an afterimage window.', effect: r => `${[0.5,1,1.5][r-1]||0}s afterimage` },
         ],
@@ -4410,7 +4576,7 @@ const TREE_DEFS = {
         nodes: [
           { key: 'kindling',      name: 'Kindling',      tier: 1, max: 3, desc: 'Single nova +1 wave per rank (Inferno baseline 4).', effect: r => `+${r} waves (${4+r} total)` },
           { key: 'conflagration', name: 'Conflagration', tier: 2, max: 2, desc: 'Supernova wave bonus (Inferno baseline 4). 15s cooldown between applications.', effect: r => `+${[1,2][r-1]||0} waves (${4+([1,2][r-1]||0)} total)` },
-          { key: 'secondFlame',   name: 'Second Flame',  tier: 3, max: 3, desc: 'Chance per nova cast to fire one free bonus wave at the end. 5s cooldown.', effect: r => `${[20,30,40][r-1]||0}% chance` },
+          { key: 'secondFlame',   name: 'Second Flame',  tier: 3, max: 3, desc: 'Chance per nova cast to fire one free bonus wave at the end. 10s cooldown.', effect: r => `${[20,30,40][r-1]||0}% chance` },
         ],
       },
       corona: {
@@ -4418,13 +4584,13 @@ const TREE_DEFS = {
         nodes: [
           { key: 'solarFlare',  name: 'Solar Flare',  tier: 1, max: 3, desc: 'Nova ring lethal radius bonus per rank (360px baseline).', effect: r => `+${[10,20,30][r-1]||0}% radius` },
           { key: 'halo',        name: 'Halo',         tier: 2, max: 3, desc: 'Supernova radiusMult step coefficient boosted (0.10 → 0.133/0.167/0.20).', effect: r => `+${(3.3*r).toFixed(1)}% step` },
-          { key: 'coronalHold', name: 'Coronal Hold', tier: 3, max: 3, desc: 'Every nova kill reduces burst cooldown by a small % of base.', effect: r => `-${[0.05,0.10,0.50][r-1]||0}% base CD per kill` },
+          { key: 'coronalHold', name: 'Coronal Hold', tier: 3, max: 3, desc: 'Every nova kill reduces burst cooldown by a % of base.', effect: r => `-${[0.25,0.50,1][r-1]||0}% base CD per kill` },
         ],
       },
       inferno: {
         name: 'INFERNO',
         nodes: [
-          { key: 'cinder',     name: 'Cinder',     tier: 1, max: 3, desc: 'Nova-killed bodies leave a 2s, 60px burn zone at the kill position (world-static, no scroll).', effect: r => `${[10,20,30][r-1]||0}% proc` },
+          { key: 'cinder',     name: 'Cinder',     tier: 1, max: 3, desc: 'Nova-killed bodies leave a 3s, 60px burn zone at the kill position (world-static, no scroll).', effect: r => `${[10,20,30][r-1]||0}% proc` },
           { key: 'firebrand',  name: 'Firebrand',  tier: 2, max: 5, desc: 'On body destroyed, chance to fire a single half-size nova ring at the body position. (3s cooldown)', effect: r => `${[2,4,6,8,10][r-1]||0}% per destroy` },
           { key: 'combustion', name: 'Combustion', tier: 3, max: 3, desc: 'Each nova cast adds +1 to a bonus-wave counter; counter consumed by the next nova cast within 2s. 15s cooldown.', effect: r => `Cap +${[1,2,3][r-1]||0} bonus waves` },
         ],
@@ -4432,7 +4598,7 @@ const TREE_DEFS = {
     },
     capstones: [
       { key: 'sunForge',     name: 'SUN FORGE',     desc: 'Supernova auto-fires every 45s.' },
-      { key: 'criticalMass', name: 'CRITICAL MASS', desc: '10+ destroys from one nova cast triggers a free 6-wave nova. 20s cooldown; kill counter paused during cooldown.' },
+      { key: 'criticalMass', name: 'CRITICAL MASS', desc: '10+ destroys from one nova cast triggers a free 6-wave nova. 30s cooldown; kill counter paused during cooldown.' },
     ],
   },
   nebula: {
@@ -4451,21 +4617,21 @@ const TREE_DEFS = {
         name: 'ENDURANCE',
         nodes: [
           { key: 'reservoir',    name: 'Reservoir',    tier: 1, max: 3, desc: 'Hyperspeed duration +0.5s per rank (3s baseline, shared timer).', effect: r => `+${0.5*r}s total (${3 + 0.5*r}s)` },
-          { key: 'overdrive',    name: 'Overdrive',    tier: 2, max: 2, desc: 'Hyperspeed stack cap +1/+2 at ranks 1/2 (Warp baseline 4).', effect: r => `Cap ${4+r} stacks` },
-          { key: 'infiniteGate', name: 'Infinite Gate', tier: 3, max: 3, desc: 'At 5+ hyperspeed stacks, natural pickup extends shared timer +0.5/1/1.5s at ranks 1/2/3. 15s cooldown between triggers.', effect: r => `+${[0.5,1,1.5][r-1]||0}s at 5+ (15s CD)` },
+          { key: 'overdrive',    name: 'Overdrive',    tier: 2, max: 3, desc: 'Hyperspeed stack cap +1/+2/+3 at ranks 1/2/3 (Warp baseline 4).', effect: r => `Cap ${4+r} stacks` },
+          { key: 'infiniteGate', name: 'Infinite Gate', tier: 3, max: 3, desc: 'At 5+ hyperspeed stacks, natural pickup extends shared timer +0.5/1/1.5s at ranks 1/2/3. 25s cooldown between triggers.', effect: r => `+${[0.5,1,1.5][r-1]||0}s at 5+ (25s CD)` },
         ],
       },
       drift: {
         name: 'DRIFT',
         nodes: [
-          { key: 'smoothEntry',  name: 'Smooth Entry',  tier: 1, max: 3, desc: 'Each natural hyperspeed pickup destroys bodies in a radius around the player on activation.', effect: r => `${[80,140,200][r-1]||0}px radius` },
-          { key: 'slipstream',   name: 'Slipstream',    tier: 2, max: 5, desc: 'On body destroyed, chance to grant a hyperspeed stack. (15s cooldown)', effect: r => `${[1,2,3,4,6][r-1]||0}% per destroy` },
+          { key: 'smoothEntry',  name: 'Momentum',      tier: 1, max: 3, desc: 'Kills during hyperspeed reduce burst cooldown.', effect: r => `-${[0.1,0.2,0.3][r-1]||0}% burst CD per hyperspeed kill` },
+          { key: 'slipstream',   name: 'Slipstream',    tier: 2, max: 5, desc: 'On body destroyed, chance to grant a hyperspeed stack. (20s cooldown)', effect: r => `${[1,2,3,4,6][r-1]||0}% per destroy` },
           { key: 'warpHarmonic', name: 'Warp Harmonic', tier: 3, max: 3, desc: 'Hyperspeed pair combos grant bonus free stacks. 20s cooldown.', effect: r => `+${r} free stacks` },
         ],
       },
     },
     capstones: [
-      { key: 'superluminal', name: 'SUPERLUMINAL',  desc: 'Raises max hyperspeed stack cap to 8.' },
+      { key: 'superluminal', name: 'SUPERLUMINAL',  desc: 'Raises max hyperspeed stack cap to 10.' },
       { key: 'eventHorizon', name: 'LINGERING HORIZON', desc: 'Every 90s, gain full-stacked hyperspeed automatically.' },
     ],
   },
@@ -4665,6 +4831,23 @@ function saveTreesUnlocked() {
   try { localStorage.setItem('drift_trees_unlocked', JSON.stringify(treesUnlocked)); } catch {}
   pgsScheduleWrite();
 }
+
+// v1.6.4 first-time tutorial: forced once per install. Persists to
+// localStorage 'drift_tutorial_completed'. PGS-merged with OR semantics
+// so a player who completed on one device doesn't re-see it on another.
+// DRIFTRESET clears it (tutorial fires again); TREETEST sets it (skip
+// for dev test runs).
+let tutorialCompleted = false;
+function loadTutorialCompleted() {
+  try { tutorialCompleted = localStorage.getItem('drift_tutorial_completed') === '1'; }
+  catch { tutorialCompleted = false; }
+}
+function saveTutorialCompleted(v) {
+  tutorialCompleted = !!v;
+  try { localStorage.setItem('drift_tutorial_completed', tutorialCompleted ? '1' : '0'); } catch {}
+  pgsScheduleWrite();
+}
+loadTutorialCompleted();
 // Attempt to unlock the given orb's skill tree. Returns true if the
 // purchase succeeded (enough crystals, not already unlocked).
 function purchaseTreeUnlock(orbKey) {
@@ -4683,11 +4866,11 @@ function purchaseTreeUnlock(orbKey) {
 // shared global table, then multiplied by the orb's scale factor. Rounded
 // to the nearest 500 crystals for clean display.
 const ORB_COST_SCALE = {
-  cyan:     0.35, // Drifter −65% (v1.6.3 pricing pass 2)
-  cosmic:   0.40, // Phantom  −60%
-  solar:    0.45, // Inferno  −55%
-  nebula:   0.50, // Warp     −50%
-  asteroid: 0.55, // Bulwark  −45%
+  cyan:     0.175, // Drifter −82.5% (v1.6.4 pricing pass: prior 0.35 × 0.50)
+  cosmic:   0.22,  // Phantom −78%   (prior 0.40 × 0.55)
+  solar:    0.27,  // Inferno −73%   (prior 0.45 × 0.60)
+  nebula:   0.325, // Warp    −67.5% (prior 0.50 × 0.65)
+  asteroid: 0.385, // Bulwark −61.5% (prior 0.55 × 0.70)
 };
 // Capstones use a separate, less-aggressive scale so they remain
 // long-term aspirations even after node grind is cheap.
@@ -5030,7 +5213,7 @@ function secondFlameRollForCast(source, px, py, waveCount, isSupernova) {
   if (sfRank <= 0) return;
   const chance = [0.20, 0.30, 0.40][sfRank - 1] || 0;
   if (Math.random() >= chance) return;
-  secondFlameNextFireTime = now + 5000;
+  secondFlameNextFireTime = now + 10000;
   const delayMs = Math.max(waveCount | 0, 1) * 400;
   const spawnX = px, spawnY = py;
   const id = setTimeout(() => {
@@ -5086,7 +5269,7 @@ function slipstreamProc() {
   activateHyperspeed(undefined, undefined, 'slipstream');
   if (activeOrb === 'nebula') activateHyperspeed(undefined, undefined, 'slipstream');
   spawnDestroyProcFlash('hyperspeed');
-  slipstreamNextProcTime = now + 15000;
+  slipstreamNextProcTime = now + 20000;
   treeLog('slipstream: +' + (activeOrb === 'nebula' ? 2 : 1) + ' stack (15s CD)');
 }
 
@@ -5219,6 +5402,25 @@ function checkDestroyProc(body, source) {
     // v1.6.3 FIX W8: Slipstream nerfed to 1/2/3/4/6% (was 2/4/6/8/10%).
     const slipChances = [0.01, 0.02, 0.03, 0.04, 0.06];
     if (r > 0 && Math.random() < slipChances[r - 1]) slipstreamProc();
+    // v1.6.4 Momentum (Warp Drift T1, key 'smoothEntry' for save-compat):
+    // every body destroyed during ACTIVE hyperspeed shaves a % of the
+    // Warp burst base off the live cooldown. Source-agnostic — barrier
+    // kills, ghost-combo kills, EMP, nova, manual contact during a
+    // ghost combo all count, as long as activeEffects.hyperspeed > 0.
+    // Lingering Horizon (the v1.6.3 90 s auto full-stack) sets
+    // activeEffects.hyperspeed normally so its kills also count, which
+    // matches the prompt's "active hyperspeed" gate (the v1.6.3 rework
+    // removed the post-hyperspeed echo phase; only active hyperspeed
+    // remains as a state).
+    const momRank = rankOf('smoothEntry');
+    if (momRank > 0 && activeEffects.hyperspeed > 0
+        && burstCooldownEnd > Date.now()) {
+      const pct = [0.001, 0.002, 0.003][momRank - 1] || 0;
+      const reduce = Math.floor(pct * BURST_COOLDOWN_MS);
+      if (reduce > 0) {
+        burstCooldownEnd = Math.max(Date.now(), burstCooldownEnd - reduce);
+      }
+    }
   } else if (activeOrb === 'asteroid') {
     if (source === 'emp') return; // exclude EMP-chain destroys (anti-loop)
     const r = rankOf('bastion2');
@@ -5267,7 +5469,7 @@ let conflagrationNextApplyTime = 0;
 let salvageBonusThisRun = 0;
 // Cinder (Inferno Inferno T1): persistent burn zones left by nova-kills.
 let burnZones = [];
-const BURN_ZONE_LIFETIME_MS = 2000;
+const BURN_ZONE_LIFETIME_MS = 3000;
 const BURN_ZONE_RADIUS = 60;
 // Second Flame (Inferno Pyre T3): setTimeouts for bonus waves — tracked so
 // we can clear on resetGame() to avoid a ghost wave firing after restart.
@@ -5547,21 +5749,165 @@ function spawnButterflyEffectSplit(x, y, type) {
   treeLog('butterfly: split spawned ' + type + ' (10s CD)');
 }
 
-// Ghostlight burst: spawn a small harmless EMP-lite burst at (x, y) that
-// visually references the shield-EMP but doesn't kill bodies or chain.
-// Reuses emitDestroyBurst for the ring flash + kills any crack fragments
-// in range (design: "kills fragments, +1 streak").
-// v1.6.3 buff: radius 90 → 120 px.
+// v1.6.4 Ghostlight rework: 120 px radius circular burst expanding from
+// the kill position. Ghost-purple, fades over 300 ms. Kills any body
+// inside the 120 px radius on contact (design: "kills fragments AND
+// bodies, +1 streak"). Previously, ghostlightBurst only emitted a tiny
+// destroy-flash and cleared crack fragments, so the EMP-lite never
+// rendered visibly and never extended the kill chain.
+let ghostlightBursts = [];
+const GHOSTLIGHT_BURST_LIFE_MS = 300;
+const GHOSTLIGHT_BURST_RADIUS = 120;
+const GHOSTLIGHT_BURSTS_CAP = 8;
+// Kill radii queued by ghostlightBurst, processed once per update tick
+// in resolveGhostlightPendingKills(). Deferring the body kills to the end
+// of the update avoids mutating `bodies` mid-iteration at the upstream
+// Razor Veil / Phantom Blade kill sites.
+let ghostlightPendingKills = [];
 function ghostlightBurst(x, y) {
+  // v1.6.4 visual rework: clones the shield-EMP burst structure (outer
+  // expanding ring + lightning bolts + center flash) so Ghostlight reads
+  // unmistakeably even when no shield is active. Bolt angles are baked
+  // into the burst so the flicker stays stable across frames; segment
+  // offsets are re-randomized at draw time for the lightning shimmer.
+  const boltCount = 4 + Math.floor(Math.random() * 3); // 4-6
+  const bolts = [];
+  for (let i = 0; i < boltCount; i++) {
+    bolts.push({
+      angle: (i / boltCount) * Math.PI * 2 + Math.random() * 0.4,
+      segs: 5 + Math.floor(Math.random() * 2), // 5-6
+    });
+  }
+  pushCapped(ghostlightBursts, {
+    x, y,
+    startTime: Date.now(),
+    maxR: GHOSTLIGHT_BURST_RADIUS,
+    bolts,
+  }, GHOSTLIGHT_BURSTS_CAP);
+  // Small particle flash on top so the impact reads instantly.
   emitDestroyBurst(x, y, POWERUP_COLORS.ghost.rgb);
-  // Clean out any crack fragments in the 120 px radius.
-  const r2 = 120 * 120;
+  // Queue the radius for end-of-update body sweep.
+  ghostlightPendingKills.push({ x, y, r: GHOSTLIGHT_BURST_RADIUS });
+  // Crack fragments are safe to clear synchronously — no caller iterates
+  // crackFragments around the upstream call sites.
+  const r2 = GHOSTLIGHT_BURST_RADIUS * GHOSTLIGHT_BURST_RADIUS;
   for (let i = crackFragments.length - 1; i >= 0; i--) {
     const f = crackFragments[i];
     const dx = f.x - x, dy = f.y - y;
     if (dx * dx + dy * dy < r2) crackFragments.splice(i, 1);
   }
   treeLog('ghostlight: burst at ' + Math.round(x) + ',' + Math.round(y));
+}
+// Resolves all queued Ghostlight kill radii against the current bodies
+// list. Called once per update tick at end-of-tick, after all primary
+// kill loops have run. Bodies inside any queued radius (excluding the
+// trigger body via a distance epsilon) get the standard ghost destroy
+// effects + 'ghost' source flag for downstream procs (Soulbound, etc.).
+function resolveGhostlightPendingKills() {
+  if (!ghostlightPendingKills.length) return;
+  const survivors = [];
+  for (const b of bodies) {
+    let killed = false;
+    for (const k of ghostlightPendingKills) {
+      const dx = b.x - k.x, dy = b.y - k.y;
+      const d2 = dx * dx + dy * dy;
+      const r2k = k.r * k.r;
+      // Skip trigger body (the original kill site already emitted its
+      // destroy effects). Distance epsilon: 0.5 px squared.
+      if (d2 < r2k && d2 > 0.25) { killed = true; break; }
+    }
+    if (killed) {
+      emitDestroyBurst(b.x, b.y, POWERUP_COLORS.ghost.rgb);
+      emitDestroyEffects(b, 'ghost');
+      addDestroyPoints();
+      SFX.planetDestroyed('ghost');
+      releaseBodyCanvases(b);
+    } else {
+      survivors.push(b);
+    }
+  }
+  bodies = survivors;
+  ghostlightPendingKills = [];
+}
+// v1.6.4 visual rework: clones drawEmpRings (outer ring + lightning bolts
+// + center flash) but in the ghost-purple palette and at the 120 px
+// Ghostlight radius. NO pixiActive early-return — production Android
+// runs pixiActive=true and the prior implementation invisibly returned
+// at the top, leaving Ghostlight rendering nothing on the device that
+// matters most. Drawing to #c overlays the pixi WebGL canvas correctly
+// because #c sits above #pixiCanvas in the stacking order.
+function drawGhostlightBursts(tctx = ctx) {
+  if (!ghostlightBursts.length) return;
+  const now = Date.now();
+  const maxLifeMs = GHOSTLIGHT_BURST_LIFE_MS;
+  const live = [];
+  const _ctx = tctx;
+  for (const g of ghostlightBursts) {
+    const age = now - g.startTime;
+    if (age >= maxLifeMs) continue;
+    live.push(g);
+    const life = Math.max(0, Math.min(1, age / maxLifeMs));
+    const fade = 1 - life;
+    const outerR = 20 + life * (g.maxR - 20);
+
+    _ctx.save();
+    _ctx.translate(g.x, g.y);
+
+    // 1) OUTER RING — single stroke. Bright purple so it pops on dark bg.
+    _ctx.globalAlpha = fade;
+    _ctx.strokeStyle = 'rgba(200,140,255,0.95)';
+    _ctx.lineWidth = 2.5;
+    _ctx.beginPath(); _ctx.arc(0, 0, outerR, 0, 6.28); _ctx.stroke();
+
+    // 2) LIGHTNING BOLTS — single Path2D so all bolts stroke in one call.
+    // Bolts fade out faster than the ring (~200 ms) for a snap-then-glow
+    // feel matching the shield EMP.
+    const boltT = Math.min(1, age / 200);
+    const boltFade = 1 - boltT;
+    if (boltFade > 0 && g.bolts) {
+      const flickerTick = Math.floor(frame / 3);
+      const rng = mulberry32((g.startTime & 0xffff) ^ flickerTick);
+      const bolts = new Path2D();
+      for (const b of g.bolts) {
+        const tipR = outerR - 4;
+        const dx = Math.cos(b.angle);
+        const dy = Math.sin(b.angle);
+        const perpX = -dy, perpY = dx;
+        bolts.moveTo(0, 0);
+        for (let i = 1; i < b.segs; i++) {
+          const u = i / b.segs;
+          const bx = dx * tipR * u;
+          const by = dy * tipR * u;
+          const off = (rng() - 0.5) * 30;
+          bolts.lineTo(bx + perpX * off, by + perpY * off);
+        }
+        bolts.lineTo(dx * tipR, dy * tipR);
+      }
+      _ctx.globalAlpha = boltFade;
+      _ctx.lineWidth = 1.6;
+      _ctx.strokeStyle = `rgba(230,200,255,${0.9 * boltFade + 0.1})`;
+      _ctx.stroke(bolts);
+    }
+
+    // 3) CENTER FLASH — implodes 24 → 0 over the first 200 ms. White core
+    // fading to ghost purple gives the burst a clear ignition point.
+    const flashT = Math.min(1, age / 200);
+    if (flashT < 1) {
+      const fk = 1 - flashT;
+      const fr = 24 * fk;
+      _ctx.globalAlpha = fk;
+      const flash = _ctx.createRadialGradient(0, 0, 0, 0, 0, Math.max(0.5, fr));
+      flash.addColorStop(0,    'rgba(255,255,255,1)');
+      flash.addColorStop(0.55, 'rgba(220,180,255,0.85)');
+      flash.addColorStop(1,    'rgba(180,120,235,0)');
+      _ctx.fillStyle = flash;
+      _ctx.beginPath(); _ctx.arc(0, 0, Math.max(0.5, fr), 0, 6.28); _ctx.fill();
+    }
+
+    _ctx.restore();
+  }
+  ghostlightBursts = live;
+  _ctx.globalAlpha = 1;
 }
 
 // --- Google Play Games Services cloud save (Android-only, opt-in) ---
@@ -5613,6 +5959,7 @@ const PGS = (() => {
         nebula:   !!treesUnlocked.nebula,
         asteroid: !!treesUnlocked.asteroid,
       },
+      tutorialCompleted: !!tutorialCompleted,
     };
   }
 
@@ -5635,6 +5982,7 @@ const PGS = (() => {
         orbTrees: mergeTrees(local.orbTrees, remote.orbTrees),
         beatDifficulty: mergeBeat(local.beatDifficulty, remote.beatDifficulty),
         treesUnlocked: mergeTreesUnlocked(local.treesUnlocked, remote.treesUnlocked),
+        tutorialCompleted: !!(local.tutorialCompleted || remote.tutorialCompleted),
       };
     }
     return {
@@ -5646,6 +5994,7 @@ const PGS = (() => {
       orbTrees: mergeTrees(local.orbTrees, remote.orbTrees),
       beatDifficulty: mergeBeat(local.beatDifficulty, remote.beatDifficulty),
       treesUnlocked: mergeTreesUnlocked(local.treesUnlocked, remote.treesUnlocked),
+      tutorialCompleted: !!(local.tutorialCompleted || remote.tutorialCompleted),
     };
   }
   // Tree state merge: per-orb, max-per-rank across node arrays; union of
@@ -5760,6 +6109,13 @@ const PGS = (() => {
         treesUnlocked[k] = !!payload.treesUnlocked[k];
       }
       try { localStorage.setItem('drift_trees_unlocked', JSON.stringify(treesUnlocked)); } catch {}
+    }
+    // v1.6.4: tutorial-completed flag — OR-merged. Local true never reverts.
+    if (typeof payload.tutorialCompleted === 'boolean') {
+      if (payload.tutorialCompleted && !tutorialCompleted) {
+        tutorialCompleted = true;
+        try { localStorage.setItem('drift_tutorial_completed', '1'); } catch {}
+      }
     }
     // activeOrb intentionally NOT applied from remote.
   }
@@ -5977,15 +6333,9 @@ let beyondAfterimage = null;
 // needed. drawAfterburnDiscs reads launchTime/originX/originY/endpointRadius
 // from those same entries.
 let planetRipples = [];
-// v1.6.3 Smooth Entry rework: one-shot expanding ring at the player on
-// natural-pickup destroy-radius fires. Each entry { x, y, maxR, startTime }.
-// Lives 200 ms; ring radius eases from 0 → maxR over the lifespan.
-let smoothEntryRings = [];
-const SMOOTH_ENTRY_RING_LIFE_MS = 200;
-const SMOOTH_ENTRY_RING_CAP = 6;
-function spawnSmoothEntryRing(x, y, maxR) {
-  pushCapped(smoothEntryRings, { x, y, maxR, startTime: Date.now() }, SMOOTH_ENTRY_RING_CAP);
-}
+// v1.6.4 Momentum rework: Smooth Entry → Momentum. The persistent kill
+// ring (and the prior one-shot expanding ring) is gone — Momentum now
+// reduces burst cooldown per hyperspeed kill via checkDestroyProc.
 // Shield EMP rings — single expanding cyan ring spawned when a shield (or
 // wraith) destroys a planet. First planet it touches gets destroyed, but no
 // chain reaction. Capped at EMP_RINGS_CAP.
@@ -6010,17 +6360,20 @@ const MIRROR_INPUT_FORCE_MUL = 0.15;
 // the purple targeting-line tint and the low-frequency hum.
 let playerInVoidRange = false;
 let voidHumNodes = null;
-// Burst ability: simultaneous left+right press. 20s cooldown (wall-clock).
+// Burst ability: simultaneous left+right press. 30 s wall-clock base
+// cooldown for all orbs (v1.6.4 unification). Per-orb reduction mechanics
+// — Restless Orb (Drifter), Coronal Hold (Inferno), Momentum (Warp) —
+// all key off this single base.
 // Reset by resetGame(). burstTriggered is a one-shot flag consumed by update().
-const BURST_COOLDOWN_MS = 20000;
+const BURST_COOLDOWN_MS = 30000;
 let burstCooldownEnd = 0;
 // Duration captured at cooldown-start so the HUD bar can compute % even if the
 // player equips a different orb mid-cooldown (which could change BURST_COOLDOWN()).
 let burstCooldownDuration = BURST_COOLDOWN_MS;
 function BURST_COOLDOWN() {
-  // Skill tree: Restless Orb -5%/rank (Drifter-only).
   let cd = BURST_COOLDOWN_MS;
-  if (activeOrb === 'cyan') cd *= (1 - 0.05 * rankOf('restlessOrb'));
+  // Skill tree: Restless Orb -10%/rank (Drifter-only).
+  if (activeOrb === 'cyan') cd *= (1 - 0.10 * rankOf('restlessOrb'));
   return Math.max(5000, Math.floor(cd));
 }
 let burstTriggered = false;
@@ -6124,14 +6477,14 @@ let hyperspeedWhooshNodes = null; // audio nodes for sustained whoosh
 // and resets the single shared hyperspeedEndTime timer. Stacks only affect
 // peak speed multiplier; the shared timer controls total duration, and all
 // stacks clear simultaneously on expiry.
-// v1.6.3 caps: base 2 default / 4 Warp. Overdrive +1/rank (max +2; 2 ranks).
-// SUPERLUMINAL raises the cap TO 8 (override, not additive). v1.6.3.
+// v1.6.3 caps: base 2 default / 4 Warp. Overdrive +1/rank (v1.6.4: max +3; 3 ranks).
+// SUPERLUMINAL raises the cap TO 10 (override, not additive). v1.6.4.
 const HYPERSPEED_MAX_STACKS_DEFAULT = 2;  // v1.6.3 nerf, was 4
 const HYPERSPEED_MAX_STACKS_NEBULA = 4;   // v1.6.3 nerf, was 6
 function HYPERSPEED_MAX_STACKS() {
-  // SUPERLUMINAL (Warp capstone) v1.6.3: absolute cap of 8 stacks —
+  // SUPERLUMINAL (Warp capstone) v1.6.4 buff: absolute cap of 10 stacks —
   // overrides Overdrive/base. Not additive.
-  if (activeOrb === 'nebula' && hasCapstone('superluminal')) return 8;
+  if (activeOrb === 'nebula' && hasCapstone('superluminal')) return 10;
   let base = activeOrb === 'nebula' ? HYPERSPEED_MAX_STACKS_NEBULA : HYPERSPEED_MAX_STACKS_DEFAULT;
   // Skill tree: Overdrive (+1/rank), Warp-only.
   if (activeOrb === 'nebula') base += rankOf('overdrive');
@@ -7889,6 +8242,23 @@ function syncPixiStarTextures() {
   }
 }
 
+// v1.6.4 perf: returns true when any fullscreen overlay covers the canvas.
+// Used to skip the per-frame pixi stage render when the canvas isn't
+// visible — the dominant battery drain on static menus was the WebGL
+// stage rasterizing 60–120×/sec into a fully occluded surface.
+function isFullscreenOverlayVisible() {
+  const ids = ['overlay','treeOverlay','settingsOverlay','pauseOverlay','usernameOverlay','guideOverlay'];
+  for (const id of ids) {
+    const el = document.getElementById(id);
+    if (!el) continue;
+    if (el.classList.contains('hidden')) continue;
+    // offsetParent === null when the element (or any ancestor) is display:none.
+    if (el.offsetParent === null) continue;
+    return true;
+  }
+  return false;
+}
+
 // Per-frame star update. Mirrors the old drawImage-based twinkle+scroll math
 // exactly (alpha = max(0, 0.35 + 0.5 * sin(frame*0.05 + midPhase))), then
 // manually renders the pixi stage. autoStart was disabled so this is the only
@@ -7910,6 +8280,16 @@ function updatePixiStars() {
       b.wrap.visible = false;
     }
   }
+  // v1.6.4 perf: skip the stage render when the canvas is fully occluded
+  // by a menu overlay AND we're not in an active gameplay state. Layer-sync
+  // calls above already ran (O(n) on mostly-empty arrays) so the first
+  // post-modal render after state flips back to gameplay snaps to the
+  // current scene. The expensive op is the WebGL render itself — that's
+  // what we gate.
+  const inGameplay = state === 'playing' || state === 'paused'
+                  || state === 'apocalypse' || state === 'devmode'
+                  || state === 'tutorial';
+  if (!inGameplay && isFullscreenOverlayVisible()) return;
   try { pixiApp.renderer.render(pixiApp.stage); } catch (err) {
     console.warn('[pixi] render threw, disabling:', err);
     pixiActive = false;
@@ -8213,7 +8593,10 @@ function updatePixiBodyEffectsLayer() {
   // original drawPowerups math; bodies use b.radius+5.
   if (pixiTargetRingGraphics) {
     pixiTargetRingGraphics.clear();
-    if (state === 'playing' && closestBody) {
+    // v1.6.4: tutorial steps 2/3 demonstrate ATTRACT/REPEL — the player
+    // needs to see the target ring around the spawned planet to recognize
+    // the targeting feedback they'll see in real gameplay.
+    if ((state === 'playing' || state === 'tutorial') && closestBody) {
       const b = closestBody;
       const orbRgb = getOrbBonus().color;
       const lineColor = leftDown ? '80,200,255' : rightDown ? '255,120,80' : orbRgb;
@@ -8235,7 +8618,7 @@ function updatePixiBodyEffectsLayer() {
   // Dashed targeting line — only when input is active and there's a target.
   if (pixiTargetLineGraphics) {
     pixiTargetLineGraphics.clear();
-    if (state === 'playing' && closestBody && (leftDown || rightDown)) {
+    if ((state === 'playing' || state === 'tutorial') && closestBody && (leftDown || rightDown)) {
       const b = closestBody;
       const orbRgb = getOrbBonus().color;
       const baseColor = leftDown ? '80,200,255' : rightDown ? '255,120,80' : orbRgb;
@@ -8372,7 +8755,10 @@ function updatePixiBodyEffectsLayer() {
 function updatePixiPlayerLayer() {
   if (!pixiActive || !pixiPlayerLayer) return;
   // --- Player composite ---
-  const playerVisible = (state === 'playing' || state === 'paused' || state === 'apocalypse' || state === 'devmode');
+  // v1.6.4: 'tutorial' must render the player too — Fix 1. The first-time
+  // tutorial steps the player through ATTRACT/REPEL and powerup pickups; if
+  // the orb is invisible they have no visual feedback for any of it.
+  const playerVisible = (state === 'playing' || state === 'paused' || state === 'apocalypse' || state === 'devmode' || state === 'tutorial');
   if (playerVisible) {
     const dpr = atlasScale();
     if (!pixiPlayerCanvas) {
@@ -8417,7 +8803,10 @@ function updatePixiPlayerLayer() {
   }
 
   // --- Trail ---
-  const trailVisible = (state === 'playing' || state === 'paused' || state === 'apocalypse' || state === 'dead' || state === 'devmode');
+  // v1.6.4: tutorial included so the orb trail particles render during
+  // ATTRACT/REPEL demonstration — without it the orb appears to glide
+  // without its signature trail.
+  const trailVisible = (state === 'playing' || state === 'paused' || state === 'apocalypse' || state === 'dead' || state === 'devmode' || state === 'tutorial');
   pixiTrailGraphics.clear();
   if (trailVisible && orbTrailParticles.length) {
     const orbRgb = activeOrbColor();
@@ -10532,7 +10921,7 @@ function rawActivate(type, x, y) {
     const add = GHOST_DURATION();
     const srRank = (activeOrb === 'cosmic') ? rankOf('shadowRegen') : 0;
     if (srRank > 0 && ghostEndTime > now) {
-      const frac = [0.10, 0.15, 0.20][srRank - 1] || 0;
+      const frac = [0.15, 0.20, 0.25][srRank - 1] || 0;
       const addMs = Math.floor(add * frac);
       // v1.6.3: apply the shared ghost duration cap so stacks can't exceed
       // 2× base duration (also prevents Shadow Regen + Soulbound/Eternal
@@ -10834,7 +11223,7 @@ function activateHyperspeed(durationOverride, peakScale, source) {
     if (igRank > 0 && now >= infiniteGateNextFireTime) {
       const bonusMs = [500, 1000, 1500][igRank - 1] || 0;
       hyperspeedEndTime += bonusMs;
-      infiniteGateNextFireTime = now + 15000;
+      infiniteGateNextFireTime = now + 25000;
       treeLog('infiniteGate: +' + bonusMs + 'ms shared timer (stacks ' + hyperSpeedStacks + ', 15s CD)');
     }
   }
@@ -10851,34 +11240,10 @@ function activateHyperspeed(durationOverride, peakScale, source) {
   if (hyperspeedWhooshNodes) { try { hyperspeedWhooshNodes.stop(0.1); } catch {} }
   hyperspeedWhooshNodes = SFX.startHyperspeedWhoosh(hyperSpeedStacks);
 
-  // Smooth Entry (Warp Drift T1) v1.6.3 rework: only natural hyperspeed
-  // pickups trigger a one-shot destroy radius around the player at
-  // activation. Slipstream / Warp Harmonic / combo / Lingering Horizon
-  // auto-fires are excluded by the source flag.
-  if (activeOrb === 'nebula' && source === 'natural') {
-    const seRank = rankOf('smoothEntry');
-    if (seRank > 0) {
-      const seRadius = [80, 140, 200][seRank - 1] || 0;
-      if (seRadius > 0) {
-        const seR2 = seRadius * seRadius;
-        const seSurv = [];
-        for (const b of bodies) {
-          const dx = b.x - player.x, dy = b.y - player.y;
-          if (dx * dx + dy * dy < seR2) {
-            emitDestroyBurst(b.x, b.y, POWERUP_COLORS.hyperspeed.rgb);
-            emitDestroyEffects(b, 'barrier');
-            addDestroyPoints();
-            SFX.planetDestroyed('barrier');
-            checkDestroyProc(b, 'nova');
-          } else {
-            seSurv.push(b);
-          }
-        }
-        bodies = seSurv;
-        spawnSmoothEntryRing(player.x, player.y, seRadius);
-      }
-    }
-  }
+  // v1.6.4 Momentum rework: this node (Warp Drift T1, key 'smoothEntry')
+  // no longer fires anything on hyperspeed activation. It now runs in
+  // checkDestroyProc, reducing burst cooldown per body destroyed during
+  // active hyperspeed.
 }
 
 function activatePowerup(type, x, y) {
@@ -11038,10 +11403,11 @@ function resetGame() {
   twilightEchoVisuals = [];
   butterflyEffectVisuals = [];
   phantomBlades = [];
+  ghostlightBursts = [];
+  ghostlightPendingKills = [];
   beyondAfterimage = null;
   orbTrailParticles = [];
   planetRipples = [];
-  smoothEntryRings = [];
   destroyEffects = [];
   deathShards = [];
   crackFragments = [];
@@ -11892,6 +12258,10 @@ function deepCleanup() {
 // --- Update ---
 function update() {
   if (state === 'apocalypse') { frame++; updateApocalypse(); return; }
+  // v1.6.4: tutorial runs its own minimal physics tick so the player can
+  // move + grab powerups while the rest of the world stays inert. No body
+  // spawning, no scrolling, no death — walls rebound instead.
+  if (state === 'tutorial') { frame++; updateTutorial(); return; }
   // DEVMODE runs the same physics/animation/collision loop as 'playing' so
   // the sandbox feels real, but auto-spawns / score submit / analytics /
   // apocalypse auto-trigger are gated below.
@@ -11926,11 +12296,11 @@ function update() {
     if (activeOrb === 'cyan') {
       const ldRank = rankOf('loadedDice');
       if (ldRank > 0 && Date.now() >= loadedDiceNextProcTime) {
-        const chance = [0.02, 0.05, 0.10][ldRank - 1] || 0;
+        const chance = [0.10, 0.20, 0.30][ldRank - 1] || 0;
         if (Math.random() < chance) {
           burstCooldownEnd = Date.now();
-          loadedDiceNextProcTime = Date.now() + 15000;
-          treeLog('loadedDice: burst CD reset (15s CD)');
+          loadedDiceNextProcTime = Date.now() + 20000;
+          treeLog('loadedDice: burst CD reset (20s CD)');
         }
       }
     }
@@ -11972,7 +12342,7 @@ function update() {
   //   collision-kill gate).
   if (prevGhostActive && activeEffects.ghost <= 0 && activeOrb === 'cosmic') {
     const teRank = rankOf('twilightEcho');
-    if (teRank > 0 && nowMs - lastComboEndTime < 1000 && nowMs >= twilightEchoNextFireTime) {
+    if (teRank > 0 && nowMs - lastComboEndTime < 2000 && nowMs >= twilightEchoNextFireTime) {
       const chance = [0.10, 0.25, 0.40][teRank - 1] || 0;
       if (Math.random() < chance) {
         const refresh = Math.floor(GHOST_DURATION() / 2);
@@ -12230,6 +12600,9 @@ function update() {
   // stuck-corner case, and bodies that drifted absurdly far above the screen.
   // Null out sprite canvases on the dropped bodies so their offscreen buffers
   // can be GC'd promptly instead of waiting for the body's own object to die.
+  // v1.6.4 Ghostlight: resolve queued in-radius kills now (after all
+  // primary kill loops above). Mutates `bodies` in survivor-pattern.
+  resolveGhostlightPendingKills();
   for (const b of bodies) {
     if (isNaN(b.x) || isNaN(b.y) || (b.x <= 1 && b.y <= 1) || b.y <= -H * 3 || b.y >= H + 80) {
       releaseBodyCanvases(b);
@@ -12371,18 +12744,19 @@ function update() {
           // fireTripleNova / nova_nova activation sites. Per-body increment
           // removed — a nova cast now contributes +1 regardless of how many
           // bodies it kills.
-          // Coronal Hold (Inferno Corona T3) v1.6.3 rework: per-body-kill
+          // Coronal Hold (Inferno Corona T3) v1.6.4 buff: per-body-kill
           // burst CD reduction from ANY nova ring (not just supernova).
-          // Rates are a % of the burst base (BURST_COOLDOWN_MS = 20000):
-          //   rank 1 = 0.05% → 10 ms per kill
-          //   rank 2 = 0.10% → 20 ms per kill
-          //   rank 3 = 0.50% → 100 ms per kill
-          // No per-cast or rolling-window caps — the simple percentage is
-          // the bound.
+          // Rates are a % of the burst base (BURST_COOLDOWN_MS = 30000):
+          //   rank 1 = 0.25% → 75 ms per kill
+          //   rank 2 = 0.50% → 150 ms per kill
+          //   rank 3 = 1.00% → 300 ms per kill
+          // Math sanity at r3: supernova killing 15 bodies = 15% × 30000 ms
+          // = 4500 ms reduction per supernova. Bounded only by per-kill
+          // nature.
           if (activeOrb === 'solar') {
             const chRank = rankOf('coronalHold');
             if (chRank > 0 && burstCooldownEnd > Date.now()) {
-              const pct = [0.0005, 0.001, 0.005][chRank - 1] || 0;
+              const pct = [0.0025, 0.005, 0.01][chRank - 1] || 0;
               const reduce = Math.floor(pct * BURST_COOLDOWN_MS);
               if (reduce > 0) {
                 burstCooldownEnd = Math.max(Date.now(), burstCooldownEnd - reduce);
@@ -12399,7 +12773,7 @@ function update() {
             if (Date.now() >= criticalMassCooldownEnd) {
               novaCastKillCount++;
               if (novaCastKillCount >= 10) {
-                criticalMassCooldownEnd = Date.now() + 20000;
+                criticalMassCooldownEnd = Date.now() + 30000;
                 novaCastKillCount = 0;
                 const id = setTimeout(() => {
                   if (state !== 'playing' && state !== 'devmode') return;
@@ -12524,9 +12898,12 @@ function update() {
   // auto-fires a full-stacked hyperspeed every 90 s instead).
   const hyperBarrierActive = (activeEffects.hyperspeed > 0 && hyperspeedCurrentMult > 1.05);
   if (hyperBarrierActive) {
-    // v1.6.3 Smooth Entry rework: barrier kill radius is the baseline 60 px
-    // regardless of Smooth Entry rank. Smooth Entry now fires a one-shot
-    // destroy radius on natural pickup activation (see activateHyperspeed).
+    // v1.6.4 Momentum rework: barrier reach is fixed at 60 px regardless
+    // of skill ranks. The previous Smooth Entry expansion (80/140/200 px)
+    // let Warp sweep the entire screen during hyperspeed and rack up
+    // disproportionate scores. Momentum (was Smooth Entry, same node key)
+    // now contributes via burst-cooldown reduction in checkDestroyProc
+    // instead of barrier expansion.
     const barrierHalfW = 60;
     const bSurvivors = [];
     for (const b of bodies) {
@@ -12647,6 +13024,121 @@ function update() {
   updateOrbTrailParticles();
 
   if (checkCollisions()) triggerDeath();
+}
+
+// --- Tutorial per-frame tick ---
+// Minimal subset of update(): player movement (input → applyForce → drag +
+// position integrate), powerup pickup detection, body pulse animation,
+// and wall rebound (NO death). The tutorial-step machine's task-check is
+// also ticked here so completion flows naturally with player action.
+function updateTutorial() {
+  // v1.6.4 Fix 1: recompute activeEffects from absolute end timestamps each
+  // frame, mirroring what update() does at the top of its body loop. Without
+  // this, activeEffects.hyperspeed stays 0 after a tutorial pickup (the
+  // hyperspeed activator only sets hyperspeedEndTime, not activeEffects), so
+  // the barrier visual never renders and the player sees no feedback for
+  // step 7. Shield/ghost are set both ways by rawActivate but we recompute
+  // here too so they also tick down naturally during the success phase.
+  const nowMs = Date.now();
+  activeEffects.shield     = Math.max(0, shieldEndTime     - nowMs);
+  activeEffects.ghost      = Math.max(0, ghostEndTime      - nowMs);
+  activeEffects.hyperspeed = Math.max(0, hyperspeedEndTime - nowMs);
+  if (activeEffects.hyperspeed <= 0) {
+    hyperSpeedStacks = 0;
+    hyperspeedCurrentMult = 1;
+  }
+  // Body pulse animation so the planet shimmers and reads as "alive".
+  for (const b of bodies) {
+    b.pulse += 0.04 * dtScale;
+  }
+  // Powerup pulse (mirrors what the production powerups loop does).
+  for (const p of powerups) {
+    p.pulse += 0.05 * dtScale;
+  }
+  // Targeting + force + drag — same pipeline as gameplay, minus the
+  // hyperspeed/scroll-speed scaling tweaks (those don't apply at idle).
+  findClosest();
+  if (closestBody) {
+    const dx = closestBody.x - player.x;
+    const dy = closestBody.y - player.y;
+    const d  = Math.max(Math.hypot(dx, dy), closestBody.radius * 2.2);
+    const nx = dx / d, ny = dy / d;
+    const influence = Math.min(140 / d, 1.8);
+    const f = FORCE * influence;
+    if (leftDown)  { player.vx += nx * f * dtScale; player.vy += ny * f * dtScale; }
+    if (rightDown) { player.vx -= nx * f * dtScale; player.vy -= ny * f * dtScale; }
+  }
+  // Light drag.
+  player.vx *= 0.91;
+  player.vy *= 0.91;
+  // Integrate.
+  player.x += player.vx * dtScale;
+  player.y += player.vy * dtScale;
+  // Wall rebound — same boundaries as the death zones (PLAYER_R+3 inset
+  // on x, ±50 on y) but instead of dying, the player bounces with a soft
+  // velocity invert + clamp. Visual feedback handled by the wall flash on
+  // step 11; rebounds happen silently otherwise so step 2/3 movement isn't
+  // disrupted.
+  const xMin = PLAYER_R + 4, xMax = W - PLAYER_R - 4;
+  const yMin = -40,           yMax = H + 40;
+  if (player.x < xMin) { player.x = xMin; player.vx = Math.abs(player.vx) * 0.6; }
+  if (player.x > xMax) { player.x = xMax; player.vx = -Math.abs(player.vx) * 0.6; }
+  if (player.y < yMin) { player.y = yMin; player.vy = Math.abs(player.vy) * 0.6; }
+  if (player.y > yMax) { player.y = yMax; player.vy = -Math.abs(player.vy) * 0.6; }
+  // Powerup pickup. Mirrors the production pickup-test geometry but routes
+  // collected pickups to a tutorial-only no-op activation: we mark them
+  // collected and apply the visible effect (cyan ring for shield, etc.)
+  // via the same activatePowerup path the real game uses, so the player
+  // sees the actual gameplay effect. Active effects last for their normal
+  // duration; tutorialFinish + resetGame clear them before real gameplay.
+  for (const p of powerups) {
+    if (p.collected) continue;
+    if (dist(player, p) < (PLAYER_R + p.radius)) {
+      p.collected = true;
+      try { activatePowerup(p.type, p.x, p.y); } catch (err) {
+        console.error('[tutorial] activatePowerup threw', err);
+      }
+    }
+  }
+  // Drop collected powerups from the array (same end-of-frame cleanup as
+  // production). tutorialSpawnedPowerups still references them so step
+  // teardown can detect that they were grabbed.
+  powerups = powerups.filter(p => !p.collected);
+  // Throttled audio cues for held input — keeps the attract/repel feel.
+  if (leftDown)  SFX.attract(frame);
+  if (rightDown) SFX.repel(frame);
+  // Trail particles so the orb shows movement nicely during steps 2/3.
+  emitOrbTrail();
+  updateOrbTrailParticles();
+  // v1.6.4 Fix: advance novaRings (radius growth + life decay). The
+  // production pipeline does this in update()'s nova-rings block (~12604),
+  // which is short-circuited when state === 'tutorial'. Without this loop
+  // the rings get pushed by fireTripleNova at radius=0 and never grow, so
+  // step 6 (NOVA pickup) and step 9 (PAIR pulsar combo) showed nothing.
+  // Mirrors the production logic except for the body-sweep kill loop —
+  // tutorial has no destructible bodies after step 3.
+  if (novaRings.length) {
+    const nrNow = Date.now();
+    const nrLive = [];
+    for (const r of novaRings) {
+      r.prevR = r.radius;
+      const sm = r.sizeMult || 1;
+      r.radius = (nrNow - (r.startTime || nrNow)) / 1000 * 420 * sm;
+      const rm = r.radiusMult || 1;
+      const ns = (typeof novaScale === 'function') ? novaScale(r) : 1;
+      if (r.radius > 320 * rm * ns) {
+        if (r._decayStart === undefined) r._decayStart = nrNow;
+        const dtS = (nrNow - r._decayStart) / 1000;
+        if (r._lifeAtDecay === undefined) r._lifeAtDecay = r.life;
+        r.life = r._lifeAtDecay * Math.pow(0.9, dtS * 60);
+      }
+      if (r.life > 0.05 && r.radius < 400 * rm * ns) nrLive.push(r);
+    }
+    novaRings = nrLive;
+  }
+  // Step machine progression — must run last so any state mutated by the
+  // pickup/movement above is visible to taskCheck this frame.
+  tutorialTick();
 }
 
 // --- Apocalypse sequence (10-minute sun-fall death) ---
@@ -13468,7 +13960,7 @@ function drawBodies() {
   // still owns full Canvas 2D rendering when pixi failed to init.
   if (pixiActive) return;
   for (const b of bodies) {
-    const isTarget = b === closestBody && state === 'playing';
+    const isTarget = b === closestBody && (state === 'playing' || state === 'tutorial');
     const pulse = Math.sin(b.pulse)*0.3+0.7;
     const glowR = b.radius * (2.6+Math.sin(b.pulse)*0.35);
 
@@ -15653,8 +16145,9 @@ function drawPowerups() {
     // bodies). Kept here on the #c fallback path so the math stays identical.
     const r = p.radius * (0.95 + Math.sin(p.pulse) * 0.18);
 
-    // Target indicator when powerup is closest body
-    if (p === closestBody && state === 'playing') {
+    // Target indicator when powerup is closest body. v1.6.4: include
+    // tutorial so the ring/dashed-line shows during powerup pickup steps.
+    if (p === closestBody && (state === 'playing' || state === 'tutorial')) {
       const orbRgb = getOrbBonus().color;
       const lineColor = leftDown ? 'rgba(80,200,255,' : rightDown ? 'rgba(255,120,80,' : `rgba(${orbRgb},`;
       ctx.globalAlpha = 0.55 + 0.25*Math.sin(frame*0.18);
@@ -15712,85 +16205,55 @@ function drawPlanetRipples() {
   ctx.globalAlpha = 1;
 }
 
-// v1.6.3 Smooth Entry rework: one-shot expanding ring at the player on
-// natural-pickup destroy-radius fires. Hyperspeed yellow/cyan family.
-function drawSmoothEntryRings(tctx = ctx) {
-  if (!smoothEntryRings.length) return;
-  const _ctx = tctx;
-  const now = Date.now();
-  const live = [];
-  for (const r of smoothEntryRings) {
-    const age = now - r.startTime;
-    if (age >= SMOOTH_ENTRY_RING_LIFE_MS) continue;
-    live.push(r);
-    if (pixiActive) continue;
-    const t = age / SMOOTH_ENTRY_RING_LIFE_MS;
-    const radius = r.maxR * (1 - (1 - t) * (1 - t));
-    const alpha = 1 - t;
-    _ctx.save();
-    _ctx.globalAlpha = 0.85 * alpha;
-    _ctx.strokeStyle = `rgba(255,220,80,${alpha})`;
-    _ctx.lineWidth = 3;
-    _ctx.beginPath();
-    _ctx.arc(r.x, r.y, radius, 0, 6.28);
-    _ctx.stroke();
-    _ctx.globalAlpha = 0.45 * alpha;
-    _ctx.strokeStyle = `rgba(120,230,255,${alpha})`;
-    _ctx.lineWidth = 1.5;
-    _ctx.beginPath();
-    _ctx.arc(r.x, r.y, radius * 1.08, 0, 6.28);
-    _ctx.stroke();
-    _ctx.restore();
-  }
-  smoothEntryRings = live;
-  _ctx.globalAlpha = 1;
-}
-
-// v1.6.3 visual pass: Cinder burn zone render. Each zone is a static
-// 60 px radius smouldering circle at its spawn position (world-static —
-// does NOT scroll). Inner bright core + outer dim halo + a light ember
-// drift via sine modulation. Fades in the last 200 ms of its 1 s life.
+// v1.6.4 Cinder visual pass: more visible burn zone hazard. Brighter
+// saturated core, stronger outer halo, sharper edge ring, larger pulse
+// amplitude, more embers (capped 7 per zone). Fade-out window: last 400 ms
+// of the now-3s lifetime, scaled with the duration constant.
 function drawBurnZones() {
   if (!burnZones.length) return;
   const now = Date.now();
-  // Renders to #c (z-index 0) above the pixi stage. Canvas 2D only — no
-  // pixi port needed because the overlay canvas already layers above pixi.
+  // Renders to #c (z-index 0) above the pixi stage. Canvas 2D only.
   for (const z of burnZones) {
     const age = now - (z.startTime || now);
     if (age < 0 || age > BURN_ZONE_LIFETIME_MS) continue;
-    // v1.6.3: fade-out window is the last 300 ms of the (now 2s) lifetime.
-    const fade = (age > BURN_ZONE_LIFETIME_MS - 300)
-      ? Math.max(0, (BURN_ZONE_LIFETIME_MS - age) / 300)
+    const fade = (age > BURN_ZONE_LIFETIME_MS - 400)
+      ? Math.max(0, (BURN_ZONE_LIFETIME_MS - age) / 400)
       : 1;
-    const pulse = 0.75 + 0.25 * Math.sin(age * 0.02);
-    // Outer dim halo.
+    // Larger pulse amplitude for "alive" feel.
+    const pulse = 0.7 + 0.4 * Math.sin(age * 0.022);
     ctx.save();
-    ctx.globalAlpha = 0.28 * fade;
+    // Outer halo — stronger opacity + more saturated red-orange.
+    ctx.globalAlpha = 0.45 * fade;
     const halo = ctx.createRadialGradient(z.x, z.y, 0, z.x, z.y, z.radius);
-    halo.addColorStop(0,   'rgba(255,130,40,0.55)');
-    halo.addColorStop(0.6, 'rgba(255,90,30,0.22)');
-    halo.addColorStop(1,   'rgba(255,60,20,0)');
+    halo.addColorStop(0,    'rgba(255,140,40,0.85)');
+    halo.addColorStop(0.55, 'rgba(255,90,30,0.45)');
+    halo.addColorStop(1,    'rgba(255,60,20,0)');
     ctx.fillStyle = halo;
     ctx.beginPath(); ctx.arc(z.x, z.y, z.radius, 0, 6.28); ctx.fill();
-    // Inner bright core.
-    ctx.globalAlpha = 0.6 * fade * pulse;
-    const core = ctx.createRadialGradient(z.x, z.y, 0, z.x, z.y, z.radius * 0.45);
-    core.addColorStop(0,   'rgba(255,220,140,0.85)');
-    core.addColorStop(0.5, 'rgba(255,160,60,0.45)');
+    // Sharp edge ring — defines the hazard boundary.
+    ctx.globalAlpha = 0.55 * fade;
+    ctx.strokeStyle = 'rgba(255,160,60,0.95)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(z.x, z.y, z.radius * 0.94, 0, 6.28); ctx.stroke();
+    // Inner bright core — more saturated, brighter peak.
+    ctx.globalAlpha = 0.85 * fade * pulse;
+    const core = ctx.createRadialGradient(z.x, z.y, 0, z.x, z.y, z.radius * 0.55);
+    core.addColorStop(0,   'rgba(255,235,160,1)');
+    core.addColorStop(0.45,'rgba(255,170,70,0.7)');
     core.addColorStop(1,   'rgba(255,120,40,0)');
     ctx.fillStyle = core;
-    ctx.beginPath(); ctx.arc(z.x, z.y, z.radius * 0.45, 0, 6.28); ctx.fill();
-    // Sparse ember ticks around the edge (deterministic from startTime so
-    // they're stable-looking across frames, cheap to compute).
-    ctx.globalAlpha = 0.7 * fade;
-    ctx.fillStyle = 'rgba(255,200,100,1)';
-    for (let i = 0; i < 5; i++) {
+    ctx.beginPath(); ctx.arc(z.x, z.y, z.radius * 0.55, 0, 6.28); ctx.fill();
+    // Ember particles — 7 per zone, deterministic from startTime so cost
+    // stays bounded (no continuous spawn) but more visible than the prior 5.
+    ctx.globalAlpha = 0.85 * fade;
+    ctx.fillStyle = 'rgba(255,210,120,1)';
+    for (let i = 0; i < 7; i++) {
       const seed = (z.startTime | 0) + i * 17;
       const ang = ((seed % 628) / 100) + age * 0.003 * ((i % 2) ? 1 : -1);
-      const rr = z.radius * (0.55 + (((seed >> 3) % 40) / 100));
+      const rr = z.radius * (0.5 + (((seed >> 3) % 45) / 100));
       const ex = z.x + Math.cos(ang) * rr;
       const ey = z.y + Math.sin(ang) * rr - age * 0.02;
-      ctx.fillRect(ex - 1, ey - 1, 2, 2);
+      ctx.fillRect(ex - 1.2, ey - 1.2, 2.4, 2.4);
     }
     ctx.restore();
   }
@@ -16232,13 +16695,12 @@ function drawHyperStackText(tctx = ctx) {
   const visible = Math.floor(frame / blinkPeriod) % 2 === 0;
   const alpha = visible ? 1 : 0.25;
 
-  // v1.6.3 visual pass part 2: stack-count escalation.
-  //   7 stacks (SUPERLUMINAL stacking past Overdrive cap of 6): numeric
-  //     counter, brighter color + thicker outline.
-  //   8 stacks (SUPERLUMINAL max on Warp): replace numeric counter with
+  // v1.6.4 stack-count escalation:
+  //   7+ stacks: emphasis tier (brighter color + thicker outline).
+  //   10 stacks (SUPERLUMINAL max on Warp): replace numeric counter with
   //     "WARP CORE" label + pulsing glow animation.
   const hasSuperluminal = activeOrb === 'nebula' && hasCapstone('superluminal');
-  const coreLabel = hasSuperluminal && hyperSpeedStacks >= 8;
+  const coreLabel = hasSuperluminal && hyperSpeedStacks >= 10;
   const emphasized = hyperSpeedStacks >= 7;
   const label = coreLabel ? 'WARP CORE' : (hyperSpeedStacks + '× HYPERSPEED');
   ctx.save();
@@ -16407,17 +16869,18 @@ function render() {
     ctx.globalAlpha = 1;
   }
 
-  if (state==='playing'||state==='dead'||state==='paused'||state==='apocalypse'||state==='devmode') {
+  if (state==='playing'||state==='dead'||state==='paused'||state==='apocalypse'||state==='devmode'||state==='tutorial') {
     drawBurnZones();
     drawGravityWellLines();
     drawPowerups();
     drawNovaRings();
     drawEmpRings();
     drawPlanetRipples();
-    drawSmoothEntryRings();
+    // v1.6.4: drawSmoothEntryRings removed — Smooth Entry was reworked
+    // into Momentum (cooldown reduction, no visual ring).
     // Step 4: trail + player live on pixi when active.
     if (!pixiActive) drawTrail();
-    if (state==='playing'||state==='paused'||state==='apocalypse') {
+    if (state==='playing'||state==='paused'||state==='apocalypse'||state==='tutorial') {
       // Step 6: hyperspeed barrier on pixi overlay when active.
       if (!pixiActive) drawHyperspeedBarrier();
       if (!pixiActive) drawPlayer();
@@ -16427,6 +16890,7 @@ function render() {
     drawTwilightEchoVisuals();
     drawButterflyEffectVisuals();
     drawPhantomBlades();
+    drawGhostlightBursts();
     drawBeyondAfterimage();
     drawAfterburnDiscs();
     drawDestroyEffects();
@@ -16445,6 +16909,37 @@ function render() {
   else if (!pixiActive && state === 'dead' && apocalypseDeathFlag) {
     ctx.fillStyle = 'rgba(0,0,0,1)';
     ctx.fillRect(0, 0, W, H);
+  }
+
+  // v1.6.4 tutorial — wall-flash overlay (step 11). Red gradient on each
+  // edge fading inward, pulsing for a 2 s window after the step opens.
+  if (state === 'tutorial' && Date.now() < tutorialWallFlashUntil) {
+    const remain = (tutorialWallFlashUntil - Date.now()) / 2000; // 1 → 0
+    const pulse  = 0.5 + 0.5 * Math.sin(Date.now() * 0.012);
+    const alpha  = 0.55 * remain * pulse;
+    const flashW = 28;
+    ctx.save();
+    // Left edge.
+    let g = ctx.createLinearGradient(0, 0, flashW, 0);
+    g.addColorStop(0, `rgba(255,60,60,${alpha})`);
+    g.addColorStop(1, 'rgba(255,60,60,0)');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, flashW, H);
+    // Right edge.
+    g = ctx.createLinearGradient(W - flashW, 0, W, 0);
+    g.addColorStop(0, 'rgba(255,60,60,0)');
+    g.addColorStop(1, `rgba(255,60,60,${alpha})`);
+    ctx.fillStyle = g; ctx.fillRect(W - flashW, 0, flashW, H);
+    // Top edge.
+    g = ctx.createLinearGradient(0, 0, 0, flashW);
+    g.addColorStop(0, `rgba(255,60,60,${alpha})`);
+    g.addColorStop(1, 'rgba(255,60,60,0)');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, flashW);
+    // Bottom edge.
+    g = ctx.createLinearGradient(0, H - flashW, 0, H);
+    g.addColorStop(0, 'rgba(255,60,60,0)');
+    g.addColorStop(1, `rgba(255,60,60,${alpha})`);
+    ctx.fillStyle = g; ctx.fillRect(0, H - flashW, W, flashW);
+    ctx.restore();
   }
 
   updatePowerupTimer();
@@ -16474,9 +16969,55 @@ let frameDt = 0;
 // Read directly from physics callees rather than threaded as a parameter,
 // matching the existing frameDt global pattern.
 let dtScale = 1;
+// v1.6.4 perf: adaptive FPS cap. drift_fps_target localStorage values:
+//   60  → 60 fps cap (default — battery-friendly).
+//   120 → 120 fps cap (smoother on capable displays).
+//   0   → adaptive / uncapped (matches device refresh).
+// Static menu screens drop to a fixed 30 fps regardless of the gameplay
+// target, since nothing on a static menu benefits from higher refresh.
+const FPS_TARGET_MENU = 30;
+function getFpsTargetGameplay() {
+  const raw = localStorage.getItem('drift_fps_target');
+  if (raw === null) return 60;          // first-launch default
+  const n = parseInt(raw, 10);
+  if (n === 60 || n === 120 || n === 0) return n;
+  return 60;
+}
+function getFrameInterval() {
+  // v1.6.4: 'tutorial' counts as gameplay for FPS-cap purposes — the player
+  // is actively interacting and 30 fps would feel sluggish.
+  const inGameplay = state === 'playing' || state === 'paused'
+                  || state === 'apocalypse' || state === 'devmode'
+                  || state === 'bodypreview' || state === 'tutorial';
+  if (!inGameplay) return 1000 / FPS_TARGET_MENU;
+  const target = getFpsTargetGameplay();
+  if (target === 0) return 0;            // uncapped
+  return 1000 / target;
+}
+// v1.6.4: cancelled when document is hidden so the loop short-circuits to a
+// pure RAF reschedule without any draw work. Set by visibilitychange and
+// the Capacitor App pause/resume listeners.
+let appHidden = false;
 function loop() {
   try {
     const nowTs = performance.now();
+    // v1.6.4: app-hidden short-circuit. Visibilitychange / Capacitor pause
+    // listeners flip appHidden=true when the screen turns off or the app is
+    // backgrounded; we still need to keep the rAF chain alive (the finally
+    // below schedules the next frame) so the resume path can deliver a clean
+    // first frame, but every other byte of work is skipped. lastFrameTime
+    // stays null so the next visible frame is a physics-skip render-only one.
+    if (appHidden) return;
+    // v1.6.4: adaptive FPS cap. Targets 60/120/uncapped during gameplay
+    // (per the player's setting), 30 on static menu screens. Skip-and-
+    // reschedule when the next frame would arrive sooner than the target
+    // interval. -1 ms slack so a 60 Hz device hitting ~16.7 ms intervals
+    // doesn't drop every other frame to 30. The finally clause re-schedules.
+    const frameInterval = getFrameInterval();
+    if (frameInterval > 0 && lastFrameTime !== null
+        && (nowTs - lastFrameTime) < (frameInterval - 1)) {
+      return;
+    }
     const skipPhysics = (lastFrameTime === null);
     frameDt = skipPhysics ? 0 : Math.min(nowTs - lastFrameTime, 32);
     dtScale = skipPhysics ? 1 : Math.min(Math.max(frameDt / 8.33, 0.125), 4.0);
@@ -16526,7 +17067,6 @@ function loop() {
         novaRings = [];
         empRings = [];
         planetRipples = [];
-        smoothEntryRings = [];
         destroyEffects = [];
         deathShards = [];
         orbTrailParticles = [];
@@ -16563,7 +17103,9 @@ function loop() {
 
 // --- Input ---
 function readInput(e) {
-  if (state!=='playing' && state!=='devmode') return;
+  // v1.6.4: tutorial accepts canvas input so the player can practice
+  // ATTRACT / REPEL during the relevant steps.
+  if (state!=='playing' && state!=='devmode' && state!=='tutorial') return;
   const rect=canvas.getBoundingClientRect();
   leftDown=false; rightDown=false;
   const pts=e.touches||[e];
@@ -16633,8 +17175,11 @@ document.getElementById('startBtn').addEventListener('click', ()=>{
     saveBeatFlags();      // localStorage + PGS schedule
     saveTreeState();      // localStorage + PGS schedule
     saveTreesUnlocked();  // localStorage + PGS schedule
+    // v1.6.4: TREETEST also marks tutorial complete so dev test runs skip
+    // the forced first-run tutorial.
+    saveTutorialCompleted(true);
     refreshActiveTreeCache();
-    console.log('[TREETEST] Crystals granted, all trees unlocked, tree state reset');
+    console.log('[TREETEST] Crystals granted, all trees unlocked, tree state reset, tutorial skipped');
     // Fall through — the run starts normally so the tester can play a round.
   }
   // DEV cheat: pilot name "DRIFTRESET" (case-insensitive) wipes ALL local
@@ -16662,11 +17207,14 @@ document.getElementById('startBtn').addEventListener('click', ()=>{
     saveTreesUnlocked();
     saveUnlockedOrbs();
     saveOrb();
+    // v1.6.4: DRIFTRESET also clears the tutorial-completed flag so the
+    // dev tester re-experiences the forced first-run tutorial on next start.
+    saveTutorialCompleted(false);
     pgsScheduleWrite();
     refreshActiveTreeCache();
     if (typeof refreshOrbBrowser === 'function') { try { refreshOrbBrowser(); } catch {} }
     if (typeof refreshImpossibleVisibility === 'function') refreshImpossibleVisibility();
-    console.log('[DRIFTRESET] All progress wiped');
+    console.log('[DRIFTRESET] All progress wiped, tutorial flag cleared');
     // Fall through — run starts normally on the now-reset profile.
   }
   // Sentry fire-test cheat: pilot name "SENTRY" triggers a tagged test event
@@ -16681,6 +17229,15 @@ document.getElementById('startBtn').addEventListener('click', ()=>{
   // Starting a fresh run — wipe any resume snapshot so the old save can't
   // resurface if the player dies before the 5s save cadence fires.
   clearResumeState();
+  // v1.6.4: forced first-time tutorial. Triggers only on the player's
+  // very first START tap (drift_tutorial_completed === false). The chosen
+  // difficulty is remembered and applied when the tutorial finishes,
+  // transitioning seamlessly into actual gameplay. TREETEST/DRIFTRESET
+  // cheats above already manipulated the flag if relevant.
+  if (!tutorialCompleted) {
+    tutorialBegin(difficulty);
+    return;
+  }
   // Death→play uses the shorter results→gameplay 0.3s crossfade per spec;
   // menu→play uses the 0.5s menu→gameplay crossfade.
   const fade = state === 'dead' ? 0.3 : 0.5;
@@ -16826,6 +17383,549 @@ function applyPauseDeltaShift(pauseDelta) {
   shiftStart(crackFragments);
 }
 
+// =====================================================================
+// v1.6.4 first-time tutorial — forced once per install.
+// =====================================================================
+// Architecture: a step machine. Each step has a task-check predicate; while
+// the predicate is false, the task instruction is shown (no tap-to-continue).
+// When it flips to true, the step moves to its "success" phase showing a
+// confirmation message + tap-to-continue. Tap on the text box advances to
+// the next step (only honored when in success phase, or when the step is
+// info-only — i.e. taskCheck === null).
+//
+// Per-step side effects (planet/powerup spawning, arrow visibility) live
+// in onEnter / onExit. Spawned objects are tracked in tutorialSpawned so
+// they can be torn down cleanly when the step changes or the tutorial
+// completes — no stragglers leaking into the post-tutorial run.
+let tutorialStepIndex = 0;
+let tutorialPhase = 'task'; // 'task' | 'success'
+let tutorialPendingDifficulty = null; // remembered across the tutorial
+let tutorialState = {};               // per-step bookkeeping
+let tutorialSpawnedBodies = [];       // bodies spawned by tutorial scripts
+let tutorialSpawnedPowerups = [];     // powerups spawned by tutorial scripts
+let tutorialWallFlashUntil = 0;       // step 11 wall-flash deadline (ms)
+
+function tutTextEl() {
+  return {
+    overlay:  document.getElementById('tutorialOverlay'),
+    title:    document.getElementById('tutorialTitle'),
+    body:     document.getElementById('tutorialBody'),
+    cont:     document.getElementById('tutorialContinue'),
+    arrowL:   document.getElementById('tutorialArrowLeft'),
+    arrowR:   document.getElementById('tutorialArrowRight'),
+    arrowHud: document.getElementById('tutorialHudArrow'),
+  };
+}
+
+function tutShowText(title, body, showContinue) {
+  const el = tutTextEl();
+  if (!el.overlay) return;
+  el.title.textContent = title || '';
+  el.body.textContent  = body  || '';
+  el.cont.classList.toggle('hidden', !showContinue);
+}
+
+function tutShowArrow(which) {
+  const el = tutTextEl();
+  if (el.arrowL)   el.arrowL.classList.toggle('visible', which === 'left');
+  if (el.arrowR)   el.arrowR.classList.toggle('visible', which === 'right');
+  if (el.arrowHud) el.arrowHud.classList.toggle('visible', which === 'hud');
+}
+
+function tutHideArrows() { tutShowArrow(null); }
+
+// Spawn a tutorial planet. Reuses the production spawnBody pipeline so
+// the planet has all the cached gradients / type-specific state needed
+// by drawBodies. Then snaps x to the requested coordinate.
+function tutSpawnPlanet(x, y, radius) {
+  const body = spawnBody(y, { type: 'planet', radius: radius || 24 });
+  if (!body) return null;
+  body.x = x;
+  body.y = y;
+  // spawnBody() returns the body without pushing — production callers
+  // own that. Push to the world so drawBodies / findClosest see it.
+  bodies.push(body);
+  tutorialSpawnedBodies.push(body);
+  return body;
+}
+
+function tutSpawnPowerup(type, x, y) {
+  const p = {
+    type, x, y, radius: 13,
+    pulse: Math.random() * 6.28,
+    collected: false,
+    pairId: null, pairSibling: null,
+  };
+  powerups.push(p);
+  tutorialSpawnedPowerups.push(p);
+  return p;
+}
+
+function tutSpawnPair(type1, type2, cx, y) {
+  const id = nextPairId++;
+  const gap = 60;
+  const a = {
+    type: type1, x: cx - gap/2, y, radius: 13,
+    pulse: Math.random() * 6.28, collected: false,
+    pairId: id, pairSibling: null,
+  };
+  const b = {
+    type: type2, x: cx + gap/2, y, radius: 13,
+    pulse: Math.random() * 6.28, collected: false,
+    pairId: id, pairSibling: null,
+  };
+  a.pairSibling = b; b.pairSibling = a;
+  powerups.push(a, b);
+  tutorialSpawnedPowerups.push(a, b);
+  return [a, b];
+}
+
+function tutClearSpawned() {
+  // Remove tutorial-spawned bodies from the world.
+  for (const b of tutorialSpawnedBodies) {
+    const i = bodies.indexOf(b);
+    if (i >= 0) bodies.splice(i, 1);
+    try { releaseBodyCanvases(b); } catch {}
+  }
+  tutorialSpawnedBodies = [];
+  // Remove tutorial-spawned powerups (collected ones already removed).
+  for (const p of tutorialSpawnedPowerups) {
+    const i = powerups.indexOf(p);
+    if (i >= 0) powerups.splice(i, 1);
+  }
+  tutorialSpawnedPowerups = [];
+}
+
+// Step definitions. Order matters — tutorialStepIndex walks through this
+// array. taskCheck === null means info-only (tap-to-continue immediately).
+// Streak text in step 10 derives from the actual mechanic: streak increments
+// on every body destroyed (addDestroyPoints), breaks after 1500 ms without
+// a destroy (see update() ~12089), capped at ×4 points per kill (×4 × 8
+// streak slots = 32 pts max per kill, plus +rank for Drifter Prime Mover).
+const TUTORIAL_STEPS = [
+  // 1 INTRO — no world objects, just text.
+  {
+    id: 'intro',
+    title: 'WELCOME TO DRIFT',
+    body: "Let's learn the controls.",
+    taskCheck: null,
+  },
+  // 2 ATTRACT — planet at top, player must enter zone via left-side hold.
+  {
+    id: 'attract',
+    title: 'ATTRACT',
+    body: 'HOLD the LEFT side of the screen to pull toward the planet.',
+    successTitle: 'GREAT',
+    successBody: 'The orb pulls toward the planet when you hold the left side.',
+    onEnter: () => {
+      tutorialState.planet = tutSpawnPlanet(W * 0.5, H * 0.32, 26);
+      tutShowArrow('left');
+    },
+    taskCheck: () => {
+      const p = tutorialState.planet;
+      if (!p) return true;
+      return dist(player, p) < (p.radius + 60);
+    },
+    onSuccess: () => { tutHideArrows(); },
+  },
+  // 3 REPEL — same planet (re-spawn close to player), player must move away.
+  {
+    id: 'repel',
+    title: 'REPEL',
+    body: 'HOLD the RIGHT side of the screen to push away from the planet.',
+    successTitle: 'GOT IT',
+    successBody: 'The orb pushes away when you hold the right side.',
+    onEnter: () => {
+      tutClearSpawned();
+      // Spawn close to the player so repel has something to push from.
+      const px = player.x, py = player.y;
+      tutorialState.planet = tutSpawnPlanet(px, Math.max(120, py - 80), 26);
+      tutorialState.repelStartDist = dist(player, tutorialState.planet);
+      tutShowArrow('right');
+    },
+    taskCheck: () => {
+      const p = tutorialState.planet;
+      if (!p) return true;
+      return dist(player, p) >= (tutorialState.repelStartDist || 0) + 180;
+    },
+    onSuccess: () => { tutHideArrows(); },
+    onExit: () => { tutClearSpawned(); },
+  },
+  // 4 POWERUPS INTRO — info-only.
+  {
+    id: 'powerupsIntro',
+    title: 'POWERUPS',
+    body: 'Now let\'s learn about powerups.',
+    taskCheck: null,
+  },
+  // 5 SHIELD
+  {
+    id: 'shield',
+    title: 'SHIELD',
+    body: 'Move to grab the cyan SHIELD. It absorbs one collision.',
+    successTitle: 'SHIELD EQUIPPED',
+    successBody: 'A cyan ring forms around the orb. It absorbs one hit, then breaks.',
+    onEnter: () => {
+      tutorialState.powerup = tutSpawnPowerup('shield', W * 0.5, H * 0.32);
+    },
+    taskCheck: () => tutorialState.powerup && tutorialState.powerup.collected,
+  },
+  // 6 NOVA
+  {
+    id: 'nova',
+    title: 'NOVA',
+    body: 'Grab the orange NOVA. It auto-fires an explosive ring.',
+    successTitle: 'NOVA READY',
+    successBody: 'The ring expands from the orb and destroys nearby planets.',
+    onEnter: () => {
+      tutorialState.powerup = tutSpawnPowerup('nova', W * 0.5, H * 0.32);
+    },
+    taskCheck: () => tutorialState.powerup && tutorialState.powerup.collected,
+  },
+  // 7 HYPERSPEED
+  {
+    id: 'hyperspeed',
+    title: 'HYPERSPEED',
+    body: 'Grab the yellow HYPERSPEED. Speed burst with a forward barrier.',
+    successTitle: 'HYPERSPEED ENGAGED',
+    successBody: 'You become invulnerable and faster. The barrier destroys planets it touches.',
+    onEnter: () => {
+      tutorialState.powerup = tutSpawnPowerup('hyperspeed', W * 0.5, H * 0.32);
+    },
+    taskCheck: () => tutorialState.powerup && tutorialState.powerup.collected,
+  },
+  // 8 GHOST
+  {
+    id: 'ghost',
+    title: 'GHOST',
+    body: 'Grab the purple GHOST. Phase through planets harmlessly.',
+    successTitle: 'GHOST ACTIVE',
+    successBody: 'Planets pass through you without dealing damage.',
+    onEnter: () => {
+      tutorialState.powerup = tutSpawnPowerup('ghost', W * 0.5, H * 0.32);
+    },
+    taskCheck: () => tutorialState.powerup && tutorialState.powerup.collected,
+  },
+  // 9 PAIR / COMBO
+  {
+    id: 'pair',
+    title: 'PAIRS',
+    body: 'Some powerups arrive in pairs. Grab both quickly to trigger a COMBO.',
+    successTitle: 'PAIR COMBO',
+    successBody: 'Combinations create powerful effects. Experiment to find them all.',
+    onEnter: () => {
+      const pair = tutSpawnPair('shield', 'nova', W * 0.5, H * 0.30);
+      tutorialState.pair = pair;
+    },
+    taskCheck: () => {
+      const p = tutorialState.pair;
+      return p && p[0].collected && p[1].collected;
+    },
+  },
+  // 10 BURST — hold BOTH halves to fire orb's special. Spawn 1-2 planets
+  // in front of the player so the burst has visible targets. Burst
+  // cooldown is reset on enter so the player can fire immediately, and
+  // again on exit so the next gameplay run starts with a ready burst.
+  {
+    id: 'burst',
+    title: 'BURST',
+    body: "Hold BOTH sides of the screen at the same time to fire your orb's special ability.",
+    successTitle: 'BURST!',
+    // Shorter text — first-time player only experiences Drifter's burst
+    // (random powerup), so listing every orb's burst would over-explain
+    // mechanics they haven't met yet. Variety is teased, specifics are
+    // discoverable.
+    successBody: "That's your orb's special. Each orb has a different one — find your favorite!",
+    onEnter: () => {
+      // No scripted target planets — burst can roll shield (passive
+      // visual, no body interaction), and tutorial physics doesn't run
+      // burst-kill paths anyway, so a planet that survives a nova ring
+      // looks broken. Pure gesture demonstration is cleaner.
+      tutorialState.burstFired = false;
+      // Reset burst cooldown so the player can fire immediately. This is
+      // also re-set on exit (see below) for the same reason.
+      burstCooldownEnd = 0;
+      // Show BOTH arrows simultaneously — visual cue for "hold both
+      // sides". tutShowArrow only flips one at a time, so reach into
+      // the DOM directly. tutHideArrows() in onExit clears both.
+      const el = tutTextEl();
+      if (el.arrowL) el.arrowL.classList.add('visible');
+      if (el.arrowR) el.arrowR.classList.add('visible');
+    },
+    taskCheck: () => {
+      // Detect the moment burstTriggered flips true (both halves held).
+      // burstTriggered is consumed by the next gameplay update, but the
+      // tutorial loop doesn't run that path; we latch the flag in
+      // tutorialState.burstFired so a single trigger sticks even if the
+      // player lifts their fingers immediately afterward. We also fire
+      // executeBurst() here so the player sees the actual orb effect.
+      if (tutorialState.burstFired) return true;
+      if (leftDown && rightDown && Date.now() >= burstCooldownEnd) {
+        try { executeBurst(); } catch (err) { console.error('[tutorial] executeBurst threw', err); }
+        burstCooldownEnd = Date.now() + 9999999; // lock cooldown for the rest of the step
+        burstTriggered = false;
+        tutorialState.burstFired = true;
+        return true;
+      }
+      return false;
+    },
+    onExit: () => {
+      tutHideArrows();
+      // Reset cooldown to "ready now" so post-tutorial gameplay starts
+      // with the burst available.
+      burstCooldownEnd = 0;
+      burstTriggered = false;
+    },
+  },
+  // 11 STREAK — info, with HUD pointer to streakDisplay. Mechanic-accurate
+  // text: addDestroyPoints() increments destroyStreak, the streak resets if
+  // 1500 ms pass without a destroy (update() at the streak-timeout check).
+  {
+    id: 'streak',
+    title: 'STREAK',
+    body: 'Destroy planets within 1.5 seconds of each other to build a STREAK. Higher streaks score more points and earn more crystals.',
+    taskCheck: null,
+    onEnter: () => {
+      // Briefly fake-show the streak indicator at 🔥 x3 so the player sees
+      // what to look for. We don't touch the real destroyStreak counter.
+      const sd = document.getElementById('streakDisplay');
+      if (sd) {
+        tutorialState.priorStreakText = sd.textContent;
+        tutorialState.priorStreakClass = sd.className;
+        sd.textContent = '🔥 x3';
+        sd.classList.add('visible');
+        // Position the HUD arrow above the streak display.
+        const r = sd.getBoundingClientRect();
+        const overlay = tutTextEl().overlay;
+        const oRect = overlay ? overlay.getBoundingClientRect() : { left: 0, top: 0 };
+        const arrow = tutTextEl().arrowHud;
+        if (arrow) {
+          arrow.style.left = (r.left - oRect.left + r.width / 2 - 11) + 'px';
+          arrow.style.top  = (r.bottom - oRect.top + 6) + 'px';
+        }
+      }
+      tutShowArrow('hud');
+    },
+    onExit: () => {
+      tutHideArrows();
+      const sd = document.getElementById('streakDisplay');
+      if (sd) {
+        sd.textContent = tutorialState.priorStreakText || '';
+        sd.className   = tutorialState.priorStreakClass || '';
+      }
+    },
+  },
+  // 12 WALLS — info, with red flash on play-area edges. The render path
+  // checks tutorialWallFlashUntil and overlays a red gradient on the four
+  // edges while active.
+  {
+    id: 'walls',
+    title: 'WALLS ARE DEADLY',
+    body: 'Drifting off any edge of the play area ends your run. Stay inside.',
+    taskCheck: null,
+    onEnter: () => {
+      // Flash for 2 s; render() reads the timer and draws the edges.
+      tutorialWallFlashUntil = Date.now() + 2000;
+    },
+  },
+  // 13 COMPLETE — info, then transition.
+  {
+    id: 'complete',
+    title: 'YOU’RE READY',
+    body: 'Now... DRIFT.',
+    taskCheck: null,
+  },
+];
+
+function tutorialEnterStep(idx) {
+  tutorialStepIndex = idx;
+  tutorialPhase = 'task';
+  tutorialState = {};
+  const step = TUTORIAL_STEPS[idx];
+  if (!step) return;
+  if (typeof step.onEnter === 'function') {
+    try { step.onEnter(); } catch (err) { console.error('[tutorial] onEnter threw', err); }
+  }
+  // Info-only steps go straight to success phase so tap-to-continue works.
+  const isInfo = step.taskCheck == null;
+  if (isInfo) {
+    tutorialPhase = 'success';
+    tutShowText(step.title, step.body, true);
+  } else {
+    tutShowText(step.title, step.body, false);
+  }
+}
+
+// v1.6.4 Fix 2: shared cleanup of every active gameplay effect at step
+// boundaries. Powerup steps (5–8) leave the player with shield/nova
+// rings/hyperspeed barrier/ghost bubble visible; without this, the next
+// step starts with a stale effect (e.g. hyperspeed barrier hiding the
+// orb on the GHOST step). One helper instead of per-step onExit
+// duplication keeps the cleanup symmetric across all steps.
+function tutorialClearActiveEffects() {
+  // Shield.
+  shieldEndTime = 0;
+  activeEffects.shield = 0;
+  shieldHits = 0;
+  shieldBroken = false;
+  fortressShield = false;
+  // Ghost.
+  ghostEndTime = 0;
+  activeEffects.ghost = 0;
+  beyondEndTime = 0;
+  beyondAfterimage = null;
+  // Hyperspeed (full reset including stack count + speed multiplier).
+  hyperspeedEndTime = 0;
+  activeEffects.hyperspeed = 0;
+  hyperSpeedStacks = 0;
+  hyperspeedCurrentMult = 1;
+  hyperspeedTargetSpeed = 0;
+  hyperspeedActiveDuration = 0;
+  if (hyperspeedWhooshNodes) {
+    try { hyperspeedWhooshNodes.stop(0.1); } catch {}
+    hyperspeedWhooshNodes = null;
+  }
+  // Nova / nova combo windows.
+  recentNovaEndTime = 0;
+  recentNovaFrames = 0;
+  // Transient effect / particle arrays. Don't touch tutorialSpawned*; those
+  // are the per-step planets/powerups that the step's own onEnter/onExit
+  // cycle owns.
+  novaRings = [];
+  empRings = [];
+  pickupParticles = [];
+  destroyEffects = [];
+  afterburnDiscs = [];
+  ghostlightBursts = [];
+  ghostlightPendingKills = [];
+  twilightEchoVisuals = [];
+  butterflyEffectVisuals = [];
+  phantomBlades = [];
+  planetRipples = [];
+  // Combo timer state — cleared so a partial combo from one step doesn't
+  // bleed into the pair step.
+  if (typeof activeCombos !== 'undefined') {
+    for (const k of Object.keys(activeCombos)) delete activeCombos[k];
+  }
+  lastGainedEffects = [];
+  lastGainedTimestamp = 0;
+}
+
+function tutorialAdvance() {
+  const step = TUTORIAL_STEPS[tutorialStepIndex];
+  if (step && typeof step.onExit === 'function') {
+    try { step.onExit(); } catch (err) { console.error('[tutorial] onExit threw', err); }
+  }
+  // Wipe any active gameplay effects (shield rings, hyperspeed barrier,
+  // ghost bubble, nova rings, etc.) before the next step starts.
+  try { tutorialClearActiveEffects(); } catch (err) {
+    console.error('[tutorial] clearActiveEffects threw', err);
+  }
+  const nextIdx = tutorialStepIndex + 1;
+  if (nextIdx >= TUTORIAL_STEPS.length) {
+    tutorialFinish();
+    return;
+  }
+  tutorialEnterStep(nextIdx);
+}
+
+function tutorialOnTap() {
+  // Tap is honored only when in success phase. While the player is
+  // mid-task, tapping the text area must NOT advance (they need to learn
+  // by doing).
+  if (state !== 'tutorial') return;
+  if (tutorialPhase !== 'success') return;
+  tutorialAdvance();
+}
+
+// Per-frame tick: progress the task-check, transition into success phase
+// when the predicate flips. Gameplay-side state changes (powerup pickup,
+// player approach to planet) flow through here.
+function tutorialTick() {
+  const step = TUTORIAL_STEPS[tutorialStepIndex];
+  if (!step) return;
+  if (tutorialPhase === 'task' && typeof step.taskCheck === 'function') {
+    let done = false;
+    try { done = !!step.taskCheck(); } catch (err) {
+      console.error('[tutorial] taskCheck threw', err);
+    }
+    if (done) {
+      tutorialPhase = 'success';
+      if (typeof step.onSuccess === 'function') {
+        try { step.onSuccess(); } catch (err) { console.error('[tutorial] onSuccess threw', err); }
+      }
+      tutShowText(
+        step.successTitle || step.title,
+        step.successBody  || step.body,
+        true
+      );
+    }
+  }
+}
+
+function tutorialBegin(difficultyKey) {
+  // Caller has already validated tutorialCompleted is false. Remember the
+  // chosen difficulty so we can resume it cleanly when the tutorial ends.
+  tutorialPendingDifficulty = difficultyKey || difficulty || 'NORMAL';
+  // Fresh world. resetGame clears bodies/powerups/effects + re-seeds the
+  // player at (W/2, H*0.72). After resetGame we override state to 'tutorial'
+  // so update() / collisions don't run normal-gameplay logic.
+  resetGame();
+  state = 'tutorial';
+  // Ensure no random bodies linger from initBodies(). Tutorial scripts spawn
+  // their own fixtures.
+  for (const b of bodies) { try { releaseBodyCanvases(b); } catch {} }
+  bodies = [];
+  powerups = [];
+  tutorialSpawnedBodies = [];
+  tutorialSpawnedPowerups = [];
+  tutorialWallFlashUntil = 0;
+  // Show overlay, hide normal HUD chrome that shouldn't appear during the
+  // tutorial. pauseBtn deliberately stays hidden so the player can't pause
+  // mid-tutorial.
+  document.getElementById('overlay').classList.add('hidden');
+  document.getElementById('tutorialOverlay').classList.add('visible');
+  pauseBtn.classList.remove('visible');
+  // Music: keep menu music playing until the tutorial completes — switching
+  // tracks here would feel jumpy. Crossfade to gameplay happens in tutorialFinish.
+  tutorialEnterStep(0);
+}
+
+function tutorialFinish() {
+  // Mark the flag (localStorage + PGS) so the tutorial never re-fires.
+  saveTutorialCompleted(true);
+  document.getElementById('tutorialOverlay').classList.remove('visible');
+  tutHideArrows();
+  tutClearSpawned();
+  tutorialPhase = 'task';
+  tutorialState = {};
+  tutorialWallFlashUntil = 0;
+  // Apply the difficulty the player chose before the tutorial.
+  const chosen = tutorialPendingDifficulty || 'NORMAL';
+  tutorialPendingDifficulty = null;
+  if (DIFFICULTIES[chosen]) difficulty = chosen;
+  // Seamless transition into a fresh run: clear resume snapshot, reset, play.
+  clearResumeState();
+  resetGame();
+  state = 'playing';
+  SFX.playTrack('gameplay', 0.5);
+  pauseBtn.classList.add('visible');
+}
+
+// Tap-to-continue handler on the text box. Wired once at module scope.
+(function wireTutorialTap() {
+  const txt = document.getElementById('tutorialText');
+  if (!txt) return;
+  const handler = (e) => {
+    if (state !== 'tutorial') return;
+    e.preventDefault();
+    e.stopPropagation();
+    tutorialOnTap();
+  };
+  txt.addEventListener('click', handler);
+  txt.addEventListener('touchstart', handler, { passive: false });
+})();
+
 function pauseGame() {
   if (state !== 'playing') return;
   state = 'paused';
@@ -16869,10 +17969,11 @@ function goToMainMenu() {
   twilightEchoVisuals = [];
   butterflyEffectVisuals = [];
   phantomBlades = [];
+  ghostlightBursts = [];
+  ghostlightPendingKills = [];
   beyondAfterimage = null;
   orbTrailParticles = [];
   planetRipples = [];
-  smoothEntryRings = [];
   destroyEffects = [];
   deathShards = [];
   crackFragments = [];
@@ -17040,12 +18141,18 @@ window.addEventListener('unhandledrejection', e => {
 document.addEventListener('visibilitychange', () => {
   try {
     if (document.hidden) {
+      // v1.6.4 perf: hard short-circuit the loop, regardless of state.
+      // Browsers throttle rAF to ~1 Hz when hidden, but Android WebView
+      // throttling is inconsistent across builds — explicit `appHidden`
+      // guarantees zero draw work until resume.
+      appHidden = true;
       if (state === 'playing') pauseGame();
       SFX.suspendCtx();
       // Invalidate the frame-time baseline so the first frame after resume
       // is render-only — prevents a huge elapsed interval from spiking dt.
       lastFrameTime = null;
     } else {
+      appHidden = false;
       SFX.resumeCtx();
       lastFrameTime = performance.now();
     }
@@ -17054,6 +18161,36 @@ document.addEventListener('visibilitychange', () => {
     recordError('visibilitychange', err);
   }
 });
+
+// v1.6.4: redundant Capacitor App lifecycle listener. Android emits these
+// reliably on background/screen-off; visibilitychange covers the same
+// transitions in most builds but Capacitor 5+ has had Android cases where
+// the WebView misses visibilitychange while the App plugin still fires.
+// Belt-and-braces: both handlers flip the same `appHidden` flag.
+try {
+  const Cap = window.Capacitor;
+  const App = Cap && Cap.Plugins && Cap.Plugins.App;
+  if (App && typeof App.addListener === 'function') {
+    App.addListener('pause', () => {
+      try {
+        appHidden = true;
+        if (state === 'playing') pauseGame();
+        if (SFX && SFX.suspendCtx) SFX.suspendCtx();
+        lastFrameTime = null;
+      } catch (err) { recordError('cap-pause', err); }
+    });
+    App.addListener('resume', () => {
+      try {
+        appHidden = false;
+        if (SFX && SFX.resumeCtx) SFX.resumeCtx();
+        lastFrameTime = performance.now();
+      } catch (err) { recordError('cap-resume', err); }
+    });
+  }
+} catch (err) {
+  // Capacitor App plugin isn't bundled on web builds — silently no-op.
+  console.warn('[capacitor] App lifecycle listener not registered:', err && err.message);
+}
 
 // Capacitor / Cordova back button: if mid-game pause instead of letting the
 // WebView host close the app. On the main menu fall through to the default
@@ -17348,8 +18485,35 @@ function drawOrbPreview() {
   orbPreviewCtx.restore();
 }
 
+// v1.6.4 perf: returns true when a covering modal sits over the orb
+// browser. Excludes #overlay because the orb browser lives inside it
+// (main menu state). When any of these other modals is visible the
+// orb preview is fully occluded and should not be drawn.
+function isOrbPreviewCovered() {
+  const ids = ['treeOverlay','settingsOverlay','pauseOverlay','usernameOverlay','guideOverlay'];
+  for (const id of ids) {
+    const el = document.getElementById(id);
+    if (!el) continue;
+    if (el.classList.contains('hidden')) continue;
+    if (el.offsetParent === null) continue;
+    return true;
+  }
+  return false;
+}
 function orbPreviewLoop() {
-  try { drawOrbPreview(); } catch {}
+  // v1.6.4 perf: gate on visibility. The preview canvas is hidden during
+  // gameplay, the death screen, and behind the skill tree / settings /
+  // pause / guide overlays. Drawing it (240×240 canvas with particle
+  // simulation, 2 radial gradients, ~40 fills) at 60 fps when hidden is
+  // pure waste — measured ~2400-3600 Canvas-2D ops/sec.
+  // offsetParent === null catches display:none cases (death screen sets
+  // #orbBrowser display:none). isOrbPreviewCovered catches the cases
+  // where the orb browser is technically still in layout but a higher
+  // z-index modal is fully painted on top of it (skill tree, settings).
+  const previewEl = document.getElementById('orbPreview');
+  if (previewEl && previewEl.offsetParent !== null && !isOrbPreviewCovered()) {
+    try { drawOrbPreview(); } catch {}
+  }
   requestAnimationFrame(orbPreviewLoop);
 }
 orbPreviewLoop();
@@ -17425,7 +18589,7 @@ const GUIDE_PAGES = [
   },
   {
     title: 'BURST',
-    text: 'Press BOTH sides at the same time to activate your BURST. Instantly grants a powerful powerup. 20 second cooldown. Each orb has a unique burst effect.',
+    text: 'Press BOTH sides at the same time to activate your BURST. Instantly grants a powerful powerup. 30 second cooldown. Each orb has a unique burst effect.',
     draw: drawGuideBurst,
   },
   {
@@ -17472,12 +18636,15 @@ function openGuide() {
   guideOverlayEl.classList.remove('hidden');
   if (guideRafId) cancelAnimationFrame(guideRafId);
   guideRafId = requestAnimationFrame(guideLoop);
+  // v1.6.4 perf: duck menu music — see openSettings rationale.
+  if (state === 'idle') { try { SFX.pauseMusic(); } catch {} }
 }
 
 function closeGuide() {
   guideOpen = false;
   guideOverlayEl.classList.add('hidden');
   if (guideRafId) { cancelAnimationFrame(guideRafId); guideRafId = null; }
+  if (state === 'idle') { try { SFX.resumeMusic(); } catch {} }
 }
 
 document.getElementById('guideBtn').addEventListener('click', () => {
@@ -17951,7 +19118,7 @@ function drawGuideBurst(ctx, t) {
   ctx.shadowBlur = 8;
   ctx.fillRect(bx, by, bw, bh);
   ctx.restore();
-  guideLabel(ctx, 'BURST — 20s cooldown', W / 2, by - 8, 'rgba(180,220,255,0.85)', 9);
+  guideLabel(ctx, 'BURST — 30s cooldown', W / 2, by - 8, 'rgba(180,220,255,0.85)', 9);
 }
 
 function drawGuideTimer(ctx, t) {
@@ -18086,16 +19253,23 @@ const settingsOverlay = document.getElementById('settingsOverlay');
 const pauseSettingsBtn = document.getElementById('pauseSettingsBtn');
 const settingsCloseBtn = document.getElementById('settingsCloseBtn');
 
-// Reflect current SFX/music state onto the toggle buttons.
+// Reflect current SFX/music/fps state onto the toggle buttons.
 function refreshSettingsUI() {
   const musicOn = SFX.isMusicEnabled();
   const sfxOn   = SFX.isSfxEnabled();
+  // v1.6.4: FPS target lives in localStorage; getFpsTargetGameplay()
+  // normalizes to one of {60, 120, 0}. The toggle's data-val matches
+  // those raw integers as strings.
+  const fpsVal = String(getFpsTargetGameplay());
   settingsOverlay.querySelectorAll('.settings-toggle').forEach(group => {
     const setting = group.dataset.setting;
-    const on = setting === 'music' ? musicOn : sfxOn;
     group.querySelectorAll('.toggle-opt').forEach(btn => {
-      const want = btn.dataset.val === 'on';
-      btn.classList.toggle('active', want === on);
+      let active;
+      if (setting === 'music')      active = (btn.dataset.val === 'on') === musicOn;
+      else if (setting === 'sfx')   active = (btn.dataset.val === 'on') === sfxOn;
+      else if (setting === 'fps')   active = btn.dataset.val === fpsVal;
+      else                          active = false;
+      btn.classList.toggle('active', active);
     });
   });
 }
@@ -18104,9 +19278,14 @@ function openSettings() {
   SFX.init();
   refreshSettingsUI();
   settingsOverlay.classList.add('visible');
+  // v1.6.4 perf: duck menu music while a modal is open (only when on
+  // main menu — pause flow already ducks). Audio thread keeps running
+  // either way, but ducked volume signals "user is in a sub-screen".
+  if (state === 'idle') { try { SFX.pauseMusic(); } catch {} }
 }
 function closeSettings() {
   settingsOverlay.classList.remove('visible');
+  if (state === 'idle') { try { SFX.resumeMusic(); } catch {} }
 }
 
 settingsBtn.addEventListener('click', () => { SFX.clickSecondary(); openSettings(); });
@@ -18118,11 +19297,20 @@ settingsOverlay.addEventListener('click', e => {
   if (!btn) return;
   const group = btn.closest('.settings-toggle');
   const setting = group.dataset.setting;
-  const on = btn.dataset.val === 'on';
   SFX.init();
   SFX.clickSecondary();
-  if (setting === 'music') SFX.setMusicEnabled(on);
-  else if (setting === 'sfx') SFX.setSfxEnabled(on);
+  if (setting === 'music') {
+    SFX.setMusicEnabled(btn.dataset.val === 'on');
+  } else if (setting === 'sfx') {
+    SFX.setSfxEnabled(btn.dataset.val === 'on');
+  } else if (setting === 'fps') {
+    // v1.6.4: persist FPS target. getFrameInterval() reads it on the next
+    // loop tick so the new cap takes effect immediately.
+    const v = btn.dataset.val;
+    if (v === '60' || v === '120' || v === '0') {
+      try { localStorage.setItem('drift_fps_target', v); } catch {}
+    }
+  }
   refreshSettingsUI();
 });
 
@@ -18242,11 +19430,14 @@ function openTreeOverlay(orbKey) {
   if (!treeUnlocked(treeUiCurrentOrb)) return;
   renderTreeOverlay();
   document.getElementById('treeOverlay').classList.add('visible');
+  // v1.6.4 perf: duck menu music — see openSettings rationale.
+  if (state === 'idle') { try { SFX.pauseMusic(); } catch {} }
 }
 function closeTreeOverlay() {
   document.getElementById('treeOverlay').classList.remove('visible');
   closeTreeDetail();
   closeTreeConfirm();
+  if (state === 'idle') { try { SFX.resumeMusic(); } catch {} }
   // Crystal balance may have changed from tree purchases — reflect it on the
   // main menu so players don't see stale HUD after closing the tree screen.
   const cb = document.getElementById('orbCrystalBalance');
@@ -18308,11 +19499,24 @@ function buildNodePill(orbKey, pathKey, nodeIdx) {
   const state = orbTrees[orbKey];
   const node = def.paths[pathKey].nodes[nodeIdx];
   const current = state[pathKey][nodeIdx] | 0;
-  const locked = !pathPrereqMet(state, pathKey, nodeIdx);
+  const prereqOk = pathPrereqMet(state, pathKey, nodeIdx);
   const maxed = current >= node.max;
   const partial = current > 0 && !maxed;
+  // v1.6.4 fix: a node is only "locked" if the player has never owned it
+  // AND the prereq isn't met. If the player invested ranks then refunded
+  // the prereq tier, the node stays ACTIVE (its ranks still apply in
+  // gameplay) but is "frozen" — no further ranks can be purchased until
+  // the prereq is restored. The detail panel surfaces this on the
+  // UPGRADE button. The pill is still clickable so the player can open
+  // detail and respec.
+  const locked = !prereqOk && current === 0;
+  const frozen = !prereqOk && current > 0 && !maxed;
   const el = document.createElement('button');
-  el.className = 'tree-node' + (locked ? ' locked' : '') + (maxed ? ' maxed' : '') + (partial ? ' partial' : '');
+  el.className = 'tree-node'
+    + (locked ? ' locked' : '')
+    + (maxed ? ' maxed' : '')
+    + (partial ? ' partial' : '')
+    + (frozen ? ' frozen' : '');
   el.style.color = maxed ? `rgba(${def.color},1)` : '';
   if (maxed) el.style.borderColor = `rgba(${def.color},0.8)`;
   const nameEl = document.createElement('div');
@@ -18321,8 +19525,18 @@ function buildNodePill(orbKey, pathKey, nodeIdx) {
   el.appendChild(nameEl);
   const metaEl = document.createElement('div');
   metaEl.className = 'tree-node-meta';
-  const nextCost = maxed ? 'MAX' : (formatCrystals(nodeCost(node.tier, current + 1, orbKey)) + ' 💎');
-  metaEl.textContent = locked ? 'LOCKED' : `${current}/${node.max} · ${nextCost}`;
+  let metaText;
+  if (locked) {
+    metaText = 'LOCKED';
+  } else if (frozen) {
+    // 🔒 marker signals "owned but cannot add more ranks" — distinct from
+    // LOCKED (never bought) and from the standard rank/cost display.
+    metaText = `${current}/${node.max} · 🔒`;
+  } else {
+    const nextCost = maxed ? 'MAX' : (formatCrystals(nodeCost(node.tier, current + 1, orbKey)) + ' 💎');
+    metaText = `${current}/${node.max} · ${nextCost}`;
+  }
+  metaEl.textContent = metaText;
   el.appendChild(metaEl);
   if (!locked) {
     el.addEventListener('click', () => openTreeDetail({ kind: 'node', orbKey, pathKey, nodeIdx }));
@@ -18394,9 +19608,21 @@ function renderTreeDetail() {
     ranksEl.innerHTML = ranksHtml;
     const maxed = current >= node.max;
     const nextCost = maxed ? 0 : nodeCost(node.tier, current + 1, t.orbKey);
+    // v1.6.4 fix: a node with ranks but unmet prereq is "frozen" — its
+    // ranks still apply in gameplay, but additional ranks can't be
+    // purchased until the prereq tier is re-invested. Surface this on
+    // the UPGRADE button so the player knows why it's grayed out.
+    const prereqOk = pathPrereqMet(state, t.pathKey, t.nodeIdx);
+    const frozen = current > 0 && !prereqOk && !maxed;
     upBtn.style.display = '';
-    upBtn.textContent = maxed ? 'MAXED' : `UPGRADE (${formatCrystals(nextCost)} 💎)`;
-    upBtn.disabled = maxed || totalCrystals < nextCost;
+    if (maxed) {
+      upBtn.textContent = 'MAXED';
+    } else if (frozen) {
+      upBtn.textContent = 'PREREQ MISSING';
+    } else {
+      upBtn.textContent = `UPGRADE (${formatCrystals(nextCost)} 💎)`;
+    }
+    upBtn.disabled = maxed || frozen || totalCrystals < nextCost;
     respecBtn.style.display = current > 0 ? '' : 'none';
     respecBtn.disabled = totalCrystals < TREE_RESPEC_SINGLE;
     upBtn.onclick = () => {
@@ -19256,7 +20482,6 @@ function exitDevMode() {
   deathParticles = [];
   orbTrailParticles = [];
   planetRipples = [];
-  smoothEntryRings = [];
   destroyEffects = [];
   deathShards = [];
   crackFragments = [];
