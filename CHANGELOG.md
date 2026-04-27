@@ -6,6 +6,107 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Each version header links to its GitHub release; see the release notes for full
 detail beyond the summaries here.
 
+## [1.6.4] - 2026-04-27
+
+### Added
+- **First-time tutorial** — a forced 13-step guided sequence on first
+  launch teaches attract / repel, all four base powerups, pair combos,
+  the burst gesture (both halves at once), the streak / combo meter,
+  and the wall-death warning. Persistent `drift_tutorial_completed`
+  flag in `localStorage` (synced into the PGS cloud-save snapshot)
+  ensures the tutorial fires exactly once per pilot. Never replays;
+  the guide overlay stays available from the main menu for refreshers
+- **Frame-rate setting** — selectable 60 / 120 / Adaptive in the
+  settings menu. Defaults to 60 fps for battery savings; persists
+  across sessions. The render loop respects the cap during gameplay
+  and drops to 30 fps on static menus (see battery fixes below)
+
+### Changed
+- **Burst cooldown unified to 30 s** for every orb (was 20 s default).
+  Per-orb burst-CD reduction mechanics (Restless Orb, Coronal Hold,
+  Momentum) all key off the same single base now
+- **Speed cap reached at 2:00** (was 3:00) on Normal / Hard / Extreme
+  — the early game feels snappier without changing the cap value
+- **Pricing pass 3** — node costs reduced again on top of the v1.6.3
+  pass: another −50 / −45 / −40 / −35 / −30 % across Drifter / Phantom /
+  Inferno / Warp / Bulwark. Capstones unchanged (the v1.6.3 capstone
+  scale of −30 / −25 / −20 / −15 / −10 % stays as-is so capstones
+  remain aspirational)
+- **Phantom balance**:
+  - Twilight Echo refresh window 1 s → 2 s
+  - Shadow Regen 10 / 15 / 20 % → 15 / 20 / 25 %
+- **Drifter balance**:
+  - Loaded Dice 2 / 5 / 10 % → 10 / 20 / 30 % chance; internal
+    cooldown after a successful reset 15 s → 20 s
+  - Restless Orb −5 / −10 / −15 % → −10 / −20 / −30 %
+- **Inferno balance**:
+  - Critical Mass 20 s → 30 s internal cooldown
+  - Cinder burn duration 2 s → 3 s, brighter visuals
+  - Second Flame 5 s → 10 s cooldown
+  - Coronal Hold −0.05 / −0.10 / −0.50 % → −0.25 / −0.50 / −1 % per
+    nova kill
+- **Warp balance + rework**:
+  - **Smooth Entry → Momentum** (rebrand + complete rework). The old
+    natural-pickup destroy-radius mechanic is gone; Momentum now
+    reduces burst cooldown by −0.1 / −0.2 / −0.3 % per kill made while
+    hyperspeed is active. Source-agnostic — barrier kills, EMP, nova,
+    ghost-combo kills, and manual contact during a ghost combo all
+    count
+  - Slipstream cooldown 15 s → 20 s
+  - Infinite Gate cooldown 15 s → 25 s
+  - Overdrive max ranks 2 → 3 (stack cap +1 / +2 / +3 at ranks 1/2/3,
+    Warp baseline 4)
+  - SUPERLUMINAL max stack cap 8 → 10
+  - LINGERING HORIZON: 90 s gameplay-driven full-stack auto-fire (was
+    a 2 s post-hyperspeed forward-barrier echo)
+- **Hardware acceleration explicit** — `android:hardwareAccelerated="true"`
+  declared on the AndroidManifest application element rather than
+  relying on the framework default
+- **Viewport meta** — `viewport-fit=cover` added to the viewport meta
+  tag so `env(safe-area-inset-*)` resolves correctly on edge-to-edge
+  Android targets
+
+### Fixed
+- **SHOP button hidden behind Android gesture nav bar** (S23 Ultra and
+  similar gesture-navigation devices) — fixed with `viewport-fit=cover`
+  + CSS `env(safe-area-inset-*)` padding across the menu chrome and
+  Android-side edge-to-edge wiring
+  (`WindowCompat.setDecorFitsSystemWindows(getWindow(), false)` in
+  `MainActivity`). All bottom-anchored UI now respects gesture-nav
+  insets
+- **Battery drain on STATIC menus** — phones were overheating and
+  burning ~10 % battery in 10–15 minutes on the skill-tree menu.
+  Multiple causes triaged and fixed:
+  - Pixi stage was rendering at full FPS while a fullscreen overlay
+    covered the canvas; render gate added so the Pixi loop short-
+    circuits when an overlay is up
+  - `backdrop-filter: blur(...)` was being composited every frame on
+    six fullscreen overlays — removed everywhere the cost wasn't
+    paying for itself
+  - `orbPreviewLoop` was running continuously even when the preview
+    pane was hidden; now gated on visibility
+  - No FPS cap existed; added a cap with menu reduction (30 fps in
+    static menus, 60 / 120 / uncapped during gameplay per the new
+    frame-rate setting)
+  - Lifecycle handlers added: `visibilitychange` plus the Capacitor
+    `App` plugin's pause / resume events stop the render loop and
+    duck music when the app is backgrounded or a modal opens from a
+    menu
+- **Ghostlight visual no-op** — the function existed but didn't render
+  anything in v1.6.3. Now properly clones the EMP burst structure with
+  purple coloring: lightning bolts, expanding ring, and centre flash
+- **Tree UI "LOCKED" state misleading** — when a prereq node was
+  refunded but the dependent node still had ranks, the dependent node
+  showed LOCKED (looked like nothing was owned). New **FROZEN** state
+  introduced (CSS `.tree-node.frozen`) for owned-but-prereq-missing
+  nodes, with a "PREREQ MISSING" upgrade button so the player
+  understands the path back. `.frozen` is defined after `.partial` so
+  the orange frozen tint wins over the partial-rank tint
+- **Pixi / Canvas parity audit** — stale render gates discovered while
+  fixing the battery drain were removed; all new visuals (Ghostlight
+  rework, FROZEN node tint) render identically on the Pixi path and
+  the Canvas 2D fallback
+
 ## [1.6.3] - 2026-04-25
 
 ### Added
@@ -517,6 +618,7 @@ dashboard, draw-call optimizations, powerup rebalancing, stability hardening) in
 - GitHub Pages live demo
 - Source-available license
 
+[1.6.4]: https://github.com/selimcelem/drift/releases/tag/v1.6.4
 [1.6.3]: https://github.com/selimcelem/drift/releases/tag/v1.6.3
 [1.6.2]: https://github.com/selimcelem/drift/releases/tag/v1.6.2
 [1.6.1]: https://github.com/selimcelem/drift/releases/tag/v1.6.1

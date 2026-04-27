@@ -1,7 +1,7 @@
 # Drift — orb skill-tree spec
 
-**Status:** shipped in v1.6.3.
-**Last updated:** 2026-04-25.
+**Status:** shipped in v1.6.3; balance pass + Momentum rework in v1.6.4.
+**Last updated:** 2026-04-27.
 **Source of truth:** `TREE_DEFS` in `www/index.html` (~line 4334). Tree
 unlock costs at `TREE_UNLOCK_COSTS` (~line 4542); cost scaling at
 `ORB_COST_SCALE` and `ORB_CAPSTONE_COST_SCALE` (~line 4685). Behaviour
@@ -100,8 +100,8 @@ in the same tree is legal. Capstones each list their own prereq
 
 The trees apply across all four difficulties:
 
-- NORMAL / HARD / EXTREME — speed cap reached at 3:00, no post-cap
-  growth.
+- NORMAL / HARD / EXTREME — speed cap reached at 2:00 (v1.6.4
+  tightening, was 3:00), no post-cap growth.
 - IMPOSSIBLE (unlocked by beating EXTREME's apocalypse) — speed cap at
   1:00, then +10%/min speed and +1 max body every 2 minutes post-cap.
   Crystals scale 1.5×, leaderboard backend has a separate stricter
@@ -118,7 +118,7 @@ scoring meta, and combo rewrites. Three capstones.
 
 | Tier | Node | Effect (current rank scaling) |
 |---|---|---|
-| T1 | Loaded Dice | Each burst has a chance to instantly reset burst cooldown. **2 / 5 / 10 %** chance, 15 s internal cooldown. Failed rolls don't stamp the cooldown |
+| T1 | Loaded Dice | Each burst has a chance to instantly reset burst cooldown. **10 / 20 / 30 %** chance (v1.6.4 buff), 20 s internal cooldown after a successful reset (v1.6.4: 15 s → 20 s). Failed rolls don't stamp the cooldown |
 | T2 | Fortune Favors | Natural single-pickup spawns biased toward your longest-expired type (**25 / 50 / 75 %** bias) AND chance to spawn a second extra pickup at offset (**10 / 20 / 30 %** with 10 s cooldown on the extra) |
 | T3 | Double or Nothing | After burst fires, chance to immediately fire a second random single powerup of a different type. **30 / 60 / 90 %** chance |
 
@@ -126,7 +126,7 @@ scoring meta, and combo rewrites. Three capstones.
 
 | Tier | Node | Effect |
 |---|---|---|
-| T1 | Restless Orb | Burst cooldown −5 % per rank (20 s → 19 / 18 / 17 s) |
+| T1 | Restless Orb | Burst cooldown −**10 / 20 / 30 %** per rank (v1.6.4 buff). With the new 30 s base: 30 → 27 / 24 / 21 s |
 | T2 | Prime Mover | Streak cap +1 per rank (8 → 9 / 10 / 11 / 12); max pts/kill from 32 → 48 at rank 4 |
 | T3 | Tempo | Time-bonus interval shrinks 30 s → 25 / 20 / 15 s |
 
@@ -156,7 +156,7 @@ scoring meta, and combo rewrites. Three capstones.
 |---|---|---|
 | T1 | Lingering Veil | Single-pickup ghost +0.5 s per rank (Phantom baseline 5 s) |
 | T2 | Eternal Ember | Eternal Phantom +0.5 / 1 / 1.5 / 2 s (Phantom baseline 7 s) |
-| T3 | Twilight Echo | If ghost ends within 1 s of any combo ending, auto-refresh ghost for half base duration. **10 / 25 / 40 %** chance, 15 s cooldown |
+| T3 | Twilight Echo | If ghost ends within 2 s of any combo ending (v1.6.4 buff: 1 s → 2 s window), auto-refresh ghost for half base duration. **10 / 25 / 40 %** chance, 15 s cooldown |
 
 ### Wraith
 
@@ -170,7 +170,7 @@ scoring meta, and combo rewrites. Three capstones.
 
 | Tier | Node | Effect |
 |---|---|---|
-| T1 | Shadow Regen | Ghost pickups stack additively at **10 / 15 / 20 %** of pickup duration. Cap: 2× base ghost duration |
+| T1 | Shadow Regen | Ghost pickups stack additively at **15 / 20 / 25 %** of pickup duration (v1.6.4 buff). Cap: 2× base ghost duration |
 | T2 ⚡ | Soulbound | On body destroyed, chance to extend ghost by +1 s. 5 s cooldown. Cap: 2× base. **2 / 4 / 6 / 8 / 10 %** |
 | T3 | Beyond | When ghost ends, remain invulnerable for an afterimage window. **0.5 / 1 / 1.5** s |
 
@@ -191,7 +191,7 @@ scoring meta, and combo rewrites. Three capstones.
 |---|---|---|
 | T1 | Kindling | Single nova +1 wave per rank (Inferno baseline 4 → 7 at rank 3) |
 | T2 | Conflagration | Supernova +1 / +2 waves at ranks 1/2. 15 s cooldown between applications |
-| T3 | Second Flame | Chance per nova cast to fire one free bonus wave at the end. **20 / 30 / 40 %** with 5 s cooldown |
+| T3 | Second Flame | Chance per nova cast to fire one free bonus wave at the end. **20 / 30 / 40 %** with 10 s cooldown (v1.6.4: 5 s → 10 s) |
 
 ### Corona
 
@@ -199,13 +199,13 @@ scoring meta, and combo rewrites. Three capstones.
 |---|---|---|
 | T1 | Solar Flare | Nova ring lethal radius +**10 / 20 / 30 %** (360 px baseline) |
 | T2 | Halo | Supernova radiusMult step coefficient 0.10 → 0.133 / 0.167 / 0.20 |
-| T3 | Coronal Hold | Each nova kill reduces burst cooldown by **0.05 / 0.10 / 0.50 %** of base |
+| T3 | Coronal Hold | Each nova kill reduces burst cooldown by **0.25 / 0.50 / 1 %** of base (v1.6.4 buff: 0.05 / 0.10 / 0.50 % → 0.25 / 0.50 / 1 %). At rank 3 with the 30 s burst base, that's 300 ms shaved per nova kill |
 
 ### Inferno
 
 | Tier | Node | Effect |
 |---|---|---|
-| T1 | Cinder | Nova-killed bodies leave a 2 s, 60 px burn zone at the kill position (world-static, no scroll). **10 / 20 / 30 %** proc |
+| T1 | Cinder | Nova-killed bodies leave a 3 s, 60 px burn zone at the kill position (world-static, no scroll; v1.6.4: 2 s → 3 s, brighter visuals). **10 / 20 / 30 %** proc |
 | T2 ⚡ | Firebrand | On body destroyed, chance to fire a single half-size nova ring at the body position (3 s cooldown). **2 / 4 / 6 / 8 / 10 %** |
 | T3 | Combustion | Each nova cast adds +1 to a bonus-wave counter; counter consumed by the next nova within 2 s. 15 s cooldown. Cap **+1 / +2 / +3** waves |
 
@@ -214,7 +214,7 @@ scoring meta, and combo rewrites. Three capstones.
 | Capstone | Effect |
 |---|---|
 | **SUN FORGE** | Supernova auto-fires every 45 s. HUD ring countdown |
-| **CRITICAL MASS** | 10+ destroys from one nova cast triggers a free 6-wave nova at the player. 20 s internal cooldown; kill counter paused during cooldown |
+| **CRITICAL MASS** | 10+ destroys from one nova cast triggers a free 6-wave nova at the player. 30 s internal cooldown (v1.6.4: 20 s → 30 s); kill counter paused during cooldown |
 
 ---
 
@@ -239,27 +239,29 @@ shared.
 | Tier | Node | Effect |
 |---|---|---|
 | T1 | Reservoir | Hyperspeed shared duration +0.5 s per rank (3 s baseline → up to 4.5 s) |
-| T2 | Overdrive | Hyperspeed stack cap +1 / +2 at ranks 1/2 (Warp baseline 4 → 6) |
-| T3 | Infinite Gate | At 5+ stacks, natural pickup extends shared timer +**0.5 / 1 / 1.5** s. 15 s cooldown |
+| T2 | Overdrive | Hyperspeed stack cap +1 / +2 / +3 at ranks 1/2/3 (Warp baseline 4 → 7; v1.6.4: max 2 → 3 ranks) |
+| T3 | Infinite Gate | At 5+ stacks, natural pickup extends shared timer +**0.5 / 1 / 1.5** s. 25 s cooldown (v1.6.4: 15 s → 25 s) |
 
 ### Drift
 
 | Tier | Node | Effect |
 |---|---|---|
-| T1 | Smooth Entry | Each natural hyperspeed pickup destroys bodies in a radius around the player on activation. **80 / 140 / 200** px |
-| T2 ⚡ | Slipstream | On body destroyed, chance to grant a hyperspeed stack (15 s cooldown). **1 / 2 / 3 / 4 / 6 %** |
+| T1 | Momentum | **v1.6.4 rebrand + complete rework** (was "Smooth Entry: destroy radius around the player on natural pickup activation"). Each kill made while hyperspeed is active reduces the live burst cooldown by **0.1 / 0.2 / 0.3 %** of the 30 s burst base — i.e. up to ~90 ms shaved per kill at rank 3. Source-agnostic: Afterburn-disc kills, ghost-combo kills, EMP, nova, manual contact during a ghost combo all count, as long as `activeEffects.hyperspeed > 0`. Lingering Horizon's auto-fire sets the same active state, so its kills count too. Internal save key stays `smoothEntry` for save-compat |
+| T2 ⚡ | Slipstream | On body destroyed, chance to grant a hyperspeed stack (20 s cooldown; v1.6.4: 15 s → 20 s). **1 / 2 / 3 / 4 / 6 %** |
 | T3 | Warp Harmonic | Hyperspeed pair combos grant +1 / +2 / +3 free stacks. 20 s cooldown |
 
 ### Capstones
 
 | Capstone | Effect |
 |---|---|
-| **SUPERLUMINAL** | Raises hyperspeed stack cap to 8 (with Overdrive 2). Stack escalation visuals: gold/orange/red/white tint progression, "WARP CORE" label past cap |
+| **SUPERLUMINAL** | Raises hyperspeed stack cap to 10 (v1.6.4: 8 → 10, paired with Overdrive 3-rank extension). Stack escalation visuals: gold/orange/red/white tint progression, "WARP CORE" label past cap |
 | **LINGERING HORIZON** | Every 90 s of gameplay, automatically grant a fully-stacked hyperspeed activation. Auto-fire uses a non-natural source flag so it doesn't re-trigger Smooth Entry / Infinite Gate. HUD ring countdown |
 
-(Smooth Entry, SUPERLUMINAL, and LINGERING HORIZON are reworks — earlier
-specs had them as "wider barrier", "uncapped stacks", and "2 s
-post-hyperspeed echo" respectively.)
+(Momentum, SUPERLUMINAL, and LINGERING HORIZON are reworks. Earlier
+specs had them as "wider forward barrier", "uncapped stacks", and "2 s
+post-hyperspeed echo" respectively. Momentum is the v1.6.4 rebrand of
+Smooth Entry — the v1.6.3 destroy-radius mechanic was retired in favour
+of the hyperspeed-kill burst-CD reduction described above.)
 
 ---
 
@@ -311,7 +313,7 @@ loops.
 | Siphon (Drifter) | 1.5 s global cooldown |
 | Soulbound (Phantom) | 5 s cooldown; +1 s extension capped at 2× base ghost duration |
 | Firebrand (Inferno) | 3 s cooldown; respects nova-overload guard so it can't fire while a nova-flavored combo is live (SUN FORGE bypasses; Firebrand does not) |
-| Slipstream (Warp) | 15 s cooldown |
+| Slipstream (Warp) | 20 s cooldown (v1.6.4: 15 s → 20 s) |
 | Bastion II (Bulwark) | EMP-chain-source destroys flagged `source: 'emp'` and excluded from the proc roll (breaks the PHALANX + Bastion II infinite loop). Overflow at shield cap converts proc to +0.5 s duration |
 
 ---
@@ -344,8 +346,10 @@ original spec now has one in code:
   above player on auto-refresh.
 - **Gravity Well lines** — thin shield-cyan lines from each nearby
   body to the player while shield is active.
-- **Smooth Entry ring** — brief 200 ms ring expanding to the rank's
-  full radius on natural pickup activation.
+- **Ghostlight EMP-lite burst** — v1.6.4 fix: the v1.6.3 visual was a
+  no-op (the function existed but didn't render). Now properly clones
+  the EMP burst structure with purple coloring — lightning bolts,
+  expanding ring, centre flash.
 - **Butterfly Effect split** — expanding ring + particle burst at the
   duplicate's spawn point at the top of the screen, soft mirror chime.
 - **Styled confirm modal** — replaces `window.confirm` for
@@ -355,3 +359,64 @@ original spec now has one in code:
 PixiJS / Canvas 2D parity: every visual lives on the Canvas 2D overlay
 (`#c`) on top of the Pixi stage so it renders identically in both
 modes. Pixi-only paths skip the canvas draws cleanly.
+
+---
+
+## v1.6.4 changes summary
+
+### Burst cooldown unification
+
+All five orbs share a single 30 s burst-cooldown base (was 20 s default
+in v1.6.3, with Warp on a separate 30 s base for the in-development
+Momentum mechanic). Per-orb burst-CD reductions all key off the same
+constant now:
+
+- **Restless Orb** (Drifter Cadence T1) — flat −10 / −20 / −30 % per
+  rank.
+- **Coronal Hold** (Inferno Corona T3) — −0.25 / −0.50 / −1 % per nova
+  kill.
+- **Momentum** (Warp Drift T1, internal key `smoothEntry`) — −0.1 /
+  −0.2 / −0.3 % per kill while hyperspeed is active.
+
+### Pricing pass 3 (nodes only)
+
+Node costs reduced again on top of v1.6.3: −50 / −45 / −40 / −35 / −30 %
+across Drifter / Phantom / Inferno / Warp / Bulwark. Capstone scaling
+unchanged so capstones remain aspirational.
+
+### Tree UI: FROZEN node state
+
+When a prereq node is refunded but the dependent node still has ranks
+(current > 0, prereq tier rank = 0, not maxed), the dependent node now
+renders in a "FROZEN" state — orange tint via CSS `.tree-node.frozen`
+(defined after `.partial` so the orange wins over the partial-rank
+tint), with a "PREREQ MISSING" upgrade button. Resolves a v1.6.3
+confusion where the node appeared LOCKED even though ranks were
+already invested.
+
+### First-time tutorial
+
+A forced 13-step tutorial overlay teaches the controls and core loops
+on first launch. Persistence: `drift_tutorial_completed` in
+`localStorage`, also folded into the PGS snapshot so the tutorial
+never fires twice for the same pilot across devices. The full guide
+remains accessible from the main menu for refreshers.
+
+### Frame-rate setting + battery fixes
+
+Settings menu gains a 60 / 120 / Adaptive picker (default 60 for
+battery). The render loop additionally drops to 30 fps in static
+menus, gates Pixi rendering behind a fullscreen-overlay-covers-canvas
+check, gates `orbPreviewLoop` on visibility, removes
+`backdrop-filter: blur` from six fullscreen overlays, and wires
+`visibilitychange` + Capacitor `App` lifecycle handlers to halt
+rendering and duck music when backgrounded or when a modal opens
+from a menu. Together these resolve the v1.6.3 STATIC-menu battery
+drain (~10 % in 10–15 minutes on test devices).
+
+### Safe-area fix for gesture-nav devices
+
+`viewport-fit=cover` on the viewport meta + `env(safe-area-inset-*)`
+padding on bottom-anchored UI + `WindowCompat.setDecorFitsSystemWindows(getWindow(), false)`
+in `MainActivity` make the SHOP button (and other bottom chrome) clear
+the Android gesture-nav bar on S23 Ultra and similar.
