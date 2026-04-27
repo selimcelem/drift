@@ -17951,7 +17951,11 @@ function restartFromPause() {
   clearResumeState();
   resetGame();
   state = 'playing';
-  SFX.resumeMusic();
+  // resetGame() called SFX.stopAllGameplayTracks() to wipe the previous run's
+  // phase voice. resumeMusic() only unducks gain on an active voice; with no
+  // active voice, the restarted run plays in silence. Match the startBtn /
+  // tutorialFinish / beginResumedRun pattern: re-arm gameplay phase 1 here.
+  SFX.playTrack('gameplay', 0.3);
   pauseOverlay.classList.remove('visible');
   quitMsg.style.display = 'none';
   pauseBtn.classList.add('visible');
