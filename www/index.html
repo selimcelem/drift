@@ -1044,6 +1044,256 @@
   .rs-diff.EXTREME { color: rgba(255,90,120,0.85); }
   .rs-diff.IMPOSSIBLE { color: rgba(235,130,255,0.9); }
 
+  /* v1.7.0 BEST tag — flagged inline next to a stat that hit a personal best
+     this run. Bright crimson with a soft glow; small enough to sit between
+     the value column and the points column without breaking the rs-row flex
+     layout. font-weight: 800 reads as bold against the muted stat text. */
+  .rs-best {
+    color: #ff3344;
+    font-family: 'Orbitron', monospace;
+    font-weight: 800;
+    font-size: 8px;
+    letter-spacing: 1.5px;
+    padding: 0 4px;
+    margin-left: 4px;
+    text-shadow: 0 0 6px rgba(255,60,80,0.55);
+    vertical-align: middle;
+  }
+  .rs-title .rs-best {
+    font-size: 10px;
+    margin-left: 8px;
+    vertical-align: middle;
+  }
+
+  /* v1.7.0 milestone banners — shown inside the run summary (above stats)
+     for trail unlocks, first-difficulty completions, and round-number
+     totals. Slide-in + fade. Stacked vertically with small gaps. */
+  .milestone-banner {
+    margin: 6px auto;
+    padding: 6px 12px;
+    border: 1px solid rgba(255,220,120,0.55);
+    border-radius: 3px;
+    background: rgba(255,220,120,0.08);
+    font-family: 'Orbitron', monospace;
+    text-align: center;
+    animation: mbSlide 360ms ease-out both;
+    max-width: 280px;
+  }
+  .milestone-banner.trail-unlock {
+    border-color: rgba(200,140,255,0.6);
+    background: rgba(180,120,255,0.10);
+  }
+  .milestone-banner.first-clear {
+    border-color: rgba(100,220,255,0.6);
+    background: rgba(100,200,255,0.10);
+  }
+  .milestone-banner .mb-title {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 2.5px;
+    color: rgba(255,230,160,0.95);
+    text-shadow: 0 0 8px rgba(255,200,80,0.4);
+  }
+  .milestone-banner.trail-unlock .mb-title { color: rgba(220,180,255,0.95); text-shadow: 0 0 8px rgba(180,120,255,0.45); }
+  .milestone-banner.first-clear .mb-title  { color: rgba(180,230,255,0.95); text-shadow: 0 0 8px rgba(100,200,255,0.45); }
+  .milestone-banner .mb-sub {
+    font-family: 'Space Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 1px;
+    color: rgba(255,255,255,0.7);
+    margin-top: 2px;
+  }
+  @keyframes mbSlide {
+    from { opacity: 0; transform: translateY(-6px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* v1.7.0 trail selector in the orb-browser preview. Sits below the orb
+     description; a button-styled "Trail: <Name> ▾" that opens a dropdown
+     overlay when tapped. Locked state strips the ▾ and dims the text. */
+  #orbTrailRow {
+    margin-top: 6px;
+    text-align: center;
+    font-family: 'Space Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 1.5px;
+    color: rgba(255,255,255,0.65);
+  }
+  #orbTrailRow .trail-btn {
+    display: inline-block;
+    padding: 3px 10px;
+    border: 1px solid rgba(100,200,255,0.35);
+    border-radius: 3px;
+    background: transparent;
+    color: rgba(180,220,255,0.85);
+    font-family: 'Space Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 1.5px;
+    cursor: pointer;
+    transition: all 0.18s ease;
+  }
+  #orbTrailRow .trail-btn:hover {
+    background: rgba(100,200,255,0.12);
+    color: rgba(220,240,255,1);
+  }
+  #orbTrailRow .trail-btn.locked {
+    border-color: rgba(255,255,255,0.18);
+    color: rgba(255,255,255,0.4);
+    cursor: default;
+  }
+  #orbTrailRow .trail-btn.locked:hover { background: transparent; color: rgba(255,255,255,0.4); }
+
+  /* Trail picker overlay — modal dropdown listing the available trails
+     for the active orb. Tapping outside the panel closes it. */
+  #trailPickerOverlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,5,0.92);
+    z-index: 32;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  #trailPickerOverlay.visible { display: flex; }
+  #trailPickerOverlay .tp-panel {
+    background: rgba(8,12,24,0.95);
+    border: 1px solid rgba(100,200,255,0.35);
+    border-radius: 6px;
+    padding: 18px 22px;
+    min-width: 240px;
+    max-width: 320px;
+  }
+  #trailPickerOverlay .tp-title {
+    font-family: 'Orbitron', monospace;
+    font-size: 12px;
+    letter-spacing: 3px;
+    color: rgba(180,220,255,0.9);
+    text-align: center;
+    margin-bottom: 14px;
+  }
+  #trailPickerOverlay .tp-opt {
+    display: block;
+    width: 100%;
+    margin: 6px 0;
+    padding: 8px 12px;
+    border: 1px solid rgba(100,200,255,0.32);
+    border-radius: 3px;
+    background: transparent;
+    color: rgba(220,240,255,0.85);
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 1.5px;
+    cursor: pointer;
+    text-align: left;
+    transition: all 0.18s ease;
+  }
+  #trailPickerOverlay .tp-opt.equipped {
+    background: rgba(100,200,255,0.18);
+    border-color: rgba(100,200,255,0.6);
+    color: rgba(255,255,255,0.95);
+  }
+  #trailPickerOverlay .tp-opt.locked {
+    border-color: rgba(255,255,255,0.16);
+    color: rgba(255,255,255,0.4);
+    cursor: not-allowed;
+  }
+  #trailPickerOverlay .tp-opt:hover:not(.locked) { background: rgba(100,200,255,0.12); }
+  #trailPickerOverlay .tp-close {
+    margin-top: 10px;
+    width: 100%;
+    padding: 6px;
+    border: 1px solid rgba(100,200,255,0.25);
+    border-radius: 3px;
+    background: transparent;
+    color: rgba(180,220,255,0.7);
+    font-family: 'Orbitron', monospace;
+    font-size: 10px;
+    letter-spacing: 2px;
+    cursor: pointer;
+  }
+  #trailPickerOverlay .tp-progress {
+    font-family: 'Space Mono', monospace;
+    font-size: 8px;
+    letter-spacing: 1px;
+    color: rgba(255,255,255,0.45);
+    margin-top: 3px;
+  }
+
+  /* v1.7.0 stats overlay — modeled on the settings overlay's spacing and
+     palette. Scrollable when content overflows; close button in corner. */
+  #statsOverlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,5,0.96);
+    z-index: 30;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    padding: calc(env(safe-area-inset-top, 0px) + 24px) 16px calc(env(safe-area-inset-bottom, 0px) + 16px);
+    overflow-y: auto;
+  }
+  #statsOverlay.visible { display: flex; }
+  #statsOverlay .stats-title {
+    font-family: 'Orbitron', monospace;
+    font-weight: 700;
+    font-size: 14px;
+    letter-spacing: 4px;
+    color: rgba(180,220,255,0.95);
+    margin-bottom: 18px;
+  }
+  #statsOverlay .stats-section {
+    width: min(320px, 100%);
+    margin-bottom: 16px;
+  }
+  #statsOverlay .stats-section-title {
+    font-family: 'Orbitron', monospace;
+    font-size: 10px;
+    letter-spacing: 3px;
+    color: rgba(255,220,120,0.85);
+    border-bottom: 1px solid rgba(255,220,120,0.25);
+    padding-bottom: 4px;
+    margin-bottom: 8px;
+  }
+  #statsOverlay .stats-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: 3px 0;
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 1px;
+  }
+  #statsOverlay .stats-row .stats-label { color: rgba(255,255,255,0.55); }
+  #statsOverlay .stats-row .stats-val   { color: rgba(255,255,255,0.92); font-weight: 700; }
+  #statsOverlay .stats-row .stats-progress { font-size: 8px; color: rgba(180,220,255,0.7); margin-left: 8px; }
+  #statsOverlay .stats-orb-row {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    column-gap: 12px;
+    padding: 3px 0;
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 1px;
+  }
+  #statsOverlay .stats-orb-row .so-name { color: rgba(255,255,255,0.85); }
+  #statsOverlay .stats-orb-row .so-cnt  { color: rgba(255,255,255,0.7); min-width: 40px; text-align: right; }
+  #statsOverlay .stats-orb-row .so-trail { font-size: 8px; color: rgba(180,220,255,0.7); }
+  #statsOverlay .stats-orb-row .so-trail.unlocked { color: rgba(255,220,120,0.95); }
+  #statsOverlay .stats-close {
+    margin-top: 10px;
+    padding: 8px 28px;
+    border: 1px solid rgba(100,200,255,0.45);
+    border-radius: 3px;
+    background: transparent;
+    color: rgba(180,220,255,0.95);
+    font-family: 'Orbitron', monospace;
+    font-size: 12px;
+    letter-spacing: 3px;
+    cursor: pointer;
+  }
+  #statsOverlay .stats-close:hover { background: rgba(100,200,255,0.12); }
+
   .lb-diff-tabs {
     display: none;
     gap: 0;
@@ -2598,6 +2848,7 @@
       </div>
       <div id="orbName">DRIFTER</div>
       <div id="orbDesc">Balanced. Equal powerup chances.</div>
+      <div id="orbTrailRow"></div>
       <div id="orbDots"></div>
       <div id="orbAction"></div>
     </div>
@@ -2768,8 +3019,24 @@
         </div>
         <div class="settings-help">60 saves battery. 120 is smoother on capable displays. ADAPT matches your screen.</div>
       </div>
+      <div class="settings-row">
+        <span class="settings-label">STATS</span>
+        <button class="settings-cloud-btn" id="statsBtn">OPEN</button>
+      </div>
     </div>
     <button class="pause-btn" id="settingsCloseBtn">CLOSE</button>
+  </div>
+  <div id="statsOverlay">
+    <div class="stats-title">STATS</div>
+    <div id="statsBody"></div>
+    <button class="stats-close" id="statsCloseBtn">CLOSE</button>
+  </div>
+  <div id="trailPickerOverlay">
+    <div class="tp-panel">
+      <div class="tp-title" id="trailPickerTitle">TRAIL</div>
+      <div id="trailPickerOptions"></div>
+      <button class="tp-close" id="trailPickerClose">CLOSE</button>
+    </div>
   </div>
   <div id="pgsPromptOverlay">
     <div class="pgs-prompt-inner">
@@ -8073,6 +8340,168 @@ function saveScore(s, d) {
   return kept;
 }
 
+// --- Stats tracking (v1.7.0) ---
+// Single object in localStorage at 'drift_stats' — totals, personal bests,
+// per-orb breakdown, difficulty completions, cosmetic-trail unlocks, and the
+// equipped trail per orb. All-time totals only grow; bests use max-merge;
+// unlocks use OR-merge. PGS sync applies the same rules in mergeStats.
+const DRIFT_STATS_KEY = 'drift_stats';
+const TRAIL_UNLOCK_THRESHOLDS = {
+  cyan: 500, cosmic: 500, solar: 1500, nebula: 1500, asteroid: 1000,
+};
+// Display names for the unlocked alternative trail per orb (shown in the
+// orb-preview dropdown and the unlock banner).
+const TRAIL_UNLOCKED_NAMES = {
+  cyan:     'Prismatic Shimmer',
+  cosmic:   'Spectral Wisps',
+  solar:    'Solar Flare',
+  nebula:   'Lightspeed',
+  asteroid: 'Tectonic',
+};
+function defaultStats() {
+  return {
+    totalKills: 0,
+    totalPassed: 0,
+    totalCrystalsEarned: 0,
+    totalCombosTriggered: 0,
+    totalRunsPlayed: 0,
+    totalDeaths: 0,
+    totalTimePlayedSeconds: 0,
+    longestStreak: 0,
+    longestTimeSurvivedSeconds: 0,
+    mostKillsInRun: 0,
+    mostBodiesPassedInRun: 0,
+    mostCrystalsInRun: 0,
+    highestScore: 0,
+    perOrb: {
+      cyan:     { kills: 0, runs: 0 },
+      cosmic:   { kills: 0, runs: 0 },
+      solar:    { kills: 0, runs: 0 },
+      nebula:   { kills: 0, runs: 0 },
+      asteroid: { kills: 0, runs: 0 },
+    },
+    difficultyCompletions: { NORMAL: 0, HARD: 0, EXTREME: 0, IMPOSSIBLE: 0 },
+    unlockedTrails: { cyan: false, cosmic: false, solar: false, nebula: false, asteroid: false },
+    equippedTrails: { cyan: 'default', cosmic: 'default', solar: 'default', nebula: 'default', asteroid: 'default' },
+  };
+}
+let stats = defaultStats();
+function loadStats() {
+  try {
+    const raw = localStorage.getItem(DRIFT_STATS_KEY);
+    if (!raw) { stats = defaultStats(); return; }
+    const parsed = JSON.parse(raw);
+    // Merge missing fields against the default so older saves auto-upgrade
+    // when new fields are added in future versions.
+    const def = defaultStats();
+    const merged = { ...def, ...parsed };
+    merged.perOrb = { ...def.perOrb };
+    if (parsed.perOrb) for (const k of Object.keys(def.perOrb)) {
+      merged.perOrb[k] = { ...def.perOrb[k], ...(parsed.perOrb[k] || {}) };
+    }
+    merged.difficultyCompletions = { ...def.difficultyCompletions, ...(parsed.difficultyCompletions || {}) };
+    merged.unlockedTrails = { ...def.unlockedTrails, ...(parsed.unlockedTrails || {}) };
+    merged.equippedTrails = { ...def.equippedTrails, ...(parsed.equippedTrails || {}) };
+    stats = merged;
+  } catch { stats = defaultStats(); }
+}
+function saveStats() {
+  try { localStorage.setItem(DRIFT_STATS_KEY, JSON.stringify(stats)); } catch {}
+  pgsScheduleWrite();
+}
+loadStats();
+// Pending milestone banners surfaced on the next death screen. Cleared after
+// the run summary renders. Each entry: { kind, title, subtitle? }.
+let pendingMilestones = [];
+function statsOnKill() {
+  stats.totalKills++;
+  const orb = activeOrb;
+  if (!stats.perOrb[orb]) stats.perOrb[orb] = { kills: 0, runs: 0 };
+  stats.perOrb[orb].kills++;
+  // Per-1000 milestone: surface every thousandth kill so long-haul totals
+  // get a beat at the run-end screen.
+  if (stats.totalKills > 0 && stats.totalKills % 1000 === 0) {
+    pendingMilestones.push({ kind: 'milestone', title: stats.totalKills.toLocaleString() + ' TOTAL KILLS' });
+  }
+  // Trail unlock check — fires once when the per-orb threshold is crossed.
+  // Persist immediately so an app crash between unlock and run-end doesn't
+  // lose the milestone (saveStats here is a one-shot per unlock, not per
+  // kill, so no per-frame localStorage churn).
+  const thresh = TRAIL_UNLOCK_THRESHOLDS[orb];
+  if (thresh && !stats.unlockedTrails[orb] && stats.perOrb[orb].kills >= thresh) {
+    stats.unlockedTrails[orb] = true;
+    const orbName = (ORB_DEFS[orb] && ORB_DEFS[orb].name) ? ORB_DEFS[orb].name.toUpperCase() : orb.toUpperCase();
+    pendingMilestones.push({
+      kind: 'trail-unlock',
+      title: orbName + ' TRAIL UNLOCKED',
+      subtitle: TRAIL_UNLOCKED_NAMES[orb] || 'New Trail',
+    });
+    saveStats();
+  }
+}
+function statsOnPassed() { stats.totalPassed++; }
+function statsOnComboActivated() { stats.totalCombosTriggered++; }
+function statsOnRunStart() {
+  stats.totalRunsPlayed++;
+  const orb = activeOrb;
+  if (!stats.perOrb[orb]) stats.perOrb[orb] = { kills: 0, runs: 0 };
+  stats.perOrb[orb].runs++;
+  // Run-count milestone every 100 runs.
+  if (stats.totalRunsPlayed > 0 && stats.totalRunsPlayed % 100 === 0) {
+    pendingMilestones.push({ kind: 'milestone', title: stats.totalRunsPlayed + ' RUNS PLAYED' });
+  }
+  saveStats();
+}
+// Personal-best comparison snapshot returned to the death screen so it can
+// flag fields with a "BEST" tag. Caller MUST pass run-final values BEFORE
+// merging them into all-time stats; this fn does both — returns the diff,
+// then writes the new highs.
+function statsOnRunEnd(runValues) {
+  const prev = {
+    longestStreak: stats.longestStreak,
+    longestTimeSurvivedSeconds: stats.longestTimeSurvivedSeconds,
+    mostKillsInRun: stats.mostKillsInRun,
+    mostBodiesPassedInRun: stats.mostBodiesPassedInRun,
+    mostCrystalsInRun: stats.mostCrystalsInRun,
+    highestScore: stats.highestScore,
+  };
+  const isBest = {};
+  if ((runValues.streak | 0)   > prev.longestStreak)              isBest.streak   = true;
+  if ((runValues.time | 0)     > prev.longestTimeSurvivedSeconds) isBest.time     = true;
+  if ((runValues.kills | 0)    > prev.mostKillsInRun)             isBest.kills    = true;
+  if ((runValues.passed | 0)   > prev.mostBodiesPassedInRun)      isBest.passed   = true;
+  if ((runValues.crystals | 0) > prev.mostCrystalsInRun)          isBest.crystals = true;
+  if ((runValues.score | 0)    > prev.highestScore)               isBest.score    = true;
+
+  stats.totalDeaths++;
+  stats.totalTimePlayedSeconds += Math.max(0, runValues.time | 0);
+  stats.totalCrystalsEarned    += Math.max(0, runValues.crystals | 0);
+  if (isBest.streak)   stats.longestStreak              = runValues.streak | 0;
+  if (isBest.time)     stats.longestTimeSurvivedSeconds = runValues.time | 0;
+  if (isBest.kills)    stats.mostKillsInRun             = runValues.kills | 0;
+  if (isBest.passed)   stats.mostBodiesPassedInRun      = runValues.passed | 0;
+  if (isBest.crystals) stats.mostCrystalsInRun          = runValues.crystals | 0;
+  if (isBest.score)    stats.highestScore               = runValues.score | 0;
+  // Difficulty completion: the apocalypse-survived signal is the only
+  // "meaningful milestone" available since the boss was removed.
+  if (runValues.apocalypseDeathFlag && runValues.difficulty && stats.difficultyCompletions[runValues.difficulty] != null) {
+    const wasZero = stats.difficultyCompletions[runValues.difficulty] === 0;
+    stats.difficultyCompletions[runValues.difficulty]++;
+    if (wasZero) {
+      pendingMilestones.push({
+        kind: 'first-clear',
+        title: 'FIRST ' + runValues.difficulty + ' COMPLETION',
+      });
+    }
+  }
+  saveStats();
+  return isBest;
+}
+function statsResetAll() {
+  stats = defaultStats();
+  try { localStorage.removeItem(DRIFT_STATS_KEY); } catch {}
+}
+
 // --- Online leaderboard ---
 const API_URL = 'https://s3dtdgsg29.execute-api.eu-west-1.amazonaws.com';
 
@@ -8972,7 +9401,13 @@ function updatePixiPlayerLayer() {
         pixiTrailGraphics.drawCircle(p.x, p.y, p.size * (0.45 + 0.6 * p.life) * flick);
         pixiTrailGraphics.endFill();
       } else if (p.kind === 'line') {
-        pixiTrailGraphics.lineStyle({ width: 2, color: orbColorInt, alpha: a, cap: 'round' });
+        // v1.7.0: per-particle hue for Lightspeed chromatic aberration.
+        let lineColorInt = orbColorInt;
+        if (p.hue) {
+          const [lr, lg, lb] = p.hue.split(',').map(n => parseInt(n, 10) | 0);
+          lineColorInt = (lr << 16) | (lg << 8) | lb;
+        }
+        pixiTrailGraphics.lineStyle({ width: 2, color: lineColorInt, alpha: a, cap: 'round' });
         pixiTrailGraphics.moveTo(p.x, p.y);
         pixiTrailGraphics.lineTo(p.x - p.dx * p.len, p.y - p.dy * p.len);
         pixiTrailGraphics.lineStyle(); // reset so next iter doesn't accidentally stroke a fill
@@ -10690,6 +11125,8 @@ function addDestroyPoints() {
   runStats.totalDestroyed++;
   runStats.pointsFromDestroying += pts;
   if (destroyStreak > runStats.longestStreak) runStats.longestStreak = destroyStreak;
+  // v1.7.0 stats: bump cumulative + per-orb kill count, run trail-unlock check.
+  statsOnKill();
   document.getElementById('score').textContent = score;
   const sd = document.getElementById('streakDisplay');
   if (destroyStreak > 1) {
@@ -10865,6 +11302,9 @@ function activateCombo(key, x, y) {
   lastComboLabel = (key === 'hyperspeed_ghost' && activeCombos.ghost_ghost) ? 'ghost_ghost' : key;
   shakeCombo(key, true);    // fresh activation
   triggerHitstop(30);        // brief pause so the combo lands with weight
+  // v1.7.0 stats: count fresh combo activations only (refresh path returns
+  // earlier, before this line).
+  statsOnComboActivated();
   SFX.comboActivate(key);
 
   if (key === 'nova_nova') {
@@ -11558,6 +11998,11 @@ function resetGame() {
   destroyStreak = 0;
   lastDestroyTime = 0;
   runStats = { totalPassed: 0, totalDestroyed: 0, pointsFromPassing: 0, pointsFromDestroying: 0, longestStreak: 0, powerupsUsed: 0 };
+  // v1.7.0 stats: count this as a new run for cumulative + per-orb tracking.
+  // pendingMilestones cleared so banners surfaced on the prior death don't
+  // re-fire if this run is also a milestone-trigger.
+  pendingMilestones = [];
+  statsOnRunStart();
   lastDeathCause = 'unknown';
   runPowerupsUsed = 0;
   runBurstCount = 0;
@@ -12752,6 +13197,8 @@ function update() {
       planetsPassed++;
       runStats.totalPassed++;
       runStats.pointsFromPassing++;
+      // v1.7.0 stats: cumulative passed-count.
+      statsOnPassed();
       document.getElementById('score').textContent = score;
     }
   }
@@ -13728,11 +14175,15 @@ function triggerDeath() {
   totalCrystals = Math.max(0, totalCrystals + crystalsEarned);
   // Salvage (Fortress Opportunism T1): accumulated mid-run crystal drops
   // added on top of the score-based payout. Cleared after the grant.
+  // v1.7.0: snapshot pre-zero so the run-end stats (mostCrystalsInRun,
+  // totalCrystalsEarned) include both the score payout and the salvage.
+  const runSalvageBonus = (typeof salvageBonusThisRun === 'number' && salvageBonusThisRun > 0) ? salvageBonusThisRun : 0;
   if (salvageBonusThisRun > 0) {
     totalCrystals = Math.max(0, totalCrystals + salvageBonusThisRun);
     treeLog('salvage: +' + salvageBonusThisRun + ' crystals paid out');
     salvageBonusThisRun = 0;
   }
+  const runCrystalsTotal = crystalsEarned + runSalvageBonus;
   saveCrystals();
 
   // v1.6.3 skill-tree unlock flags: dying *from* the apocalypse sequence on
@@ -13744,6 +14195,20 @@ function triggerDeath() {
     saveBeatFlags();
     treeLog('beat ' + difficulty + ' — trees unlocked');
   }
+
+  // v1.7.0 stats: capture run-final values, compare against existing personal
+  // bests (returned as isBest map for the run-summary BEST tags), then merge
+  // into all-time stats. runCrystalsTotal includes score payout + salvage.
+  const runIsBest = statsOnRunEnd({
+    streak:   runStats.longestStreak | 0,
+    time:     elapsedAtDeath | 0,
+    kills:    runStats.totalDestroyed | 0,
+    passed:   planetsPassed | 0,
+    crystals: runCrystalsTotal | 0,
+    score:    score | 0,
+    apocalypseDeathFlag: !!apocalypseDeathFlag,
+    difficulty: difficulty,
+  });
 
   // Orb shatter: 6-8 irregular shards fly outward from the player position
   // before the existing particle burst fires. Each shard has a random
@@ -13839,26 +14304,70 @@ function triggerDeath() {
     const apocalypseBanner = apocalypseDeathFlag
       ? `<div style="font-family:'Orbitron',monospace;font-weight:900;letter-spacing:3px;font-size:15px;color:rgba(255,110,60,0.98);text-shadow:0 0 18px rgba(255,80,40,0.6);text-align:center;margin-bottom:8px;">CONSUMED BY THE SUN</div>`
       : '';
+    // v1.7.0 dopamine pass: BEST tags next to fields where this run set a
+    // new personal best. runIsBest is computed in statsOnRunEnd above and
+    // reflects values BEFORE this run's stats were merged in.
+    const bestTag = ' <span class="rs-best">BEST</span>';
+    const bScore  = runIsBest && runIsBest.score    ? bestTag : '';
+    const bPass   = runIsBest && runIsBest.passed   ? bestTag : '';
+    const bKills  = runIsBest && runIsBest.kills    ? bestTag : '';
+    const bStreak = runIsBest && runIsBest.streak   ? bestTag : '';
+    const bTime   = runIsBest && runIsBest.time     ? bestTag : '';
+    const bCryst  = runIsBest && runIsBest.crystals ? bestTag : '';
+    // Milestone banners — drained from pendingMilestones so the run-end
+    // surfaces every unlock / first-completion / round-number total that
+    // accrued during this run. Cleared after render.
+    const milestoneBanners = (pendingMilestones && pendingMilestones.length)
+      ? pendingMilestones.map(m =>
+          `<div class="milestone-banner ${m.kind}"><div class="mb-title">${m.title}</div>${m.subtitle ? `<div class="mb-sub">${m.subtitle}</div>` : ''}</div>`
+        ).join('')
+      : '';
+    // BEST tags are siblings of .rs-val (NOT children) so the 30 px val
+    // column stays its size and the tag flows in the row's flex layout
+    // between the value and the .rs-pts column. This prevents horizontal
+    // overflow on narrow viewports where every pixel matters.
     rs.innerHTML = `
       ${apocalypseBanner}
-      <div class="rs-title">${deathScore}</div>
-      <div class="rs-row"><span class="rs-label">PLANETS PASSED</span><span class="rs-val">${deathPlanetsPassed}</span><span class="rs-pts">${deathStats.pointsFromPassing} pts</span></div>
-      <div class="rs-row"><span class="rs-label">PLANETS DESTROYED</span><span class="rs-val">${deathStats.totalDestroyed}</span><span class="rs-pts">${deathStats.pointsFromDestroying} pts</span></div>
-      <div class="rs-row"><span class="rs-label">LONGEST STREAK</span><span class="rs-val">${deathStats.longestStreak}</span><span class="rs-pts"></span></div>
+      ${milestoneBanners}
+      <div class="rs-title">${deathScore}${bScore}</div>
+      <div class="rs-row"><span class="rs-label">PLANETS PASSED</span><span class="rs-val">${deathPlanetsPassed}</span>${bPass}<span class="rs-pts">${deathStats.pointsFromPassing} pts</span></div>
+      <div class="rs-row"><span class="rs-label">PLANETS DESTROYED</span><span class="rs-val">${deathStats.totalDestroyed}</span>${bKills}<span class="rs-pts">${deathStats.pointsFromDestroying} pts</span></div>
+      <div class="rs-row"><span class="rs-label">LONGEST STREAK</span><span class="rs-val">${deathStats.longestStreak}</span>${bStreak}<span class="rs-pts"></span></div>
       <div class="rs-row"><span class="rs-label">POWERUPS USED</span><span class="rs-val">${deathStats.powerupsUsed}</span><span class="rs-pts"></span></div>
-      <div class="rs-row"><span class="rs-label">TIME SURVIVED</span><span class="rs-val">${formatRunTime(deathElapsedSeconds)}</span><span class="rs-pts"></span></div>
+      <div class="rs-row"><span class="rs-label">TIME SURVIVED</span><span class="rs-val">${formatRunTime(deathElapsedSeconds)}</span>${bTime}<span class="rs-pts"></span></div>
       ${timeBonusRow}
       <hr class="rs-sep">
       <div class="rs-total"><span>TOTAL</span><span>${deathScore} pts <span class="rs-diff ${deathDifficulty}">${deathDifficulty}</span></span></div>
       <div style="text-align:right; font-size:8px; letter-spacing:1px; color:rgba(255,255,255,0.35); padding-top:2px;">× ${crystalMult} difficulty multiplier</div>
     `;
     rs.style.display = 'block';
+    // Banners are one-shot per run-end render. Drain so a re-shown death
+    // screen (after a pause, etc.) doesn't redisplay them.
+    pendingMilestones = [];
 
-    // Crystal display: earned this run (gold) + running total
+    // Crystal display: earned this run (gold) + running total. v1.7.0:
+    // animate the +N counter from 0 to final over ~1 s with ease-out cubic
+    // so the payout reads as a beat instead of a static number drop.
     const dc = document.getElementById('deathCrystals');
     const dct = document.getElementById('deathCrystalTotal');
-    dc.textContent = '+ ' + formatCrystals(crystalsEarned) + ' 💎';
+    const _crystalRunTotal = runCrystalsTotal | 0;
+    const _crystalAnimMs = 1000;
+    const _crystalAnimStart = performance.now();
+    const _bestCrystalSuffix = bCryst ? bestTag : '';
+    function _tickDeathCrystals() {
+      // Bail if the player already navigated away.
+      if (state !== 'dead') {
+        dc.textContent = '+ ' + formatCrystals(_crystalRunTotal) + ' 💎' + _bestCrystalSuffix.replace(/<\/?[^>]+>/g, '');
+        return;
+      }
+      const t = Math.min(1, (performance.now() - _crystalAnimStart) / _crystalAnimMs);
+      const ease = 1 - Math.pow(1 - t, 3);
+      const cur = Math.floor(_crystalRunTotal * ease);
+      dc.innerHTML = '+ ' + formatCrystals(cur) + ' 💎' + (t >= 1 ? _bestCrystalSuffix : '');
+      if (t < 1) requestAnimationFrame(_tickDeathCrystals);
+    }
     dc.style.display = 'block';
+    _tickDeathCrystals();
     dct.textContent = '💎 TOTAL: ' + formatCrystals(totalCrystals);
     dct.style.display = 'block';
 
@@ -15928,6 +16437,13 @@ function emitOrbTrail() {
   const sizeMul = 0.8 + Math.min(1.2, intensity * 0.12);
   const alphaMul = 0.7 + Math.min(0.3, intensity * 0.04);
 
+  // v1.7.0: cosmetic "unlocked" trail variant, gated by per-orb kill count
+  // (TRAIL_UNLOCK_THRESHOLDS) and the player's equip choice. Each variant
+  // re-uses an existing render kind so neither drawOrbTrailParticles nor
+  // the pixi trail path needs new shape code. The only renderer extension
+  // is an optional `hue` field on the 'line' kind for Lightspeed's
+  // chromatic-aberration multi-stroke.
+  const useUnlocked = !!(stats.unlockedTrails[orb] && stats.equippedTrails[orb] === 'unlocked');
   for (let i = 0; i < count; i++) {
     // Small jitter around the behind-player spawn point.
     const jx = px + (Math.random() - 0.5) * 8;
@@ -15935,62 +16451,166 @@ function emitOrbTrail() {
 
     const nowOt = Date.now();
     if (orb === 'cyan') {
-      // fade 0.05/frame → 20 frames → 333ms
-      pushCapped(orbTrailParticles, {
-        kind: 'cyan',
-        x: jx, y: jy,
-        vx: bx * (0.3 + Math.random() * 0.6) + (Math.random() - 0.5) * 0.3,
-        vy: by * (0.3 + Math.random() * 0.6) + (Math.random() - 0.5) * 0.3,
-        life: 1, size: (2 + Math.random() * 2.4) * sizeMul,
-        alphaMul, startTime: nowOt, maxLifeMs: 333,
-      }, ORB_TRAIL_CAP);
+      if (useUnlocked) {
+        // PRISMATIC SHIMMER: rainbow-cycling soft glows. Re-uses 'fire'
+        // (which already accepts a custom hue) and rotates through a cyan-
+        // family rainbow palette frame-locked to the global frame counter
+        // so adjacent particles read as a coherent gradient instead of
+        // random noise.
+        const hues = ['200,255,255','125,232,255','160,200,255','200,180,255','220,150,255','255,180,220','255,200,180','255,255,180','200,255,200'];
+        const hue = hues[((frame >> 2) + i) % hues.length];
+        pushCapped(orbTrailParticles, {
+          kind: 'fire',
+          x: jx, y: jy,
+          vx: bx * (0.3 + Math.random() * 0.6) + (Math.random() - 0.5) * 0.5,
+          vy: by * (0.3 + Math.random() * 0.6) + (Math.random() - 0.5) * 0.5,
+          life: 1, size: (2.5 + Math.random() * 2.2) * sizeMul,
+          hue, flicker: Math.random() * 6.28,
+          alphaMul, startTime: nowOt, maxLifeMs: 500,
+        }, ORB_TRAIL_CAP);
+      } else {
+        // fade 0.05/frame → 20 frames → 333ms
+        pushCapped(orbTrailParticles, {
+          kind: 'cyan',
+          x: jx, y: jy,
+          vx: bx * (0.3 + Math.random() * 0.6) + (Math.random() - 0.5) * 0.3,
+          vy: by * (0.3 + Math.random() * 0.6) + (Math.random() - 0.5) * 0.3,
+          life: 1, size: (2 + Math.random() * 2.4) * sizeMul,
+          alphaMul, startTime: nowOt, maxLifeMs: 333,
+        }, ORB_TRAIL_CAP);
+      }
     } else if (orb === 'cosmic') {
-      // fade 0.025/frame → 40 frames → 667ms. Purple wisps drift sideways.
-      pushCapped(orbTrailParticles, {
-        kind: 'wisp',
-        x: jx, y: jy,
-        vx: bx * (0.4 + Math.random() * 0.6) + (Math.random() - 0.5) * 0.8,
-        vy: by * (0.4 + Math.random() * 0.6) + (Math.random() - 0.5) * 0.4,
-        drift: (Math.random() - 0.5) * 0.12, // sideways drift per frame
-        life: 1, size: (2.5 + Math.random() * 2.5) * sizeMul,
-        alphaMul, startTime: nowOt, maxLifeMs: 600,
-      }, ORB_TRAIL_CAP);
+      if (useUnlocked) {
+        // SPECTRAL WISPS: bigger, longer-lived, more drift. Reuses 'wisp'.
+        // Lifetime ≈ 1.7× base so the trail visibly lingers.
+        pushCapped(orbTrailParticles, {
+          kind: 'wisp',
+          x: jx, y: jy,
+          vx: bx * (0.3 + Math.random() * 0.5) + (Math.random() - 0.5) * 1.0,
+          vy: by * (0.3 + Math.random() * 0.5) + (Math.random() - 0.5) * 0.6,
+          drift: (Math.random() - 0.5) * 0.18,
+          life: 1, size: (3.5 + Math.random() * 3.5) * sizeMul,
+          alphaMul, startTime: nowOt, maxLifeMs: 1000,
+        }, ORB_TRAIL_CAP);
+      } else {
+        // fade 0.025/frame → 40 frames → 667ms. Purple wisps drift sideways.
+        pushCapped(orbTrailParticles, {
+          kind: 'wisp',
+          x: jx, y: jy,
+          vx: bx * (0.4 + Math.random() * 0.6) + (Math.random() - 0.5) * 0.8,
+          vy: by * (0.4 + Math.random() * 0.6) + (Math.random() - 0.5) * 0.4,
+          drift: (Math.random() - 0.5) * 0.12,
+          life: 1, size: (2.5 + Math.random() * 2.5) * sizeMul,
+          alphaMul, startTime: nowOt, maxLifeMs: 600,
+        }, ORB_TRAIL_CAP);
+      }
     } else if (orb === 'solar') {
-      // fade 0.055/frame → 18 frames → 300ms. Orange/red fire, flickers, fades fast.
-      pushCapped(orbTrailParticles, {
-        kind: 'fire',
-        x: jx, y: jy,
-        vx: bx * (0.5 + Math.random() * 0.9) + (Math.random() - 0.5) * 0.6,
-        vy: by * (0.5 + Math.random() * 0.9) + (Math.random() - 0.5) * 0.6,
-        life: 1, size: (3 + Math.random() * 3.5) * sizeMul,
-        hue: Math.random() < 0.35 ? '255,210,80'
-           : (Math.random() < 0.55 ? '255,120,40' : '255,80,30'),
-        flicker: Math.random() * 6.28,
-        alphaMul, startTime: nowOt, maxLifeMs: 300,
-      }, ORB_TRAIL_CAP);
+      if (useUnlocked) {
+        // SOLAR FLARE: hotter palette (whites + bright yellows on top of
+        // the orange/red base) and ~1.3× size. Visually reads as more
+        // intense fire without needing a new render kind.
+        const r = Math.random();
+        const hue = r < 0.25 ? '255,255,200'
+                  : r < 0.50 ? '255,220,100'
+                  : r < 0.75 ? '255,140,40'
+                  :            '255,80,30';
+        pushCapped(orbTrailParticles, {
+          kind: 'fire',
+          x: jx, y: jy,
+          vx: bx * (0.5 + Math.random() * 0.9) + (Math.random() - 0.5) * 0.7,
+          vy: by * (0.5 + Math.random() * 0.9) + (Math.random() - 0.5) * 0.7,
+          life: 1, size: (4 + Math.random() * 4) * sizeMul,
+          hue, flicker: Math.random() * 6.28,
+          alphaMul, startTime: nowOt, maxLifeMs: 360,
+        }, ORB_TRAIL_CAP);
+      } else {
+        // fade 0.055/frame → 18 frames → 300ms. Orange/red fire, flickers, fades fast.
+        pushCapped(orbTrailParticles, {
+          kind: 'fire',
+          x: jx, y: jy,
+          vx: bx * (0.5 + Math.random() * 0.9) + (Math.random() - 0.5) * 0.6,
+          vy: by * (0.5 + Math.random() * 0.9) + (Math.random() - 0.5) * 0.6,
+          life: 1, size: (3 + Math.random() * 3.5) * sizeMul,
+          hue: Math.random() < 0.35 ? '255,210,80'
+             : (Math.random() < 0.55 ? '255,120,40' : '255,80,30'),
+          flicker: Math.random() * 6.28,
+          alphaMul, startTime: nowOt, maxLifeMs: 300,
+        }, ORB_TRAIL_CAP);
+      }
     } else if (orb === 'nebula') {
-      // fade 0.045/frame → ~22 frames → 367ms. Blue speed lines.
       const len = (10 + Math.random() * 14) * sizeMul;
-      pushCapped(orbTrailParticles, {
-        kind: 'line',
-        x: jx, y: jy,
-        vx: bx * (0.9 + Math.random() * 0.8),
-        vy: by * (0.9 + Math.random() * 0.8),
-        dx: bx, dy: by, // streak direction = movement direction
-        len,
-        life: 1, alphaMul, startTime: nowOt, maxLifeMs: 367,
-      }, ORB_TRAIL_CAP);
+      if (useUnlocked) {
+        // LIGHTSPEED: chromatic aberration. Three offset speed-lines per
+        // emit, one each for R/G/B-shifted hues, perpendicular by ±2 px.
+        // The 'line' renderer reads `hue` if present (added below) — this
+        // is the only render extension the v1.7.0 trail set requires.
+        const perpX = -by, perpY = bx;
+        const baseVx = bx * (1.0 + Math.random() * 0.8);
+        const baseVy = by * (1.0 + Math.random() * 0.8);
+        const t0 = nowOt;
+        const variants = [
+          { ox: -2, hue: '255,80,120' },
+          { ox:  0, hue: '180,220,255' },
+          { ox:  2, hue: '120,255,200' },
+        ];
+        for (const v of variants) {
+          pushCapped(orbTrailParticles, {
+            kind: 'line',
+            x: jx + perpX * v.ox, y: jy + perpY * v.ox,
+            vx: baseVx, vy: baseVy,
+            dx: bx, dy: by, len: len * 1.25,
+            hue: v.hue,
+            life: 1, alphaMul, startTime: t0, maxLifeMs: 420,
+          }, ORB_TRAIL_CAP);
+        }
+        // Skip the default fall-through — three lines is plenty for one emit.
+      } else {
+        // fade 0.045/frame → ~22 frames → 367ms. Blue speed lines.
+        pushCapped(orbTrailParticles, {
+          kind: 'line',
+          x: jx, y: jy,
+          vx: bx * (0.9 + Math.random() * 0.8),
+          vy: by * (0.9 + Math.random() * 0.8),
+          dx: bx, dy: by,
+          len,
+          life: 1, alphaMul, startTime: nowOt, maxLifeMs: 367,
+        }, ORB_TRAIL_CAP);
+      }
     } else if (orb === 'asteroid') {
-      // fade 0.03/frame → 33 frames → 550ms. Grey rock fragments tumble.
-      pushCapped(orbTrailParticles, {
-        kind: 'rock',
-        x: jx, y: jy,
-        vx: bx * (0.3 + Math.random() * 0.7) + (Math.random() - 0.5) * 1.4,
-        vy: by * (0.3 + Math.random() * 0.7) + (Math.random() - 0.5) * 1.4,
-        life: 1, size: (2 + Math.random() * 2.5) * sizeMul,
-        angle: Math.random() * 6.28, spin: (Math.random() - 0.5) * 0.3,
-        alphaMul, startTime: nowOt, maxLifeMs: 550,
-      }, ORB_TRAIL_CAP);
+      if (useUnlocked) {
+        // TECTONIC: 1.5× rocks plus a soft grey dust circle alongside —
+        // every emit lands as fragment + impact-dust, reading heavier than
+        // the base trail. The dust uses 'cyan' kind (orb-tinted circle).
+        pushCapped(orbTrailParticles, {
+          kind: 'rock',
+          x: jx, y: jy,
+          vx: bx * (0.3 + Math.random() * 0.7) + (Math.random() - 0.5) * 1.6,
+          vy: by * (0.3 + Math.random() * 0.7) + (Math.random() - 0.5) * 1.6,
+          life: 1, size: (3 + Math.random() * 3.5) * sizeMul,
+          angle: Math.random() * 6.28, spin: (Math.random() - 0.5) * 0.35,
+          alphaMul, startTime: nowOt, maxLifeMs: 700,
+        }, ORB_TRAIL_CAP);
+        pushCapped(orbTrailParticles, {
+          kind: 'cyan',
+          x: jx + (Math.random() - 0.5) * 4,
+          y: jy + (Math.random() - 0.5) * 4,
+          vx: bx * 0.2 + (Math.random() - 0.5) * 0.5,
+          vy: by * 0.2 + (Math.random() - 0.5) * 0.5,
+          life: 1, size: (4 + Math.random() * 3) * sizeMul,
+          alphaMul: alphaMul * 0.55, startTime: nowOt, maxLifeMs: 800,
+        }, ORB_TRAIL_CAP);
+      } else {
+        // fade 0.03/frame → 33 frames → 550ms. Grey rock fragments tumble.
+        pushCapped(orbTrailParticles, {
+          kind: 'rock',
+          x: jx, y: jy,
+          vx: bx * (0.3 + Math.random() * 0.7) + (Math.random() - 0.5) * 1.4,
+          vy: by * (0.3 + Math.random() * 0.7) + (Math.random() - 0.5) * 1.4,
+          life: 1, size: (2 + Math.random() * 2.5) * sizeMul,
+          angle: Math.random() * 6.28, spin: (Math.random() - 0.5) * 0.3,
+          alphaMul, startTime: nowOt, maxLifeMs: 550,
+        }, ORB_TRAIL_CAP);
+      }
     }
   }
 }
@@ -16037,7 +16657,10 @@ function drawOrbTrailParticles(tctx = ctx) {
       ctx.arc(p.x, p.y, p.size * (0.45 + 0.6 * p.life) * flick, 0, 6.28);
       ctx.fill();
     } else if (p.kind === 'line') {
-      ctx.strokeStyle = `rgba(${orbRgb},1)`;
+      // v1.7.0: respect per-particle `hue` for the Lightspeed trail's
+      // chromatic-aberration multi-stroke. Falls back to the orb color so
+      // the existing nebula trail emits look unchanged.
+      ctx.strokeStyle = `rgba(${p.hue || orbRgb},1)`;
       ctx.lineWidth = 2;
       ctx.lineCap = 'round';
       ctx.beginPath();
@@ -17445,6 +18068,10 @@ document.getElementById('startBtn').addEventListener('click', ()=>{
     unlockedOrbs = ['cyan'];
     activeOrb = 'cyan';
     try { localStorage.removeItem('drift_scores'); } catch {}
+    // v1.7.0: also wipe the stats object (totals, personal bests, per-orb
+    // counters, trail unlocks/equips, difficulty completions) so DRIFTRESET
+    // is a true full progress reset.
+    statsResetAll();
     clearResumeState();
     saveCrystals();
     saveBeatFlags();
@@ -18646,6 +19273,72 @@ function refreshOrbBrowser() {
   }
 
   document.getElementById('orbCrystalBalance').textContent = '💎 ' + formatCrystals(totalCrystals);
+  // v1.7.0: trail selector below the orb description. Locked orbs hide it
+  // entirely (no trail to pick on a not-yet-unlocked orb). Otherwise show
+  // the equipped trail name; tap opens the picker.
+  refreshOrbTrailRow(key, locked);
+}
+
+function refreshOrbTrailRow(orbKey, orbLocked) {
+  const row = document.getElementById('orbTrailRow');
+  if (!row) return;
+  if (orbLocked) { row.innerHTML = ''; return; }
+  const unlocked = !!stats.unlockedTrails[orbKey];
+  const equipped = (stats.equippedTrails[orbKey] === 'unlocked' && unlocked) ? 'unlocked' : 'default';
+  const displayName = equipped === 'unlocked'
+    ? (TRAIL_UNLOCKED_NAMES[orbKey] || 'Unlocked')
+    : 'Default';
+  if (!unlocked) {
+    // Show progress toward unlock so the player can see how close they are.
+    const have = (stats.perOrb[orbKey] && stats.perOrb[orbKey].kills) | 0;
+    const need = TRAIL_UNLOCK_THRESHOLDS[orbKey] || 0;
+    const progress = need > 0 ? `<div class="tp-progress">${have.toLocaleString()} / ${need.toLocaleString()} kills</div>` : '';
+    row.innerHTML = `<span class="trail-btn locked">Trail: Default (Locked)</span>${progress}`;
+    return;
+  }
+  row.innerHTML = `<button class="trail-btn" id="trailBtn">Trail: ${displayName} ▾</button>`;
+  document.getElementById('trailBtn').addEventListener('click', () => {
+    SFX.clickSecondary();
+    openTrailPicker(orbKey);
+  });
+}
+
+function openTrailPicker(orbKey) {
+  const overlay = document.getElementById('trailPickerOverlay');
+  const titleEl = document.getElementById('trailPickerTitle');
+  const optsEl  = document.getElementById('trailPickerOptions');
+  const orbName = (ORB_DEFS[orbKey] && ORB_DEFS[orbKey].name) ? ORB_DEFS[orbKey].name.toUpperCase() : orbKey.toUpperCase();
+  titleEl.textContent = orbName + ' TRAIL';
+  const unlocked = !!stats.unlockedTrails[orbKey];
+  const equipped = stats.equippedTrails[orbKey] || 'default';
+  const opts = [
+    { id: 'default',  name: 'Default',                                   locked: false },
+    { id: 'unlocked', name: TRAIL_UNLOCKED_NAMES[orbKey] || 'Unlocked',  locked: !unlocked },
+  ];
+  optsEl.innerHTML = opts.map(o => {
+    const cls = ['tp-opt'];
+    if (o.id === equipped) cls.push('equipped');
+    if (o.locked) cls.push('locked');
+    const suffix = o.locked
+      ? ` <span style="opacity:0.55">(LOCKED)</span>`
+      : (o.id === equipped ? ` <span style="float:right;opacity:0.85">✓</span>` : '');
+    return `<button class="${cls.join(' ')}" data-trail="${o.id}" ${o.locked ? 'disabled' : ''}>${o.name}${suffix}</button>`;
+  }).join('');
+  optsEl.querySelectorAll('.tp-opt').forEach(btn => {
+    if (btn.classList.contains('locked')) return;
+    btn.addEventListener('click', () => {
+      const id = btn.getAttribute('data-trail');
+      stats.equippedTrails[orbKey] = id;
+      saveStats();
+      SFX.clickPrimary();
+      closeTrailPicker();
+      refreshOrbBrowser();
+    });
+  });
+  overlay.classList.add('visible');
+}
+function closeTrailPicker() {
+  document.getElementById('trailPickerOverlay').classList.remove('visible');
 }
 
 function drawOrbPreview() {
@@ -19542,6 +20235,88 @@ function closeSettings() {
 settingsBtn.addEventListener('click', () => { SFX.clickSecondary(); openSettings(); });
 pauseSettingsBtn.addEventListener('click', () => { SFX.clickSecondary(); openSettings(); });
 settingsCloseBtn.addEventListener('click', () => { SFX.clickSecondary(); closeSettings(); });
+
+// v1.7.0: Stats overlay — opens from the Settings → STATS row. Reads from
+// the in-memory `stats` object (already loaded at boot via loadStats), so
+// values are always current.
+function openStatsOverlay() {
+  renderStatsOverlay();
+  document.getElementById('statsOverlay').classList.add('visible');
+}
+function closeStatsOverlay() {
+  document.getElementById('statsOverlay').classList.remove('visible');
+}
+function fmtNum(n) {
+  return Math.max(0, n | 0).toLocaleString();
+}
+function fmtTimeMs(secs) {
+  const s = Math.max(0, secs | 0);
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return m + ':' + (r < 10 ? '0' + r : r);
+}
+function fmtTimeHMS(secs) {
+  const s = Math.max(0, secs | 0);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const r = s % 60;
+  if (h > 0) return h + 'h ' + m + 'm ' + r + 's';
+  return m + 'm ' + r + 's';
+}
+function renderStatsOverlay() {
+  const body = document.getElementById('statsBody');
+  if (!body) return;
+  const row = (label, val, prog) => `<div class="stats-row"><span class="stats-label">${label}</span><span class="stats-val">${val}${prog ? `<span class="stats-progress">${prog}</span>` : ''}</span></div>`;
+
+  let html = '';
+  html += '<div class="stats-section"><div class="stats-section-title">ALL-TIME TOTALS</div>';
+  html += row('TOTAL KILLS',          fmtNum(stats.totalKills));
+  html += row('TOTAL BODIES PASSED',  fmtNum(stats.totalPassed));
+  html += row('TOTAL CRYSTALS EARNED', fmtNum(stats.totalCrystalsEarned));
+  html += row('TOTAL COMBOS',          fmtNum(stats.totalCombosTriggered));
+  html += row('TOTAL RUNS PLAYED',     fmtNum(stats.totalRunsPlayed));
+  html += row('TOTAL DEATHS',          fmtNum(stats.totalDeaths));
+  html += row('TOTAL TIME PLAYED',     fmtTimeHMS(stats.totalTimePlayedSeconds));
+  html += '</div>';
+
+  html += '<div class="stats-section"><div class="stats-section-title">PERSONAL BESTS</div>';
+  html += row('HIGHEST SCORE',     fmtNum(stats.highestScore));
+  html += row('LONGEST STREAK',    fmtNum(stats.longestStreak) + ' &#x1F525;');
+  html += row('LONGEST SURVIVAL',  fmtTimeMs(stats.longestTimeSurvivedSeconds));
+  html += row('MOST KILLS IN RUN', fmtNum(stats.mostKillsInRun));
+  html += row('MOST PASSED IN RUN', fmtNum(stats.mostBodiesPassedInRun));
+  html += row('MOST CRYSTALS IN RUN', fmtNum(stats.mostCrystalsInRun));
+  html += '</div>';
+
+  html += '<div class="stats-section"><div class="stats-section-title">PER-ORB BREAKDOWN</div>';
+  for (const k of ORB_ORDER) {
+    const def = ORB_DEFS[k] || { name: k };
+    const po  = stats.perOrb[k] || { kills: 0, runs: 0 };
+    const need = TRAIL_UNLOCK_THRESHOLDS[k] || 0;
+    const unlocked = !!stats.unlockedTrails[k];
+    const trailLabel = unlocked
+      ? `<span class="so-trail unlocked">${TRAIL_UNLOCKED_NAMES[k] || 'UNLOCKED'} ✓</span>`
+      : (need > 0 ? `<span class="so-trail">${fmtNum(po.kills)} / ${fmtNum(need)}</span>` : `<span class="so-trail">—</span>`);
+    html += `<div class="stats-orb-row"><span class="so-name">${def.name.toUpperCase()}</span><span class="so-cnt">${fmtNum(po.kills)} kills · ${fmtNum(po.runs)} runs</span>${trailLabel}</div>`;
+  }
+  html += '</div>';
+
+  html += '<div class="stats-section"><div class="stats-section-title">DIFFICULTY COMPLETIONS</div>';
+  for (const d of ['NORMAL', 'HARD', 'EXTREME', 'IMPOSSIBLE']) {
+    const c = (stats.difficultyCompletions && stats.difficultyCompletions[d]) | 0;
+    html += row(d, fmtNum(c));
+  }
+  html += '</div>';
+
+  body.innerHTML = html;
+}
+document.getElementById('statsBtn').addEventListener('click', () => { SFX.clickSecondary(); openStatsOverlay(); });
+document.getElementById('statsCloseBtn').addEventListener('click', () => { SFX.clickSecondary(); closeStatsOverlay(); });
+document.getElementById('trailPickerClose').addEventListener('click', () => { SFX.clickSecondary(); closeTrailPicker(); });
+document.getElementById('trailPickerOverlay').addEventListener('click', (e) => {
+  // Tap on the dimmed backdrop closes; tap on the inner panel does not.
+  if (e.target.id === 'trailPickerOverlay') closeTrailPicker();
+});
 
 settingsOverlay.addEventListener('click', e => {
   const btn = e.target.closest('.toggle-opt');
