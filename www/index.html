@@ -5495,6 +5495,7 @@ function secondFlameRollForCast(source, px, py, waveCount, isSupernova) {
       supernova: !!isSupernova,
       sizeMult: 0.9,
     }, NOVA_RINGS_CAP);
+    emitNovaSpecks(spawnX, spawnY);
     // v1.7.0: spawn-site shake removed; the kills from this ring drive
     // shake via shakeMassDestroy in the standard nova-ring sweep loop.
     SFX.pickup('nova');
@@ -5519,6 +5520,7 @@ function firebrandProc(bodyX, bodyY) {
     x: px, y: py, radius: 0, life: 1, prevR: 0,
     startTime: now, sizeMult: 0.5,
   }, NOVA_RINGS_CAP);
+  emitNovaSpecks(px, py);
   // v1.7.0: spawn-site shake removed; kills from this ring drive shake via
   // shakeMassDestroy in the standard nova-ring sweep loop.
   SFX.pickup('nova');
@@ -9422,23 +9424,26 @@ function updatePixiPlayerLayer() {
         pixiTrailGraphics.drawCircle(p.x, p.y, p.size * (0.45 + 0.6 * p.life) * flick);
         pixiTrailGraphics.endFill();
       } else if (p.kind === 'ember' && pixiTrailAdditiveGraphics) {
-        // v1.7.0 polish r3: ember kind renders to the ADD-blend Graphics so
+        // v1.7.0 polish r3-r4: ember renders to the ADD-blend Graphics so
         // warm hues read as glowing fire. Hue lerps toward (220,70,20) once
-        // life drops below 0.5 — same logic as Canvas 2D pass 2.
+        // life drops below 0.3 (was 0.5). `bright: true` skips the 0.6 trail
+        // dimming so nova-state flames pop. Same logic as Canvas 2D pass 2.
         let r0, g0, b0;
         const parts = (p.hue || '255,140,40').split(',');
         r0 = parseInt(parts[0], 10) | 0;
         g0 = parseInt(parts[1], 10) | 0;
         b0 = parseInt(parts[2], 10) | 0;
-        if (p.life < 0.5) {
-          const t = Math.min(1, (0.5 - p.life) / 0.5);
+        if (p.life < 0.3) {
+          const t = Math.min(1, (0.3 - p.life) / 0.3);
           r0 = Math.round(r0 * (1 - t) + 220 * t);
           g0 = Math.round(g0 * (1 - t) + 70  * t);
           b0 = Math.round(b0 * (1 - t) + 20  * t);
         }
         const emberInt = (r0 << 16) | (g0 << 8) | b0;
         const flick = 0.85 + Math.sin(p.flicker || 0) * 0.25;
-        pixiTrailAdditiveGraphics.beginFill(emberInt, a);
+        const emberDim = p.bright ? 1.0 : 0.6;
+        const emberA = Math.max(0, p.life) * (p.alphaMul || 0.8) * emberDim;
+        pixiTrailAdditiveGraphics.beginFill(emberInt, emberA);
         pixiTrailAdditiveGraphics.drawCircle(p.x, p.y, p.size * (0.45 + 0.6 * p.life) * flick);
         pixiTrailAdditiveGraphics.endFill();
       } else if (p.kind === 'orbit') {
@@ -10926,6 +10931,36 @@ function pushEffect(e) {
   destroyEffects.push(e);
 }
 
+// v1.7.0 polish r4: per-nova punctuation. Fires a small burst of novaFrag-
+// like specks at (x, y) every time a nova ring spawns — single nova,
+// supernova waves, secondFlame bonus rings, firebrand procs, criticalMass
+// free nova, etc. Distinct from emitDestroyEffects's per-kill fragments
+// (those fire per-body-destroyed; these fire per-cast as ignition feedback).
+// Capped against the shared 15-novaFrag ceiling so a busy supernova chain
+// doesn't blow the destroyEffects cap.
+function emitNovaSpecks(x, y) {
+  const have = countEffectKind('novaFrag');
+  const want = 5 + Math.floor(Math.random() * 3); // 5-7
+  const add = Math.max(0, Math.min(want, 15 - have));
+  if (add <= 0) return;
+  const now = Date.now();
+  for (let i = 0; i < add; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const sp = 1.4 + Math.random() * 1.8;
+    pushEffect({
+      kind: 'novaFrag', x, y,
+      vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+      startTime: now, age: 0, maxLife: 350,
+      verts: computeFragVerts(
+        Math.random() * Math.PI * 2,
+        3 + Math.floor(Math.random() * 2),
+        2.5 + Math.random() * 2.0
+      ),
+      color: 'rgba(255,200,80,1)',
+    });
+  }
+}
+
 // Flat [dx0, dy0, dx1, dy1, ...] polygon vertex list, already rotated by
 // `angle`. Used to bake the fragment polygon at spawn so drawDestroyEffects
 // can batch same-colour fragments into a single Path2D fill. Loses per-frame
@@ -11467,6 +11502,7 @@ function activateCombo(key, x, y) {
           sizeMult: 0.9,
           startTime: Date.now(),
         }, NOVA_RINGS_CAP);
+        emitNovaSpecks(player.x, player.y);
         SFX.pickup('nova');
       }, i * 400));
     }
@@ -11651,6 +11687,7 @@ function fireTripleNova(px, py, source, waveOverride) {
   // smaller seed. The ring expansion math elsewhere treats radius relative
   // to its per-ring start, so the 0.9 seed carries through the lifecycle.
   pushCapped(novaRings, { x: px, y: py, radius: 0, life: 1, prevR: 0, startTime: Date.now(), sizeMult: 0.9 }, NOVA_RINGS_CAP);
+  emitNovaSpecks(px, py);
   // v1.7.0: nova-cast shake removed from spawn site. Shake is now driven by
   // the kill loop (shakeMassDestroy on the per-ring kill count) so it scales
   // with how many bodies the nova actually destroys, not with how many
@@ -11697,6 +11734,7 @@ function fireTripleNova(px, py, source, waveOverride) {
     pendingNovaTimeouts.push(setTimeout(() => {
       if (state === 'playing' || state === 'devmode') {
         pushCapped(novaRings, { x: player.x, y: player.y, radius: 0, life, prevR: 0, startTime: Date.now(), sizeMult: 0.9 }, NOVA_RINGS_CAP);
+        emitNovaSpecks(player.x, player.y);
         // v1.7.0: per-wave shake removed; kill-driven shake replaces it.
         SFX.pickup('nova');
       }
@@ -16749,17 +16787,23 @@ function emitOrbTrailUnlocked(orb, intensity, sizeMul, alphaMul, px, py, bx, by,
     // updateOrbTrailParticles for kind:'ember'). Nova-just-fired brightens
     // hue and bumps size; supernova combo elevates to white-hot AND triples
     // the per-emit ember count with wider spread for a clearly more intense
-    // trail. Hyperspeed adds an elongation streak. No separate ring overlay.
-    // v1.7.0 polish r3: single coherent palette per state instead of a
-    // 3-way random spawn (which gave 2 of 3 embers a dim hue and read as
-    // greyish smoke). Spawn-time palette is the BRIGHT side; the draw-time
-    // lerp toward (220,70,20) handles the dying-ember red on its own.
+    // trail.
+    //
+    // v1.7.0 polish r4: dropped the leftover 'line' speed-line emit during
+    // hyperspeed (Inferno is fire, not speed). Hyperspeed instead bumps
+    // ember life so the existing trail visibly elongates. Also boosted
+    // alpha + added a bright "core" particle on nova-state spawns so the
+    // trail reads as hot flames not greyish smoke (the previous low-alpha
+    // ember stack additively layered into a desaturated colour).
     let hue = '255,140,40';                       // hot orange base
     let sz = (2.5 + Math.random() * 2.0) * sizeMul;
-    if (novaJustFired)   { hue = '255,200,60';  sz *= 1.4; }   // bright yellow-orange
-    if (supernovaActive) { hue = '255,235,180'; sz *= 1.5; }   // white-hot warm
-    // Supernova: emit 3 embers per cycle with wider lateral spread; default
-    // emits 1 (the existing single ember per cycle reads as cool but quiet).
+    let novaState = false;
+    if (novaJustFired)   { hue = '255,200,60';  sz *= 1.4; novaState = true; }   // bright yellow-orange
+    if (supernovaActive) { hue = '255,235,180'; sz *= 1.5; novaState = true; }   // white-hot warm
+    // Boost alpha during nova states. The renderer's per-particle 0.6 trail
+    // dimming gets bypassed via `bright: true` so flames pop instead of
+    // sitting at 60 % alpha.
+    const emberAlphaMul = novaState ? Math.min(1, alphaMul * 1.45) : alphaMul;
     const emberCount = supernovaActive ? 3 : 1;
     const spread = supernovaActive ? 18 : 8;
     for (let ei = 0; ei < emberCount; ei++) {
@@ -16775,17 +16819,25 @@ function emitOrbTrailUnlocked(orb, intensity, sizeMul, alphaMul, px, py, bx, by,
         hue,
         flicker: Math.random() * 6.28,
         life: 1, size: sz * (0.85 + Math.random() * 0.35),
-        alphaMul, startTime: nowOt, maxLifeMs: hyperOn ? 600 : 450,
+        bright: novaState,
+        alphaMul: emberAlphaMul, startTime: nowOt, maxLifeMs: hyperOn ? 600 : 450,
       }, ORB_TRAIL_CAP);
     }
-    if (hyperOn) {
+    // Nova-state CORE: brighter, larger, shorter-lived white-yellow ember
+    // at the player's position so the eye reads "ignition flash" before
+    // resolving the sprayed embers around it. One per emit cycle.
+    if (novaState) {
       pushCapped(orbTrailParticles, {
-        kind: 'line',
-        x: px, y: py,
-        vx: bx * 1.8, vy: by * 1.8,
-        dx: bx, dy: by, len: 22 * sizeMul,
-        hue: '255,170,60',
-        life: 1, alphaMul, startTime: nowOt, maxLifeMs: 320,
+        kind: 'ember',
+        x: player.x, y: player.y,
+        vx: bx * 0.15 + (Math.random() - 0.5) * 0.3,
+        vy: by * 0.15 + (Math.random() - 0.5) * 0.3,
+        hue: supernovaActive ? '255,250,220' : '255,230,140',
+        flicker: Math.random() * 6.28,
+        life: 1, size: (3.5 + Math.random() * 1.5) * sizeMul,
+        bright: true,
+        alphaMul: Math.min(1, alphaMul * 1.6),
+        startTime: nowOt, maxLifeMs: 250,
       }, ORB_TRAIL_CAP);
     }
   } else if (orb === 'nebula') {
@@ -16872,93 +16924,102 @@ function emitOrbTrailUnlocked(orb, intensity, sizeMul, alphaMul, px, py, bx, by,
   }
 }
 
-// v1.7.0 polish round 3: Warp aerodynamic streamlines.
+// v1.7.0 polish r3-r4: Warp aerodynamic streamlines.
 //
-// Spawn N polyline particles ahead of the orb at perpendicular offsets,
-// each a snapshot of an air streamline curving around the player's
-// silhouette. Once spawned, the streamline is FIXED in screen space — it
-// fades alpha over life and is then evicted. New streamlines spawn every
-// emit cycle, creating the impression of continuous wind flow.
+// Each streamline is a baked polyline that flows opposite the player's
+// motion vector. Most of the streamline length is BEHIND the orb (head
+// 30 px ahead, tail 90 px behind) so it reads as wind flowing past, not
+// caging the orb. Slight per-segment wobble + subtle deflection (3-5 px
+// peak) shape the curve organically without the previous dramatic bend.
+// Once spawned, the polyline is FIXED in screen space — it fades alpha
+// over life and is evicted.
 //
-// Density scales with player intensity at base, multiplied by hyperspeed
-// stack count when hyperspeed is active. Color shifts from soft blue-white
-// at base to brighter white-cyan at hyperspeed. Line width scales gently
-// at high stacks.
+// Density tuned sparser at base (idle: 0-1, slow: 1-2, active: 2-4) and
+// dramatic during hyperspeed (4-8 base, 10-12 at 7+ stacks). Color shifts
+// from soft blue-white at base to brighter white-cyan at hyperspeed; line
+// width 0.7-1.0 px (was 0.9-1.5 — thinner reads more like air).
 //
-// Performance: cap 40 streamlines × 10 segments × 2 floats = 800 numbers
-// resident, single stroke per streamline = ~40 strokes per render frame.
-// Cheaper than 30 alpha-blended circles.
+// Performance: cap 40 streamlines × 10 segments. Single stroke per line.
 function spawnWarpStreamlines(intensity, sizeMul, alphaMul, hyperOn, stacks, bx, by) {
-  // Spawn count per emit cycle — see prompt:
-  //   Idle / slow:      1-2
-  //   Active:           2-4
-  //   Hyperspeed base:  4-8
-  //   Hyperspeed peak:  up to 12 at 7+ stacks.
+  // Spawn count per emit cycle, tuned per round-4 spec.
   let spawnCount;
   if (!hyperOn) {
-    // intensity ranges roughly 0..6 for typical play.
-    spawnCount = Math.max(1, Math.min(4, 1 + Math.floor(intensity * 0.45)));
+    if (intensity < 0.5) {
+      spawnCount = Math.random() < 0.4 ? 1 : 0;                       // idle: 0-1
+    } else if (intensity < 1.5) {
+      spawnCount = 1 + (Math.random() < 0.45 ? 1 : 0);                // slow: 1-2
+    } else {
+      spawnCount = 2 + Math.floor(Math.random() * 3);                 // active: 2-4
+    }
   } else {
-    // Stack-scaled multiplier.
-    const stackMul = stacks <= 3 ? 1.5 : (stacks <= 6 ? 2.0 : 3.0);
-    spawnCount = Math.max(2, Math.min(12, Math.round(4 * stackMul)));
+    if (stacks >= 7) {
+      spawnCount = 10 + Math.floor(Math.random() * 3);                // 10-12
+    } else if (stacks >= 4) {
+      spawnCount = 6 + Math.floor(Math.random() * 3);                 // 6-8
+    } else {
+      spawnCount = 4 + Math.floor(Math.random() * 3);                 // 4-6
+    }
   }
+  if (spawnCount <= 0) return;
 
-  // Motion direction (-bx, -by) is "behind player". The streamline FLOWS in
-  // that direction (opposite of player motion). bx/by from emitOrbTrail is
-  // already -velocity / |velocity|, i.e. the "behind" unit vector. So flow
-  // is +bx/+by; the head spawns in the opposite direction (ahead of player
-  // = -bx/-by).
-  const fx = bx, fy = by;            // flow direction (downstream)
-  const ax = -bx, ay = -by;          // motion direction (upstream / orb's heading)
-  const perpX = -fy, perpY = fx;     // 90° CCW from flow
+  // bx/by from emitOrbTrail is the unit "behind" vector (opposite of motion).
+  // Flow direction is +bx/+by (downstream); motion direction (head spawn) is
+  // the negation.
+  const fx = bx, fy = by;
+  const ax = -bx, ay = -by;
+  const perpX = -fy, perpY = fx;
 
-  const N = 10;                      // segments per streamline
-  const streamLen = 90;              // total streamline length
-  const upstreamAheadDist = 38;      // head spawns this far ahead of orb
-  const orbDeflectR = 22;            // deflection range around player center
-  const deflectStrength = 14;        // peak px deflection at orb level
+  const N = 10;
+  const streamLen = 120;             // total length, was 90
+  const upstreamAheadDist = 30;      // head 30 px ahead of orb (was 38)
+  const orbDeflectR = 22;
+  const deflectStrength = 4;         // SUBTLE deflection (was 14)
 
-  // Color + width state-driven.
-  const hue   = hyperOn ? '220,240,255' : '180,220,255';
-  const width = hyperOn ? (stacks >= 7 ? 1.5 : stacks >= 4 ? 1.2 : 1.0) : 0.9;
-  // Subtle per-stack pulse at high stacks: brightness oscillates ±10 %.
+  const hue = hyperOn ? '220,240,255' : '180,220,255';
+  // Thinner overall: 0.7-1.0 base, scaling slightly at high stacks.
+  let width = hyperOn ? (stacks >= 7 ? 1.0 : stacks >= 4 ? 0.9 : 0.8) : 0.75;
+  width += (Math.random() - 0.5) * 0.1; // slight per-line variance
   const pulse = (hyperOn && stacks >= 7) ? (0.95 + 0.1 * Math.sin(frame * 0.18)) : 1.0;
   const lineAlpha = Math.min(1, alphaMul * pulse);
 
   for (let s = 0; s < spawnCount; s++) {
-    // Spawn perpendicular offset: ±36 px. Wider than orb radius so most
-    // streamlines pass clear; narrow ones get deflected.
-    const offset = (Math.random() * 2 - 1) * 36;
-    // Pre-allocate flat float array for segment positions (x0,y0,x1,y1,...).
+    // Wider perpendicular range and bias toward edges so spacing isn't
+    // uniform across the [-50, +50] band — sample with cube-bias which
+    // pushes most spawns toward the outside (clear of the orb).
+    const u = Math.random() * 2 - 1;             // [-1, 1]
+    const biased = u * u * u;                    // cubed: more weight at edges
+    const offset = biased * 50;
+    // Per-line wobble seed and frequency for the slight curve along the
+    // length. Each segment offsets perpendicular by a sine of its longPos.
+    const wobblePhase = Math.random() * Math.PI * 2;
+    const wobbleAmp = 1.5 + Math.random() * 2.0;  // ±1.5-3.5 px peak
+    const wobbleFreq = 0.06 + Math.random() * 0.04;
     const pts = new Array(N * 2);
     for (let i = 0; i < N; i++) {
-      const u = i / (N - 1);                       // 0..1
-      const longPos = u * streamLen;               // 0 (head) → streamLen (tail)
-      // Distance along the line from where the orb sits (which is at
-      // longPos = upstreamAheadDist, since head is at +upstreamAheadDist
-      // from player along motion direction, i.e. -upstreamAheadDist along
-      // flow direction... we measure from head along flow, so player is at
-      // longPos = upstreamAheadDist).
+      const t = i / (N - 1);                     // 0..1
+      const longPos = t * streamLen;             // 0 (head) → streamLen (tail)
       const distFromOrbAlongLine = Math.abs(longPos - upstreamAheadDist);
-      // Deflection pushes the segment further FROM the orb in the perpendicular
-      // direction when it's near the orb's longitudinal position.
       let perpAmt = offset;
       if (distFromOrbAlongLine < orbDeflectR) {
         const sign = offset >= 0 ? 1 : -1;
-        const proximity = 1 - distFromOrbAlongLine / orbDeflectR;  // 1 at orb, 0 at edge
+        const proximity = 1 - distFromOrbAlongLine / orbDeflectR;
         perpAmt += sign * deflectStrength * (proximity * proximity);
       }
+      // Slight wobble along the length for organic flow. Tapers off near
+      // the head (so the line looks anchored ahead of the orb) and grows
+      // toward the tail.
+      const wobble = Math.sin(longPos * wobbleFreq + wobblePhase) * wobbleAmp * Math.min(1, t * 1.4);
+      perpAmt += wobble;
       const sx = player.x + ax * upstreamAheadDist + fx * longPos + perpX * perpAmt;
       const sy = player.y + ay * upstreamAheadDist + fy * longPos + perpY * perpAmt;
-      pts[i * 2] = sx;
+      pts[i * 2]     = sx;
       pts[i * 2 + 1] = sy;
     }
     pushCapped(warpStreamlines, {
       pts, N,
-      hue, width,
+      hue, width: Math.max(0.6, width),
       startTime: Date.now(),
-      maxLifeMs: hyperOn ? 800 : 600,
+      maxLifeMs: hyperOn ? 800 : 700,
       alphaMul: lineAlpha,
     }, WARP_STREAMLINE_CAP);
   }
@@ -17158,21 +17219,24 @@ function drawOrbTrailParticles(tctx = ctx) {
       ctx.fill();
     }
   }
-  // Pass 2: ember particles with additive blending. v1.7.0 polish r3:
-  // hue lerps toward deep red-orange (220,70,20) once life drops below 0.5
-  // so dying embers cool off visually instead of just fading.
+  // Pass 2: ember particles with additive blending. v1.7.0 polish r3-r4:
+  // hue lerps toward deep red-orange (220,70,20) once life drops below 0.3
+  // (was 0.5) so embers stay bright through most of their life and cool
+  // off visually only at the end. `bright: true` particles skip the 0.6
+  // global trail dimming so flames pop on nova / supernova states.
   ctx.globalCompositeOperation = 'lighter';
   for (const p of orbTrailParticles) {
     if (p.kind !== 'ember') continue;
-    const a = Math.max(0, p.life) * (p.alphaMul || 0.8) * 0.6;
+    const dim = p.bright ? 1.0 : 0.6;
+    const a = Math.max(0, p.life) * (p.alphaMul || 0.8) * dim;
     ctx.globalAlpha = a;
     let renderHue = p.hue;
-    if (p.life < 0.5) {
+    if (p.life < 0.3) {
       const parts = p.hue.split(',');
       const r0 = parseInt(parts[0], 10) | 0;
       const g0 = parseInt(parts[1], 10) | 0;
       const b0 = parseInt(parts[2], 10) | 0;
-      const t = Math.min(1, (0.5 - p.life) / 0.5);
+      const t = Math.min(1, (0.3 - p.life) / 0.3);
       const r = Math.round(r0 * (1 - t) + 220 * t);
       const g = Math.round(g0 * (1 - t) + 70  * t);
       const b = Math.round(b0 * (1 - t) + 20  * t);
@@ -20005,23 +20069,26 @@ function drawOrbPreviewUnlocked(particles, orbKey, color, cx, cy, t) {
       });
     }
   } else if (orbKey === 'nebula') {
-    // v1.7.0 polish r3: wind-tunnel streamline preview. Spawn 1-2 baked
-    // polylines per emit cycle, flowing downward (matches gameplay's
-    // "flow opposite to motion" — preview orb is stationary, but the bob
-    // motion is upward so flow is downward). Each streamline has 8-10
-    // segments with deflection around the static center.
-    const spawn = Math.random() < 0.6 ? 1 : 0;
-    for (let s = 0; s < spawn + 1; s++) {
-      const N = 9;
-      const streamLen = 110;
-      const upstreamAheadDist = 40;
+    // v1.7.0 polish r4: wind-tunnel streamline preview matching the new
+    // shape — head 30 px above the bobbing orb, tail 90 px below (most of
+    // the line BEHIND the orb), subtle deflection, slight wobble. Sparse
+    // emit so the preview reads like the new sparse-at-base gameplay.
+    if (Math.random() < 0.55) {
+      const N = 10;
+      const streamLen = 120;
+      const upstreamAheadDist = 30;
       const orbDeflectR = 32;
-      const deflectStrength = 18;
-      const offset = (Math.random() * 2 - 1) * 44;
+      const deflectStrength = 5;
+      // Cube-biased offset so spawns favor the edges (clear of the orb).
+      const u = Math.random() * 2 - 1;
+      const offset = u * u * u * 50;
+      const wobblePhase = Math.random() * Math.PI * 2;
+      const wobbleAmp = 2.0 + Math.random() * 1.5;
+      const wobbleFreq = 0.06 + Math.random() * 0.04;
       const pts = [];
       for (let i = 0; i < N; i++) {
-        const u = i / (N - 1);
-        const longPos = u * streamLen;
+        const t = i / (N - 1);
+        const longPos = t * streamLen;
         const distFromOrbAlongLine = Math.abs(longPos - upstreamAheadDist);
         let perpAmt = offset;
         if (distFromOrbAlongLine < orbDeflectR) {
@@ -20029,18 +20096,16 @@ function drawOrbPreviewUnlocked(particles, orbKey, color, cx, cy, t) {
           const proximity = 1 - distFromOrbAlongLine / orbDeflectR;
           perpAmt += sign * deflectStrength * (proximity * proximity);
         }
-        // Flow is downward (vec 0,1); motion (orb's heading) is upward (0,-1).
-        // Perpendicular of flow (0,1) is (-1,0).
-        const sx = cx - upstreamAheadDist * 0 + 0 * longPos + (-1) * perpAmt;
-        const sy = cy + (-1) * upstreamAheadDist + 1 * longPos + 0 * perpAmt;
-        // Above simplifies: sx = cx - perpAmt; sy = cy - upstreamAheadDist + longPos.
+        perpAmt += Math.sin(longPos * wobbleFreq + wobblePhase) * wobbleAmp * Math.min(1, t * 1.4);
+        // Flow downward in the preview (orb bobs upward, so wind blows down).
+        // sx = cx - perpAmt; sy = cy - upstreamAheadDist + longPos.
         pts.push(cx - perpAmt, cy - upstreamAheadDist + longPos);
       }
       particles.push({
         kind: 'streamline',
         pts, N,
         hue: '180,220,255',
-        width: 0.9 + Math.random() * 0.4,
+        width: 0.7 + Math.random() * 0.3,
         startTime: performance.now(),
         maxLifeMs: 700,
         life: 1,
