@@ -5811,9 +5811,11 @@ function ghostlightBurst(x, y, rank) {
 }
 // Resolves all queued Ghostlight kill radii against the current bodies
 // list. Called once per update tick at end-of-tick, after all primary
-// kill loops have run. Bodies inside any queued radius (excluding the
-// trigger body via a distance epsilon) get the standard ghost destroy
-// effects + 'ghost' source flag for downstream procs (Soulbound, etc.).
+// kill loops have run. Bodies whose edge overlaps any queued burst
+// (excluding the trigger body via a distance epsilon) get the standard
+// ghost destroy effects + 'ghost' source flag for downstream procs
+// (Soulbound, etc.). Threshold mirrors shield EMP's `dd < r.radius +
+// b.radius` so a body the visual ring touches is reliably killed.
 function resolveGhostlightPendingKills() {
   if (!ghostlightPendingKills.length) return;
   const survivors = [];
@@ -5822,10 +5824,12 @@ function resolveGhostlightPendingKills() {
     for (const k of ghostlightPendingKills) {
       const dx = b.x - k.x, dy = b.y - k.y;
       const d2 = dx * dx + dy * dy;
-      const r2k = k.r * k.r;
-      // Skip trigger body (the original kill site already emitted its
-      // destroy effects). Distance epsilon: 0.5 px squared.
-      if (d2 < r2k && d2 > 0.25) { killed = true; break; }
+      // Edge-overlap check (matches shield EMP at index.html:13052). Reach
+      // is per-body, so r2k is recomputed inside the loop. Skip trigger
+      // body (the original kill site already emitted its destroy effects)
+      // via a 0.5 px squared epsilon.
+      const reach = k.r + b.radius;
+      if (d2 < reach * reach && d2 > 0.25) { killed = true; break; }
     }
     if (killed) {
       emitDestroyBurst(b.x, b.y, POWERUP_COLORS.ghost.rgb);
