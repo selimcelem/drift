@@ -9513,23 +9513,53 @@ function updatePixiPlayerLayer() {
       }
     }
   }
-  // v1.7.0 polish r3: Warp wind-tunnel streamlines on the additive layer.
-  // Single lineStyle + multiple lineTo per streamline = one batched stroke.
-  if (trailVisible && pixiTrailAdditiveGraphics && warpStreamlines.length) {
+  // v1.7.0 polish r5: Warp lightning bolts on the additive layer. Two
+  // strokes per bolt — thicker cyan outer + thin white inner core — and
+  // one or two short branches at hyperspeed 7+ stacks. Same flash-curve
+  // (full bright for 25 % of life, then fade) as the Canvas 2D path.
+  if (trailVisible && pixiTrailAdditiveGraphics && warpLightning.length) {
     const now = Date.now();
-    for (const sl of warpStreamlines) {
-      const age = (now - sl.startTime) / sl.maxLifeMs;
+    const OUTER_INT = (180 << 16) | (220 << 8) | 255;
+    const INNER_INT = (240 << 16) | (250 << 8) | 255;
+    for (const b of warpLightning) {
+      const age = (now - b.startTime) / b.maxLifeMs;
       if (age >= 1) continue;
-      const a = (1 - age) * sl.alphaMul;
+      const flash = age < 0.25 ? 1 : (1 - (age - 0.25) / 0.75);
+      const a = flash * b.alphaMul;
       if (a <= 0.02) continue;
-      const [hr, hg, hb] = sl.hue.split(',').map(n => parseInt(n, 10) | 0);
-      const lineInt = (hr << 16) | (hg << 8) | hb;
-      pixiTrailAdditiveGraphics.lineStyle({ width: sl.width, color: lineInt, alpha: a, cap: 'round', join: 'round' });
-      pixiTrailAdditiveGraphics.moveTo(sl.pts[0], sl.pts[1]);
-      for (let i = 1; i < sl.N; i++) {
-        pixiTrailAdditiveGraphics.lineTo(sl.pts[i * 2], sl.pts[i * 2 + 1]);
+
+      // Outer cyan-blue.
+      pixiTrailAdditiveGraphics.lineStyle({ width: b.outerW, color: OUTER_INT, alpha: a * 0.85, cap: 'round', join: 'round' });
+      pixiTrailAdditiveGraphics.moveTo(b.pts[0], b.pts[1]);
+      for (let i = 1; i < b.N; i++) {
+        pixiTrailAdditiveGraphics.lineTo(b.pts[i * 2], b.pts[i * 2 + 1]);
       }
       pixiTrailAdditiveGraphics.lineStyle();
+
+      // Inner white core.
+      pixiTrailAdditiveGraphics.lineStyle({ width: b.innerW, color: INNER_INT, alpha: a, cap: 'round', join: 'round' });
+      pixiTrailAdditiveGraphics.moveTo(b.pts[0], b.pts[1]);
+      for (let i = 1; i < b.N; i++) {
+        pixiTrailAdditiveGraphics.lineTo(b.pts[i * 2], b.pts[i * 2 + 1]);
+      }
+      pixiTrailAdditiveGraphics.lineStyle();
+
+      if (b.branches) {
+        for (const br of b.branches) {
+          pixiTrailAdditiveGraphics.lineStyle({ width: b.outerW * 0.7, color: OUTER_INT, alpha: a * 0.7, cap: 'round', join: 'round' });
+          pixiTrailAdditiveGraphics.moveTo(br.pts[0], br.pts[1]);
+          for (let i = 1; i <= br.N; i++) {
+            pixiTrailAdditiveGraphics.lineTo(br.pts[i * 2], br.pts[i * 2 + 1]);
+          }
+          pixiTrailAdditiveGraphics.lineStyle();
+          pixiTrailAdditiveGraphics.lineStyle({ width: b.innerW * 0.7, color: INNER_INT, alpha: a * 0.85, cap: 'round', join: 'round' });
+          pixiTrailAdditiveGraphics.moveTo(br.pts[0], br.pts[1]);
+          for (let i = 1; i <= br.N; i++) {
+            pixiTrailAdditiveGraphics.lineTo(br.pts[i * 2], br.pts[i * 2 + 1]);
+          }
+          pixiTrailAdditiveGraphics.lineStyle();
+        }
+      }
     }
   }
 }
@@ -12154,7 +12184,7 @@ function resetGame() {
   ghostlightPendingKills = [];
   beyondAfterimage = null;
   orbTrailParticles = [];
-  warpStreamlines = [];
+  warpLightning = [];
   planetRipples = [];
   destroyEffects = [];
   deathShards = [];
@@ -13817,7 +13847,7 @@ function update() {
 
   emitOrbTrail();
   updateOrbTrailParticles();
-  updateWarpStreamlines();
+  updateWarpLightning();
 
   if (checkCollisions()) triggerDeath();
 }
@@ -13906,7 +13936,7 @@ function updateTutorial() {
   // Trail particles so the orb shows movement nicely during steps 2/3.
   emitOrbTrail();
   updateOrbTrailParticles();
-  updateWarpStreamlines();
+  updateWarpLightning();
   // v1.6.4 Fix: advance novaRings (radius growth + life decay). The
   // production pipeline does this in update()'s nova-rings block (~12604),
   // which is short-circuited when state === 'tutorial'. Without this loop
@@ -16536,14 +16566,17 @@ let orbTrailParticles = [];
 // Phantom's denser wisps, and the radial bursts emitted on nova-just-fired.
 const ORB_TRAIL_CAP = 30;
 
-// v1.7.0 polish (round 3): Warp Reality Tear redesign — wind-tunnel
-// streamlines drawn around the orb. Polyline particles, baked at spawn,
-// fade over ~700 ms, additively blended to glow against dark space. Held
-// in a separate array from orbTrailParticles so they don't compete with
-// the 30-particle cap (they're thinner / longer-lived and a wind-tunnel
-// look needs density). Cap 40 per the spec.
-let warpStreamlines = [];
-const WARP_STREAMLINE_CAP = 40;
+// v1.7.0 polish (round 5): Warp Reality Tear is now LIGHTNING bolts —
+// jagged segmented streaks projected backward from the orb edge, flashing
+// in (≤350 ms) with a thicker cyan-blue outer pass + thin white inner
+// core, additively blended. Replaces the wind-tunnel streamline system
+// from rounds 3-4 (which never sold the "high-speed warp" feel — see
+// _reference/trails/warp_lightning_streaks.png).
+//
+// Held in its own array so it doesn't compete with the 30-particle orb
+// trail cap. Cap 24 — bolts are short-lived so churn is high.
+let warpLightning = [];
+const WARP_LIGHTNING_CAP = 24;
 
 function emitOrbTrail() {
   if (state !== 'playing') return;
@@ -16736,17 +16769,10 @@ function emitOrbTrailUnlocked(orb, intensity, sizeMul, alphaMul, px, py, bx, by,
         }, ORB_TRAIL_CAP);
       }
     }
-    // Hyperspeed: streak speed-line behind the player on top of orbit.
-    if (hyperOn) {
-      pushCapped(orbTrailParticles, {
-        kind: 'line',
-        x: px, y: py,
-        vx: bx * 1.8, vy: by * 1.8,
-        dx: bx, dy: by, len: 18 * sizeMul,
-        hue: comboActive ? '255,255,200' : null,
-        life: 1, alphaMul, startTime: nowOt, maxLifeMs: 320,
-      }, ORB_TRAIL_CAP);
-    }
+    // v1.7.0 polish r5: removed the leftover hyperspeed speed-line streak.
+    // Drifter's hyperspeed visual is the orbit widening (orbitR scales from
+    // 18 → 24 above when hyperOn is true). The separate line was a holdover
+    // from an earlier iteration and read as a competing element.
   } else if (orb === 'cosmic') {
     // SPECTER'S VEIL — wisps drift like ink. Ghost active doubles density
     // and darkens. Eternal Phantom (ghost_ghost combo) adds afterimage
@@ -16840,14 +16866,56 @@ function emitOrbTrailUnlocked(orb, intensity, sizeMul, alphaMul, px, py, bx, by,
         startTime: nowOt, maxLifeMs: 250,
       }, ORB_TRAIL_CAP);
     }
+    // v1.7.0 polish r5: FLAME WRAP — flame particles spawn around the orb
+    // perimeter and move tangentially (clockwise/counter-clockwise mix)
+    // before falling back as embers. Reads as fire engulfing the orb (per
+    // the Inferno reference image) rather than just a trail behind it.
+    // Always emits 2-3 per cycle — these define the "flaming ball" base
+    // look. Nova / supernova states bump count + brighten hue.
+    const wrapBaseHue = supernovaActive ? '255,250,200'
+                     : (novaJustFired ? '255,220,100'
+                                      : '255,170,60');
+    const wrapCount = supernovaActive ? 4 : (novaJustFired ? 3 : 2 + (Math.random() < 0.4 ? 1 : 0));
+    for (let wi = 0; wi < wrapCount; wi++) {
+      // Random angle around the orb. Spawn at radius PLAYER_R + 4..12 so the
+      // flame visibly hugs the edge.
+      const ang = Math.random() * Math.PI * 2;
+      const r = PLAYER_R + 4 + Math.random() * 8;
+      const sx = player.x + Math.cos(ang) * r;
+      const sy = player.y + Math.sin(ang) * r;
+      // Tangent direction: ±90° from radial. Mix CW + CCW for a turbulent
+      // wrap. Bias slightly backward (toward bx, by) so flames also drift
+      // in the trail direction — comet-like.
+      const tangentSign = Math.random() < 0.5 ? 1 : -1;
+      const tx = -Math.sin(ang) * tangentSign;
+      const ty =  Math.cos(ang) * tangentSign;
+      const tangentSpeed = 1.0 + Math.random() * 1.2;
+      // Slight backward bias: blend tangent with `behind` direction (bx, by).
+      const backBias = 0.35;
+      const vxOut = tx * tangentSpeed * (1 - backBias) + bx * tangentSpeed * backBias;
+      const vyOut = ty * tangentSpeed * (1 - backBias) + by * tangentSpeed * backBias;
+      pushCapped(orbTrailParticles, {
+        kind: 'ember',
+        x: sx, y: sy,
+        vx: vxOut, vy: vyOut,
+        hue: wrapBaseHue,
+        flicker: Math.random() * 6.28,
+        life: 1, size: (2.5 + Math.random() * 1.8) * sizeMul,
+        bright: true,
+        // Wrap particles ignore gravity briefly via wrap:true — handled in
+        // updateOrbTrailParticles, gravity is reduced so they hug the orb
+        // rather than dropping immediately.
+        wrap: true,
+        alphaMul: Math.min(1, (novaState ? alphaMul * 1.45 : alphaMul) * 1.1),
+        startTime: nowOt, maxLifeMs: novaState ? 360 : 320,
+      }, ORB_TRAIL_CAP);
+    }
   } else if (orb === 'nebula') {
-    // REALITY TEAR — wind-tunnel streamlines (v1.7.0 polish round 3).
-    // Each streamline is a baked polyline that flows opposite the player's
-    // motion vector and curves around the orb's silhouette. Streamlines
-    // stay fixed in screen-space once spawned (no follow-the-player), fade
-    // over their life, and render with additive blending. Density scales
-    // with player intensity at base, then with hyperspeed stacks.
-    spawnWarpStreamlines(intensity, sizeMul, alphaMul, hyperOn, stacks, bx, by);
+    // REALITY TEAR — lightning bolts (v1.7.0 polish round 5). Streamlines
+    // never sold the high-speed warp feel; replaced with jagged segmented
+    // lightning streaks that flash backward from the orb's edge. See
+    // _reference/trails/warp_lightning_streaks.png.
+    spawnWarpLightning(intensity, sizeMul, alphaMul, hyperOn, stacks, bx, by);
   } else if (orb === 'asteroid') {
     // AEGIS SHARDS — 5 fragments orbit close to the player. Trail itself
     // adapts to shield state (no separate hex shield UI element):
@@ -16924,124 +16992,145 @@ function emitOrbTrailUnlocked(orb, intensity, sizeMul, alphaMul, px, py, bx, by,
   }
 }
 
-// v1.7.0 polish r3-r4: Warp aerodynamic streamlines.
+// v1.7.0 polish r5: Warp lightning bolts.
 //
-// Each streamline is a baked polyline that flows opposite the player's
-// motion vector. Most of the streamline length is BEHIND the orb (head
-// 30 px ahead, tail 90 px behind) so it reads as wind flowing past, not
-// caging the orb. Slight per-segment wobble + subtle deflection (3-5 px
-// peak) shape the curve organically without the previous dramatic bend.
-// Once spawned, the polyline is FIXED in screen space — it fades alpha
-// over life and is evicted.
+// Each bolt is a baked jagged polyline projected backward from the orb's
+// edge along the motion-reversed direction (with a ±30° spread). Per-
+// segment angular kinks produce real-lightning shapes — not smooth curves.
+// Bolts FLASH (200-350 ms life, full intensity for ~30% of life, then
+// fade out) so the trail constantly renews instead of lingering.
 //
-// Density tuned sparser at base (idle: 0-1, slow: 1-2, active: 2-4) and
-// dramatic during hyperspeed (4-8 base, 10-12 at 7+ stacks). Color shifts
-// from soft blue-white at base to brighter white-cyan at hyperspeed; line
-// width 0.7-1.0 px (was 0.9-1.5 — thinner reads more like air).
+// Render is a two-pass stroke per bolt: thicker cyan outer (3-4 px) +
+// thin white inner core (1.5-2 px). Additive blend.
 //
-// Performance: cap 40 streamlines × 10 segments. Single stroke per line.
-function spawnWarpStreamlines(intensity, sizeMul, alphaMul, hyperOn, stacks, bx, by) {
-  // Spawn count per emit cycle, tuned per round-4 spec.
+// Hyperspeed: longer (90-120 px), more bolts per emit, brighter core. At
+// 7+ stacks an occasional "main bolt" gets one or two short branching
+// sub-bolts forking off mid-length.
+function spawnWarpLightning(intensity, sizeMul, alphaMul, hyperOn, stacks, bx, by) {
+  // Spawn count per emit cycle (every 3rd frame).
   let spawnCount;
   if (!hyperOn) {
     if (intensity < 0.5) {
-      spawnCount = Math.random() < 0.4 ? 1 : 0;                       // idle: 0-1
+      // Idle: very rare (~one bolt every ~200 ms = ~one per 4 emit cycles).
+      spawnCount = Math.random() < 0.25 ? 1 : 0;
     } else if (intensity < 1.5) {
-      spawnCount = 1 + (Math.random() < 0.45 ? 1 : 0);                // slow: 1-2
+      spawnCount = Math.random() < 0.7 ? 1 : 0;                       // slow: 0-1
     } else {
-      spawnCount = 2 + Math.floor(Math.random() * 3);                 // active: 2-4
+      spawnCount = 1 + (Math.random() < 0.5 ? 1 : 0);                 // active: 1-2
     }
   } else {
     if (stacks >= 7) {
-      spawnCount = 10 + Math.floor(Math.random() * 3);                // 10-12
+      spawnCount = 3 + Math.floor(Math.random() * 2);                 // 3-4
     } else if (stacks >= 4) {
-      spawnCount = 6 + Math.floor(Math.random() * 3);                 // 6-8
+      spawnCount = 2 + Math.floor(Math.random() * 2);                 // 2-3
     } else {
-      spawnCount = 4 + Math.floor(Math.random() * 3);                 // 4-6
+      spawnCount = 2 + (Math.random() < 0.4 ? 1 : 0);                 // 2-3
     }
   }
   if (spawnCount <= 0) return;
 
-  // bx/by from emitOrbTrail is the unit "behind" vector (opposite of motion).
-  // Flow direction is +bx/+by (downstream); motion direction (head spawn) is
-  // the negation.
-  const fx = bx, fy = by;
-  const ax = -bx, ay = -by;
-  const perpX = -fy, perpY = fx;
-
-  const N = 10;
-  const streamLen = 120;             // total length, was 90
-  const upstreamAheadDist = 30;      // head 30 px ahead of orb (was 38)
-  const orbDeflectR = 22;
-  const deflectStrength = 4;         // SUBTLE deflection (was 14)
-
-  const hue = hyperOn ? '220,240,255' : '180,220,255';
-  // Thinner overall: 0.7-1.0 base, scaling slightly at high stacks.
-  let width = hyperOn ? (stacks >= 7 ? 1.0 : stacks >= 4 ? 0.9 : 0.8) : 0.75;
-  width += (Math.random() - 0.5) * 0.1; // slight per-line variance
-  const pulse = (hyperOn && stacks >= 7) ? (0.95 + 0.1 * Math.sin(frame * 0.18)) : 1.0;
-  const lineAlpha = Math.min(1, alphaMul * pulse);
+  // bx/by is the unit "behind" vector — bolt PROJECTS in this direction.
+  // If the player is stationary bx=0, by=1 (behind = downward).
+  const projX = bx, projY = by;
+  const orbR = (typeof PLAYER_R === 'number' ? PLAYER_R : 12);
 
   for (let s = 0; s < spawnCount; s++) {
-    // Wider perpendicular range and bias toward edges so spacing isn't
-    // uniform across the [-50, +50] band — sample with cube-bias which
-    // pushes most spawns toward the outside (clear of the orb).
-    const u = Math.random() * 2 - 1;             // [-1, 1]
-    const biased = u * u * u;                    // cubed: more weight at edges
-    const offset = biased * 50;
-    // Per-line wobble seed and frequency for the slight curve along the
-    // length. Each segment offsets perpendicular by a sine of its longPos.
-    const wobblePhase = Math.random() * Math.PI * 2;
-    const wobbleAmp = 1.5 + Math.random() * 2.0;  // ±1.5-3.5 px peak
-    const wobbleFreq = 0.06 + Math.random() * 0.04;
-    const pts = new Array(N * 2);
-    for (let i = 0; i < N; i++) {
-      const t = i / (N - 1);                     // 0..1
-      const longPos = t * streamLen;             // 0 (head) → streamLen (tail)
-      const distFromOrbAlongLine = Math.abs(longPos - upstreamAheadDist);
-      let perpAmt = offset;
-      if (distFromOrbAlongLine < orbDeflectR) {
-        const sign = offset >= 0 ? 1 : -1;
-        const proximity = 1 - distFromOrbAlongLine / orbDeflectR;
-        perpAmt += sign * deflectStrength * (proximity * proximity);
+    // Random ±30° spread off the pure backward direction.
+    const baseAngle = Math.atan2(projY, projX) + (Math.random() - 0.5) * (Math.PI / 3);
+    let dx = Math.cos(baseAngle);
+    let dy = Math.sin(baseAngle);
+    // Origin at orb edge in that direction.
+    const ox = player.x + dx * (orbR + 1);
+    const oy = player.y + dy * (orbR + 1);
+    // Total length: 60-90 base, 90-120 hyperspeed.
+    const totalLen = (hyperOn ? 90 : 60) + Math.random() * 30;
+    // Segment count 4-6.
+    const N = 4 + Math.floor(Math.random() * 3);
+    const stepLen = totalLen / N;
+    const pts = new Array((N + 1) * 2);
+    pts[0] = ox; pts[1] = oy;
+    let cx = ox, cy = oy, cdx = dx, cdy = dy;
+    for (let i = 1; i <= N; i++) {
+      // Per-segment angular kink: ±0.5 rad (~±28°). Bigger kinks read as
+      // more jagged. Slight bias to alternate kink direction so the bolt
+      // doesn't all bend the same way (zigzag look).
+      const kink = (Math.random() - 0.5) * 1.0;
+      const ca = Math.cos(kink), sa = Math.sin(kink);
+      const ndx = cdx * ca - cdy * sa;
+      const ndy = cdx * sa + cdy * ca;
+      cdx = ndx; cdy = ndy;
+      cx += cdx * stepLen;
+      cy += cdy * stepLen;
+      pts[i * 2]     = cx;
+      pts[i * 2 + 1] = cy;
+    }
+
+    // Hyperspeed at 7+ stacks: 25 % chance of a single branching sub-bolt
+    // forking from a mid-segment vertex with shorter length.
+    let branches = null;
+    if (hyperOn && stacks >= 7 && Math.random() < 0.25) {
+      const branchSeg = 1 + Math.floor(Math.random() * Math.max(1, N - 1));
+      const bx0 = pts[branchSeg * 2];
+      const by0 = pts[branchSeg * 2 + 1];
+      // Branch direction: kink off the bolt direction at that segment.
+      const baseDx = pts[branchSeg * 2] - pts[(branchSeg - 1) * 2];
+      const baseDy = pts[branchSeg * 2 + 1] - pts[(branchSeg - 1) * 2 + 1];
+      const baseMag = Math.hypot(baseDx, baseDy) || 1;
+      const bndx = baseDx / baseMag, bndy = baseDy / baseMag;
+      const branchKink = (Math.random() < 0.5 ? 1 : -1) * (0.6 + Math.random() * 0.5);
+      const ca = Math.cos(branchKink), sa = Math.sin(branchKink);
+      let bdx = bndx * ca - bndy * sa;
+      let bdy = bndx * sa + bndy * ca;
+      const bN = 2 + Math.floor(Math.random() * 2); // 2-3 segments
+      const bStep = (totalLen * 0.35) / bN;
+      const bpts = new Array((bN + 1) * 2);
+      bpts[0] = bx0; bpts[1] = by0;
+      let bcx = bx0, bcy = by0;
+      for (let bi = 1; bi <= bN; bi++) {
+        const bk = (Math.random() - 0.5) * 1.2;
+        const bca = Math.cos(bk), bsa = Math.sin(bk);
+        const nbdx = bdx * bca - bdy * bsa;
+        const nbdy = bdx * bsa + bdy * bca;
+        bdx = nbdx; bdy = nbdy;
+        bcx += bdx * bStep;
+        bcy += bdy * bStep;
+        bpts[bi * 2]     = bcx;
+        bpts[bi * 2 + 1] = bcy;
       }
-      // Slight wobble along the length for organic flow. Tapers off near
-      // the head (so the line looks anchored ahead of the orb) and grows
-      // toward the tail.
-      const wobble = Math.sin(longPos * wobbleFreq + wobblePhase) * wobbleAmp * Math.min(1, t * 1.4);
-      perpAmt += wobble;
-      const sx = player.x + ax * upstreamAheadDist + fx * longPos + perpX * perpAmt;
-      const sy = player.y + ay * upstreamAheadDist + fy * longPos + perpY * perpAmt;
-      pts[i * 2]     = sx;
-      pts[i * 2 + 1] = sy;
+      branches = [{ pts: bpts, N: bN }];
     }
-    pushCapped(warpStreamlines, {
-      pts, N,
-      hue, width: Math.max(0.6, width),
+
+    const lifeMs = 200 + Math.random() * 150;
+    const outerW = hyperOn ? (3.0 + Math.random() * 1.0) : (2.5 + Math.random() * 1.0);
+    const innerW = hyperOn ? (1.5 + Math.random() * 0.5) : (1.2 + Math.random() * 0.4);
+    pushCapped(warpLightning, {
+      pts, N: N + 1,
+      branches,
+      outerW, innerW,
       startTime: Date.now(),
-      maxLifeMs: hyperOn ? 800 : 700,
-      alphaMul: lineAlpha,
-    }, WARP_STREAMLINE_CAP);
+      maxLifeMs: lifeMs,
+      alphaMul: Math.min(1, alphaMul * (hyperOn ? 1.05 : 0.95)),
+    }, WARP_LIGHTNING_CAP);
   }
 }
 
-// Cull expired streamlines. Called once per update tick alongside the
-// other particle updates.
-function updateWarpStreamlines() {
-  if (!warpStreamlines.length) return;
+// Cull expired bolts. Called from the update tick.
+function updateWarpLightning() {
+  if (!warpLightning.length) return;
   const now = Date.now();
-  for (let i = warpStreamlines.length - 1; i >= 0; i--) {
-    if (now - warpStreamlines[i].startTime >= warpStreamlines[i].maxLifeMs) {
-      warpStreamlines.splice(i, 1);
+  for (let i = warpLightning.length - 1; i >= 0; i--) {
+    if (now - warpLightning[i].startTime >= warpLightning[i].maxLifeMs) {
+      warpLightning.splice(i, 1);
     }
   }
 }
 
-// Canvas 2D streamline render. Single stroke per streamline (no per-segment
-// alpha gradient — would 10× the stroke count). Additive blend so the
-// thin lines glow against the dark backdrop.
-function drawWarpStreamlines(tctx) {
-  if (!warpStreamlines.length) return;
+// Canvas 2D bolt render: per bolt, two strokes — thicker cyan outer + thin
+// white inner core. Additive blend. Brightness curve flashes (full for
+// first 25 % of life, then linear fade). Branch sub-bolts (hyperspeed 7+)
+// stroke alongside the main bolt.
+function drawWarpLightning(tctx) {
+  if (!warpLightning.length) return;
   const ctx = tctx;
   const now = Date.now();
   ctx.save();
@@ -17049,19 +17138,55 @@ function drawWarpStreamlines(tctx) {
   ctx.lineJoin = 'round';
   const prevComp = ctx.globalCompositeOperation;
   ctx.globalCompositeOperation = 'lighter';
-  for (const sl of warpStreamlines) {
-    const age = (now - sl.startTime) / sl.maxLifeMs;
+  for (const b of warpLightning) {
+    const age = (now - b.startTime) / b.maxLifeMs;
     if (age >= 1) continue;
-    const a = (1 - age) * sl.alphaMul;
+    // Flash curve: full bright for first 25 %, fade to 0 over rest.
+    const flash = age < 0.25 ? 1 : (1 - (age - 0.25) / 0.75);
+    const a = flash * b.alphaMul;
     if (a <= 0.02) continue;
-    ctx.lineWidth = sl.width;
-    ctx.strokeStyle = `rgba(${sl.hue},${a})`;
+
+    // Outer cyan-blue stroke.
+    ctx.strokeStyle = `rgba(180,220,255,${a * 0.85})`;
+    ctx.lineWidth = b.outerW;
     ctx.beginPath();
-    ctx.moveTo(sl.pts[0], sl.pts[1]);
-    for (let i = 1; i < sl.N; i++) {
-      ctx.lineTo(sl.pts[i * 2], sl.pts[i * 2 + 1]);
+    ctx.moveTo(b.pts[0], b.pts[1]);
+    for (let i = 1; i < b.N; i++) {
+      ctx.lineTo(b.pts[i * 2], b.pts[i * 2 + 1]);
     }
     ctx.stroke();
+
+    // Inner white core.
+    ctx.strokeStyle = `rgba(240,250,255,${a})`;
+    ctx.lineWidth = b.innerW;
+    ctx.beginPath();
+    ctx.moveTo(b.pts[0], b.pts[1]);
+    for (let i = 1; i < b.N; i++) {
+      ctx.lineTo(b.pts[i * 2], b.pts[i * 2 + 1]);
+    }
+    ctx.stroke();
+
+    // Branches: render with the same two-pass scheme but slightly thinner.
+    if (b.branches) {
+      for (const br of b.branches) {
+        ctx.strokeStyle = `rgba(180,220,255,${a * 0.7})`;
+        ctx.lineWidth = b.outerW * 0.7;
+        ctx.beginPath();
+        ctx.moveTo(br.pts[0], br.pts[1]);
+        for (let i = 1; i <= br.N; i++) {
+          ctx.lineTo(br.pts[i * 2], br.pts[i * 2 + 1]);
+        }
+        ctx.stroke();
+        ctx.strokeStyle = `rgba(240,250,255,${a * 0.85})`;
+        ctx.lineWidth = b.innerW * 0.7;
+        ctx.beginPath();
+        ctx.moveTo(br.pts[0], br.pts[1]);
+        for (let i = 1; i <= br.N; i++) {
+          ctx.lineTo(br.pts[i * 2], br.pts[i * 2 + 1]);
+        }
+        ctx.stroke();
+      }
+    }
   }
   ctx.globalCompositeOperation = prevComp;
   ctx.restore();
@@ -17097,8 +17222,17 @@ function updateOrbTrailParticles() {
         // v1.7.0: pyroclasm embers fall under gravity instead of curling up
         // — distinguishes them from the default Inferno fire trail. Slight
         // air resistance on horizontal velocity so they settle into a fall.
-        p.vy += 0.05;
-        p.vx *= 0.985;
+        // v1.7.0 polish r5: flame-wrap particles (kind: 'ember', wrap:true)
+        // get reduced gravity + heavier damping so they hug the orb's edge
+        // for their short life instead of dropping like a regular ember.
+        if (p.wrap) {
+          p.vy += 0.012;
+          p.vx *= 0.94;
+          p.vy *= 0.94;
+        } else {
+          p.vy += 0.05;
+          p.vx *= 0.985;
+        }
         if (p.flicker !== undefined) p.flicker += 0.28;
       }
     }
@@ -17261,11 +17395,11 @@ function drawOrbTrailParticles(tctx = ctx) {
 
 // drawTrail now renders the orb particle stream only. The legacy cyan position
 // trail was replaced per spec — every orb shares the same particle system.
-// v1.7.0 polish r3: Warp streamlines render after the particle stream so
-// they glow on top with additive blending.
+// v1.7.0 polish r5: Warp lightning bolts render after the particle stream
+// so they glow on top with additive blending.
 function drawTrail() {
   drawOrbTrailParticles();
-  drawWarpStreamlines(ctx);
+  drawWarpLightning(ctx);
 }
 
 function drawPlayer(tctx = ctx) {
@@ -18513,8 +18647,9 @@ function loop() {
         destroyEffects = [];
         deathShards = [];
         orbTrailParticles = [];
-        warpStreamlines = [];
+        warpLightning = [];
         crackFragments = [];
+
       }
     }
     // Heap watchdog: every 180 frames (~3s @60fps) read performance.memory on
@@ -19427,7 +19562,7 @@ function goToMainMenu() {
   ghostlightPendingKills = [];
   beyondAfterimage = null;
   orbTrailParticles = [];
-  warpStreamlines = [];
+  warpLightning = [];
   planetRipples = [];
   destroyEffects = [];
   deathShards = [];
@@ -20069,45 +20204,37 @@ function drawOrbPreviewUnlocked(particles, orbKey, color, cx, cy, t) {
       });
     }
   } else if (orbKey === 'nebula') {
-    // v1.7.0 polish r4: wind-tunnel streamline preview matching the new
-    // shape — head 30 px above the bobbing orb, tail 90 px below (most of
-    // the line BEHIND the orb), subtle deflection, slight wobble. Sparse
-    // emit so the preview reads like the new sparse-at-base gameplay.
-    if (Math.random() < 0.55) {
-      const N = 10;
-      const streamLen = 120;
-      const upstreamAheadDist = 30;
-      const orbDeflectR = 32;
-      const deflectStrength = 5;
-      // Cube-biased offset so spawns favor the edges (clear of the orb).
-      const u = Math.random() * 2 - 1;
-      const offset = u * u * u * 50;
-      const wobblePhase = Math.random() * Math.PI * 2;
-      const wobbleAmp = 2.0 + Math.random() * 1.5;
-      const wobbleFreq = 0.06 + Math.random() * 0.04;
-      const pts = [];
-      for (let i = 0; i < N; i++) {
-        const t = i / (N - 1);
-        const longPos = t * streamLen;
-        const distFromOrbAlongLine = Math.abs(longPos - upstreamAheadDist);
-        let perpAmt = offset;
-        if (distFromOrbAlongLine < orbDeflectR) {
-          const sign = offset >= 0 ? 1 : -1;
-          const proximity = 1 - distFromOrbAlongLine / orbDeflectR;
-          perpAmt += sign * deflectStrength * (proximity * proximity);
-        }
-        perpAmt += Math.sin(longPos * wobbleFreq + wobblePhase) * wobbleAmp * Math.min(1, t * 1.4);
-        // Flow downward in the preview (orb bobs upward, so wind blows down).
-        // sx = cx - perpAmt; sy = cy - upstreamAheadDist + longPos.
-        pts.push(cx - perpAmt, cy - upstreamAheadDist + longPos);
+    // v1.7.0 polish r5: lightning bolt preview — jagged segmented bolts
+    // flashing backward (downward) from the bobbing orb. Sparse spawn rate
+    // matches the new gameplay base cadence; outer cyan + inner white.
+    if (Math.random() < 0.4) {
+      // Backward direction in the preview is downward (orb bobs upward).
+      const baseAngle = Math.PI / 2 + (Math.random() - 0.5) * (Math.PI / 3);
+      let dx = Math.cos(baseAngle), dy = Math.sin(baseAngle);
+      const ox = cx + dx * 24;
+      const oy = cy + dy * 24;
+      const totalLen = 70 + Math.random() * 30;
+      const N = 4 + Math.floor(Math.random() * 3);
+      const stepLen = totalLen / N;
+      const pts = [ox, oy];
+      let curX = ox, curY = oy, cdx = dx, cdy = dy;
+      for (let i = 1; i <= N; i++) {
+        const kink = (Math.random() - 0.5) * 1.0;
+        const ca = Math.cos(kink), sa = Math.sin(kink);
+        const ndx = cdx * ca - cdy * sa;
+        const ndy = cdx * sa + cdy * ca;
+        cdx = ndx; cdy = ndy;
+        curX += cdx * stepLen;
+        curY += cdy * stepLen;
+        pts.push(curX, curY);
       }
       particles.push({
-        kind: 'streamline',
-        pts, N,
-        hue: '180,220,255',
-        width: 0.7 + Math.random() * 0.3,
+        kind: 'lightning',
+        pts, N: N + 1,
+        outerW: 2.5 + Math.random() * 1.0,
+        innerW: 1.3 + Math.random() * 0.4,
         startTime: performance.now(),
-        maxLifeMs: 700,
+        maxLifeMs: 220 + Math.random() * 130,
         life: 1,
       });
     }
@@ -20149,15 +20276,16 @@ function drawOrbPreviewUnlocked(particles, orbKey, color, cx, cy, t) {
       p.x += p.vx; p.y += p.vy;
       p.vy += 0.05; p.vx *= 0.985;
       if (p.flicker !== undefined) p.flicker += 0.28;
-    } else if (p.kind === 'streamline') {
-      // Streamlines age via wall-clock so the preview rate matches gameplay.
+    } else if (p.kind === 'streamline' || p.kind === 'lightning') {
+      // Wall-clock age so the preview cadence matches gameplay. Polylines
+      // are baked at spawn, so position never updates.
       const age = (nowPrev - p.startTime) / p.maxLifeMs;
       p.life = Math.max(0, 1 - age);
     } else {
       p.x += p.vx; p.y += p.vy;
       if (p.drift) p.x += p.drift;
     }
-    if (p.kind !== 'streamline') p.life -= ageDecay;
+    if (p.kind !== 'streamline' && p.kind !== 'lightning') p.life -= ageDecay;
     if (p.life <= 0) particles.splice(i, 1);
   }
   if (particles.length > 40) particles.splice(0, particles.length - 40);
@@ -20209,15 +20337,27 @@ function drawOrbPreviewUnlocked(particles, orbKey, color, cx, cy, t) {
       ctx.moveTo(p.x, p.y);
       ctx.lineTo(p.x, p.y - (p.lineLen || 20));
       ctx.stroke();
-    } else if (p.kind === 'streamline') {
-      // v1.7.0 polish r3: wind-tunnel streamline preview. Additive blend
-      // so the thin lines glow against the dark canvas.
+    } else if (p.kind === 'lightning') {
+      // v1.7.0 polish r5: lightning bolt preview — two strokes, additive.
+      // Flash curve mirrors gameplay (full bright for 25 % of life).
+      const age = 1 - Math.max(0, p.life);
+      const flash = age < 0.25 ? 1 : (1 - (age - 0.25) / 0.75);
       const prevComp = ctx.globalCompositeOperation;
       ctx.globalCompositeOperation = 'lighter';
-      ctx.strokeStyle = `rgba(${p.hue || '180,220,255'},1)`;
-      ctx.lineWidth = p.width || 1.0;
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
+      // Outer cyan-blue
+      ctx.strokeStyle = `rgba(180,220,255,${flash * 0.85})`;
+      ctx.lineWidth = p.outerW;
+      ctx.beginPath();
+      ctx.moveTo(p.pts[0], p.pts[1]);
+      for (let si = 1; si < p.N; si++) {
+        ctx.lineTo(p.pts[si * 2], p.pts[si * 2 + 1]);
+      }
+      ctx.stroke();
+      // Inner white
+      ctx.strokeStyle = `rgba(240,250,255,${flash})`;
+      ctx.lineWidth = p.innerW;
       ctx.beginPath();
       ctx.moveTo(p.pts[0], p.pts[1]);
       for (let si = 1; si < p.N; si++) {
@@ -22322,7 +22462,7 @@ function exitDevMode() {
   pickupParticles = [];
   deathParticles = [];
   orbTrailParticles = [];
-  warpStreamlines = [];
+  warpLightning = [];
   planetRipples = [];
   destroyEffects = [];
   deathShards = [];
