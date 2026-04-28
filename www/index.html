@@ -9390,16 +9390,50 @@ function updatePixiPlayerLayer() {
       const a = Math.max(0, p.life) * (p.alphaMul || 0.8) * 0.6;
       if (a <= 0) continue;
       if (p.kind === 'cyan' || p.kind === 'wisp') {
-        pixiTrailGraphics.beginFill(orbColorInt, a);
+        // v1.7.0: per-particle hue (Phantom dense smoke) — falls back to orb.
+        let circColor = orbColorInt;
+        if (p.hue) {
+          const [hr, hg, hb] = p.hue.split(',').map(n => parseInt(n, 10) | 0);
+          circColor = (hr << 16) | (hg << 8) | hb;
+        }
+        pixiTrailGraphics.beginFill(circColor, a);
         pixiTrailGraphics.drawCircle(p.x, p.y, p.size * (0.5 + 0.5 * p.life));
         pixiTrailGraphics.endFill();
-      } else if (p.kind === 'fire') {
-        const [fr, fg, fb] = p.hue.split(',').map(n => parseInt(n, 10) | 0);
+      } else if (p.kind === 'fire' || p.kind === 'ember') {
+        const [fr, fg, fb] = (p.hue || orbRgb).split(',').map(n => parseInt(n, 10) | 0);
         const fireInt = (fr << 16) | (fg << 8) | fb;
         const flick = 0.85 + Math.sin(p.flicker || 0) * 0.25;
         pixiTrailGraphics.beginFill(fireInt, a);
         pixiTrailGraphics.drawCircle(p.x, p.y, p.size * (0.45 + 0.6 * p.life) * flick);
         pixiTrailGraphics.endFill();
+      } else if (p.kind === 'orbit') {
+        // CHAOS CYCLE — circle + tangent streak.
+        let oColor = orbColorInt;
+        if (p.hue) {
+          const [hr, hg, hb] = p.hue.split(',').map(n => parseInt(n, 10) | 0);
+          oColor = (hr << 16) | (hg << 8) | hb;
+        }
+        const r = p.size * (0.6 + 0.4 * p.life);
+        pixiTrailGraphics.beginFill(oColor, a);
+        pixiTrailGraphics.drawCircle(p.x, p.y, r);
+        pixiTrailGraphics.endFill();
+        const sign = p.angularVel >= 0 ? 1 : -1;
+        const tx = -Math.sin(p.angle) * sign;
+        const ty =  Math.cos(p.angle) * sign;
+        pixiTrailGraphics.lineStyle({ width: 1.4, color: oColor, alpha: a * 0.55, cap: 'round' });
+        pixiTrailGraphics.moveTo(p.x, p.y);
+        pixiTrailGraphics.lineTo(p.x - tx * r * 1.8, p.y - ty * r * 1.8);
+        pixiTrailGraphics.lineStyle();
+      } else if (p.kind === 'afterimage') {
+        // SPECTER'S VEIL ETERNAL — simulate the radial gradient with a few
+        // concentric fading discs (PIXI v7 Graphics has no radial gradient).
+        let aColor = orbColorInt;
+        if (p.hue) {
+          const [hr, hg, hb] = p.hue.split(',').map(n => parseInt(n, 10) | 0);
+          aColor = (hr << 16) | (hg << 8) | hb;
+        }
+        pixiTrailGraphics.beginFill(aColor, a * 0.45); pixiTrailGraphics.drawCircle(p.x, p.y, p.size * 0.55); pixiTrailGraphics.endFill();
+        pixiTrailGraphics.beginFill(aColor, a * 0.18); pixiTrailGraphics.drawCircle(p.x, p.y, p.size * 0.85); pixiTrailGraphics.endFill();
       } else if (p.kind === 'line') {
         // v1.7.0: per-particle hue for Lightspeed chromatic aberration.
         let lineColorInt = orbColorInt;
@@ -9411,11 +9445,12 @@ function updatePixiPlayerLayer() {
         pixiTrailGraphics.moveTo(p.x, p.y);
         pixiTrailGraphics.lineTo(p.x - p.dx * p.len, p.y - p.dy * p.len);
         pixiTrailGraphics.lineStyle(); // reset so next iter doesn't accidentally stroke a fill
-      } else if (p.kind === 'rock') {
+      } else if (p.kind === 'rock' || p.kind === 'shield-fragment') {
         const s = p.size;
-        const cosA = Math.cos(p.angle), sinA = Math.sin(p.angle);
-        // Rotate the polygon vertices manually since PIXI.Graphics.drawPolygon
-        // doesn't have a per-call rotation parameter.
+        // Rock kind uses p.angle for rotation; shield-fragment uses p.rockAngle
+        // (its p.angle is the orbit angle, separate from its tumble).
+        const rotAngle = (p.kind === 'shield-fragment') ? (p.rockAngle || 0) : p.angle;
+        const cosA = Math.cos(rotAngle), sinA = Math.sin(rotAngle);
         const verts = [
           { x: -s,       y: -s * 0.4 },
           { x:  s * 0.6, y: -s       },
@@ -9427,7 +9462,12 @@ function updatePixiPlayerLayer() {
           poly.push(p.x + v.x * cosA - v.y * sinA);
           poly.push(p.y + v.x * sinA + v.y * cosA);
         }
-        pixiTrailGraphics.beginFill(orbColorInt, a);
+        let fillColor = orbColorInt;
+        if (p.hue) {
+          const [hr, hg, hb] = p.hue.split(',').map(n => parseInt(n, 10) | 0);
+          fillColor = (hr << 16) | (hg << 8) | hb;
+        }
+        pixiTrailGraphics.beginFill(fillColor, a);
         pixiTrailGraphics.drawPolygon(poly);
         pixiTrailGraphics.endFill();
       }
@@ -16396,7 +16436,10 @@ function drawCrackFragments() {
 // player. Intensity (spawn rate, size, opacity) scales with both the player's
 // motion speed and the current scroll speed so faster play feels more visceral.
 let orbTrailParticles = [];
-const ORB_TRAIL_CAP = 15;
+// v1.7.0 trail overhaul: bumped 15 → 30 to fit the state-aware unlocked
+// variants — Drifter's 4 orbiting particles, Bulwark's 5 shield fragments,
+// Phantom's denser wisps, and the radial bursts emitted on nova-just-fired.
+const ORB_TRAIL_CAP = 30;
 
 function emitOrbTrail() {
   if (state !== 'playing') return;
@@ -16437,13 +16480,15 @@ function emitOrbTrail() {
   const sizeMul = 0.8 + Math.min(1.2, intensity * 0.12);
   const alphaMul = 0.7 + Math.min(0.3, intensity * 0.04);
 
-  // v1.7.0: cosmetic "unlocked" trail variant, gated by per-orb kill count
-  // (TRAIL_UNLOCK_THRESHOLDS) and the player's equip choice. Each variant
-  // re-uses an existing render kind so neither drawOrbTrailParticles nor
-  // the pixi trail path needs new shape code. The only renderer extension
-  // is an optional `hue` field on the 'line' kind for Lightspeed's
-  // chromatic-aberration multi-stroke.
+  // v1.7.0 trail overhaul: when the unlocked variant is equipped, hand off
+  // to emitOrbTrailUnlocked which produces a state-aware emission set —
+  // particles, hues, lifetimes, and counts respond to active powerups,
+  // combos, and stack counts. Default-trail emission below is unchanged.
   const useUnlocked = !!(stats.unlockedTrails[orb] && stats.equippedTrails[orb] === 'unlocked');
+  if (useUnlocked) {
+    emitOrbTrailUnlocked(orb, intensity, sizeMul, alphaMul, px, py, bx, by, count);
+    return;
+  }
   for (let i = 0; i < count; i++) {
     // Small jitter around the behind-player spawn point.
     const jx = px + (Math.random() - 0.5) * 8;
@@ -16451,167 +16496,286 @@ function emitOrbTrail() {
 
     const nowOt = Date.now();
     if (orb === 'cyan') {
-      if (useUnlocked) {
-        // PRISMATIC SHIMMER: rainbow-cycling soft glows. Re-uses 'fire'
-        // (which already accepts a custom hue) and rotates through a cyan-
-        // family rainbow palette frame-locked to the global frame counter
-        // so adjacent particles read as a coherent gradient instead of
-        // random noise.
-        const hues = ['200,255,255','125,232,255','160,200,255','200,180,255','220,150,255','255,180,220','255,200,180','255,255,180','200,255,200'];
-        const hue = hues[((frame >> 2) + i) % hues.length];
-        pushCapped(orbTrailParticles, {
-          kind: 'fire',
-          x: jx, y: jy,
-          vx: bx * (0.3 + Math.random() * 0.6) + (Math.random() - 0.5) * 0.5,
-          vy: by * (0.3 + Math.random() * 0.6) + (Math.random() - 0.5) * 0.5,
-          life: 1, size: (2.5 + Math.random() * 2.2) * sizeMul,
-          hue, flicker: Math.random() * 6.28,
-          alphaMul, startTime: nowOt, maxLifeMs: 500,
-        }, ORB_TRAIL_CAP);
-      } else {
-        // fade 0.05/frame → 20 frames → 333ms
-        pushCapped(orbTrailParticles, {
-          kind: 'cyan',
-          x: jx, y: jy,
-          vx: bx * (0.3 + Math.random() * 0.6) + (Math.random() - 0.5) * 0.3,
-          vy: by * (0.3 + Math.random() * 0.6) + (Math.random() - 0.5) * 0.3,
-          life: 1, size: (2 + Math.random() * 2.4) * sizeMul,
-          alphaMul, startTime: nowOt, maxLifeMs: 333,
-        }, ORB_TRAIL_CAP);
-      }
+      // fade 0.05/frame → 20 frames → 333ms
+      pushCapped(orbTrailParticles, {
+        kind: 'cyan',
+        x: jx, y: jy,
+        vx: bx * (0.3 + Math.random() * 0.6) + (Math.random() - 0.5) * 0.3,
+        vy: by * (0.3 + Math.random() * 0.6) + (Math.random() - 0.5) * 0.3,
+        life: 1, size: (2 + Math.random() * 2.4) * sizeMul,
+        alphaMul, startTime: nowOt, maxLifeMs: 333,
+      }, ORB_TRAIL_CAP);
     } else if (orb === 'cosmic') {
-      if (useUnlocked) {
-        // SPECTRAL WISPS: bigger, longer-lived, more drift. Reuses 'wisp'.
-        // Lifetime ≈ 1.7× base so the trail visibly lingers.
-        pushCapped(orbTrailParticles, {
-          kind: 'wisp',
-          x: jx, y: jy,
-          vx: bx * (0.3 + Math.random() * 0.5) + (Math.random() - 0.5) * 1.0,
-          vy: by * (0.3 + Math.random() * 0.5) + (Math.random() - 0.5) * 0.6,
-          drift: (Math.random() - 0.5) * 0.18,
-          life: 1, size: (3.5 + Math.random() * 3.5) * sizeMul,
-          alphaMul, startTime: nowOt, maxLifeMs: 1000,
-        }, ORB_TRAIL_CAP);
-      } else {
-        // fade 0.025/frame → 40 frames → 667ms. Purple wisps drift sideways.
-        pushCapped(orbTrailParticles, {
-          kind: 'wisp',
-          x: jx, y: jy,
-          vx: bx * (0.4 + Math.random() * 0.6) + (Math.random() - 0.5) * 0.8,
-          vy: by * (0.4 + Math.random() * 0.6) + (Math.random() - 0.5) * 0.4,
-          drift: (Math.random() - 0.5) * 0.12,
-          life: 1, size: (2.5 + Math.random() * 2.5) * sizeMul,
-          alphaMul, startTime: nowOt, maxLifeMs: 600,
-        }, ORB_TRAIL_CAP);
-      }
+      // fade 0.025/frame → 40 frames → 667ms. Purple wisps drift sideways.
+      pushCapped(orbTrailParticles, {
+        kind: 'wisp',
+        x: jx, y: jy,
+        vx: bx * (0.4 + Math.random() * 0.6) + (Math.random() - 0.5) * 0.8,
+        vy: by * (0.4 + Math.random() * 0.6) + (Math.random() - 0.5) * 0.4,
+        drift: (Math.random() - 0.5) * 0.12,
+        life: 1, size: (2.5 + Math.random() * 2.5) * sizeMul,
+        alphaMul, startTime: nowOt, maxLifeMs: 600,
+      }, ORB_TRAIL_CAP);
     } else if (orb === 'solar') {
-      if (useUnlocked) {
-        // SOLAR FLARE: hotter palette (whites + bright yellows on top of
-        // the orange/red base) and ~1.3× size. Visually reads as more
-        // intense fire without needing a new render kind.
-        const r = Math.random();
-        const hue = r < 0.25 ? '255,255,200'
-                  : r < 0.50 ? '255,220,100'
-                  : r < 0.75 ? '255,140,40'
-                  :            '255,80,30';
-        pushCapped(orbTrailParticles, {
-          kind: 'fire',
-          x: jx, y: jy,
-          vx: bx * (0.5 + Math.random() * 0.9) + (Math.random() - 0.5) * 0.7,
-          vy: by * (0.5 + Math.random() * 0.9) + (Math.random() - 0.5) * 0.7,
-          life: 1, size: (4 + Math.random() * 4) * sizeMul,
-          hue, flicker: Math.random() * 6.28,
-          alphaMul, startTime: nowOt, maxLifeMs: 360,
-        }, ORB_TRAIL_CAP);
-      } else {
-        // fade 0.055/frame → 18 frames → 300ms. Orange/red fire, flickers, fades fast.
-        pushCapped(orbTrailParticles, {
-          kind: 'fire',
-          x: jx, y: jy,
-          vx: bx * (0.5 + Math.random() * 0.9) + (Math.random() - 0.5) * 0.6,
-          vy: by * (0.5 + Math.random() * 0.9) + (Math.random() - 0.5) * 0.6,
-          life: 1, size: (3 + Math.random() * 3.5) * sizeMul,
-          hue: Math.random() < 0.35 ? '255,210,80'
-             : (Math.random() < 0.55 ? '255,120,40' : '255,80,30'),
-          flicker: Math.random() * 6.28,
-          alphaMul, startTime: nowOt, maxLifeMs: 300,
-        }, ORB_TRAIL_CAP);
-      }
+      // fade 0.055/frame → 18 frames → 300ms. Orange/red fire, flickers, fades fast.
+      pushCapped(orbTrailParticles, {
+        kind: 'fire',
+        x: jx, y: jy,
+        vx: bx * (0.5 + Math.random() * 0.9) + (Math.random() - 0.5) * 0.6,
+        vy: by * (0.5 + Math.random() * 0.9) + (Math.random() - 0.5) * 0.6,
+        life: 1, size: (3 + Math.random() * 3.5) * sizeMul,
+        hue: Math.random() < 0.35 ? '255,210,80'
+           : (Math.random() < 0.55 ? '255,120,40' : '255,80,30'),
+        flicker: Math.random() * 6.28,
+        alphaMul, startTime: nowOt, maxLifeMs: 300,
+      }, ORB_TRAIL_CAP);
     } else if (orb === 'nebula') {
+      // fade 0.045/frame → ~22 frames → 367ms. Blue speed lines.
       const len = (10 + Math.random() * 14) * sizeMul;
-      if (useUnlocked) {
-        // LIGHTSPEED: chromatic aberration. Three offset speed-lines per
-        // emit, one each for R/G/B-shifted hues, perpendicular by ±2 px.
-        // The 'line' renderer reads `hue` if present (added below) — this
-        // is the only render extension the v1.7.0 trail set requires.
-        const perpX = -by, perpY = bx;
-        const baseVx = bx * (1.0 + Math.random() * 0.8);
-        const baseVy = by * (1.0 + Math.random() * 0.8);
-        const t0 = nowOt;
-        const variants = [
-          { ox: -2, hue: '255,80,120' },
-          { ox:  0, hue: '180,220,255' },
-          { ox:  2, hue: '120,255,200' },
-        ];
-        for (const v of variants) {
-          pushCapped(orbTrailParticles, {
-            kind: 'line',
-            x: jx + perpX * v.ox, y: jy + perpY * v.ox,
-            vx: baseVx, vy: baseVy,
-            dx: bx, dy: by, len: len * 1.25,
-            hue: v.hue,
-            life: 1, alphaMul, startTime: t0, maxLifeMs: 420,
-          }, ORB_TRAIL_CAP);
-        }
-        // Skip the default fall-through — three lines is plenty for one emit.
-      } else {
-        // fade 0.045/frame → ~22 frames → 367ms. Blue speed lines.
-        pushCapped(orbTrailParticles, {
-          kind: 'line',
-          x: jx, y: jy,
-          vx: bx * (0.9 + Math.random() * 0.8),
-          vy: by * (0.9 + Math.random() * 0.8),
-          dx: bx, dy: by,
-          len,
-          life: 1, alphaMul, startTime: nowOt, maxLifeMs: 367,
-        }, ORB_TRAIL_CAP);
-      }
+      pushCapped(orbTrailParticles, {
+        kind: 'line',
+        x: jx, y: jy,
+        vx: bx * (0.9 + Math.random() * 0.8),
+        vy: by * (0.9 + Math.random() * 0.8),
+        dx: bx, dy: by,
+        len,
+        life: 1, alphaMul, startTime: nowOt, maxLifeMs: 367,
+      }, ORB_TRAIL_CAP);
     } else if (orb === 'asteroid') {
-      if (useUnlocked) {
-        // TECTONIC: 1.5× rocks plus a soft grey dust circle alongside —
-        // every emit lands as fragment + impact-dust, reading heavier than
-        // the base trail. The dust uses 'cyan' kind (orb-tinted circle).
+      // fade 0.03/frame → 33 frames → 550ms. Grey rock fragments tumble.
+      pushCapped(orbTrailParticles, {
+        kind: 'rock',
+        x: jx, y: jy,
+        vx: bx * (0.3 + Math.random() * 0.7) + (Math.random() - 0.5) * 1.4,
+        vy: by * (0.3 + Math.random() * 0.7) + (Math.random() - 0.5) * 1.4,
+        life: 1, size: (2 + Math.random() * 2.5) * sizeMul,
+        angle: Math.random() * 6.28, spin: (Math.random() - 0.5) * 0.3,
+        alphaMul, startTime: nowOt, maxLifeMs: 550,
+      }, ORB_TRAIL_CAP);
+    }
+  }
+}
+
+// v1.7.0 trail overhaul: adaptive, state-aware emission for the unlocked
+// trail variants. Reads live powerup / combo / stack state and tunes the
+// particle parameters per emit cycle. Each orb keeps a distinct visual
+// signature (CHAOS CYCLE, SPECTER'S VEIL, PYROCLASM, REALITY TEAR, AEGIS
+// SHARDS) and layers in extra effects when the player's state warrants —
+// shield orbits speed up, ghost wisps darken, embers brighten near nova,
+// speed lines multiply with hyperspeed stacks, shield fragments orbit
+// the orb. The hex-shield polygon and supernova fire ring are NOT emitted
+// here — they're drawn each frame as adaptive overlays in
+// drawTrailAdaptiveOverlays so they aren't subject to the particle cap.
+function emitOrbTrailUnlocked(orb, intensity, sizeMul, alphaMul, px, py, bx, by, count) {
+  const nowOt = Date.now();
+  const shieldOn = activeEffects.shield > 0;
+  const ghostOn  = activeEffects.ghost  > 0;
+  const hyperOn  = activeEffects.hyperspeed > 0;
+  // Last-300ms window of the 1500ms recentNova hold = "nova just fired".
+  const novaJustFired = (recentNovaEndTime - Date.now()) > 1200;
+  const supernovaActive = !!activeCombos.nova_nova;
+  const comboCount = (typeof activeCombos === 'object' && activeCombos) ? Object.keys(activeCombos).length : 0;
+  const comboActive = comboCount > 0;
+  const stacks = hyperSpeedStacks | 0;
+  const orbColorRgb = activeOrbColor();
+
+  if (orb === 'cyan') {
+    // CHAOS CYCLE — 4 small particles orbit the player in a circular orbit.
+    // State modulates orbit speed, hue, and adds extra effects (radial nova
+    // burst, hyperspeed streak). Orbits update their position relative to
+    // the player every frame in updateOrbTrailParticles.
+    let aliveOrbit = 0;
+    for (let i = 0; i < orbTrailParticles.length; i++) {
+      const p = orbTrailParticles[i];
+      if (p.kind === 'orbit' && p.owner === 'cyan') aliveOrbit++;
+    }
+    if (aliveOrbit < 4) {
+      // 270°/sec base = 0.0785 rad/frame at 60 fps. 540°/sec under shield.
+      let angularVel = 0.0785;
+      let hue = orbColorRgb;
+      let lifeMs = 1500;
+      if (shieldOn) { angularVel = 0.157; hue = '210,250,255'; }
+      if (ghostOn)  { hue = '200,140,255'; lifeMs = 2000; }
+      if (comboActive) {
+        const hues = ['255,150,150','255,210,150','220,255,150','150,255,200','150,210,255','220,150,255'];
+        hue = hues[((frame >> 3) + aliveOrbit) % hues.length];
+      }
+      // Distribute starting angle so the four particles spread evenly.
+      const startAngle = aliveOrbit * (Math.PI / 2) + Math.random() * 0.4;
+      // Orbit radius widens slightly under hyperspeed for the elongation feel.
+      const orbitR = (hyperOn ? 24 : 18) + Math.random() * 4;
+      pushCapped(orbTrailParticles, {
+        kind: 'orbit',
+        owner: 'cyan',
+        angle: startAngle,
+        orbitR, angularVel,
+        hue,
+        x: player.x, y: player.y,
+        life: 1, size: (2.6 + Math.random() * 1.2) * sizeMul,
+        alphaMul, startTime: nowOt, maxLifeMs: lifeMs,
+      }, ORB_TRAIL_CAP);
+    }
+    // Nova just fired: emit 2 radial burst particles per emit cycle.
+    if (novaJustFired) {
+      for (let i = 0; i < 2; i++) {
+        const a = Math.random() * Math.PI * 2;
         pushCapped(orbTrailParticles, {
-          kind: 'rock',
-          x: jx, y: jy,
-          vx: bx * (0.3 + Math.random() * 0.7) + (Math.random() - 0.5) * 1.6,
-          vy: by * (0.3 + Math.random() * 0.7) + (Math.random() - 0.5) * 1.6,
-          life: 1, size: (3 + Math.random() * 3.5) * sizeMul,
-          angle: Math.random() * 6.28, spin: (Math.random() - 0.5) * 0.35,
-          alphaMul, startTime: nowOt, maxLifeMs: 700,
-        }, ORB_TRAIL_CAP);
-        pushCapped(orbTrailParticles, {
-          kind: 'cyan',
-          x: jx + (Math.random() - 0.5) * 4,
-          y: jy + (Math.random() - 0.5) * 4,
-          vx: bx * 0.2 + (Math.random() - 0.5) * 0.5,
-          vy: by * 0.2 + (Math.random() - 0.5) * 0.5,
-          life: 1, size: (4 + Math.random() * 3) * sizeMul,
-          alphaMul: alphaMul * 0.55, startTime: nowOt, maxLifeMs: 800,
-        }, ORB_TRAIL_CAP);
-      } else {
-        // fade 0.03/frame → 33 frames → 550ms. Grey rock fragments tumble.
-        pushCapped(orbTrailParticles, {
-          kind: 'rock',
-          x: jx, y: jy,
-          vx: bx * (0.3 + Math.random() * 0.7) + (Math.random() - 0.5) * 1.4,
-          vy: by * (0.3 + Math.random() * 0.7) + (Math.random() - 0.5) * 1.4,
-          life: 1, size: (2 + Math.random() * 2.5) * sizeMul,
-          angle: Math.random() * 6.28, spin: (Math.random() - 0.5) * 0.3,
-          alphaMul, startTime: nowOt, maxLifeMs: 550,
+          kind: 'fire',
+          x: player.x, y: player.y,
+          vx: Math.cos(a) * (3.5 + Math.random() * 1.5),
+          vy: Math.sin(a) * (3.5 + Math.random() * 1.5),
+          hue: '210,250,255',
+          life: 1, size: (2 + Math.random() * 1.5) * sizeMul,
+          flicker: Math.random() * 6.28,
+          alphaMul, startTime: nowOt, maxLifeMs: 360,
         }, ORB_TRAIL_CAP);
       }
     }
+    // Hyperspeed: streak speed-line behind the player on top of orbit.
+    if (hyperOn) {
+      pushCapped(orbTrailParticles, {
+        kind: 'line',
+        x: px, y: py,
+        vx: bx * 1.8, vy: by * 1.8,
+        dx: bx, dy: by, len: 18 * sizeMul,
+        hue: comboActive ? '255,255,200' : null,
+        life: 1, alphaMul, startTime: nowOt, maxLifeMs: 320,
+      }, ORB_TRAIL_CAP);
+    }
+  } else if (orb === 'cosmic') {
+    // SPECTER'S VEIL — wisps drift like ink. Ghost active doubles density
+    // and darkens. Eternal Phantom (ghost_ghost combo) adds afterimage
+    // particles that solidify the trail into ghostly orb copies.
+    const eternal = !!activeCombos.ghost_ghost;
+    const dense = ghostOn;
+    const lifeMs = eternal ? 2400 : (dense ? 1500 : 1100);
+    // Darker palette during ghost so the trail reads as smoke; default
+    // cosmic purple otherwise.
+    const wispHue = dense ? '90,40,140' : '140,80,220';
+    const emitCount = dense ? 2 : 1;
+    for (let i = 0; i < emitCount; i++) {
+      pushCapped(orbTrailParticles, {
+        kind: 'wisp',
+        x: px + (Math.random() - 0.5) * 8,
+        y: py + (Math.random() - 0.5) * 8,
+        vx: bx * (0.25 + Math.random() * 0.5) + (Math.random() - 0.5) * 1.0,
+        vy: by * (0.25 + Math.random() * 0.5) + (Math.random() - 0.5) * 0.5,
+        drift: (Math.random() - 0.5) * 0.20,
+        hue: wispHue,
+        life: 1, size: ((dense ? 4.5 : 3.2) + Math.random() * 3.0) * sizeMul,
+        alphaMul, startTime: nowOt, maxLifeMs: lifeMs,
+      }, ORB_TRAIL_CAP);
+    }
+    // Eternal Phantom: drop a faint orb-shaped afterimage every ~6 frames.
+    if (eternal && (frame % 6) === 0) {
+      pushCapped(orbTrailParticles, {
+        kind: 'afterimage',
+        x: player.x, y: player.y,
+        vx: 0, vy: 0,
+        hue: '180,140,255',
+        life: 1, size: (PLAYER_R + 2) * sizeMul,
+        alphaMul: alphaMul * 0.7, startTime: nowOt, maxLifeMs: 700,
+      }, ORB_TRAIL_CAP);
+    }
+  } else if (orb === 'solar') {
+    // PYROCLASM — embers fall away from the orb under gravity (handled in
+    // updateOrbTrailParticles for kind:'ember'). Nova-just-fired brightens
+    // hue and bumps size; supernova combo elevates to white-hot. Hyperspeed
+    // adds an elongation streak. The 360° fire ring is an overlay.
+    const r = Math.random();
+    let hue = r < 0.30 ? '255,140,40' : r < 0.65 ? '255,90,30' : '180,40,20';
+    let sz = (2.5 + Math.random() * 2.0) * sizeMul;
+    if (novaJustFired)   { hue = '255,220,100'; sz *= 1.4; }
+    if (supernovaActive) { hue = '255,255,200'; sz *= 1.5; }
+    pushCapped(orbTrailParticles, {
+      kind: 'ember',
+      x: px + (Math.random() - 0.5) * 8,
+      y: py,
+      vx: bx * 0.3 + (Math.random() - 0.5) * 0.8,
+      vy: by * 0.25 + (Math.random() - 0.5) * 0.4,
+      hue,
+      flicker: Math.random() * 6.28,
+      life: 1, size: sz,
+      alphaMul, startTime: nowOt, maxLifeMs: hyperOn ? 600 : 450,
+    }, ORB_TRAIL_CAP);
+    if (hyperOn) {
+      pushCapped(orbTrailParticles, {
+        kind: 'line',
+        x: px, y: py,
+        vx: bx * 1.8, vy: by * 1.8,
+        dx: bx, dy: by, len: 22 * sizeMul,
+        hue: '255,170,60',
+        life: 1, alphaMul, startTime: nowOt, maxLifeMs: 320,
+      }, ORB_TRAIL_CAP);
+    }
+  } else if (orb === 'nebula') {
+    // REALITY TEAR — base 1 line. Hyperspeed scales line count with stacks
+    // (1 stack → 2 lines, 4 stacks → 3, 6+ → 5). Each parallel offset gets
+    // a different chromatic-aberration hue. Slipstream-just-fired bumps the
+    // trail to white-blue for a beat (no per-event flag yet — leverages
+    // the natural transient burst-cooldown drop instead).
+    const len = (10 + Math.random() * 14) * sizeMul;
+    let lineCount;
+    if (hyperOn) {
+      lineCount = Math.max(1, Math.min(5, 1 + Math.floor((stacks + 1) / 2)));
+    } else {
+      lineCount = 1;
+    }
+    const perpX = -by, perpY = bx;
+    const baseVx = bx * (1.0 + Math.random() * 0.8);
+    const baseVy = by * (1.0 + Math.random() * 0.8);
+    const aberration = ['255,80,120','180,220,255','120,255,200','255,200,255','180,255,120'];
+    for (let li = 0; li < lineCount; li++) {
+      const ox = (li - (lineCount - 1) / 2) * 2;
+      pushCapped(orbTrailParticles, {
+        kind: 'line',
+        x: px + perpX * ox, y: py + perpY * ox,
+        vx: baseVx, vy: baseVy,
+        dx: bx, dy: by, len: len * (hyperOn ? 1.5 : 1.05),
+        hue: hyperOn ? aberration[li % aberration.length] : null,
+        life: 1, alphaMul, startTime: nowOt, maxLifeMs: hyperOn ? 460 : 380,
+      }, ORB_TRAIL_CAP);
+    }
+  } else if (orb === 'asteroid') {
+    // AEGIS SHARDS — 5 fragments orbit close to the player. Shield active
+    // tints them gold; full Fortress shield turns them solid gold. The hex
+    // polygon overlay (one ring per shieldHits) is drawn separately by
+    // drawTrailAdaptiveOverlays so it doesn't compete with the particle
+    // cap. Ground-dust circles emit alongside for impact weight.
+    let aliveFrag = 0;
+    for (let i = 0; i < orbTrailParticles.length; i++) {
+      const p = orbTrailParticles[i];
+      if (p.kind === 'shield-fragment' && p.owner === 'asteroid') aliveFrag++;
+    }
+    if (aliveFrag < 5) {
+      const startAngle = aliveFrag * (Math.PI * 2 / 5) + Math.random() * 0.25;
+      let hue = null; // null → orb color (grey)
+      if (shieldOn)       hue = '255,210,120'; // gold rim under shield
+      if (fortressShield) hue = '255,230,150';
+      pushCapped(orbTrailParticles, {
+        kind: 'shield-fragment',
+        owner: 'asteroid',
+        angle: startAngle,
+        orbitR: 14 + Math.random() * 3,
+        angularVel: 0.052, // ~180°/sec
+        rockAngle: Math.random() * 6.28,
+        spin: (Math.random() - 0.5) * 0.2,
+        hue,
+        x: player.x, y: player.y,
+        life: 1, size: (2 + Math.random() * 1.4) * sizeMul,
+        alphaMul, startTime: nowOt, maxLifeMs: 1500,
+      }, ORB_TRAIL_CAP);
+    }
+    // Dust kicked up beneath. Reuses the 'cyan' kind (orb-tinted circle).
+    pushCapped(orbTrailParticles, {
+      kind: 'cyan',
+      x: px + (Math.random() - 0.5) * 6,
+      y: py + (Math.random() - 0.5) * 4,
+      vx: bx * 0.15 + (Math.random() - 0.5) * 0.4,
+      vy: by * 0.15 + (Math.random() - 0.5) * 0.4,
+      life: 1, size: (3.5 + Math.random() * 2.5) * sizeMul,
+      alphaMul: alphaMul * 0.45, startTime: nowOt, maxLifeMs: 700,
+    }, ORB_TRAIL_CAP);
   }
 }
 
@@ -16619,12 +16783,36 @@ function updateOrbTrailParticles() {
   const nowOtu = Date.now();
   for (let i = orbTrailParticles.length - 1; i >= 0; i--) {
     const p = orbTrailParticles[i];
-    p.x += p.vx; p.y += p.vy;
-    if (p.drift) p.x += p.drift;
-    if (p.angle !== undefined) p.angle += p.spin;
-    if (p.kind === 'fire') {
-      p.vy -= 0.03; // fire curls upward as it fades
-      if (p.flicker !== undefined) p.flicker += 0.3;
+    // v1.7.0: orbit + shield-fragment particles track the player every frame
+    // by recomputing position from angle × orbitR. Existing rock/cyan/etc.
+    // integrate vx/vy as before. If the player has swapped orbs (or
+    // unequipped the unlocked variant), expire the orbiter immediately so
+    // it doesn't keep spinning around the new orb.
+    if (p.kind === 'orbit' || p.kind === 'shield-fragment') {
+      const stillEquipped = !!(stats.unlockedTrails[activeOrb] && stats.equippedTrails[activeOrb] === 'unlocked');
+      if (p.owner !== activeOrb || !stillEquipped) {
+        p.life = 0;
+      } else {
+        p.angle += p.angularVel;
+        if (p.kind === 'shield-fragment') p.rockAngle += p.spin;
+        p.x = player.x + Math.cos(p.angle) * p.orbitR;
+        p.y = player.y + Math.sin(p.angle) * p.orbitR;
+      }
+    } else {
+      p.x += p.vx; p.y += p.vy;
+      if (p.drift) p.x += p.drift;
+      if (p.angle !== undefined) p.angle += p.spin;
+      if (p.kind === 'fire') {
+        p.vy -= 0.03; // fire curls upward as it fades
+        if (p.flicker !== undefined) p.flicker += 0.3;
+      } else if (p.kind === 'ember') {
+        // v1.7.0: pyroclasm embers fall under gravity instead of curling up
+        // — distinguishes them from the default Inferno fire trail. Slight
+        // air resistance on horizontal velocity so they settle into a fall.
+        p.vy += 0.05;
+        p.vx *= 0.985;
+        if (p.flicker !== undefined) p.flicker += 0.28;
+      }
     }
     if (p.startTime !== undefined && p.maxLifeMs) {
       p.life = Math.max(0, 1 - (nowOtu - p.startTime) / p.maxLifeMs);
@@ -16646,11 +16834,15 @@ function drawOrbTrailParticles(tctx = ctx) {
     const a = Math.max(0, p.life) * (p.alphaMul || 0.8) * 0.6;
     ctx.globalAlpha = a;
     if (p.kind === 'cyan' || p.kind === 'wisp') {
-      ctx.fillStyle = `rgba(${orbRgb},1)`;
+      // v1.7.0: respect per-particle `hue` (Phantom dense smoke). Default
+      // falls back to the orb color so the base trails are unchanged.
+      ctx.fillStyle = `rgba(${p.hue || orbRgb},1)`;
       ctx.beginPath();
       ctx.arc(p.x, p.y, p.size * (0.5 + 0.5 * p.life), 0, 6.28);
       ctx.fill();
-    } else if (p.kind === 'fire') {
+    } else if (p.kind === 'fire' || p.kind === 'ember') {
+      // Ember + fire share the same render shape — they differ in physics
+      // (gravity vs upward curl) handled in updateOrbTrailParticles.
       ctx.fillStyle = `rgba(${p.hue},1)`;
       const flick = 0.85 + Math.sin(p.flicker || 0) * 0.25;
       ctx.beginPath();
@@ -16681,10 +16873,132 @@ function drawOrbTrailParticles(tctx = ctx) {
       ctx.closePath();
       ctx.fill();
       ctx.restore();
+    } else if (p.kind === 'orbit') {
+      // CHAOS CYCLE — soft glow circle with a short streak trail toward the
+      // orbit-tangent direction. The tangent is perpendicular to the radial
+      // vector from player → particle, so the streak reads as motion blur
+      // along the orbit path.
+      ctx.fillStyle = `rgba(${p.hue || orbRgb},1)`;
+      const r = p.size * (0.6 + 0.4 * p.life);
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, r, 0, 6.28);
+      ctx.fill();
+      // Tangent streak (~60% as long as orbit radius). Direction of motion
+      // is perpendicular to the radial in the rotation sense.
+      const sign = p.angularVel >= 0 ? 1 : -1;
+      const tx = -Math.sin(p.angle) * sign;
+      const ty =  Math.cos(p.angle) * sign;
+      ctx.globalAlpha = a * 0.55;
+      ctx.strokeStyle = `rgba(${p.hue || orbRgb},1)`;
+      ctx.lineWidth = 1.4;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y);
+      ctx.lineTo(p.x - tx * r * 1.8, p.y - ty * r * 1.8);
+      ctx.stroke();
+      ctx.globalAlpha = a;
+    } else if (p.kind === 'shield-fragment') {
+      // AEGIS SHARDS — small rock-like polygon orbiting the player. Same
+      // shape as the 'rock' kind but rotated by p.rockAngle (separate from
+      // the orbit angle) so the fragment tumbles independent of the orbit.
+      ctx.fillStyle = `rgba(${p.hue || orbRgb},1)`;
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(p.rockAngle || 0);
+      const s = p.size;
+      ctx.beginPath();
+      ctx.moveTo(-s, -s * 0.4);
+      ctx.lineTo(s * 0.6, -s);
+      ctx.lineTo(s, s * 0.3);
+      ctx.lineTo(-s * 0.3, s);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    } else if (p.kind === 'afterimage') {
+      // SPECTER'S VEIL Eternal afterimage — soft circular ghost of the orb,
+      // fades out smoothly. Used only when ghost_ghost is active.
+      const grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.size);
+      grad.addColorStop(0,    `rgba(${p.hue || orbRgb},0.55)`);
+      grad.addColorStop(0.55, `rgba(${p.hue || orbRgb},0.18)`);
+      grad.addColorStop(1,    `rgba(${p.hue || orbRgb},0)`);
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size, 0, 6.28);
+      ctx.fill();
     }
   }
   ctx.restore();
   ctx.globalAlpha = 1;
+}
+
+// v1.7.0 trail overhaul: state-driven overlays that don't fit the particle
+// system — drawn each frame on top of the particle stream. They render in
+// BOTH Canvas 2D and Pixi modes (ctx is the #c canvas which sits above the
+// pixi WebGL canvas in the stacking order). Currently:
+//   - Bulwark Aegis: hexagonal shield polygon, one ring per shieldHits,
+//     gold-rim under fortressShield, gentle pulse animation.
+//   - Inferno Pyroclasm: 360° fire ring expanding around the player while
+//     the supernova combo (nova_nova) is active.
+function drawTrailAdaptiveOverlays(tctx = ctx) {
+  const ctx = tctx;
+  if (state !== 'playing' && state !== 'paused' && state !== 'apocalypse' && state !== 'tutorial') return;
+  const orb = activeOrb;
+  const equipped = !!(stats.unlockedTrails[orb] && stats.equippedTrails[orb] === 'unlocked');
+  if (!equipped) return;
+  if (orb === 'asteroid') {
+    if (activeEffects.shield <= 0) return;
+    const layers = Math.max(1, shieldHits | 0);
+    const fortress = !!fortressShield;
+    const baseR = 28;
+    const stepR = 6;
+    const t = Date.now() / 1000;
+    const pulse = 0.85 + Math.sin(t * 3.2) * 0.15;
+    ctx.save();
+    ctx.translate(player.x, player.y);
+    for (let li = 0; li < layers; li++) {
+      const r = (baseR + li * stepR) * pulse;
+      const innerStroke = fortress ? 'rgba(255,230,150,0.85)' : 'rgba(200,210,220,0.55)';
+      const fillCol     = fortress ? 'rgba(255,210,120,0.10)' : 'rgba(160,180,200,0.06)';
+      ctx.lineWidth = fortress ? 2 : 1.4;
+      ctx.strokeStyle = innerStroke;
+      ctx.fillStyle   = fillCol;
+      ctx.beginPath();
+      for (let i = 0; i < 6; i++) {
+        const ang = i * (Math.PI / 3) + Math.PI / 6;
+        const hx = Math.cos(ang) * r;
+        const hy = Math.sin(ang) * r;
+        if (i === 0) ctx.moveTo(hx, hy);
+        else ctx.lineTo(hx, hy);
+      }
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    }
+    ctx.restore();
+  } else if (orb === 'solar') {
+    if (!activeCombos.nova_nova) return;
+    // Supernova fire ring — single expanding circle outlines around the
+    // player for the duration of the supernova combo (nova_nova endTime).
+    const combo = activeCombos.nova_nova;
+    const endT = (combo && combo.endTime) ? combo.endTime : (Date.now() + 1000);
+    const totalMs = 2833;
+    const remaining = Math.max(0, endT - Date.now());
+    const k = Math.max(0, Math.min(1, 1 - remaining / totalMs)); // 0 → 1 across combo
+    const baseR = 30 + k * 60;
+    ctx.save();
+    ctx.globalAlpha = 0.6 * (1 - k * 0.4);
+    ctx.translate(player.x, player.y);
+    ctx.lineWidth = 2.2;
+    ctx.strokeStyle = 'rgba(255,150,40,0.85)';
+    ctx.beginPath(); ctx.arc(0, 0, baseR,         0, 6.28); ctx.stroke();
+    ctx.lineWidth = 1.4;
+    ctx.strokeStyle = 'rgba(255,220,120,0.7)';
+    ctx.beginPath(); ctx.arc(0, 0, baseR * 0.78,  0, 6.28); ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,90,30,0.55)';
+    ctx.beginPath(); ctx.arc(0, 0, baseR * 1.22,  0, 6.28); ctx.stroke();
+    ctx.restore();
+    ctx.globalAlpha = 1;
+  }
 }
 
 // drawTrail now renders the orb particle stream only. The legacy cyan position
@@ -17748,6 +18062,11 @@ function render() {
     // into Momentum (cooldown reduction, no visual ring).
     // Step 4: trail + player live on pixi when active.
     if (!pixiActive) drawTrail();
+    // v1.7.0 trail overhaul: adaptive overlays (Bulwark hex shield, Inferno
+    // supernova fire ring) are drawn on Canvas 2D unconditionally — the #c
+    // canvas sits above the pixi WebGL canvas in the stacking order, so the
+    // overlay reads correctly on both render paths.
+    drawTrailAdaptiveOverlays();
     if (state==='playing'||state==='paused'||state==='apocalypse'||state==='tutorial') {
       // Step 6: hyperspeed barrier on pixi overlay when active.
       if (!pixiActive) drawHyperspeedBarrier();
@@ -19331,6 +19650,10 @@ function openTrailPicker(orbKey) {
       stats.equippedTrails[orbKey] = id;
       saveStats();
       SFX.clickPrimary();
+      // v1.7.0: drop the preview's per-orb particle pool so the canvas
+      // doesn't carry over particles emitted under the old variant (they'd
+      // either NaN-position or render with mismatched kind handling).
+      if (orbPreviewParticles[orbKey]) orbPreviewParticles[orbKey] = [];
       closeTrailPicker();
       refreshOrbBrowser();
     });
@@ -19352,62 +19675,74 @@ function drawOrbPreview() {
   const bob = Math.sin(t * Math.PI) * 16;
   const cx = cw / 2, cy = ch / 2 + bob;
 
+  // v1.7.0: when the unlocked variant is equipped for this orb, render it
+  // here too so the preview matches what the player will see in-game. The
+  // preview has no live powerup state, so the unlocked path renders the
+  // BASE state of the variant (orbiting particles for Drifter / Bulwark,
+  // dense wisps for Phantom, embers for Inferno, multi-line speedlines
+  // for Warp). Adaptive responses (shield/ghost/etc) only show in-game.
+  const useUnlocked = !!(stats.unlockedTrails[key] && stats.equippedTrails[key] === 'unlocked');
+
   // Trail particles
   const particles = ensureOrbParticles(key);
-  if (Math.random() < 0.5) {
-    if (def.trail === 'cosmic') {
-      particles.push({ x: cx + (Math.random() - 0.5) * 30, y: cy + 10 + Math.random() * 15, vx: (Math.random() - 0.5) * 0.5, vy: -1.5 - Math.random(), life: 1, size: 3 + Math.random() * 3 });
-    } else if (def.trail === 'solar') {
-      particles.push({ x: cx + (Math.random() - 0.5) * 24, y: cy + 18, vx: (Math.random() - 0.5) * 1.2, vy: 1 + Math.random() * 1.5, life: 1, size: 3 + Math.random() * 3 });
-    } else if (def.trail === 'nebula') {
-      particles.push({ x: cx - 40 + Math.random() * 80, y: cy + (Math.random() - 0.5) * 40, vx: 0, vy: 4 + Math.random() * 3, life: 1, size: 2, lineLen: 18 + Math.random() * 20 });
-    } else if (def.trail === 'asteroid') {
-      particles.push({ x: cx + (Math.random() - 0.5) * 20, y: cy + 14, vx: (Math.random() - 0.5) * 2, vy: 1.5 + Math.random() * 2, life: 1, size: 2 + Math.random() * 3, angle: Math.random() * 6.28, spin: (Math.random() - 0.5) * 0.2 });
-    } else {
-      particles.push({ x: cx + (Math.random() - 0.5) * 10, y: cy + 10, vx: (Math.random() - 0.5) * 1.5, vy: 1 + Math.random() * 2, life: 1, size: 2 + Math.random() * 3 });
+  if (useUnlocked) {
+    drawOrbPreviewUnlocked(particles, key, color, cx, cy, t);
+  } else {
+    if (Math.random() < 0.5) {
+      if (def.trail === 'cosmic') {
+        particles.push({ x: cx + (Math.random() - 0.5) * 30, y: cy + 10 + Math.random() * 15, vx: (Math.random() - 0.5) * 0.5, vy: -1.5 - Math.random(), life: 1, size: 3 + Math.random() * 3 });
+      } else if (def.trail === 'solar') {
+        particles.push({ x: cx + (Math.random() - 0.5) * 24, y: cy + 18, vx: (Math.random() - 0.5) * 1.2, vy: 1 + Math.random() * 1.5, life: 1, size: 3 + Math.random() * 3 });
+      } else if (def.trail === 'nebula') {
+        particles.push({ x: cx - 40 + Math.random() * 80, y: cy + (Math.random() - 0.5) * 40, vx: 0, vy: 4 + Math.random() * 3, life: 1, size: 2, lineLen: 18 + Math.random() * 20 });
+      } else if (def.trail === 'asteroid') {
+        particles.push({ x: cx + (Math.random() - 0.5) * 20, y: cy + 14, vx: (Math.random() - 0.5) * 2, vy: 1.5 + Math.random() * 2, life: 1, size: 2 + Math.random() * 3, angle: Math.random() * 6.28, spin: (Math.random() - 0.5) * 0.2 });
+      } else {
+        particles.push({ x: cx + (Math.random() - 0.5) * 10, y: cy + 10, vx: (Math.random() - 0.5) * 1.5, vy: 1 + Math.random() * 2, life: 1, size: 2 + Math.random() * 3 });
+      }
     }
-  }
-  for (let i = particles.length - 1; i >= 0; i--) {
-    const p = particles[i];
-    p.x += p.vx; p.y += p.vy;
-    p.life -= 0.025;
-    if (p.angle !== undefined) p.angle += p.spin;
-    if (p.life <= 0) particles.splice(i, 1);
-  }
-  if (particles.length > 40) particles.splice(0, particles.length - 40);
+    for (let i = particles.length - 1; i >= 0; i--) {
+      const p = particles[i];
+      p.x += p.vx; p.y += p.vy;
+      p.life -= 0.025;
+      if (p.angle !== undefined) p.angle += p.spin;
+      if (p.life <= 0) particles.splice(i, 1);
+    }
+    if (particles.length > 40) particles.splice(0, particles.length - 40);
 
-  orbPreviewCtx.save();
-  for (const p of particles) {
-    orbPreviewCtx.globalAlpha = p.life * 0.75;
-    if (def.trail === 'nebula') {
-      orbPreviewCtx.strokeStyle = `rgba(${color},1)`;
-      orbPreviewCtx.lineWidth = 2;
-      orbPreviewCtx.beginPath();
-      orbPreviewCtx.moveTo(p.x, p.y);
-      orbPreviewCtx.lineTo(p.x, p.y - (p.lineLen || 20));
-      orbPreviewCtx.stroke();
-    } else if (def.trail === 'asteroid') {
-      orbPreviewCtx.fillStyle = `rgba(${color},1)`;
-      orbPreviewCtx.save();
-      orbPreviewCtx.translate(p.x, p.y);
-      orbPreviewCtx.rotate(p.angle || 0);
-      const s = p.size;
-      orbPreviewCtx.beginPath();
-      orbPreviewCtx.moveTo(-s, -s * 0.4);
-      orbPreviewCtx.lineTo(s * 0.6, -s);
-      orbPreviewCtx.lineTo(s, s * 0.3);
-      orbPreviewCtx.lineTo(-s * 0.3, s);
-      orbPreviewCtx.closePath();
-      orbPreviewCtx.fill();
-      orbPreviewCtx.restore();
-    } else {
-      orbPreviewCtx.fillStyle = `rgba(${color},1)`;
-      orbPreviewCtx.beginPath();
-      orbPreviewCtx.arc(p.x, p.y, p.size, 0, 6.28);
-      orbPreviewCtx.fill();
+    orbPreviewCtx.save();
+    for (const p of particles) {
+      orbPreviewCtx.globalAlpha = p.life * 0.75;
+      if (def.trail === 'nebula') {
+        orbPreviewCtx.strokeStyle = `rgba(${color},1)`;
+        orbPreviewCtx.lineWidth = 2;
+        orbPreviewCtx.beginPath();
+        orbPreviewCtx.moveTo(p.x, p.y);
+        orbPreviewCtx.lineTo(p.x, p.y - (p.lineLen || 20));
+        orbPreviewCtx.stroke();
+      } else if (def.trail === 'asteroid') {
+        orbPreviewCtx.fillStyle = `rgba(${color},1)`;
+        orbPreviewCtx.save();
+        orbPreviewCtx.translate(p.x, p.y);
+        orbPreviewCtx.rotate(p.angle || 0);
+        const s = p.size;
+        orbPreviewCtx.beginPath();
+        orbPreviewCtx.moveTo(-s, -s * 0.4);
+        orbPreviewCtx.lineTo(s * 0.6, -s);
+        orbPreviewCtx.lineTo(s, s * 0.3);
+        orbPreviewCtx.lineTo(-s * 0.3, s);
+        orbPreviewCtx.closePath();
+        orbPreviewCtx.fill();
+        orbPreviewCtx.restore();
+      } else {
+        orbPreviewCtx.fillStyle = `rgba(${color},1)`;
+        orbPreviewCtx.beginPath();
+        orbPreviewCtx.arc(p.x, p.y, p.size, 0, 6.28);
+        orbPreviewCtx.fill();
+      }
     }
+    orbPreviewCtx.restore();
   }
-  orbPreviewCtx.restore();
 
   // Orb aura + core
   orbPreviewCtx.save();
@@ -19427,6 +19762,178 @@ function drawOrbPreview() {
   orbPreviewCtx.fillStyle = core;
   orbPreviewCtx.beginPath(); orbPreviewCtx.arc(cx, cy, 20, 0, 6.28); orbPreviewCtx.fill();
   orbPreviewCtx.restore();
+}
+
+// v1.7.0: unlocked-variant rendering for the orb-preview canvas. Uses the
+// preview's own particle pool (separate from the gameplay orbTrailParticles)
+// so it doesn't interfere with live game state. Renders the BASE state of
+// each variant — no live powerup state to react to — so the player can
+// validate they've equipped the right look. Math is simplified relative
+// to gameplay (no per-frame player-tracking) since the preview orb is
+// stationary at (cx, cy) modulo the bob.
+function drawOrbPreviewUnlocked(particles, orbKey, color, cx, cy, t) {
+  const ctx = orbPreviewCtx;
+  const ageDecay = 0.022;
+  if (orbKey === 'cyan') {
+    // CHAOS CYCLE — keep 4 orbiting particles + occasional drift trail.
+    let aliveOrbit = 0;
+    for (const p of particles) if (p.kind === 'orbit') aliveOrbit++;
+    if (aliveOrbit < 4 && Math.random() < 0.3) {
+      const startAngle = aliveOrbit * (Math.PI / 2) + Math.random() * 0.4;
+      particles.push({
+        kind: 'orbit', angle: startAngle, orbitR: 36 + Math.random() * 8,
+        angularVel: 0.045, // ~155°/sec; preview canvas is 2× scale so feel
+        life: 1, size: 4 + Math.random() * 1.5,
+        x: cx, y: cy, hue: color, startTime: performance.now(), maxLifeMs: 3000,
+      });
+    }
+  } else if (orbKey === 'cosmic') {
+    if (Math.random() < 0.55) {
+      particles.push({
+        kind: 'wisp', x: cx + (Math.random() - 0.5) * 36,
+        y: cy + 14 + Math.random() * 18,
+        vx: (Math.random() - 0.5) * 0.6, vy: -1.2 - Math.random() * 0.8,
+        drift: (Math.random() - 0.5) * 0.3,
+        life: 1, size: 5 + Math.random() * 4,
+        hue: '90,40,140',
+      });
+    }
+  } else if (orbKey === 'solar') {
+    if (Math.random() < 0.6) {
+      const r = Math.random();
+      const hue = r < 0.30 ? '255,140,40' : r < 0.65 ? '255,90,30' : '180,40,20';
+      particles.push({
+        kind: 'ember', x: cx + (Math.random() - 0.5) * 28,
+        y: cy + 18,
+        vx: (Math.random() - 0.5) * 1.3, vy: 1.0 + Math.random() * 1.5,
+        life: 1, size: 3 + Math.random() * 2.5,
+        hue, flicker: Math.random() * 6.28,
+      });
+    }
+  } else if (orbKey === 'nebula') {
+    if (Math.random() < 0.55) {
+      // Three-line chromatic aberration: spawn one per emit cycle, alternating.
+      const aberration = ['255,80,120','180,220,255','120,255,200'];
+      const ox = ((Math.floor(t * 8)) % 3 - 1) * 4;
+      particles.push({
+        kind: 'speedline',
+        x: cx + (Math.random() - 0.5) * 70 + ox,
+        y: cy + (Math.random() - 0.5) * 50,
+        vx: 0, vy: 4 + Math.random() * 3,
+        life: 1, size: 2, lineLen: 22 + Math.random() * 18,
+        hue: aberration[Math.floor(Math.random() * 3)],
+      });
+    }
+  } else if (orbKey === 'asteroid') {
+    let aliveFrag = 0;
+    for (const p of particles) if (p.kind === 'shield-fragment') aliveFrag++;
+    if (aliveFrag < 5 && Math.random() < 0.3) {
+      const startAngle = aliveFrag * (Math.PI * 2 / 5) + Math.random() * 0.3;
+      particles.push({
+        kind: 'shield-fragment', angle: startAngle, orbitR: 32 + Math.random() * 6,
+        angularVel: 0.034, rockAngle: Math.random() * 6.28,
+        spin: (Math.random() - 0.5) * 0.12,
+        life: 1, size: 3.5 + Math.random() * 1.5,
+        x: cx, y: cy, startTime: performance.now(), maxLifeMs: 3000,
+      });
+    }
+    // Soft dust circle
+    if (Math.random() < 0.35) {
+      particles.push({
+        x: cx + (Math.random() - 0.5) * 22, y: cy + 14,
+        vx: (Math.random() - 0.5) * 0.4, vy: 0.4 + Math.random() * 0.6,
+        life: 1, size: 5 + Math.random() * 3, dust: true,
+      });
+    }
+  }
+
+  // Tick + draw the preview pool. Orbit/fragment particles update by angle
+  // (relative to the bobbing orb center); ember particles get gravity;
+  // others use vx/vy.
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    if (p.kind === 'orbit' || p.kind === 'shield-fragment') {
+      p.angle += p.angularVel;
+      if (p.kind === 'shield-fragment') p.rockAngle += p.spin;
+      p.x = cx + Math.cos(p.angle) * p.orbitR;
+      p.y = cy + Math.sin(p.angle) * p.orbitR;
+    } else if (p.kind === 'ember') {
+      p.x += p.vx; p.y += p.vy;
+      p.vy += 0.05; p.vx *= 0.985;
+      if (p.flicker !== undefined) p.flicker += 0.28;
+    } else {
+      p.x += p.vx; p.y += p.vy;
+      if (p.drift) p.x += p.drift;
+    }
+    p.life -= ageDecay;
+    if (p.life <= 0) particles.splice(i, 1);
+  }
+  if (particles.length > 40) particles.splice(0, particles.length - 40);
+
+  ctx.save();
+  for (const p of particles) {
+    ctx.globalAlpha = Math.max(0, p.life) * 0.85;
+    if (p.kind === 'orbit') {
+      ctx.fillStyle = `rgba(${p.hue || color},1)`;
+      const r = p.size * (0.7 + 0.3 * p.life);
+      ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, 6.28); ctx.fill();
+      // tangent streak
+      const sign = p.angularVel >= 0 ? 1 : -1;
+      const tx = -Math.sin(p.angle) * sign;
+      const ty =  Math.cos(p.angle) * sign;
+      ctx.globalAlpha *= 0.5;
+      ctx.strokeStyle = `rgba(${p.hue || color},1)`;
+      ctx.lineWidth = 1.6;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y);
+      ctx.lineTo(p.x - tx * r * 1.8, p.y - ty * r * 1.8);
+      ctx.stroke();
+    } else if (p.kind === 'shield-fragment') {
+      ctx.fillStyle = `rgba(${color},1)`;
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(p.rockAngle || 0);
+      const s = p.size;
+      ctx.beginPath();
+      ctx.moveTo(-s, -s * 0.4);
+      ctx.lineTo(s * 0.6, -s);
+      ctx.lineTo(s, s * 0.3);
+      ctx.lineTo(-s * 0.3, s);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    } else if (p.kind === 'ember') {
+      ctx.fillStyle = `rgba(${p.hue},1)`;
+      const flick = 0.85 + Math.sin(p.flicker || 0) * 0.25;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size * (0.45 + 0.6 * p.life) * flick, 0, 6.28);
+      ctx.fill();
+    } else if (p.kind === 'speedline') {
+      ctx.strokeStyle = `rgba(${p.hue || color},1)`;
+      ctx.lineWidth = 2;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y);
+      ctx.lineTo(p.x, p.y - (p.lineLen || 20));
+      ctx.stroke();
+    } else if (p.kind === 'wisp') {
+      ctx.fillStyle = `rgba(${p.hue || color},1)`;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size * (0.55 + 0.45 * p.life), 0, 6.28);
+      ctx.fill();
+    } else if (p.dust) {
+      ctx.fillStyle = `rgba(${color},1)`;
+      ctx.globalAlpha *= 0.55;
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, 6.28); ctx.fill();
+    } else {
+      ctx.fillStyle = `rgba(${color},1)`;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size, 0, 6.28);
+      ctx.fill();
+    }
+  }
+  ctx.restore();
 }
 
 // v1.6.4 perf: returns true when a covering modal sits over the orb
