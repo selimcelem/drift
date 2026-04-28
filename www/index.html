@@ -3237,6 +3237,10 @@ let pixiPlayerSprite = null;
 let pixiPlayerCanvas = null;
 let pixiPlayerCtx = null;
 let pixiTrailGraphics = null;
+// v1.7.0 polish r3: separate additive-blend trail Graphics for Warp
+// streamlines + Inferno embers; created in the pixi init alongside
+// pixiTrailGraphics, cleared+redrawn each frame in updatePixiPlayerLayer.
+let pixiTrailAdditiveGraphics = null;
 const PIXI_PLAYER_CANVAS_SIZE = 256;
 // Step 5: particle systems. All 4 ported this step use native PIXI.Graphics
 // rebuilt each frame — particles are scattered across the screen so a single
@@ -8744,6 +8748,14 @@ function initPixiStars() {
     pixiApp.stage.addChild(pixiPlayerLayer);
     pixiTrailGraphics = new PIXI.Graphics();
     pixiPlayerLayer.addChild(pixiTrailGraphics);
+    // v1.7.0 polish r3: separate Graphics for trails that need additive
+    // blending (Warp wind-tunnel streamlines, Inferno embers). PIXI.Graphics
+    // applies blendMode to the entire object, so a second Graphics is the
+    // cheapest path; both share the player layer so z-order vs the orb
+    // matches the non-additive trail.
+    pixiTrailAdditiveGraphics = new PIXI.Graphics();
+    pixiTrailAdditiveGraphics.blendMode = PIXI.BLEND_MODES.ADD;
+    pixiPlayerLayer.addChild(pixiTrailAdditiveGraphics);
     // pixiPlayerSprite is created lazily on first updatePixiPlayerLayer call
     // because PIXI.Texture.from(canvas) needs the canvas to exist first.
     // Step 5: particle layer above player. Crack fragments draw below other
@@ -9382,6 +9394,7 @@ function updatePixiPlayerLayer() {
   // without its signature trail.
   const trailVisible = (state === 'playing' || state === 'paused' || state === 'apocalypse' || state === 'dead' || state === 'devmode' || state === 'tutorial');
   pixiTrailGraphics.clear();
+  if (pixiTrailAdditiveGraphics) pixiTrailAdditiveGraphics.clear();
   if (trailVisible && orbTrailParticles.length) {
     const orbRgb = activeOrbColor();
     const [or, og, ob] = orbRgb.split(',').map(n => parseInt(n, 10) | 0);
@@ -9399,13 +9412,35 @@ function updatePixiPlayerLayer() {
         pixiTrailGraphics.beginFill(circColor, a);
         pixiTrailGraphics.drawCircle(p.x, p.y, p.size * (0.5 + 0.5 * p.life));
         pixiTrailGraphics.endFill();
-      } else if (p.kind === 'fire' || p.kind === 'ember') {
+      } else if (p.kind === 'fire') {
+        // 'fire' uses normal blending (Drifter nova-burst, etc.). Embers
+        // route to the additive layer below for the glow read.
         const [fr, fg, fb] = (p.hue || orbRgb).split(',').map(n => parseInt(n, 10) | 0);
         const fireInt = (fr << 16) | (fg << 8) | fb;
         const flick = 0.85 + Math.sin(p.flicker || 0) * 0.25;
         pixiTrailGraphics.beginFill(fireInt, a);
         pixiTrailGraphics.drawCircle(p.x, p.y, p.size * (0.45 + 0.6 * p.life) * flick);
         pixiTrailGraphics.endFill();
+      } else if (p.kind === 'ember' && pixiTrailAdditiveGraphics) {
+        // v1.7.0 polish r3: ember kind renders to the ADD-blend Graphics so
+        // warm hues read as glowing fire. Hue lerps toward (220,70,20) once
+        // life drops below 0.5 — same logic as Canvas 2D pass 2.
+        let r0, g0, b0;
+        const parts = (p.hue || '255,140,40').split(',');
+        r0 = parseInt(parts[0], 10) | 0;
+        g0 = parseInt(parts[1], 10) | 0;
+        b0 = parseInt(parts[2], 10) | 0;
+        if (p.life < 0.5) {
+          const t = Math.min(1, (0.5 - p.life) / 0.5);
+          r0 = Math.round(r0 * (1 - t) + 220 * t);
+          g0 = Math.round(g0 * (1 - t) + 70  * t);
+          b0 = Math.round(b0 * (1 - t) + 20  * t);
+        }
+        const emberInt = (r0 << 16) | (g0 << 8) | b0;
+        const flick = 0.85 + Math.sin(p.flicker || 0) * 0.25;
+        pixiTrailAdditiveGraphics.beginFill(emberInt, a);
+        pixiTrailAdditiveGraphics.drawCircle(p.x, p.y, p.size * (0.45 + 0.6 * p.life) * flick);
+        pixiTrailAdditiveGraphics.endFill();
       } else if (p.kind === 'orbit') {
         // CHAOS CYCLE — circle + tangent streak.
         let oColor = orbColorInt;
@@ -9471,6 +9506,25 @@ function updatePixiPlayerLayer() {
         pixiTrailGraphics.drawPolygon(poly);
         pixiTrailGraphics.endFill();
       }
+    }
+  }
+  // v1.7.0 polish r3: Warp wind-tunnel streamlines on the additive layer.
+  // Single lineStyle + multiple lineTo per streamline = one batched stroke.
+  if (trailVisible && pixiTrailAdditiveGraphics && warpStreamlines.length) {
+    const now = Date.now();
+    for (const sl of warpStreamlines) {
+      const age = (now - sl.startTime) / sl.maxLifeMs;
+      if (age >= 1) continue;
+      const a = (1 - age) * sl.alphaMul;
+      if (a <= 0.02) continue;
+      const [hr, hg, hb] = sl.hue.split(',').map(n => parseInt(n, 10) | 0);
+      const lineInt = (hr << 16) | (hg << 8) | hb;
+      pixiTrailAdditiveGraphics.lineStyle({ width: sl.width, color: lineInt, alpha: a, cap: 'round', join: 'round' });
+      pixiTrailAdditiveGraphics.moveTo(sl.pts[0], sl.pts[1]);
+      for (let i = 1; i < sl.N; i++) {
+        pixiTrailAdditiveGraphics.lineTo(sl.pts[i * 2], sl.pts[i * 2 + 1]);
+      }
+      pixiTrailAdditiveGraphics.lineStyle();
     }
   }
 }
@@ -12062,6 +12116,7 @@ function resetGame() {
   ghostlightPendingKills = [];
   beyondAfterimage = null;
   orbTrailParticles = [];
+  warpStreamlines = [];
   planetRipples = [];
   destroyEffects = [];
   deathShards = [];
@@ -13724,6 +13779,7 @@ function update() {
 
   emitOrbTrail();
   updateOrbTrailParticles();
+  updateWarpStreamlines();
 
   if (checkCollisions()) triggerDeath();
 }
@@ -13812,6 +13868,7 @@ function updateTutorial() {
   // Trail particles so the orb shows movement nicely during steps 2/3.
   emitOrbTrail();
   updateOrbTrailParticles();
+  updateWarpStreamlines();
   // v1.6.4 Fix: advance novaRings (radius growth + life decay). The
   // production pipeline does this in update()'s nova-rings block (~12604),
   // which is short-circuited when state === 'tutorial'. Without this loop
@@ -16441,6 +16498,15 @@ let orbTrailParticles = [];
 // Phantom's denser wisps, and the radial bursts emitted on nova-just-fired.
 const ORB_TRAIL_CAP = 30;
 
+// v1.7.0 polish (round 3): Warp Reality Tear redesign — wind-tunnel
+// streamlines drawn around the orb. Polyline particles, baked at spawn,
+// fade over ~700 ms, additively blended to glow against dark space. Held
+// in a separate array from orbTrailParticles so they don't compete with
+// the 30-particle cap (they're thinner / longer-lived and a wind-tunnel
+// look needs density). Cap 40 per the spec.
+let warpStreamlines = [];
+const WARP_STREAMLINE_CAP = 40;
+
 function emitOrbTrail() {
   if (state !== 'playing') return;
   // Throttle emission to every 3rd frame. On Android WebView the per-frame
@@ -16684,11 +16750,14 @@ function emitOrbTrailUnlocked(orb, intensity, sizeMul, alphaMul, px, py, bx, by,
     // hue and bumps size; supernova combo elevates to white-hot AND triples
     // the per-emit ember count with wider spread for a clearly more intense
     // trail. Hyperspeed adds an elongation streak. No separate ring overlay.
-    const r = Math.random();
-    let hue = r < 0.30 ? '255,140,40' : r < 0.65 ? '255,90,30' : '180,40,20';
+    // v1.7.0 polish r3: single coherent palette per state instead of a
+    // 3-way random spawn (which gave 2 of 3 embers a dim hue and read as
+    // greyish smoke). Spawn-time palette is the BRIGHT side; the draw-time
+    // lerp toward (220,70,20) handles the dying-ember red on its own.
+    let hue = '255,140,40';                       // hot orange base
     let sz = (2.5 + Math.random() * 2.0) * sizeMul;
-    if (novaJustFired)   { hue = '255,220,100'; sz *= 1.4; }
-    if (supernovaActive) { hue = '255,255,200'; sz *= 1.5; }
+    if (novaJustFired)   { hue = '255,200,60';  sz *= 1.4; }   // bright yellow-orange
+    if (supernovaActive) { hue = '255,235,180'; sz *= 1.5; }   // white-hot warm
     // Supernova: emit 3 embers per cycle with wider lateral spread; default
     // emits 1 (the existing single ember per cycle reads as cool but quiet).
     const emberCount = supernovaActive ? 3 : 1;
@@ -16720,60 +16789,13 @@ function emitOrbTrailUnlocked(orb, intensity, sizeMul, alphaMul, px, py, bx, by,
       }, ORB_TRAIL_CAP);
     }
   } else if (orb === 'nebula') {
-    // REALITY TEAR — single coherent speed trail. v1.7.0 polish replaced
-    // the chromatic-aberration multi-line approach (read as rainbow noise)
-    // with one coherent white-blue motion-blur trail. Hyperspeed scales the
-    // trail's INTENSITY (particle density + length) rather than line count.
-    //   - Hyperspeed inactive: subtle blue line, base length, single line.
-    //   - Hyperspeed active: white-blue (200,230,255) particles streaming
-    //     behind the orb with longer streaks. Stacks scale density (2-3×
-    //     emit count at 8 stacks) and length (~1.6× at 8 stacks).
-    if (!hyperOn) {
-      // Base: subtle blue line, no chromatic shift.
-      const len = (10 + Math.random() * 14) * sizeMul;
-      pushCapped(orbTrailParticles, {
-        kind: 'line',
-        x: px, y: py,
-        vx: bx * (0.9 + Math.random() * 0.8),
-        vy: by * (0.9 + Math.random() * 0.8),
-        dx: bx, dy: by, len,
-        life: 1, alphaMul, startTime: nowOt, maxLifeMs: 380,
-      }, ORB_TRAIL_CAP);
-    } else {
-      // Hyperspeed: motion-blur speed trail. Mix of two particle kinds for
-      // the blur feel — one elongated 'line' for the streak, one 'cyan'
-      // (circle) for the streaming particle stream behind. Density scales
-      // with stacks: 1 stack → 1 emit, 4 → 2, 8+ → 3.
-      const density = Math.max(1, Math.min(3, 1 + Math.floor(stacks / 3)));
-      // Length scales 1.0× at 1 stack to ~1.6× at 8+ stacks.
-      const lenScale = 1.0 + Math.min(0.6, stacks * 0.075);
-      const speedHue = '200,230,255';
-      const baseLen = (16 + Math.random() * 14) * sizeMul * lenScale;
-      // One sharp coherent line streak per emit.
-      pushCapped(orbTrailParticles, {
-        kind: 'line',
-        x: px, y: py,
-        vx: bx * 1.6, vy: by * 1.6,
-        dx: bx, dy: by, len: baseLen,
-        hue: speedHue,
-        life: 1, alphaMul, startTime: nowOt, maxLifeMs: 480,
-      }, ORB_TRAIL_CAP);
-      // density-1 additional streaming particles trailing behind for the
-      // blur tail. Slight perpendicular jitter so the stream has texture.
-      const perpX = -by, perpY = bx;
-      for (let di = 0; di < density - 1; di++) {
-        const jit = (Math.random() - 0.5) * 6;
-        pushCapped(orbTrailParticles, {
-          kind: 'cyan',
-          x: px + perpX * jit, y: py + perpY * jit,
-          vx: bx * (1.4 + Math.random() * 0.6),
-          vy: by * (1.4 + Math.random() * 0.6),
-          hue: speedHue,
-          life: 1, size: (1.8 + Math.random() * 1.2) * sizeMul,
-          alphaMul, startTime: nowOt, maxLifeMs: 600,
-        }, ORB_TRAIL_CAP);
-      }
-    }
+    // REALITY TEAR — wind-tunnel streamlines (v1.7.0 polish round 3).
+    // Each streamline is a baked polyline that flows opposite the player's
+    // motion vector and curves around the orb's silhouette. Streamlines
+    // stay fixed in screen-space once spawned (no follow-the-player), fade
+    // over their life, and render with additive blending. Density scales
+    // with player intensity at base, then with hyperspeed stacks.
+    spawnWarpStreamlines(intensity, sizeMul, alphaMul, hyperOn, stacks, bx, by);
   } else if (orb === 'asteroid') {
     // AEGIS SHARDS — 5 fragments orbit close to the player. Trail itself
     // adapts to shield state (no separate hex shield UI element):
@@ -16850,6 +16872,140 @@ function emitOrbTrailUnlocked(orb, intensity, sizeMul, alphaMul, px, py, bx, by,
   }
 }
 
+// v1.7.0 polish round 3: Warp aerodynamic streamlines.
+//
+// Spawn N polyline particles ahead of the orb at perpendicular offsets,
+// each a snapshot of an air streamline curving around the player's
+// silhouette. Once spawned, the streamline is FIXED in screen space — it
+// fades alpha over life and is then evicted. New streamlines spawn every
+// emit cycle, creating the impression of continuous wind flow.
+//
+// Density scales with player intensity at base, multiplied by hyperspeed
+// stack count when hyperspeed is active. Color shifts from soft blue-white
+// at base to brighter white-cyan at hyperspeed. Line width scales gently
+// at high stacks.
+//
+// Performance: cap 40 streamlines × 10 segments × 2 floats = 800 numbers
+// resident, single stroke per streamline = ~40 strokes per render frame.
+// Cheaper than 30 alpha-blended circles.
+function spawnWarpStreamlines(intensity, sizeMul, alphaMul, hyperOn, stacks, bx, by) {
+  // Spawn count per emit cycle — see prompt:
+  //   Idle / slow:      1-2
+  //   Active:           2-4
+  //   Hyperspeed base:  4-8
+  //   Hyperspeed peak:  up to 12 at 7+ stacks.
+  let spawnCount;
+  if (!hyperOn) {
+    // intensity ranges roughly 0..6 for typical play.
+    spawnCount = Math.max(1, Math.min(4, 1 + Math.floor(intensity * 0.45)));
+  } else {
+    // Stack-scaled multiplier.
+    const stackMul = stacks <= 3 ? 1.5 : (stacks <= 6 ? 2.0 : 3.0);
+    spawnCount = Math.max(2, Math.min(12, Math.round(4 * stackMul)));
+  }
+
+  // Motion direction (-bx, -by) is "behind player". The streamline FLOWS in
+  // that direction (opposite of player motion). bx/by from emitOrbTrail is
+  // already -velocity / |velocity|, i.e. the "behind" unit vector. So flow
+  // is +bx/+by; the head spawns in the opposite direction (ahead of player
+  // = -bx/-by).
+  const fx = bx, fy = by;            // flow direction (downstream)
+  const ax = -bx, ay = -by;          // motion direction (upstream / orb's heading)
+  const perpX = -fy, perpY = fx;     // 90° CCW from flow
+
+  const N = 10;                      // segments per streamline
+  const streamLen = 90;              // total streamline length
+  const upstreamAheadDist = 38;      // head spawns this far ahead of orb
+  const orbDeflectR = 22;            // deflection range around player center
+  const deflectStrength = 14;        // peak px deflection at orb level
+
+  // Color + width state-driven.
+  const hue   = hyperOn ? '220,240,255' : '180,220,255';
+  const width = hyperOn ? (stacks >= 7 ? 1.5 : stacks >= 4 ? 1.2 : 1.0) : 0.9;
+  // Subtle per-stack pulse at high stacks: brightness oscillates ±10 %.
+  const pulse = (hyperOn && stacks >= 7) ? (0.95 + 0.1 * Math.sin(frame * 0.18)) : 1.0;
+  const lineAlpha = Math.min(1, alphaMul * pulse);
+
+  for (let s = 0; s < spawnCount; s++) {
+    // Spawn perpendicular offset: ±36 px. Wider than orb radius so most
+    // streamlines pass clear; narrow ones get deflected.
+    const offset = (Math.random() * 2 - 1) * 36;
+    // Pre-allocate flat float array for segment positions (x0,y0,x1,y1,...).
+    const pts = new Array(N * 2);
+    for (let i = 0; i < N; i++) {
+      const u = i / (N - 1);                       // 0..1
+      const longPos = u * streamLen;               // 0 (head) → streamLen (tail)
+      // Distance along the line from where the orb sits (which is at
+      // longPos = upstreamAheadDist, since head is at +upstreamAheadDist
+      // from player along motion direction, i.e. -upstreamAheadDist along
+      // flow direction... we measure from head along flow, so player is at
+      // longPos = upstreamAheadDist).
+      const distFromOrbAlongLine = Math.abs(longPos - upstreamAheadDist);
+      // Deflection pushes the segment further FROM the orb in the perpendicular
+      // direction when it's near the orb's longitudinal position.
+      let perpAmt = offset;
+      if (distFromOrbAlongLine < orbDeflectR) {
+        const sign = offset >= 0 ? 1 : -1;
+        const proximity = 1 - distFromOrbAlongLine / orbDeflectR;  // 1 at orb, 0 at edge
+        perpAmt += sign * deflectStrength * (proximity * proximity);
+      }
+      const sx = player.x + ax * upstreamAheadDist + fx * longPos + perpX * perpAmt;
+      const sy = player.y + ay * upstreamAheadDist + fy * longPos + perpY * perpAmt;
+      pts[i * 2] = sx;
+      pts[i * 2 + 1] = sy;
+    }
+    pushCapped(warpStreamlines, {
+      pts, N,
+      hue, width,
+      startTime: Date.now(),
+      maxLifeMs: hyperOn ? 800 : 600,
+      alphaMul: lineAlpha,
+    }, WARP_STREAMLINE_CAP);
+  }
+}
+
+// Cull expired streamlines. Called once per update tick alongside the
+// other particle updates.
+function updateWarpStreamlines() {
+  if (!warpStreamlines.length) return;
+  const now = Date.now();
+  for (let i = warpStreamlines.length - 1; i >= 0; i--) {
+    if (now - warpStreamlines[i].startTime >= warpStreamlines[i].maxLifeMs) {
+      warpStreamlines.splice(i, 1);
+    }
+  }
+}
+
+// Canvas 2D streamline render. Single stroke per streamline (no per-segment
+// alpha gradient — would 10× the stroke count). Additive blend so the
+// thin lines glow against the dark backdrop.
+function drawWarpStreamlines(tctx) {
+  if (!warpStreamlines.length) return;
+  const ctx = tctx;
+  const now = Date.now();
+  ctx.save();
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  const prevComp = ctx.globalCompositeOperation;
+  ctx.globalCompositeOperation = 'lighter';
+  for (const sl of warpStreamlines) {
+    const age = (now - sl.startTime) / sl.maxLifeMs;
+    if (age >= 1) continue;
+    const a = (1 - age) * sl.alphaMul;
+    if (a <= 0.02) continue;
+    ctx.lineWidth = sl.width;
+    ctx.strokeStyle = `rgba(${sl.hue},${a})`;
+    ctx.beginPath();
+    ctx.moveTo(sl.pts[0], sl.pts[1]);
+    for (let i = 1; i < sl.N; i++) {
+      ctx.lineTo(sl.pts[i * 2], sl.pts[i * 2 + 1]);
+    }
+    ctx.stroke();
+  }
+  ctx.globalCompositeOperation = prevComp;
+  ctx.restore();
+}
+
 function updateOrbTrailParticles() {
   const nowOtu = Date.now();
   for (let i = orbTrailParticles.length - 1; i >= 0; i--) {
@@ -16899,7 +17055,11 @@ function drawOrbTrailParticles(tctx = ctx) {
   if (!orbTrailParticles.length) return;
   const orbRgb = activeOrbColor();
   ctx.save();
+  // v1.7.0 polish r3: ember kind renders in a SECOND pass with additive
+  // blending so warm hues read as glowing fire instead of greyish smoke.
+  // First pass: everything else with normal blending.
   for (const p of orbTrailParticles) {
+    if (p.kind === 'ember') continue;
     // 0.6 = 40% opacity reduction so trails are less distracting at high
     // speeds while still visible.
     const a = Math.max(0, p.life) * (p.alphaMul || 0.8) * 0.6;
@@ -16911,9 +17071,9 @@ function drawOrbTrailParticles(tctx = ctx) {
       ctx.beginPath();
       ctx.arc(p.x, p.y, p.size * (0.5 + 0.5 * p.life), 0, 6.28);
       ctx.fill();
-    } else if (p.kind === 'fire' || p.kind === 'ember') {
-      // Ember + fire share the same render shape — they differ in physics
-      // (gravity vs upward curl) handled in updateOrbTrailParticles.
+    } else if (p.kind === 'fire') {
+      // 'fire' uses normal blending (it's a generic flicker — Drifter's
+      // nova-just-fired radial burst, etc.). Embers go to the additive pass.
       ctx.fillStyle = `rgba(${p.hue},1)`;
       const flick = 0.85 + Math.sin(p.flicker || 0) * 0.25;
       ctx.beginPath();
@@ -16998,6 +17158,32 @@ function drawOrbTrailParticles(tctx = ctx) {
       ctx.fill();
     }
   }
+  // Pass 2: ember particles with additive blending. v1.7.0 polish r3:
+  // hue lerps toward deep red-orange (220,70,20) once life drops below 0.5
+  // so dying embers cool off visually instead of just fading.
+  ctx.globalCompositeOperation = 'lighter';
+  for (const p of orbTrailParticles) {
+    if (p.kind !== 'ember') continue;
+    const a = Math.max(0, p.life) * (p.alphaMul || 0.8) * 0.6;
+    ctx.globalAlpha = a;
+    let renderHue = p.hue;
+    if (p.life < 0.5) {
+      const parts = p.hue.split(',');
+      const r0 = parseInt(parts[0], 10) | 0;
+      const g0 = parseInt(parts[1], 10) | 0;
+      const b0 = parseInt(parts[2], 10) | 0;
+      const t = Math.min(1, (0.5 - p.life) / 0.5);
+      const r = Math.round(r0 * (1 - t) + 220 * t);
+      const g = Math.round(g0 * (1 - t) + 70  * t);
+      const b = Math.round(b0 * (1 - t) + 20  * t);
+      renderHue = r + ',' + g + ',' + b;
+    }
+    ctx.fillStyle = `rgba(${renderHue},1)`;
+    const flick = 0.85 + Math.sin(p.flicker || 0) * 0.25;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size * (0.45 + 0.6 * p.life) * flick, 0, 6.28);
+    ctx.fill();
+  }
   ctx.restore();
   ctx.globalAlpha = 1;
 }
@@ -17011,8 +17197,11 @@ function drawOrbTrailParticles(tctx = ctx) {
 
 // drawTrail now renders the orb particle stream only. The legacy cyan position
 // trail was replaced per spec — every orb shares the same particle system.
+// v1.7.0 polish r3: Warp streamlines render after the particle stream so
+// they glow on top with additive blending.
 function drawTrail() {
   drawOrbTrailParticles();
+  drawWarpStreamlines(ctx);
 }
 
 function drawPlayer(tctx = ctx) {
@@ -18260,6 +18449,7 @@ function loop() {
         destroyEffects = [];
         deathShards = [];
         orbTrailParticles = [];
+        warpStreamlines = [];
         crackFragments = [];
       }
     }
@@ -19173,6 +19363,7 @@ function goToMainMenu() {
   ghostlightPendingKills = [];
   beyondAfterimage = null;
   orbTrailParticles = [];
+  warpStreamlines = [];
   planetRipples = [];
   destroyEffects = [];
   deathShards = [];
@@ -19814,17 +20005,45 @@ function drawOrbPreviewUnlocked(particles, orbKey, color, cx, cy, t) {
       });
     }
   } else if (orbKey === 'nebula') {
-    if (Math.random() < 0.55) {
-      // Three-line chromatic aberration: spawn one per emit cycle, alternating.
-      const aberration = ['255,80,120','180,220,255','120,255,200'];
-      const ox = ((Math.floor(t * 8)) % 3 - 1) * 4;
+    // v1.7.0 polish r3: wind-tunnel streamline preview. Spawn 1-2 baked
+    // polylines per emit cycle, flowing downward (matches gameplay's
+    // "flow opposite to motion" — preview orb is stationary, but the bob
+    // motion is upward so flow is downward). Each streamline has 8-10
+    // segments with deflection around the static center.
+    const spawn = Math.random() < 0.6 ? 1 : 0;
+    for (let s = 0; s < spawn + 1; s++) {
+      const N = 9;
+      const streamLen = 110;
+      const upstreamAheadDist = 40;
+      const orbDeflectR = 32;
+      const deflectStrength = 18;
+      const offset = (Math.random() * 2 - 1) * 44;
+      const pts = [];
+      for (let i = 0; i < N; i++) {
+        const u = i / (N - 1);
+        const longPos = u * streamLen;
+        const distFromOrbAlongLine = Math.abs(longPos - upstreamAheadDist);
+        let perpAmt = offset;
+        if (distFromOrbAlongLine < orbDeflectR) {
+          const sign = offset >= 0 ? 1 : -1;
+          const proximity = 1 - distFromOrbAlongLine / orbDeflectR;
+          perpAmt += sign * deflectStrength * (proximity * proximity);
+        }
+        // Flow is downward (vec 0,1); motion (orb's heading) is upward (0,-1).
+        // Perpendicular of flow (0,1) is (-1,0).
+        const sx = cx - upstreamAheadDist * 0 + 0 * longPos + (-1) * perpAmt;
+        const sy = cy + (-1) * upstreamAheadDist + 1 * longPos + 0 * perpAmt;
+        // Above simplifies: sx = cx - perpAmt; sy = cy - upstreamAheadDist + longPos.
+        pts.push(cx - perpAmt, cy - upstreamAheadDist + longPos);
+      }
       particles.push({
-        kind: 'speedline',
-        x: cx + (Math.random() - 0.5) * 70 + ox,
-        y: cy + (Math.random() - 0.5) * 50,
-        vx: 0, vy: 4 + Math.random() * 3,
-        life: 1, size: 2, lineLen: 22 + Math.random() * 18,
-        hue: aberration[Math.floor(Math.random() * 3)],
+        kind: 'streamline',
+        pts, N,
+        hue: '180,220,255',
+        width: 0.9 + Math.random() * 0.4,
+        startTime: performance.now(),
+        maxLifeMs: 700,
+        life: 1,
       });
     }
   } else if (orbKey === 'asteroid') {
@@ -19852,7 +20071,8 @@ function drawOrbPreviewUnlocked(particles, orbKey, color, cx, cy, t) {
 
   // Tick + draw the preview pool. Orbit/fragment particles update by angle
   // (relative to the bobbing orb center); ember particles get gravity;
-  // others use vx/vy.
+  // streamlines stay fixed in space (just age out); others use vx/vy.
+  const nowPrev = performance.now();
   for (let i = particles.length - 1; i >= 0; i--) {
     const p = particles[i];
     if (p.kind === 'orbit' || p.kind === 'shield-fragment') {
@@ -19864,11 +20084,15 @@ function drawOrbPreviewUnlocked(particles, orbKey, color, cx, cy, t) {
       p.x += p.vx; p.y += p.vy;
       p.vy += 0.05; p.vx *= 0.985;
       if (p.flicker !== undefined) p.flicker += 0.28;
+    } else if (p.kind === 'streamline') {
+      // Streamlines age via wall-clock so the preview rate matches gameplay.
+      const age = (nowPrev - p.startTime) / p.maxLifeMs;
+      p.life = Math.max(0, 1 - age);
     } else {
       p.x += p.vx; p.y += p.vy;
       if (p.drift) p.x += p.drift;
     }
-    p.life -= ageDecay;
+    if (p.kind !== 'streamline') p.life -= ageDecay;
     if (p.life <= 0) particles.splice(i, 1);
   }
   if (particles.length > 40) particles.splice(0, particles.length - 40);
@@ -19920,6 +20144,22 @@ function drawOrbPreviewUnlocked(particles, orbKey, color, cx, cy, t) {
       ctx.moveTo(p.x, p.y);
       ctx.lineTo(p.x, p.y - (p.lineLen || 20));
       ctx.stroke();
+    } else if (p.kind === 'streamline') {
+      // v1.7.0 polish r3: wind-tunnel streamline preview. Additive blend
+      // so the thin lines glow against the dark canvas.
+      const prevComp = ctx.globalCompositeOperation;
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.strokeStyle = `rgba(${p.hue || '180,220,255'},1)`;
+      ctx.lineWidth = p.width || 1.0;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.beginPath();
+      ctx.moveTo(p.pts[0], p.pts[1]);
+      for (let si = 1; si < p.N; si++) {
+        ctx.lineTo(p.pts[si * 2], p.pts[si * 2 + 1]);
+      }
+      ctx.stroke();
+      ctx.globalCompositeOperation = prevComp;
     } else if (p.kind === 'wisp') {
       ctx.fillStyle = `rgba(${p.hue || color},1)`;
       ctx.beginPath();
@@ -22017,6 +22257,7 @@ function exitDevMode() {
   pickupParticles = [];
   deathParticles = [];
   orbTrailParticles = [];
+  warpStreamlines = [];
   planetRipples = [];
   destroyEffects = [];
   deathShards = [];
