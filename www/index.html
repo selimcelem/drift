@@ -9485,11 +9485,43 @@ function updatePixiPlayerLayer() {
         pixiTrailGraphics.moveTo(p.x, p.y);
         pixiTrailGraphics.lineTo(p.x - p.dx * p.len, p.y - p.dy * p.len);
         pixiTrailGraphics.lineStyle(); // reset so next iter doesn't accidentally stroke a fill
-      } else if (p.kind === 'rock' || p.kind === 'shield-fragment') {
+      } else if (p.kind === 'shield-fragment') {
+        // v1.7.0 polish r6: render shield-fragment as a mini electric ball
+        // — concentric translucent circles approximate the radial-gradient
+        // halo on Canvas 2D. Tinted gold under shield, brighter under
+        // fortress. PIXI.Graphics has no createRadialGradient, hence the
+        // multi-fill stack.
+        const fragR = p.size + 1.5;
+        const goldOn = activeEffects.shield > 0 || !!fortressShield;
+        const fortressOn = !!fortressShield;
+        const haloOuter = fragR + 6;
+        const haloCol = fortressOn ? ((255 << 16) | (235 << 8) | 180)
+                     : goldOn      ? ((240 << 16) | (225 << 8) | 200)
+                     :               ((220 << 16) | (220 << 8) | 230);
+        const coreCol = goldOn ? ((255 << 16) | (250 << 8) | 220)
+                               : ((245 << 16) | (245 << 8) | 250);
+        const t = Date.now();
+        const pulseAlpha = (0.38 + 0.14 * Math.sin(t * 0.0125)) * (fortressOn ? 1.25 : (goldOn ? 1.1 : 1.0));
+        // Three concentric halo circles.
+        if (pixiTrailAdditiveGraphics) {
+          pixiTrailAdditiveGraphics.beginFill(haloCol, Math.min(1, pulseAlpha) * a);
+          pixiTrailAdditiveGraphics.drawCircle(p.x, p.y, haloOuter);
+          pixiTrailAdditiveGraphics.endFill();
+          pixiTrailAdditiveGraphics.beginFill(haloCol, Math.min(1, pulseAlpha * 0.55) * a);
+          pixiTrailAdditiveGraphics.drawCircle(p.x, p.y, haloOuter * 0.7);
+          pixiTrailAdditiveGraphics.endFill();
+          pixiTrailAdditiveGraphics.beginFill(coreCol, 0.95 * a);
+          pixiTrailAdditiveGraphics.drawCircle(p.x, p.y, fragR * 0.55);
+          pixiTrailAdditiveGraphics.endFill();
+        } else {
+          pixiTrailGraphics.beginFill(coreCol, 0.85 * a);
+          pixiTrailGraphics.drawCircle(p.x, p.y, fragR * 0.6);
+          pixiTrailGraphics.endFill();
+        }
+        continue;
+      } else if (p.kind === 'rock') {
         const s = p.size;
-        // Rock kind uses p.angle for rotation; shield-fragment uses p.rockAngle
-        // (its p.angle is the orbit angle, separate from its tumble).
-        const rotAngle = (p.kind === 'shield-fragment') ? (p.rockAngle || 0) : p.angle;
+        const rotAngle = p.angle;
         const cosA = Math.cos(rotAngle), sinA = Math.sin(rotAngle);
         const verts = [
           { x: -s,       y: -s * 0.4 },
@@ -9513,53 +9545,35 @@ function updatePixiPlayerLayer() {
       }
     }
   }
-  // v1.7.0 polish r5: Warp lightning bolts on the additive layer. Two
-  // strokes per bolt — thicker cyan outer + thin white inner core — and
-  // one or two short branches at hyperspeed 7+ stacks. Same flash-curve
-  // (full bright for 25 % of life, then fade) as the Canvas 2D path.
-  if (trailVisible && pixiTrailAdditiveGraphics && warpLightning.length) {
+  // v1.7.0 polish r6: Warp soft motion streaks. Pixi.Graphics doesn't
+  // support gradient strokes, so we emulate the head→middle→tail alpha
+  // gradient via 3 sub-strokes per streak, each with its own alpha tier.
+  // Always one streak per spawn render at 0.55× alpha for the tail/head
+  // taper plus one at full alpha for the middle 50 %.
+  if (trailVisible && pixiTrailAdditiveGraphics && warpStreaks.length) {
     const now = Date.now();
-    const OUTER_INT = (180 << 16) | (220 << 8) | 255;
-    const INNER_INT = (240 << 16) | (250 << 8) | 255;
-    for (const b of warpLightning) {
-      const age = (now - b.startTime) / b.maxLifeMs;
+    const STREAK_INT = (140 << 16) | (200 << 8) | 255;
+    for (const sk of warpStreaks) {
+      const age = (now - sk.startTime) / sk.maxLifeMs;
       if (age >= 1) continue;
-      const flash = age < 0.25 ? 1 : (1 - (age - 0.25) / 0.75);
-      const a = flash * b.alphaMul;
+      const lifeMul = age < 0.15 ? (age / 0.15) : (1 - (age - 0.15) / 0.85);
+      const a = Math.max(0, Math.min(1, lifeMul)) * sk.peakAlpha;
       if (a <= 0.02) continue;
 
-      // Outer cyan-blue.
-      pixiTrailAdditiveGraphics.lineStyle({ width: b.outerW, color: OUTER_INT, alpha: a * 0.85, cap: 'round', join: 'round' });
-      pixiTrailAdditiveGraphics.moveTo(b.pts[0], b.pts[1]);
-      for (let i = 1; i < b.N; i++) {
-        pixiTrailAdditiveGraphics.lineTo(b.pts[i * 2], b.pts[i * 2 + 1]);
-      }
-      pixiTrailAdditiveGraphics.lineStyle();
-
-      // Inner white core.
-      pixiTrailAdditiveGraphics.lineStyle({ width: b.innerW, color: INNER_INT, alpha: a, cap: 'round', join: 'round' });
-      pixiTrailAdditiveGraphics.moveTo(b.pts[0], b.pts[1]);
-      for (let i = 1; i < b.N; i++) {
-        pixiTrailAdditiveGraphics.lineTo(b.pts[i * 2], b.pts[i * 2 + 1]);
-      }
-      pixiTrailAdditiveGraphics.lineStyle();
-
-      if (b.branches) {
-        for (const br of b.branches) {
-          pixiTrailAdditiveGraphics.lineStyle({ width: b.outerW * 0.7, color: OUTER_INT, alpha: a * 0.7, cap: 'round', join: 'round' });
-          pixiTrailAdditiveGraphics.moveTo(br.pts[0], br.pts[1]);
-          for (let i = 1; i <= br.N; i++) {
-            pixiTrailAdditiveGraphics.lineTo(br.pts[i * 2], br.pts[i * 2 + 1]);
-          }
-          pixiTrailAdditiveGraphics.lineStyle();
-          pixiTrailAdditiveGraphics.lineStyle({ width: b.innerW * 0.7, color: INNER_INT, alpha: a * 0.85, cap: 'round', join: 'round' });
-          pixiTrailAdditiveGraphics.moveTo(br.pts[0], br.pts[1]);
-          for (let i = 1; i <= br.N; i++) {
-            pixiTrailAdditiveGraphics.lineTo(br.pts[i * 2], br.pts[i * 2 + 1]);
-          }
-          pixiTrailAdditiveGraphics.lineStyle();
+      // Helper to stroke a slice [iStart, iEnd] of the polyline at alpha.
+      const stroke = (iStart, iEnd, alpha) => {
+        pixiTrailAdditiveGraphics.lineStyle({ width: sk.width, color: STREAK_INT, alpha, cap: 'round', join: 'round' });
+        pixiTrailAdditiveGraphics.moveTo(sk.pts[iStart * 2], sk.pts[iStart * 2 + 1]);
+        for (let i = iStart + 1; i <= iEnd; i++) {
+          pixiTrailAdditiveGraphics.lineTo(sk.pts[i * 2], sk.pts[i * 2 + 1]);
         }
-      }
+        pixiTrailAdditiveGraphics.lineStyle();
+      };
+      // 3 sub-segments for N=4: head-mid (faded-in), mid-tail-1 (full),
+      // tail-end (faded-out).
+      stroke(0, 1, a * 0.35);          // head: rising
+      stroke(1, 2, a);                 // middle: peak
+      stroke(2, 3, a * 0.35);           // tail: falling
     }
   }
 }
@@ -12184,7 +12198,7 @@ function resetGame() {
   ghostlightPendingKills = [];
   beyondAfterimage = null;
   orbTrailParticles = [];
-  warpLightning = [];
+  warpStreaks = [];
   planetRipples = [];
   destroyEffects = [];
   deathShards = [];
@@ -12569,6 +12583,8 @@ function checkCollisions() {
         bodies.splice(i, 1);
         checkDestroyProc(_shieldVictim, 'shield');
         shieldHits--;
+        // v1.7.0 polish r6: pulse the Bulwark electric-ball flash.
+        lastBulwarkEmpFlashTime = Date.now();
         if (shieldHits <= 0) {
           shieldEndTime = 0;
           activeEffects.shield = 0;
@@ -12593,6 +12609,8 @@ function checkCollisions() {
           SFX.playSfxBuffer('shieldDestroy', 0.3);
           crackFragments.splice(i, 1);
           shieldHits--;
+          // v1.7.0 polish r6: pulse the Bulwark electric-ball flash.
+          lastBulwarkEmpFlashTime = Date.now();
           if (shieldHits <= 0) {
             shieldEndTime = 0;
             activeEffects.shield = 0;
@@ -13847,7 +13865,7 @@ function update() {
 
   emitOrbTrail();
   updateOrbTrailParticles();
-  updateWarpLightning();
+  updateWarpStreaks();
 
   if (checkCollisions()) triggerDeath();
 }
@@ -13936,7 +13954,7 @@ function updateTutorial() {
   // Trail particles so the orb shows movement nicely during steps 2/3.
   emitOrbTrail();
   updateOrbTrailParticles();
-  updateWarpLightning();
+  updateWarpStreaks();
   // v1.6.4 Fix: advance novaRings (radius growth + life decay). The
   // production pipeline does this in update()'s nova-rings block (~12604),
   // which is short-circuited when state === 'tutorial'. Without this loop
@@ -16566,17 +16584,18 @@ let orbTrailParticles = [];
 // Phantom's denser wisps, and the radial bursts emitted on nova-just-fired.
 const ORB_TRAIL_CAP = 30;
 
-// v1.7.0 polish (round 5): Warp Reality Tear is now LIGHTNING bolts —
-// jagged segmented streaks projected backward from the orb edge, flashing
-// in (≤350 ms) with a thicker cyan-blue outer pass + thin white inner
-// core, additively blended. Replaces the wind-tunnel streamline system
-// from rounds 3-4 (which never sold the "high-speed warp" feel — see
-// _reference/trails/warp_lightning_streaks.png).
+// v1.7.0 polish (round 6): Warp Reality Tear is now SOFT MOTION STREAKS —
+// a few smooth curved sub-trails that emerge from the orb edge, fade up
+// from invisible to peak alpha around the middle, then taper to nothing
+// at the tail. Replaces the lightning-bolt system from r5 (read as too
+// bright / lightning-storm rather than motion blur). Reference: long-
+// exposure light streaks — _reference/trails/warp_lightning_streaks.png.
 //
-// Held in its own array so it doesn't compete with the 30-particle orb
-// trail cap. Cap 24 — bolts are short-lived so churn is high.
-let warpLightning = [];
-const WARP_LIGHTNING_CAP = 24;
+// HARD cap: never more than 3 streaks per emit cycle regardless of stacks.
+// Stacks scale alpha + length, NOT count. Sparks are a separate small
+// accent kind tracked in the shared orbTrailParticles pool.
+let warpStreaks = [];
+const WARP_STREAK_CAP = 24;
 
 function emitOrbTrail() {
   if (state !== 'playing') return;
@@ -16911,11 +16930,11 @@ function emitOrbTrailUnlocked(orb, intensity, sizeMul, alphaMul, px, py, bx, by,
       }, ORB_TRAIL_CAP);
     }
   } else if (orb === 'nebula') {
-    // REALITY TEAR — lightning bolts (v1.7.0 polish round 5). Streamlines
-    // never sold the high-speed warp feel; replaced with jagged segmented
-    // lightning streaks that flash backward from the orb's edge. See
-    // _reference/trails/warp_lightning_streaks.png.
-    spawnWarpLightning(intensity, sizeMul, alphaMul, hyperOn, stacks, bx, by);
+    // REALITY TEAR — soft motion streaks (v1.7.0 polish round 6). The
+    // r5 lightning bolts read as a separate UI element rather than trail;
+    // replaced with subtle blue motion-blur streaks that fade in from the
+    // orb edge. See _reference/trails/warp_lightning_streaks.png.
+    spawnWarpStreaks(intensity, sizeMul, alphaMul, hyperOn, stacks, bx, by);
   } else if (orb === 'asteroid') {
     // AEGIS SHARDS — 5 fragments orbit close to the player. Trail itself
     // adapts to shield state (no separate hex shield UI element):
@@ -16952,185 +16971,146 @@ function emitOrbTrailUnlocked(orb, intensity, sizeMul, alphaMul, px, py, bx, by,
         alphaMul, startTime: nowOt, maxLifeMs: 1500,
       }, ORB_TRAIL_CAP);
     }
-    // Dust kicked up beneath. Reuses the 'cyan' kind (orb-tinted circle).
-    // Shield active: dust intensifies (twice the spawn frequency, slightly
-    // larger) — reads as the orb pushing harder against gravity.
-    const dustMore = shieldOn;
-    const dustCount = dustMore ? 2 : 1;
-    for (let di = 0; di < dustCount; di++) {
-      pushCapped(orbTrailParticles, {
-        kind: 'cyan',
-        x: px + (Math.random() - 0.5) * 6,
-        y: py + (Math.random() - 0.5) * 4,
-        vx: bx * 0.15 + (Math.random() - 0.5) * 0.4,
-        vy: by * 0.15 + (Math.random() - 0.5) * 0.4,
-        life: 1, size: ((dustMore ? 4.0 : 3.5) + Math.random() * 2.5) * sizeMul,
-        alphaMul: alphaMul * 0.45, startTime: nowOt, maxLifeMs: 700,
-      }, ORB_TRAIL_CAP);
-    }
-    // Multi-stack / fortress shield: emit small gold spark particles
-    // orbiting alongside the fragments. Sparks reuse the 'cyan' kind with
-    // a gold hue and small size; throttled to every ~8 frames so the air
-    // around the orb gets a soft gold shimmer without overflowing the cap.
-    const sparksOn = (layers >= 2) || fortressShield;
-    if (sparksOn && (frame % 8) === 0) {
-      const sparkHue = fortressShield ? '255,240,170' : '255,220,140';
-      const sparkAng = Math.random() * Math.PI * 2;
-      const sparkR = 14 + Math.random() * 3;
-      pushCapped(orbTrailParticles, {
-        kind: 'cyan',
-        x: player.x + Math.cos(sparkAng) * sparkR,
-        y: player.y + Math.sin(sparkAng) * sparkR,
-        vx: (Math.random() - 0.5) * 0.6,
-        vy: (Math.random() - 0.5) * 0.6 - 0.2,
-        hue: sparkHue,
-        life: 1, size: (1.2 + Math.random() * 0.8) * sizeMul,
-        alphaMul: Math.min(1, alphaMul * 1.2),
-        startTime: nowOt, maxLifeMs: 500,
-      }, ORB_TRAIL_CAP);
-    }
+    // v1.7.0 polish r6: dust + spark particles deleted. The electric-ball
+    // treatment on the orb itself + the fragments is the new visual; extra
+    // particles muddied the read. Fragments stay (they're rendered as mini
+    // electric balls in drawOrbTrailParticles when kind === 'shield-fragment').
   }
 }
 
-// v1.7.0 polish r5: Warp lightning bolts.
+// v1.7.0 polish r6: Warp soft motion streaks.
 //
-// Each bolt is a baked jagged polyline projected backward from the orb's
-// edge along the motion-reversed direction (with a ±30° spread). Per-
-// segment angular kinks produce real-lightning shapes — not smooth curves.
-// Bolts FLASH (200-350 ms life, full intensity for ~30% of life, then
-// fade out) so the trail constantly renews instead of lingering.
+// Each streak is a smooth gently-curved polyline of 4 vertices (3 sub-
+// segments). Originates AT the orb edge in the motion-reversed direction,
+// trails backward with ±20° random spread + a slight wavy curve. The
+// alpha gradient along the length goes 0 (head/orb edge) → peak (middle)
+// → 0 (tail), so the streak fades INTO existence as it trails away from
+// the orb instead of popping in. Color is soft blue (140,200,255), NOT
+// white — that's why the previous lightning iteration read as too bright.
 //
-// Render is a two-pass stroke per bolt: thicker cyan outer (3-4 px) +
-// thin white inner core (1.5-2 px). Additive blend.
-//
-// Hyperspeed: longer (90-120 px), more bolts per emit, brighter core. At
-// 7+ stacks an occasional "main bolt" gets one or two short branching
-// sub-bolts forking off mid-length.
-function spawnWarpLightning(intensity, sizeMul, alphaMul, hyperOn, stacks, bx, by) {
-  // Spawn count per emit cycle (every 3rd frame).
+// HARD CAP: ≤ 3 streaks per emit cycle regardless of hyperspeed stacks.
+// Stacks scale alpha + length, NOT count. Render uses additive blending.
+function spawnWarpStreaks(intensity, sizeMul, alphaMul, hyperOn, stacks, bx, by) {
+  // Spawn count: hard cap at 3 regardless of stacks.
   let spawnCount;
   if (!hyperOn) {
     if (intensity < 0.5) {
-      // Idle: very rare (~one bolt every ~200 ms = ~one per 4 emit cycles).
-      spawnCount = Math.random() < 0.25 ? 1 : 0;
+      spawnCount = 0;                                                 // idle: NONE
     } else if (intensity < 1.5) {
-      spawnCount = Math.random() < 0.7 ? 1 : 0;                       // slow: 0-1
+      spawnCount = Math.random() < 0.45 ? 1 : 0;                      // slow: 0-1
     } else {
-      spawnCount = 1 + (Math.random() < 0.5 ? 1 : 0);                 // active: 1-2
+      spawnCount = 1 + (Math.random() < 0.55 ? 1 : 0);                // active: 1-2
     }
   } else {
     if (stacks >= 7) {
-      spawnCount = 3 + Math.floor(Math.random() * 2);                 // 3-4
+      spawnCount = 3;                                                 // peak: always 3
     } else if (stacks >= 4) {
-      spawnCount = 2 + Math.floor(Math.random() * 2);                 // 2-3
+      spawnCount = 2 + (Math.random() < 0.5 ? 1 : 0);                 // 2-3
     } else {
-      spawnCount = 2 + (Math.random() < 0.4 ? 1 : 0);                 // 2-3
+      spawnCount = 2 + (Math.random() < 0.3 ? 1 : 0);                 // 2-3
     }
   }
   if (spawnCount <= 0) return;
+  if (spawnCount > 3) spawnCount = 3;
 
-  // bx/by is the unit "behind" vector — bolt PROJECTS in this direction.
-  // If the player is stationary bx=0, by=1 (behind = downward).
-  const projX = bx, projY = by;
   const orbR = (typeof PLAYER_R === 'number' ? PLAYER_R : 12);
 
   for (let s = 0; s < spawnCount; s++) {
-    // Random ±30° spread off the pure backward direction.
-    const baseAngle = Math.atan2(projY, projX) + (Math.random() - 0.5) * (Math.PI / 3);
-    let dx = Math.cos(baseAngle);
-    let dy = Math.sin(baseAngle);
-    // Origin at orb edge in that direction.
+    // ±20° spread off the pure backward direction (was ±30° for lightning;
+    // tighter so the streaks read as a coherent trail).
+    const baseAngle = Math.atan2(by, bx) + (Math.random() - 0.5) * (Math.PI / 4.5);
+    const dx = Math.cos(baseAngle);
+    const dy = Math.sin(baseAngle);
+    // Perpendicular to the streak direction, used for the wavy-curve.
+    const perpX = -dy, perpY = dx;
+    // Origin AT orb edge.
     const ox = player.x + dx * (orbR + 1);
     const oy = player.y + dy * (orbR + 1);
-    // Total length: 60-90 base, 90-120 hyperspeed.
-    const totalLen = (hyperOn ? 90 : 60) + Math.random() * 30;
-    // Segment count 4-6.
-    const N = 4 + Math.floor(Math.random() * 3);
-    const stepLen = totalLen / N;
-    const pts = new Array((N + 1) * 2);
-    pts[0] = ox; pts[1] = oy;
-    let cx = ox, cy = oy, cdx = dx, cdy = dy;
-    for (let i = 1; i <= N; i++) {
-      // Per-segment angular kink: ±0.5 rad (~±28°). Bigger kinks read as
-      // more jagged. Slight bias to alternate kink direction so the bolt
-      // doesn't all bend the same way (zigzag look).
-      const kink = (Math.random() - 0.5) * 1.0;
-      const ca = Math.cos(kink), sa = Math.sin(kink);
-      const ndx = cdx * ca - cdy * sa;
-      const ndy = cdx * sa + cdy * ca;
-      cdx = ndx; cdy = ndy;
-      cx += cdx * stepLen;
-      cy += cdy * stepLen;
-      pts[i * 2]     = cx;
-      pts[i * 2 + 1] = cy;
+    // Length scales gently with stacks (50-90 base → up to ~120 at 7+).
+    const lenBase = hyperOn ? (60 + Math.random() * 30) : (50 + Math.random() * 30);
+    const lenScale = hyperOn ? (1.0 + Math.min(0.4, stacks * 0.05)) : 1.0;
+    const totalLen = lenBase * lenScale;
+    // Smooth curve: 4 vertices = 3 sub-segments. Plenty for a gentle wave.
+    const N = 4;
+    const wobblePhase = Math.random() * Math.PI * 2;
+    const wobbleAmp = 4 + Math.random() * 4;            // ±4-8 px peak
+    const wobbleFreq = 0.04 + Math.random() * 0.025;
+    const pts = new Array(N * 2);
+    for (let i = 0; i < N; i++) {
+      const t = i / (N - 1);                            // 0 (head) → 1 (tail)
+      const longPos = t * totalLen;
+      // Wobble grows from 0 at the head (anchored to orb) to peak at tail.
+      const w = Math.sin(longPos * wobbleFreq + wobblePhase) * wobbleAmp * t;
+      const sx = ox + dx * longPos + perpX * w;
+      const sy = oy + dy * longPos + perpY * w;
+      pts[i * 2]     = sx;
+      pts[i * 2 + 1] = sy;
     }
-
-    // Hyperspeed at 7+ stacks: 25 % chance of a single branching sub-bolt
-    // forking from a mid-segment vertex with shorter length.
-    let branches = null;
-    if (hyperOn && stacks >= 7 && Math.random() < 0.25) {
-      const branchSeg = 1 + Math.floor(Math.random() * Math.max(1, N - 1));
-      const bx0 = pts[branchSeg * 2];
-      const by0 = pts[branchSeg * 2 + 1];
-      // Branch direction: kink off the bolt direction at that segment.
-      const baseDx = pts[branchSeg * 2] - pts[(branchSeg - 1) * 2];
-      const baseDy = pts[branchSeg * 2 + 1] - pts[(branchSeg - 1) * 2 + 1];
-      const baseMag = Math.hypot(baseDx, baseDy) || 1;
-      const bndx = baseDx / baseMag, bndy = baseDy / baseMag;
-      const branchKink = (Math.random() < 0.5 ? 1 : -1) * (0.6 + Math.random() * 0.5);
-      const ca = Math.cos(branchKink), sa = Math.sin(branchKink);
-      let bdx = bndx * ca - bndy * sa;
-      let bdy = bndx * sa + bndy * ca;
-      const bN = 2 + Math.floor(Math.random() * 2); // 2-3 segments
-      const bStep = (totalLen * 0.35) / bN;
-      const bpts = new Array((bN + 1) * 2);
-      bpts[0] = bx0; bpts[1] = by0;
-      let bcx = bx0, bcy = by0;
-      for (let bi = 1; bi <= bN; bi++) {
-        const bk = (Math.random() - 0.5) * 1.2;
-        const bca = Math.cos(bk), bsa = Math.sin(bk);
-        const nbdx = bdx * bca - bdy * bsa;
-        const nbdy = bdx * bsa + bdy * bca;
-        bdx = nbdx; bdy = nbdy;
-        bcx += bdx * bStep;
-        bcy += bdy * bStep;
-        bpts[bi * 2]     = bcx;
-        bpts[bi * 2 + 1] = bcy;
-      }
-      branches = [{ pts: bpts, N: bN }];
+    // Alpha + width tuned per state. Stacks scale alpha (0.7 → ~0.95) and
+    // width (1.2 → 2.0) without bumping count.
+    let peakAlpha;
+    if (!hyperOn) {
+      peakAlpha = 0.55;
+    } else {
+      peakAlpha = 0.7 + Math.min(0.25, stacks * 0.035);
     }
-
-    const lifeMs = 200 + Math.random() * 150;
-    const outerW = hyperOn ? (3.0 + Math.random() * 1.0) : (2.5 + Math.random() * 1.0);
-    const innerW = hyperOn ? (1.5 + Math.random() * 0.5) : (1.2 + Math.random() * 0.4);
-    pushCapped(warpLightning, {
-      pts, N: N + 1,
-      branches,
-      outerW, innerW,
+    const width = (hyperOn ? 1.5 : 1.3) + Math.min(0.7, stacks * 0.07);
+    const lifeMs = 400 + Math.random() * 200;
+    pushCapped(warpStreaks, {
+      pts, N,
+      width,
       startTime: Date.now(),
       maxLifeMs: lifeMs,
-      alphaMul: Math.min(1, alphaMul * (hyperOn ? 1.05 : 0.95)),
-    }, WARP_LIGHTNING_CAP);
+      peakAlpha: Math.min(0.95, peakAlpha * Math.max(0.6, alphaMul)),
+    }, WARP_STREAK_CAP);
   }
-}
 
-// Cull expired bolts. Called from the update tick.
-function updateWarpLightning() {
-  if (!warpLightning.length) return;
-  const now = Date.now();
-  for (let i = warpLightning.length - 1; i >= 0; i--) {
-    if (now - warpLightning[i].startTime >= warpLightning[i].maxLifeMs) {
-      warpLightning.splice(i, 1);
+  // Spark accents — small soft cyan dots emitted alongside the streaks.
+  // These drift in the existing orbTrailParticles pool (kind 'cyan' with
+  // a soft-blue hue override). HARD cap 4 sparks per emit.
+  let sparkCount = 0;
+  if (!hyperOn) {
+    if (intensity >= 1.5) sparkCount = 1 + (Math.random() < 0.45 ? 1 : 0);
+    else if (intensity >= 0.5) sparkCount = Math.random() < 0.5 ? 1 : 0;
+  } else {
+    sparkCount = stacks >= 4 ? 3 : 2;
+  }
+  if (sparkCount > 4) sparkCount = 4;
+  if (sparkCount > 0) {
+    for (let k = 0; k < sparkCount; k++) {
+      const sa = Math.atan2(by, bx) + (Math.random() - 0.5) * (Math.PI / 3);
+      const sx = player.x + Math.cos(sa) * (orbR + 2);
+      const sy = player.y + Math.sin(sa) * (orbR + 2);
+      pushCapped(orbTrailParticles, {
+        kind: 'cyan',
+        x: sx, y: sy,
+        vx: Math.cos(sa) * (1.2 + Math.random() * 0.8),
+        vy: Math.sin(sa) * (1.2 + Math.random() * 0.8),
+        hue: '180,220,255',
+        life: 1, size: (1.3 + Math.random() * 0.9) * sizeMul,
+        alphaMul: Math.min(1, alphaMul * (hyperOn ? 1.0 : 0.85)),
+        startTime: Date.now(), maxLifeMs: 300 + Math.random() * 200,
+      }, ORB_TRAIL_CAP);
     }
   }
 }
 
-// Canvas 2D bolt render: per bolt, two strokes — thicker cyan outer + thin
-// white inner core. Additive blend. Brightness curve flashes (full for
-// first 25 % of life, then linear fade). Branch sub-bolts (hyperspeed 7+)
-// stroke alongside the main bolt.
-function drawWarpLightning(tctx) {
-  if (!warpLightning.length) return;
+// Cull expired streaks.
+function updateWarpStreaks() {
+  if (!warpStreaks.length) return;
+  const now = Date.now();
+  for (let i = warpStreaks.length - 1; i >= 0; i--) {
+    if (now - warpStreaks[i].startTime >= warpStreaks[i].maxLifeMs) {
+      warpStreaks.splice(i, 1);
+    }
+  }
+}
+
+// Canvas 2D streak render. Per streak: build a linear gradient from head
+// (alpha 0) → middle (peakAlpha) → tail (alpha 0), apply to a single
+// stroke. Uses `lighter` composite for the soft additive glow.
+function drawWarpStreaks(tctx) {
+  if (!warpStreaks.length) return;
   const ctx = tctx;
   const now = Date.now();
   ctx.save();
@@ -17138,55 +17118,30 @@ function drawWarpLightning(tctx) {
   ctx.lineJoin = 'round';
   const prevComp = ctx.globalCompositeOperation;
   ctx.globalCompositeOperation = 'lighter';
-  for (const b of warpLightning) {
-    const age = (now - b.startTime) / b.maxLifeMs;
+  for (const sk of warpStreaks) {
+    const age = (now - sk.startTime) / sk.maxLifeMs;
     if (age >= 1) continue;
-    // Flash curve: full bright for first 25 %, fade to 0 over rest.
-    const flash = age < 0.25 ? 1 : (1 - (age - 0.25) / 0.75);
-    const a = flash * b.alphaMul;
+    // Life envelope: ramp in over first 15 %, then ease out over remainder.
+    const lifeMul = age < 0.15 ? (age / 0.15) : (1 - (age - 0.15) / 0.85);
+    const a = Math.max(0, Math.min(1, lifeMul)) * sk.peakAlpha;
     if (a <= 0.02) continue;
-
-    // Outer cyan-blue stroke.
-    ctx.strokeStyle = `rgba(180,220,255,${a * 0.85})`;
-    ctx.lineWidth = b.outerW;
+    // Linear gradient from head → tail. Mid-stop carries the peak, head
+    // and tail both clamp to 0 for the fade-in/fade-out look.
+    const x0 = sk.pts[0],          y0 = sk.pts[1];
+    const x1 = sk.pts[(sk.N - 1) * 2], y1 = sk.pts[(sk.N - 1) * 2 + 1];
+    const grad = ctx.createLinearGradient(x0, y0, x1, y1);
+    grad.addColorStop(0,    `rgba(140,200,255,0)`);
+    grad.addColorStop(0.45, `rgba(140,200,255,${a})`);
+    grad.addColorStop(0.55, `rgba(170,220,255,${a})`);
+    grad.addColorStop(1,    `rgba(140,200,255,0)`);
+    ctx.strokeStyle = grad;
+    ctx.lineWidth = sk.width;
     ctx.beginPath();
-    ctx.moveTo(b.pts[0], b.pts[1]);
-    for (let i = 1; i < b.N; i++) {
-      ctx.lineTo(b.pts[i * 2], b.pts[i * 2 + 1]);
+    ctx.moveTo(x0, y0);
+    for (let i = 1; i < sk.N; i++) {
+      ctx.lineTo(sk.pts[i * 2], sk.pts[i * 2 + 1]);
     }
     ctx.stroke();
-
-    // Inner white core.
-    ctx.strokeStyle = `rgba(240,250,255,${a})`;
-    ctx.lineWidth = b.innerW;
-    ctx.beginPath();
-    ctx.moveTo(b.pts[0], b.pts[1]);
-    for (let i = 1; i < b.N; i++) {
-      ctx.lineTo(b.pts[i * 2], b.pts[i * 2 + 1]);
-    }
-    ctx.stroke();
-
-    // Branches: render with the same two-pass scheme but slightly thinner.
-    if (b.branches) {
-      for (const br of b.branches) {
-        ctx.strokeStyle = `rgba(180,220,255,${a * 0.7})`;
-        ctx.lineWidth = b.outerW * 0.7;
-        ctx.beginPath();
-        ctx.moveTo(br.pts[0], br.pts[1]);
-        for (let i = 1; i <= br.N; i++) {
-          ctx.lineTo(br.pts[i * 2], br.pts[i * 2 + 1]);
-        }
-        ctx.stroke();
-        ctx.strokeStyle = `rgba(240,250,255,${a * 0.85})`;
-        ctx.lineWidth = b.innerW * 0.7;
-        ctx.beginPath();
-        ctx.moveTo(br.pts[0], br.pts[1]);
-        for (let i = 1; i <= br.N; i++) {
-          ctx.lineTo(br.pts[i * 2], br.pts[i * 2 + 1]);
-        }
-        ctx.stroke();
-      }
-    }
   }
   ctx.globalCompositeOperation = prevComp;
   ctx.restore();
@@ -17324,22 +17279,18 @@ function drawOrbTrailParticles(tctx = ctx) {
       ctx.stroke();
       ctx.globalAlpha = a;
     } else if (p.kind === 'shield-fragment') {
-      // AEGIS SHARDS — small rock-like polygon orbiting the player. Same
-      // shape as the 'rock' kind but rotated by p.rockAngle (separate from
-      // the orbit angle) so the fragment tumbles independent of the orbit.
-      ctx.fillStyle = `rgba(${p.hue || orbRgb},1)`;
-      ctx.save();
-      ctx.translate(p.x, p.y);
-      ctx.rotate(p.rockAngle || 0);
-      const s = p.size;
-      ctx.beginPath();
-      ctx.moveTo(-s, -s * 0.4);
-      ctx.lineTo(s * 0.6, -s);
-      ctx.lineTo(s, s * 0.3);
-      ctx.lineTo(-s * 0.3, s);
-      ctx.closePath();
-      ctx.fill();
-      ctx.restore();
+      // AEGIS SHARDS — orbiting fragments. v1.7.0 polish r6: rendered as
+      // mini electric balls (halo + bright core) instead of rock polygons,
+      // matching the player's electric-ball overlay. shield-fragment is
+      // only spawned when Tectonic is equipped, so no further check needed.
+      const fragR = p.size + 1.5;
+      ctx.globalAlpha = a;
+      drawElectricBallOverlay(ctx, p.x, p.y, fragR, {
+        shieldOn: activeEffects.shield > 0,
+        fortressOn: !!fortressShield,
+        shieldHits: shieldHits | 0,
+        isFragment: true,
+      });
     } else if (p.kind === 'afterimage') {
       // SPECTER'S VEIL Eternal afterimage — soft circular ghost of the orb,
       // fades out smoothly. Used only when ghost_ghost is active.
@@ -17395,11 +17346,11 @@ function drawOrbTrailParticles(tctx = ctx) {
 
 // drawTrail now renders the orb particle stream only. The legacy cyan position
 // trail was replaced per spec — every orb shares the same particle system.
-// v1.7.0 polish r5: Warp lightning bolts render after the particle stream
-// so they glow on top with additive blending.
+// v1.7.0 polish r6: Warp streaks render after the particle stream so the
+// gradient strokes glow on top with additive blending.
 function drawTrail() {
   drawOrbTrailParticles();
-  drawWarpLightning(ctx);
+  drawWarpStreaks(ctx);
 }
 
 function drawPlayer(tctx = ctx) {
@@ -17570,6 +17521,24 @@ function drawPlayer(tctx = ctx) {
   }, ctx);
   ctx.fillStyle = core; ctx.beginPath(); ctx.arc(0,0,PLAYER_R,0,6.28); ctx.fill();
 
+  // v1.7.0 polish r6: BULWARK ELECTRIC BALL — when Tectonic is equipped,
+  // overlay the orb with a glowing greyish-white electric sphere featuring
+  // crackling arcs that regenerate every ~80 ms. Shield/fortress states
+  // tint the glow gold and intensify arc density. The EMP-burst-flash
+  // on shield consume is gated by lastBulwarkEmpFlashTime which is set in
+  // the shield-break path. Sits ABOVE the base core so the player still
+  // reads as Bulwark's grey orb but with electric character.
+  if (activeOrb === 'asteroid'
+      && stats.unlockedTrails && stats.unlockedTrails.asteroid
+      && stats.equippedTrails && stats.equippedTrails.asteroid === 'unlocked') {
+    drawElectricBallOverlay(ctx, 0, 0, PLAYER_R, {
+      shieldOn: shielded,
+      fortressOn: !!fortressShield,
+      shieldHits: shieldHits | 0,
+      arcCount: 0, // 0 = use default (4 base, 6 with shield)
+    });
+  }
+
   const spd = Math.hypot(player.vx, player.vy);
   if (spd > 0.9) {
     ctx.globalAlpha = Math.min(spd/4,0.55) * ghostAlpha;
@@ -17578,6 +17547,151 @@ function drawPlayer(tctx = ctx) {
     ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(-player.vx*2.8,-player.vy*2.8); ctx.stroke();
   }
   ctx.restore(); ctx.globalAlpha = 1;
+}
+
+// v1.7.0 polish r6: Bulwark electric-ball overlay. Draws a glowing halo +
+// regenerating crackling arcs at (cx, cy) with given radius. Coordinate
+// space is the caller's — drawPlayer translates to player position before
+// calling this, so cx=cy=0; the fragment renderer passes absolute coords.
+//
+// Arcs regenerate on a deterministic 80 ms chunk so they're stable within
+// each chunk (no per-frame re-roll churn) and flicker between chunks.
+// `mulberry32` is reused from the existing codebase.
+let lastBulwarkEmpFlashTime = 0;
+function drawElectricBallOverlay(ctx, cx, cy, radius, opts) {
+  opts = opts || {};
+  const t = Date.now();
+  const shieldOn   = !!opts.shieldOn;
+  const fortressOn = !!opts.fortressOn;
+  const shieldHitsN = opts.shieldHits | 0;
+  const isFragment = !!opts.isFragment;
+  // Tint state. Shield active introduces gold; fortress brightens it.
+  const goldTier = fortressOn ? 2 : (shieldOn ? 1 : 0);
+
+  // EMP burst flash: 100 ms pure-white blast on shield break. The flash
+  // crossfades the entire overlay toward white. Expires after 120 ms.
+  const flashAge = t - lastBulwarkEmpFlashTime;
+  const flashFactor = (flashAge < 120) ? Math.max(0, 1 - flashAge / 120) : 0;
+
+  // 1) GLOW HALO — radial gradient extending past the orb edge. Pulses ~2 Hz.
+  const haloOuter = radius + (isFragment ? 6 : 18);
+  const haloInner = radius * 0.5;
+  const pulseAlpha = 0.38 + 0.14 * Math.sin(t * 0.0125);
+  const haloAlpha = pulseAlpha * (goldTier === 2 ? 1.25 : (goldTier === 1 ? 1.10 : 1.0));
+  const halo = ctx.createRadialGradient(cx, cy, haloInner, cx, cy, haloOuter);
+  if (goldTier === 2) {
+    halo.addColorStop(0,    `rgba(255,235,180,${Math.min(1, haloAlpha)})`);
+    halo.addColorStop(0.55, `rgba(230,210,170,${Math.min(1, haloAlpha * 0.55)})`);
+    halo.addColorStop(1,    'rgba(220,200,160,0)');
+  } else if (goldTier === 1) {
+    halo.addColorStop(0,    `rgba(240,225,200,${Math.min(1, haloAlpha)})`);
+    halo.addColorStop(0.55, `rgba(220,215,210,${Math.min(1, haloAlpha * 0.5)})`);
+    halo.addColorStop(1,    'rgba(210,210,210,0)');
+  } else {
+    halo.addColorStop(0,    `rgba(220,220,230,${Math.min(1, haloAlpha)})`);
+    halo.addColorStop(0.55, `rgba(200,200,210,${Math.min(1, haloAlpha * 0.45)})`);
+    halo.addColorStop(1,    'rgba(200,200,210,0)');
+  }
+  ctx.fillStyle = halo;
+  ctx.beginPath(); ctx.arc(cx, cy, haloOuter, 0, 6.28); ctx.fill();
+
+  if (isFragment) {
+    // Fragments stop at halo + bright core dot — interior arcs would be
+    // visual noise at small scale and expensive at 5 fragments × per frame.
+    const coreR = radius * 0.55;
+    const coreGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, coreR);
+    const coreCol  = goldTier ? '255,250,220' : '245,245,250';
+    coreGrad.addColorStop(0, `rgba(${coreCol},0.95)`);
+    coreGrad.addColorStop(1, `rgba(${coreCol},0)`);
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = coreGrad;
+    ctx.beginPath(); ctx.arc(cx, cy, coreR, 0, 6.28); ctx.fill();
+    ctx.restore();
+    return;
+  }
+
+  // 2) INTERIOR ARCS — clip to the orb's silhouette so arcs only render
+  // inside, then draw radial zigzag lines from a point near center out to
+  // the edge. Regenerate via deterministic seed every 80 ms.
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius * 1.02, 0, 6.28);
+  ctx.clip();
+
+  const prevComp = ctx.globalCompositeOperation;
+  ctx.globalCompositeOperation = 'lighter';
+
+  // Arc count scales with shield stacks. Base 4, shield 5, multi-stack 6,
+  // fortress 7. Cap at 7.
+  let arcCount = 4 + (shieldOn ? 1 : 0) + (shieldHitsN >= 2 ? 1 : 0) + (fortressOn ? 1 : 0);
+  if (arcCount > 7) arcCount = 7;
+  if (opts.arcCount > 0) arcCount = opts.arcCount;
+
+  const chunk = Math.floor(t / 80);
+  const baseStrokeCol = goldTier === 2 ? '255,235,180'
+                     : goldTier === 1 ? '240,225,200'
+                     :                  '220,220,230';
+  const innerStrokeCol = goldTier ? '255,250,220' : '245,245,250';
+
+  for (let i = 0; i < arcCount; i++) {
+    const seed = chunk * 49297 + i * 9301 + 5717;
+    const rng = mulberry32(seed >>> 0);
+    const startAng = rng() * Math.PI * 2;
+    const segments = 3 + Math.floor(rng() * 3); // 3-5
+    let dirAng = startAng;
+    let curX = cx + Math.cos(startAng) * radius * 0.1;
+    let curY = cy + Math.sin(startAng) * radius * 0.1;
+    const stepLen = radius / segments;
+    // Outer thicker stroke (cyan/grey glow).
+    ctx.strokeStyle = `rgba(${baseStrokeCol},0.78)`;
+    ctx.lineWidth = 1.4;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(curX, curY);
+    let endX = curX, endY = curY;
+    for (let s = 0; s < segments; s++) {
+      const kink = (rng() - 0.5) * 1.6;
+      dirAng += kink;
+      endX += Math.cos(dirAng) * stepLen;
+      endY += Math.sin(dirAng) * stepLen;
+      ctx.lineTo(endX, endY);
+    }
+    ctx.stroke();
+    // Inner thin bright pass — same path, override stroke. Re-draw same
+    // segments since the canvas path is consumed.
+    ctx.strokeStyle = `rgba(${innerStrokeCol},0.95)`;
+    ctx.lineWidth = 0.6;
+    ctx.stroke();
+  }
+
+  // 3) CENTER CORE — bright spot in the middle, the source of the arcs.
+  const coreR = radius * 0.22;
+  const coreCol = goldTier ? '255,250,220' : '245,245,250';
+  const coreGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, coreR);
+  coreGrad.addColorStop(0, `rgba(${coreCol},0.92)`);
+  coreGrad.addColorStop(1, `rgba(${coreCol},0)`);
+  ctx.fillStyle = coreGrad;
+  ctx.beginPath(); ctx.arc(cx, cy, coreR, 0, 6.28); ctx.fill();
+
+  ctx.globalCompositeOperation = prevComp;
+  ctx.restore();
+
+  // 4) EMP BURST FLASH — overlay a quick white flash if a shield was just
+  // consumed. The flash punches through clipping so it covers the full
+  // halo extent, not just the orb interior.
+  if (flashFactor > 0) {
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    const fA = flashFactor * 0.85;
+    const fGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, haloOuter * 1.1);
+    fGrad.addColorStop(0,    `rgba(255,255,255,${fA})`);
+    fGrad.addColorStop(0.55, `rgba(245,245,250,${fA * 0.6})`);
+    fGrad.addColorStop(1,    'rgba(245,245,250,0)');
+    ctx.fillStyle = fGrad;
+    ctx.beginPath(); ctx.arc(cx, cy, haloOuter * 1.1, 0, 6.28); ctx.fill();
+    ctx.restore();
+  }
 }
 
 function drawPairTethers() {
@@ -18647,7 +18761,7 @@ function loop() {
         destroyEffects = [];
         deathShards = [];
         orbTrailParticles = [];
-        warpLightning = [];
+        warpStreaks = [];
         crackFragments = [];
 
       }
@@ -19562,7 +19676,7 @@ function goToMainMenu() {
   ghostlightPendingKills = [];
   beyondAfterimage = null;
   orbTrailParticles = [];
-  warpLightning = [];
+  warpStreaks = [];
   planetRipples = [];
   destroyEffects = [];
   deathShards = [];
@@ -20155,6 +20269,14 @@ function drawOrbPreview() {
   orbPreviewCtx.fillStyle = core;
   orbPreviewCtx.beginPath(); orbPreviewCtx.arc(cx, cy, 20, 0, 6.28); orbPreviewCtx.fill();
   orbPreviewCtx.restore();
+
+  // v1.7.0 polish r6: Bulwark + Tectonic preview gets the electric-ball
+  // overlay on top of the core so the menu shows the same look as gameplay.
+  if (key === 'asteroid' && useUnlocked) {
+    drawElectricBallOverlay(orbPreviewCtx, cx, cy, 22, {
+      shieldOn: false, fortressOn: false, shieldHits: 0,
+    });
+  }
 }
 
 // v1.7.0: unlocked-variant rendering for the orb-preview canvas. Uses the
@@ -20204,41 +20326,41 @@ function drawOrbPreviewUnlocked(particles, orbKey, color, cx, cy, t) {
       });
     }
   } else if (orbKey === 'nebula') {
-    // v1.7.0 polish r5: lightning bolt preview — jagged segmented bolts
-    // flashing backward (downward) from the bobbing orb. Sparse spawn rate
-    // matches the new gameplay base cadence; outer cyan + inner white.
-    if (Math.random() < 0.4) {
-      // Backward direction in the preview is downward (orb bobs upward).
-      const baseAngle = Math.PI / 2 + (Math.random() - 0.5) * (Math.PI / 3);
-      let dx = Math.cos(baseAngle), dy = Math.sin(baseAngle);
+    // v1.7.0 polish r6: soft motion streak preview. Smooth curved polyline
+    // with gradient alpha (head 0 → middle peak → tail 0), additive blend.
+    if (Math.random() < 0.45) {
+      // Backward in the preview is downward (orb bobs upward).
+      const baseAngle = Math.PI / 2 + (Math.random() - 0.5) * (Math.PI / 4.5);
+      const dx = Math.cos(baseAngle), dy = Math.sin(baseAngle);
+      const perpX = -dy, perpY = dx;
       const ox = cx + dx * 24;
       const oy = cy + dy * 24;
       const totalLen = 70 + Math.random() * 30;
-      const N = 4 + Math.floor(Math.random() * 3);
-      const stepLen = totalLen / N;
-      const pts = [ox, oy];
-      let curX = ox, curY = oy, cdx = dx, cdy = dy;
-      for (let i = 1; i <= N; i++) {
-        const kink = (Math.random() - 0.5) * 1.0;
-        const ca = Math.cos(kink), sa = Math.sin(kink);
-        const ndx = cdx * ca - cdy * sa;
-        const ndy = cdx * sa + cdy * ca;
-        cdx = ndx; cdy = ndy;
-        curX += cdx * stepLen;
-        curY += cdy * stepLen;
-        pts.push(curX, curY);
+      const N = 4;
+      const wobblePhase = Math.random() * Math.PI * 2;
+      const wobbleAmp = 5 + Math.random() * 4;
+      const wobbleFreq = 0.05 + Math.random() * 0.025;
+      const pts = [];
+      for (let i = 0; i < N; i++) {
+        const t = i / (N - 1);
+        const longPos = t * totalLen;
+        const w = Math.sin(longPos * wobbleFreq + wobblePhase) * wobbleAmp * t;
+        pts.push(ox + dx * longPos + perpX * w, oy + dy * longPos + perpY * w);
       }
       particles.push({
-        kind: 'lightning',
-        pts, N: N + 1,
-        outerW: 2.5 + Math.random() * 1.0,
-        innerW: 1.3 + Math.random() * 0.4,
+        kind: 'streak',
+        pts, N,
+        width: 1.4 + Math.random() * 0.4,
+        peakAlpha: 0.65,
         startTime: performance.now(),
-        maxLifeMs: 220 + Math.random() * 130,
+        maxLifeMs: 500,
         life: 1,
       });
     }
   } else if (orbKey === 'asteroid') {
+    // v1.7.0 polish r6: dust particles removed; fragments are mini electric
+    // balls now. Fragment count and orbit math are unchanged so the orbit
+    // ring still reads the same.
     let aliveFrag = 0;
     for (const p of particles) if (p.kind === 'shield-fragment') aliveFrag++;
     if (aliveFrag < 5 && Math.random() < 0.3) {
@@ -20249,14 +20371,6 @@ function drawOrbPreviewUnlocked(particles, orbKey, color, cx, cy, t) {
         spin: (Math.random() - 0.5) * 0.12,
         life: 1, size: 3.5 + Math.random() * 1.5,
         x: cx, y: cy, startTime: performance.now(), maxLifeMs: 3000,
-      });
-    }
-    // Soft dust circle
-    if (Math.random() < 0.35) {
-      particles.push({
-        x: cx + (Math.random() - 0.5) * 22, y: cy + 14,
-        vx: (Math.random() - 0.5) * 0.4, vy: 0.4 + Math.random() * 0.6,
-        life: 1, size: 5 + Math.random() * 3, dust: true,
       });
     }
   }
@@ -20276,7 +20390,7 @@ function drawOrbPreviewUnlocked(particles, orbKey, color, cx, cy, t) {
       p.x += p.vx; p.y += p.vy;
       p.vy += 0.05; p.vx *= 0.985;
       if (p.flicker !== undefined) p.flicker += 0.28;
-    } else if (p.kind === 'streamline' || p.kind === 'lightning') {
+    } else if (p.kind === 'streamline' || p.kind === 'lightning' || p.kind === 'streak') {
       // Wall-clock age so the preview cadence matches gameplay. Polylines
       // are baked at spawn, so position never updates.
       const age = (nowPrev - p.startTime) / p.maxLifeMs;
@@ -20285,7 +20399,7 @@ function drawOrbPreviewUnlocked(particles, orbKey, color, cx, cy, t) {
       p.x += p.vx; p.y += p.vy;
       if (p.drift) p.x += p.drift;
     }
-    if (p.kind !== 'streamline' && p.kind !== 'lightning') p.life -= ageDecay;
+    if (p.kind !== 'streamline' && p.kind !== 'lightning' && p.kind !== 'streak') p.life -= ageDecay;
     if (p.life <= 0) particles.splice(i, 1);
   }
   if (particles.length > 40) particles.splice(0, particles.length - 40);
@@ -20310,19 +20424,11 @@ function drawOrbPreviewUnlocked(particles, orbKey, color, cx, cy, t) {
       ctx.lineTo(p.x - tx * r * 1.8, p.y - ty * r * 1.8);
       ctx.stroke();
     } else if (p.kind === 'shield-fragment') {
-      ctx.fillStyle = `rgba(${color},1)`;
-      ctx.save();
-      ctx.translate(p.x, p.y);
-      ctx.rotate(p.rockAngle || 0);
-      const s = p.size;
-      ctx.beginPath();
-      ctx.moveTo(-s, -s * 0.4);
-      ctx.lineTo(s * 0.6, -s);
-      ctx.lineTo(s, s * 0.3);
-      ctx.lineTo(-s * 0.3, s);
-      ctx.closePath();
-      ctx.fill();
-      ctx.restore();
+      // v1.7.0 polish r6: mini electric ball preview. Same overlay as
+      // gameplay; preview has no shield state so always default-tier.
+      ctx.globalAlpha = Math.max(0, p.life) * 0.85;
+      drawElectricBallOverlay(ctx, p.x, p.y, p.size + 1.5, { isFragment: true });
+      continue;
     } else if (p.kind === 'ember') {
       ctx.fillStyle = `rgba(${p.hue},1)`;
       const flick = 0.85 + Math.sin(p.flicker || 0) * 0.25;
@@ -20337,34 +20443,34 @@ function drawOrbPreviewUnlocked(particles, orbKey, color, cx, cy, t) {
       ctx.moveTo(p.x, p.y);
       ctx.lineTo(p.x, p.y - (p.lineLen || 20));
       ctx.stroke();
-    } else if (p.kind === 'lightning') {
-      // v1.7.0 polish r5: lightning bolt preview — two strokes, additive.
-      // Flash curve mirrors gameplay (full bright for 25 % of life).
+    } else if (p.kind === 'streak') {
+      // v1.7.0 polish r6: soft motion streak preview. Linear gradient stroke,
+      // additive blend. Same envelope as gameplay (rise then ease-out).
       const age = 1 - Math.max(0, p.life);
-      const flash = age < 0.25 ? 1 : (1 - (age - 0.25) / 0.75);
-      const prevComp = ctx.globalCompositeOperation;
-      ctx.globalCompositeOperation = 'lighter';
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
-      // Outer cyan-blue
-      ctx.strokeStyle = `rgba(180,220,255,${flash * 0.85})`;
-      ctx.lineWidth = p.outerW;
-      ctx.beginPath();
-      ctx.moveTo(p.pts[0], p.pts[1]);
-      for (let si = 1; si < p.N; si++) {
-        ctx.lineTo(p.pts[si * 2], p.pts[si * 2 + 1]);
+      const lifeMul = age < 0.15 ? (age / 0.15) : (1 - (age - 0.15) / 0.85);
+      const a = Math.max(0, Math.min(1, lifeMul)) * (p.peakAlpha || 0.65);
+      if (a > 0.02) {
+        const prevComp = ctx.globalCompositeOperation;
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        const x0 = p.pts[0],            y0 = p.pts[1];
+        const x1 = p.pts[(p.N - 1) * 2], y1 = p.pts[(p.N - 1) * 2 + 1];
+        const grad = ctx.createLinearGradient(x0, y0, x1, y1);
+        grad.addColorStop(0,    'rgba(140,200,255,0)');
+        grad.addColorStop(0.45, `rgba(140,200,255,${a})`);
+        grad.addColorStop(0.55, `rgba(170,220,255,${a})`);
+        grad.addColorStop(1,    'rgba(140,200,255,0)');
+        ctx.strokeStyle = grad;
+        ctx.lineWidth = p.width || 1.4;
+        ctx.beginPath();
+        ctx.moveTo(x0, y0);
+        for (let si = 1; si < p.N; si++) {
+          ctx.lineTo(p.pts[si * 2], p.pts[si * 2 + 1]);
+        }
+        ctx.stroke();
+        ctx.globalCompositeOperation = prevComp;
       }
-      ctx.stroke();
-      // Inner white
-      ctx.strokeStyle = `rgba(240,250,255,${flash})`;
-      ctx.lineWidth = p.innerW;
-      ctx.beginPath();
-      ctx.moveTo(p.pts[0], p.pts[1]);
-      for (let si = 1; si < p.N; si++) {
-        ctx.lineTo(p.pts[si * 2], p.pts[si * 2 + 1]);
-      }
-      ctx.stroke();
-      ctx.globalCompositeOperation = prevComp;
     } else if (p.kind === 'wisp') {
       ctx.fillStyle = `rgba(${p.hue || color},1)`;
       ctx.beginPath();
@@ -22462,7 +22568,7 @@ function exitDevMode() {
   pickupParticles = [];
   deathParticles = [];
   orbTrailParticles = [];
-  warpLightning = [];
+  warpStreaks = [];
   planetRipples = [];
   destroyEffects = [];
   deathShards = [];
