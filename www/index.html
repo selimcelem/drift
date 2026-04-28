@@ -6057,10 +6057,19 @@ const PGS = (() => {
     return Array.from(set).filter(k => ORB_DEFS[k]);
   }
   function mergeScores(a, b) {
+    // v1.7.0 dedup: previously this combined [...a, ...b] with no dedup, so
+    // each launch's syncFromRemote — which merges local against a remote that
+    // already contains local from the prior session — would duplicate entries
+    // up to the 5-per-difficulty cap. Dedup by (score, difficulty) signature
+    // before truncating so equal-value scores collapse to one entry.
     const combined = [...(a || []), ...(b || [])];
+    const seen = new Set();
     const byDiff = {};
     for (const s of combined) {
       if (!s || typeof s.score !== 'number' || !s.difficulty) continue;
+      const sig = s.score + '|' + s.difficulty;
+      if (seen.has(sig)) continue;
+      seen.add(sig);
       (byDiff[s.difficulty] = byDiff[s.difficulty] || []).push(s);
     }
     const kept = [];
@@ -6340,57 +6349,63 @@ function addShake(value) {
 }
 function shakeKill(b) {
   // Per-body destruction shake. Tiny → tier 1, large/special → tier 4.
+  // v1.7.0: bumped tiers (was 1/2/3/4) — kill feedback was too subtle.
   if (!b || typeof b.radius !== 'number') return;
   const r = b.radius;
   let v;
-  if (r >= 31) v = 4;       // heart, skull, mirror, void, screaming, etc.
-  else if (r >= 23) v = 3;
-  else if (r >= 16) v = 2;
-  else v = 1;
+  if (r >= 31) v = 6;       // heart, skull, mirror, void, screaming, etc.
+  else if (r >= 23) v = 4;
+  else if (r >= 16) v = 3;
+  else v = 2;
   addShake(v);
 }
 function shakeMassDestroy(count) {
   // Single shake for nova ring sweeps, EMP chains, hyperspeed barrier
   // sweeps, ghostlight bursts. Replaces per-kill stacking from those
   // sources so a 10-body sweep produces ONE punch, not 10 stacked.
+  // v1.7.0: bumped buckets (was 3/5/7) — mass destruction needs more punch.
   if (count <= 0) return;
-  const v = (count >= 8) ? 7 : (count >= 4) ? 5 : 3;
+  const v = (count >= 8) ? 11 : (count >= 4) ? 8 : 5;
   addShake(v);
 }
 function shakeBurst(orb) {
   // Per-orb tuning so each burst feels distinct. Bulwark heaviest, Phantom
   // ghostly. Default is Drifter's value if orb is unrecognized.
-  const v = orb === 'asteroid' ? 8
-          : orb === 'solar'    ? 7
-          : orb === 'cosmic'   ? 4
-          : orb === 'nebula'   ? 5
-          : 5;
+  // v1.7.0: bumped each (was 8/7/4/5/5).
+  const v = orb === 'asteroid' ? 10
+          : orb === 'solar'    ? 9
+          : orb === 'cosmic'   ? 5
+          : orb === 'nebula'   ? 6
+          : 6;
   addShake(v);
 }
 function shakeCombo(_comboKey, isFresh) {
-  // Fresh activation gets a gentle thump; refresh is almost silent — the
-  // combo's downstream effects (supernova waves, etc.) bring their own
-  // appropriate shakes via shakeMassDestroy on kill loops.
-  addShake(isFresh ? 5 : 1);
+  // Fresh activation gets a thump; refresh is quieter — the combo's
+  // downstream effects (supernova waves, etc.) bring their own appropriate
+  // shakes via shakeMassDestroy on kill loops.
+  // v1.7.0: bumped (was 5/1).
+  addShake(isFresh ? 7 : 2);
 }
 function shakeCapstone(capstone) {
+  // v1.7.0: bumped values across the board.
   switch (capstone) {
-    case 'deadCenter':       addShake(5); break;
-    case 'butterflyEffect':  addShake(4); break;
-    case 'shroud':           addShake(3); break;
-    case 'nightShade':       addShake(4); break;
-    case 'sunForge':         addShake(6); break;
-    case 'criticalMass':     addShake(6); break;
-    case 'aegis':            addShake(8); break;
-    case 'lingeringHorizon': addShake(5); break;
+    case 'deadCenter':       addShake(7); break;
+    case 'butterflyEffect':  addShake(6); break;
+    case 'shroud':           addShake(4); break;
+    case 'nightShade':       addShake(6); break;
+    case 'sunForge':         addShake(9); break;
+    case 'criticalMass':     addShake(9); break;
+    case 'aegis':            addShake(11); break;
+    case 'lingeringHorizon': addShake(7); break;
     // SUPERLUMINAL is a passive cap raise — no shake event.
     // PHALANX EMP cascade is covered by shakeMassDestroy at chain end.
   }
 }
 function shakePlayerDeath(cause) {
   // Hard impact spike on death. Apocalypse impact is bigger because it's
-  // the climactic end-of-run event; standard wall/body deaths are 14.
-  const v = (cause === 'apocalypse') ? 35 : 14;
+  // the climactic end-of-run event; standard wall/body deaths are 18.
+  // v1.7.0: bumped (was 14/35).
+  const v = (cause === 'apocalypse') ? 38 : 18;
   addShake(v);
 }
 
@@ -8001,18 +8016,40 @@ const SFX = (function() {
 // --- Highscores (localStorage, top 5) ---
 // Schema: [{ score: number, difficulty: 'NORMAL'|'HARD'|'EXTREME' }, ...]
 // Old schema (numbers) is migrated transparently.
+//
+// v1.7.0: dedup by (score, difficulty) signature on every load/save. Without
+// this, syncFromRemote merging local against a remote that already contains
+// local-from-prior-session would duplicate entries up to the 5-per-difficulty
+// cap on every launch. The merge path (mergeScores in the PGS module) does
+// the same dedup; doing it here too is defensive — cleans up already-bloated
+// stores from older builds, and stops local-only saves from drifting if the
+// merge path is ever bypassed.
+function _dedupScores(arr) {
+  const seen = new Set();
+  const out = [];
+  for (const s of arr) {
+    if (!s || typeof s.score !== 'number' || !s.difficulty) continue;
+    const sig = s.score + '|' + s.difficulty;
+    if (seen.has(sig)) continue;
+    seen.add(sig);
+    out.push(s);
+  }
+  return out;
+}
 function getScores() {
   try {
     const raw = JSON.parse(localStorage.getItem('drift_scores') || '[]');
-    return raw.map(s => typeof s === 'number' ? { score: s, difficulty: 'NORMAL' } : s);
+    const migrated = raw.map(s => typeof s === 'number' ? { score: s, difficulty: 'NORMAL' } : s);
+    return _dedupScores(migrated);
   } catch { return []; }
 }
 function saveScore(s, d) {
   const scores = getScores();
   scores.push({ score: s, difficulty: d });
   // Keep top 5 per difficulty (not 5 total) so one difficulty can't push out another
+  const deduped = _dedupScores(scores);
   const byDiff = {};
-  for (const sc of scores) {
+  for (const sc of deduped) {
     (byDiff[sc.difficulty] = byDiff[sc.difficulty] || []).push(sc);
   }
   const kept = [];
@@ -8021,6 +8058,9 @@ function saveScore(s, d) {
     kept.push(...arr.slice(0, 5));
   }
   kept.sort((a,b) => b.score - a.score);
+  // Hard safety cap — total list size can't exceed 100 entries even if a future
+  // schema extension breaks the per-difficulty bound.
+  if (kept.length > 100) kept.length = 100;
   localStorage.setItem('drift_scores', JSON.stringify(kept));
   console.log('[drift] saved scores:', JSON.stringify(kept));
   pgsScheduleWrite();
@@ -10935,6 +10975,9 @@ function activateCombo(key, x, y) {
     if (activeEffects.hyperspeed <= 0) activateHyperspeed(HYPERSPEED_COMBO_DURATION);
     if (activeEffects.shield <= 0) { shieldEndTime = Date.now() + SHIELD_DURATION(); activeEffects.shield = SHIELD_DURATION(); shieldBroken = false; }
     juggernautPendingShieldRefresh = true;
+    // v1.7.0: armored ram needs more weight on activation. Barrier kills
+    // are already shake-covered via shakeMassDestroy in the barrier sweep.
+    triggerHitstop(40);
     activeCombos[key] = { def, deps: ['hyperspeed'] };
   } else if (key === 'ghost_shield') {
     // WRAITH: during ghost destroy on contact; when ghost ends, shield absorbs 1 hit
@@ -12590,6 +12633,9 @@ function update() {
   if (activeCombos.nova_shield && activeEffects.shield > 0) {
     if (Date.now() >= pulsarNextNovaTime) {
       fireTripleNova(player.x, player.y);
+      // v1.7.0: punctuation hitstop per Pulsar nova fire (kill-set shake is
+      // covered by the nova ring sweep's shakeMassDestroy).
+      triggerHitstop(30);
       pulsarNextNovaTime = Date.now() + 6000;
     }
   }
@@ -12600,6 +12646,7 @@ function update() {
   if (activeEffects.ghost > 0 && pbActive) {
     const auraR = 120;
     const survivors = [];
+    let pbAuraKillCount = 0;
     for (const b of bodies) {
       if (dist(player, b) < auraR + b.radius) {
         emitDestroyBurst(b.x, b.y, POWERUP_COLORS.nova.rgb);
@@ -12607,9 +12654,17 @@ function update() {
         addDestroyPoints();
         SFX.planetDestroyed('nova');
         checkDestroyProc(b, 'nova');
+        pbAuraKillCount++;
       } else survivors.push(b);
     }
     bodies = survivors;
+    // v1.7.0: Phantom Blast aura was firing zero feedback. ONE mass-destroy
+    // shake per frame for the kill set + hitstop punctuation when the aura
+    // chews through bodies — the combo's signature destruction event.
+    if (pbAuraKillCount > 0) {
+      shakeMassDestroy(pbAuraKillCount);
+      triggerHitstop(40);
+    }
   }
   // Phantom Blade (Wraith T3) v1.6.3 rework: tick-based blade spawns.
   // Every 6/5/4 s during active ghost or Eternal Phantom, iterate bodies
@@ -12946,7 +13001,10 @@ function update() {
     }
     bodies = survivors;
     // v1.7.0: ONE shake proportional to total kills this frame, not per-kill.
+    // Single-frame mass destruction (4+ in one sweep) gets a hitstop
+    // punctuation — big sweeps deserve a beat.
     if (novaKillCount > 0) shakeMassDestroy(novaKillCount);
+    if (novaKillCount >= 4) triggerHitstop(30);
     // Crack fragments swept by nova rings die silently — no points / streak.
     for (let i = crackFragments.length - 1; i >= 0; i--) {
       const f = crackFragments[i];
