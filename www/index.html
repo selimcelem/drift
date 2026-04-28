@@ -16561,11 +16561,12 @@ function emitOrbTrail() {
 // particle parameters per emit cycle. Each orb keeps a distinct visual
 // signature (CHAOS CYCLE, SPECTER'S VEIL, PYROCLASM, REALITY TEAR, AEGIS
 // SHARDS) and layers in extra effects when the player's state warrants —
-// shield orbits speed up, ghost wisps darken, embers brighten near nova,
-// speed lines multiply with hyperspeed stacks, shield fragments orbit
-// the orb. The hex-shield polygon and supernova fire ring are NOT emitted
-// here — they're drawn each frame as adaptive overlays in
-// drawTrailAdaptiveOverlays so they aren't subject to the particle cap.
+// shield orbits speed up, ghost wisps darken, embers intensify on nova /
+// supernova, hyperspeed stacks scale the Warp speed-trail's density and
+// length, and Bulwark fragments tint gold + emit gold sparks under shield.
+// All adaptive responses live in particle emission only — no separate UI
+// overlays (the prior hex shield + supernova fire ring overlays were
+// removed in v1.7.0 polish; they read as nova/shield UI rather than trail).
 function emitOrbTrailUnlocked(orb, intensity, sizeMul, alphaMul, px, py, bx, by, count) {
   const nowOt = Date.now();
   const shieldOn = activeEffects.shield > 0;
@@ -16680,24 +16681,34 @@ function emitOrbTrailUnlocked(orb, intensity, sizeMul, alphaMul, px, py, bx, by,
   } else if (orb === 'solar') {
     // PYROCLASM — embers fall away from the orb under gravity (handled in
     // updateOrbTrailParticles for kind:'ember'). Nova-just-fired brightens
-    // hue and bumps size; supernova combo elevates to white-hot. Hyperspeed
-    // adds an elongation streak. The 360° fire ring is an overlay.
+    // hue and bumps size; supernova combo elevates to white-hot AND triples
+    // the per-emit ember count with wider spread for a clearly more intense
+    // trail. Hyperspeed adds an elongation streak. No separate ring overlay.
     const r = Math.random();
     let hue = r < 0.30 ? '255,140,40' : r < 0.65 ? '255,90,30' : '180,40,20';
     let sz = (2.5 + Math.random() * 2.0) * sizeMul;
     if (novaJustFired)   { hue = '255,220,100'; sz *= 1.4; }
     if (supernovaActive) { hue = '255,255,200'; sz *= 1.5; }
-    pushCapped(orbTrailParticles, {
-      kind: 'ember',
-      x: px + (Math.random() - 0.5) * 8,
-      y: py,
-      vx: bx * 0.3 + (Math.random() - 0.5) * 0.8,
-      vy: by * 0.25 + (Math.random() - 0.5) * 0.4,
-      hue,
-      flicker: Math.random() * 6.28,
-      life: 1, size: sz,
-      alphaMul, startTime: nowOt, maxLifeMs: hyperOn ? 600 : 450,
-    }, ORB_TRAIL_CAP);
+    // Supernova: emit 3 embers per cycle with wider lateral spread; default
+    // emits 1 (the existing single ember per cycle reads as cool but quiet).
+    const emberCount = supernovaActive ? 3 : 1;
+    const spread = supernovaActive ? 18 : 8;
+    for (let ei = 0; ei < emberCount; ei++) {
+      const lateral = (Math.random() - 0.5) * spread;
+      pushCapped(orbTrailParticles, {
+        kind: 'ember',
+        x: px + lateral,
+        y: py,
+        // Wider lateral velocity component during supernova so the cloud
+        // visibly sprays outward instead of trailing straight back.
+        vx: bx * 0.3 + (Math.random() - 0.5) * (supernovaActive ? 1.6 : 0.8),
+        vy: by * 0.25 + (Math.random() - 0.5) * 0.4,
+        hue,
+        flicker: Math.random() * 6.28,
+        life: 1, size: sz * (0.85 + Math.random() * 0.35),
+        alphaMul, startTime: nowOt, maxLifeMs: hyperOn ? 600 : 450,
+      }, ORB_TRAIL_CAP);
+    }
     if (hyperOn) {
       pushCapped(orbTrailParticles, {
         kind: 'line',
@@ -16709,39 +16720,75 @@ function emitOrbTrailUnlocked(orb, intensity, sizeMul, alphaMul, px, py, bx, by,
       }, ORB_TRAIL_CAP);
     }
   } else if (orb === 'nebula') {
-    // REALITY TEAR — base 1 line. Hyperspeed scales line count with stacks
-    // (1 stack → 2 lines, 4 stacks → 3, 6+ → 5). Each parallel offset gets
-    // a different chromatic-aberration hue. Slipstream-just-fired bumps the
-    // trail to white-blue for a beat (no per-event flag yet — leverages
-    // the natural transient burst-cooldown drop instead).
-    const len = (10 + Math.random() * 14) * sizeMul;
-    let lineCount;
-    if (hyperOn) {
-      lineCount = Math.max(1, Math.min(5, 1 + Math.floor((stacks + 1) / 2)));
-    } else {
-      lineCount = 1;
-    }
-    const perpX = -by, perpY = bx;
-    const baseVx = bx * (1.0 + Math.random() * 0.8);
-    const baseVy = by * (1.0 + Math.random() * 0.8);
-    const aberration = ['255,80,120','180,220,255','120,255,200','255,200,255','180,255,120'];
-    for (let li = 0; li < lineCount; li++) {
-      const ox = (li - (lineCount - 1) / 2) * 2;
+    // REALITY TEAR — single coherent speed trail. v1.7.0 polish replaced
+    // the chromatic-aberration multi-line approach (read as rainbow noise)
+    // with one coherent white-blue motion-blur trail. Hyperspeed scales the
+    // trail's INTENSITY (particle density + length) rather than line count.
+    //   - Hyperspeed inactive: subtle blue line, base length, single line.
+    //   - Hyperspeed active: white-blue (200,230,255) particles streaming
+    //     behind the orb with longer streaks. Stacks scale density (2-3×
+    //     emit count at 8 stacks) and length (~1.6× at 8 stacks).
+    if (!hyperOn) {
+      // Base: subtle blue line, no chromatic shift.
+      const len = (10 + Math.random() * 14) * sizeMul;
       pushCapped(orbTrailParticles, {
         kind: 'line',
-        x: px + perpX * ox, y: py + perpY * ox,
-        vx: baseVx, vy: baseVy,
-        dx: bx, dy: by, len: len * (hyperOn ? 1.5 : 1.05),
-        hue: hyperOn ? aberration[li % aberration.length] : null,
-        life: 1, alphaMul, startTime: nowOt, maxLifeMs: hyperOn ? 460 : 380,
+        x: px, y: py,
+        vx: bx * (0.9 + Math.random() * 0.8),
+        vy: by * (0.9 + Math.random() * 0.8),
+        dx: bx, dy: by, len,
+        life: 1, alphaMul, startTime: nowOt, maxLifeMs: 380,
       }, ORB_TRAIL_CAP);
+    } else {
+      // Hyperspeed: motion-blur speed trail. Mix of two particle kinds for
+      // the blur feel — one elongated 'line' for the streak, one 'cyan'
+      // (circle) for the streaming particle stream behind. Density scales
+      // with stacks: 1 stack → 1 emit, 4 → 2, 8+ → 3.
+      const density = Math.max(1, Math.min(3, 1 + Math.floor(stacks / 3)));
+      // Length scales 1.0× at 1 stack to ~1.6× at 8+ stacks.
+      const lenScale = 1.0 + Math.min(0.6, stacks * 0.075);
+      const speedHue = '200,230,255';
+      const baseLen = (16 + Math.random() * 14) * sizeMul * lenScale;
+      // One sharp coherent line streak per emit.
+      pushCapped(orbTrailParticles, {
+        kind: 'line',
+        x: px, y: py,
+        vx: bx * 1.6, vy: by * 1.6,
+        dx: bx, dy: by, len: baseLen,
+        hue: speedHue,
+        life: 1, alphaMul, startTime: nowOt, maxLifeMs: 480,
+      }, ORB_TRAIL_CAP);
+      // density-1 additional streaming particles trailing behind for the
+      // blur tail. Slight perpendicular jitter so the stream has texture.
+      const perpX = -by, perpY = bx;
+      for (let di = 0; di < density - 1; di++) {
+        const jit = (Math.random() - 0.5) * 6;
+        pushCapped(orbTrailParticles, {
+          kind: 'cyan',
+          x: px + perpX * jit, y: py + perpY * jit,
+          vx: bx * (1.4 + Math.random() * 0.6),
+          vy: by * (1.4 + Math.random() * 0.6),
+          hue: speedHue,
+          life: 1, size: (1.8 + Math.random() * 1.2) * sizeMul,
+          alphaMul, startTime: nowOt, maxLifeMs: 600,
+        }, ORB_TRAIL_CAP);
+      }
     }
   } else if (orb === 'asteroid') {
-    // AEGIS SHARDS — 5 fragments orbit close to the player. Shield active
-    // tints them gold; full Fortress shield turns them solid gold. The hex
-    // polygon overlay (one ring per shieldHits) is drawn separately by
-    // drawTrailAdaptiveOverlays so it doesn't compete with the particle
-    // cap. Ground-dust circles emit alongside for impact weight.
+    // AEGIS SHARDS — 5 fragments orbit close to the player. Trail itself
+    // adapts to shield state (no separate hex shield UI element):
+    //   - No shield: grey-stone fragments, normal orbit speed.
+    //   - Shield (1 stack): fragments tint gold, orbit ~25 % faster, dust
+    //     emit rate doubles for a kicked-up feel.
+    //   - Shield (2+ stacks via Bastion II): fragments brighten further +
+    //     gold spark particles emit alongside the fragments.
+    //   - Fortress shield: brightest gold + sparks emit at higher rate.
+    const layers = shieldHits | 0;
+    const orbitVel = shieldOn ? 0.065 : 0.052; // ~25% faster under shield
+    let fragHue = null; // null → orb color (grey-stone)
+    if (shieldOn)        fragHue = '255,210,120'; // gold rim
+    if (layers >= 2)     fragHue = '255,225,140'; // brighter
+    if (fortressShield)  fragHue = '255,235,160'; // brightest
     let aliveFrag = 0;
     for (let i = 0; i < orbTrailParticles.length; i++) {
       const p = orbTrailParticles[i];
@@ -16749,33 +16796,57 @@ function emitOrbTrailUnlocked(orb, intensity, sizeMul, alphaMul, px, py, bx, by,
     }
     if (aliveFrag < 5) {
       const startAngle = aliveFrag * (Math.PI * 2 / 5) + Math.random() * 0.25;
-      let hue = null; // null → orb color (grey)
-      if (shieldOn)       hue = '255,210,120'; // gold rim under shield
-      if (fortressShield) hue = '255,230,150';
       pushCapped(orbTrailParticles, {
         kind: 'shield-fragment',
         owner: 'asteroid',
         angle: startAngle,
         orbitR: 14 + Math.random() * 3,
-        angularVel: 0.052, // ~180°/sec
+        angularVel: orbitVel,
         rockAngle: Math.random() * 6.28,
         spin: (Math.random() - 0.5) * 0.2,
-        hue,
+        hue: fragHue,
         x: player.x, y: player.y,
         life: 1, size: (2 + Math.random() * 1.4) * sizeMul,
         alphaMul, startTime: nowOt, maxLifeMs: 1500,
       }, ORB_TRAIL_CAP);
     }
     // Dust kicked up beneath. Reuses the 'cyan' kind (orb-tinted circle).
-    pushCapped(orbTrailParticles, {
-      kind: 'cyan',
-      x: px + (Math.random() - 0.5) * 6,
-      y: py + (Math.random() - 0.5) * 4,
-      vx: bx * 0.15 + (Math.random() - 0.5) * 0.4,
-      vy: by * 0.15 + (Math.random() - 0.5) * 0.4,
-      life: 1, size: (3.5 + Math.random() * 2.5) * sizeMul,
-      alphaMul: alphaMul * 0.45, startTime: nowOt, maxLifeMs: 700,
-    }, ORB_TRAIL_CAP);
+    // Shield active: dust intensifies (twice the spawn frequency, slightly
+    // larger) — reads as the orb pushing harder against gravity.
+    const dustMore = shieldOn;
+    const dustCount = dustMore ? 2 : 1;
+    for (let di = 0; di < dustCount; di++) {
+      pushCapped(orbTrailParticles, {
+        kind: 'cyan',
+        x: px + (Math.random() - 0.5) * 6,
+        y: py + (Math.random() - 0.5) * 4,
+        vx: bx * 0.15 + (Math.random() - 0.5) * 0.4,
+        vy: by * 0.15 + (Math.random() - 0.5) * 0.4,
+        life: 1, size: ((dustMore ? 4.0 : 3.5) + Math.random() * 2.5) * sizeMul,
+        alphaMul: alphaMul * 0.45, startTime: nowOt, maxLifeMs: 700,
+      }, ORB_TRAIL_CAP);
+    }
+    // Multi-stack / fortress shield: emit small gold spark particles
+    // orbiting alongside the fragments. Sparks reuse the 'cyan' kind with
+    // a gold hue and small size; throttled to every ~8 frames so the air
+    // around the orb gets a soft gold shimmer without overflowing the cap.
+    const sparksOn = (layers >= 2) || fortressShield;
+    if (sparksOn && (frame % 8) === 0) {
+      const sparkHue = fortressShield ? '255,240,170' : '255,220,140';
+      const sparkAng = Math.random() * Math.PI * 2;
+      const sparkR = 14 + Math.random() * 3;
+      pushCapped(orbTrailParticles, {
+        kind: 'cyan',
+        x: player.x + Math.cos(sparkAng) * sparkR,
+        y: player.y + Math.sin(sparkAng) * sparkR,
+        vx: (Math.random() - 0.5) * 0.6,
+        vy: (Math.random() - 0.5) * 0.6 - 0.2,
+        hue: sparkHue,
+        life: 1, size: (1.2 + Math.random() * 0.8) * sizeMul,
+        alphaMul: Math.min(1, alphaMul * 1.2),
+        startTime: nowOt, maxLifeMs: 500,
+      }, ORB_TRAIL_CAP);
+    }
   }
 }
 
@@ -16931,75 +17002,12 @@ function drawOrbTrailParticles(tctx = ctx) {
   ctx.globalAlpha = 1;
 }
 
-// v1.7.0 trail overhaul: state-driven overlays that don't fit the particle
-// system — drawn each frame on top of the particle stream. They render in
-// BOTH Canvas 2D and Pixi modes (ctx is the #c canvas which sits above the
-// pixi WebGL canvas in the stacking order). Currently:
-//   - Bulwark Aegis: hexagonal shield polygon, one ring per shieldHits,
-//     gold-rim under fortressShield, gentle pulse animation.
-//   - Inferno Pyroclasm: 360° fire ring expanding around the player while
-//     the supernova combo (nova_nova) is active.
-function drawTrailAdaptiveOverlays(tctx = ctx) {
-  const ctx = tctx;
-  if (state !== 'playing' && state !== 'paused' && state !== 'apocalypse' && state !== 'tutorial') return;
-  const orb = activeOrb;
-  const equipped = !!(stats.unlockedTrails[orb] && stats.equippedTrails[orb] === 'unlocked');
-  if (!equipped) return;
-  if (orb === 'asteroid') {
-    if (activeEffects.shield <= 0) return;
-    const layers = Math.max(1, shieldHits | 0);
-    const fortress = !!fortressShield;
-    const baseR = 28;
-    const stepR = 6;
-    const t = Date.now() / 1000;
-    const pulse = 0.85 + Math.sin(t * 3.2) * 0.15;
-    ctx.save();
-    ctx.translate(player.x, player.y);
-    for (let li = 0; li < layers; li++) {
-      const r = (baseR + li * stepR) * pulse;
-      const innerStroke = fortress ? 'rgba(255,230,150,0.85)' : 'rgba(200,210,220,0.55)';
-      const fillCol     = fortress ? 'rgba(255,210,120,0.10)' : 'rgba(160,180,200,0.06)';
-      ctx.lineWidth = fortress ? 2 : 1.4;
-      ctx.strokeStyle = innerStroke;
-      ctx.fillStyle   = fillCol;
-      ctx.beginPath();
-      for (let i = 0; i < 6; i++) {
-        const ang = i * (Math.PI / 3) + Math.PI / 6;
-        const hx = Math.cos(ang) * r;
-        const hy = Math.sin(ang) * r;
-        if (i === 0) ctx.moveTo(hx, hy);
-        else ctx.lineTo(hx, hy);
-      }
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
-    }
-    ctx.restore();
-  } else if (orb === 'solar') {
-    if (!activeCombos.nova_nova) return;
-    // Supernova fire ring — single expanding circle outlines around the
-    // player for the duration of the supernova combo (nova_nova endTime).
-    const combo = activeCombos.nova_nova;
-    const endT = (combo && combo.endTime) ? combo.endTime : (Date.now() + 1000);
-    const totalMs = 2833;
-    const remaining = Math.max(0, endT - Date.now());
-    const k = Math.max(0, Math.min(1, 1 - remaining / totalMs)); // 0 → 1 across combo
-    const baseR = 30 + k * 60;
-    ctx.save();
-    ctx.globalAlpha = 0.6 * (1 - k * 0.4);
-    ctx.translate(player.x, player.y);
-    ctx.lineWidth = 2.2;
-    ctx.strokeStyle = 'rgba(255,150,40,0.85)';
-    ctx.beginPath(); ctx.arc(0, 0, baseR,         0, 6.28); ctx.stroke();
-    ctx.lineWidth = 1.4;
-    ctx.strokeStyle = 'rgba(255,220,120,0.7)';
-    ctx.beginPath(); ctx.arc(0, 0, baseR * 0.78,  0, 6.28); ctx.stroke();
-    ctx.strokeStyle = 'rgba(255,90,30,0.55)';
-    ctx.beginPath(); ctx.arc(0, 0, baseR * 1.22,  0, 6.28); ctx.stroke();
-    ctx.restore();
-    ctx.globalAlpha = 1;
-  }
-}
+// v1.7.0 trail polish (post-feedback): the supernova fire ring + Bulwark hex
+// shield overlays were removed. Both read as separate UI elements rather
+// than as an extension of the trail itself, so they've been folded back
+// into the per-orb particle emission instead. Inferno intensifies its
+// embers during nova_nova; Bulwark tints + sparks its orbiting fragments
+// based on shield state.
 
 // drawTrail now renders the orb particle stream only. The legacy cyan position
 // trail was replaced per spec — every orb shares the same particle system.
@@ -18062,11 +18070,6 @@ function render() {
     // into Momentum (cooldown reduction, no visual ring).
     // Step 4: trail + player live on pixi when active.
     if (!pixiActive) drawTrail();
-    // v1.7.0 trail overhaul: adaptive overlays (Bulwark hex shield, Inferno
-    // supernova fire ring) are drawn on Canvas 2D unconditionally — the #c
-    // canvas sits above the pixi WebGL canvas in the stacking order, so the
-    // overlay reads correctly on both render paths.
-    drawTrailAdaptiveOverlays();
     if (state==='playing'||state==='paused'||state==='apocalypse'||state==='tutorial') {
       // Step 6: hyperspeed barrier on pixi overlay when active.
       if (!pixiActive) drawHyperspeedBarrier();
