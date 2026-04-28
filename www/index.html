@@ -9545,37 +9545,87 @@ function updatePixiPlayerLayer() {
       }
     }
   }
-  // v1.7.0 polish r6: Warp soft motion streaks. Pixi.Graphics doesn't
-  // support gradient strokes, so we emulate the head→middle→tail alpha
-  // gradient via 3 sub-strokes per streak, each with its own alpha tier.
-  // Always one streak per spawn render at 0.55× alpha for the tail/head
-  // taper plus one at full alpha for the middle 50 %.
-  if (trailVisible && pixiTrailAdditiveGraphics && warpStreaks.length) {
-    const now = Date.now();
-    const STREAK_INT = (140 << 16) | (200 << 8) | 255;
-    for (const sk of warpStreaks) {
-      const age = (now - sk.startTime) / sk.maxLifeMs;
-      if (age >= 1) continue;
-      const lifeMul = age < 0.15 ? (age / 0.15) : (1 - (age - 0.15) / 0.85);
-      const a = Math.max(0, Math.min(1, lifeMul)) * sk.peakAlpha;
-      if (a <= 0.02) continue;
-
-      // Helper to stroke a slice [iStart, iEnd] of the polyline at alpha.
-      const stroke = (iStart, iEnd, alpha) => {
-        pixiTrailAdditiveGraphics.lineStyle({ width: sk.width, color: STREAK_INT, alpha, cap: 'round', join: 'round' });
-        pixiTrailAdditiveGraphics.moveTo(sk.pts[iStart * 2], sk.pts[iStart * 2 + 1]);
-        for (let i = iStart + 1; i <= iEnd; i++) {
-          pixiTrailAdditiveGraphics.lineTo(sk.pts[i * 2], sk.pts[i * 2 + 1]);
-        }
-        pixiTrailAdditiveGraphics.lineStyle();
-      };
-      // 3 sub-segments for N=4: head-mid (faded-in), mid-tail-1 (full),
-      // tail-end (faded-out).
-      stroke(0, 1, a * 0.35);          // head: rising
-      stroke(1, 2, a);                 // middle: peak
-      stroke(2, 3, a * 0.35);           // tail: falling
-    }
+  // v1.7.0 polish r7: Warp orbital rings render path is on the Pixi
+  // additive layer when the player is Warp + Tectonic-equipped. Drawn
+  // around the orb each frame; speed-gated and pulsing as in Canvas 2D.
+  // Drawn here instead of in updatePixiPlayerLayer's player composite
+  // because the player canvas is fixed-size and we want the rings to
+  // render in world-space at the orb's actual position.
+  if (trailVisible && pixiTrailAdditiveGraphics
+      && activeOrb === 'nebula'
+      && stats && stats.unlockedTrails && stats.unlockedTrails.nebula
+      && stats.equippedTrails && stats.equippedTrails.nebula === 'unlocked') {
+    const _hyperOnPixi = activeEffects.hyperspeed > 0;
+    const _stacksPixi = hyperSpeedStacks | 0;
+    // Compute the same intensity used in emitOrbTrail so ring tier matches.
+    const _moveMagPixi = Math.hypot(player.vx, player.vy);
+    const _intensityPixi = scrollSpeed() * 0.3 + _moveMagPixi * 0.5;
+    pixiDrawWarpOrbitalRings(pixiTrailAdditiveGraphics, player.x, player.y, _intensityPixi, _hyperOnPixi, _stacksPixi);
   }
+}
+
+// Pixi parity for drawWarpOrbitalRings. PIXI v7 has no native ellipse, so
+// approximate via 30-segment polygon (same segment count as Canvas 2D so
+// the shapes match). State + tiering math mirrors drawWarpOrbitalRings.
+function pixiDrawWarpOrbitalRings(g, cx, cy, intensity, hyperOn, stacks) {
+  let ringTier;
+  let baseAlpha;
+  if (!hyperOn) {
+    if (intensity < 0.5) { ringTier = 0; baseAlpha = 0; }
+    else if (intensity < 1.5) {
+      ringTier = 1;
+      baseAlpha = 0.05 + Math.min(0.15, (intensity - 0.5) * 0.2);
+    } else {
+      ringTier = 2; baseAlpha = 0.4;
+    }
+  } else {
+    if (stacks >= 7)      { ringTier = 3; baseAlpha = 1.0; }
+    else if (stacks >= 4) { ringTier = 3; baseAlpha = 0.8; }
+    else                  { ringTier = 3; baseAlpha = 0.6; }
+  }
+  if (baseAlpha <= 0.01) return;
+
+  const t = Date.now() * 0.001;
+  const R = PLAYER_R * 2.5;
+  const speedMul = (hyperOn && stacks >= 7) ? 1.5 : 1.0;
+  const phase1 = t * 0.8 * speedMul;
+  const phase2 = t * 1.0 * speedMul;
+  const phase3 = t * 1.2 * speedMul;
+  const pulseDepth = (ringTier === 3 && stacks >= 7) ? 0.15 : 0.10;
+  const pulse = 1 + Math.sin(t * Math.PI * 6) * pulseDepth;
+  const scaleMul = 1 + Math.sin(t * Math.PI * 6) * 0.05;
+  const aBase = baseAlpha * pulse;
+  const lineWidth = 1 + Math.min(0.5, (hyperOn && stacks >= 7) ? 0.5 : 0);
+  const RING_INT = (180 << 16) | (220 << 8) | 255;
+  const Rs = R * scaleMul;
+  const ringCount = ringTier === 1 ? 1 : (ringTier === 2 ? 2 : 3);
+  const segs = 30;
+
+  // Helper: stroke a 30-segment ellipse at (cx,cy) with optional rotation.
+  function strokeEllipse(rx, ry, alpha, rot) {
+    if (alpha <= 0.01 || rx <= 0.5 || ry <= 0.5) return;
+    g.lineStyle({ width: lineWidth, color: RING_INT, alpha: Math.min(1, alpha), cap: 'round', join: 'round' });
+    const cosR = rot ? Math.cos(rot) : 1;
+    const sinR = rot ? Math.sin(rot) : 0;
+    for (let i = 0; i <= segs; i++) {
+      const a = (i / segs) * Math.PI * 2;
+      let x = Math.cos(a) * rx;
+      let y = Math.sin(a) * ry;
+      if (rot) {
+        const xr = x * cosR - y * sinR;
+        const yr = x * sinR + y * cosR;
+        x = xr; y = yr;
+      }
+      x += cx; y += cy;
+      if (i === 0) g.moveTo(x, y);
+      else g.lineTo(x, y);
+    }
+    g.lineStyle();
+  }
+
+  if (ringCount >= 1) strokeEllipse(Rs, Rs * Math.abs(Math.cos(phase1)), aBase, 0);
+  if (ringCount >= 2) strokeEllipse(Rs * Math.abs(Math.cos(phase2)), Rs, aBase, 0);
+  if (ringCount >= 3) strokeEllipse(Rs, Rs * Math.abs(Math.cos(phase3)), aBase, Math.PI / 4);
 }
 
 // Step 5: particle systems rebuilt each frame as native PIXI.Graphics.
@@ -12198,7 +12248,6 @@ function resetGame() {
   ghostlightPendingKills = [];
   beyondAfterimage = null;
   orbTrailParticles = [];
-  warpStreaks = [];
   planetRipples = [];
   destroyEffects = [];
   deathShards = [];
@@ -13865,7 +13914,7 @@ function update() {
 
   emitOrbTrail();
   updateOrbTrailParticles();
-  updateWarpStreaks();
+  // v1.7.0 polish r7: Warp orbital rings are stateless renders — no per-tick update needed.
 
   if (checkCollisions()) triggerDeath();
 }
@@ -13954,7 +14003,7 @@ function updateTutorial() {
   // Trail particles so the orb shows movement nicely during steps 2/3.
   emitOrbTrail();
   updateOrbTrailParticles();
-  updateWarpStreaks();
+  // v1.7.0 polish r7: Warp orbital rings are stateless renders — no per-tick update needed.
   // v1.6.4 Fix: advance novaRings (radius growth + life decay). The
   // production pipeline does this in update()'s nova-rings block (~12604),
   // which is short-circuited when state === 'tutorial'. Without this loop
@@ -16584,18 +16633,14 @@ let orbTrailParticles = [];
 // Phantom's denser wisps, and the radial bursts emitted on nova-just-fired.
 const ORB_TRAIL_CAP = 30;
 
-// v1.7.0 polish (round 6): Warp Reality Tear is now SOFT MOTION STREAKS —
-// a few smooth curved sub-trails that emerge from the orb edge, fade up
-// from invisible to peak alpha around the middle, then taper to nothing
-// at the tail. Replaces the lightning-bolt system from r5 (read as too
-// bright / lightning-storm rather than motion blur). Reference: long-
-// exposure light streaks — _reference/trails/warp_lightning_streaks.png.
-//
-// HARD cap: never more than 3 streaks per emit cycle regardless of stacks.
-// Stacks scale alpha + length, NOT count. Sparks are a separate small
-// accent kind tracked in the shared orbTrailParticles pool.
-let warpStreaks = [];
-const WARP_STREAK_CAP = 24;
+// v1.7.0 polish (round 7): Warp Reality Tear is now ORBITAL RINGS — the
+// orb gets 3 intersecting elliptical rings drawn around it (atom / planet
+// visualization). Speed-gated visibility: idle = no rings, slow = 1
+// faint, active = 2, hyperspeed = 3 with rotation + pulse. Drawn directly
+// from drawPlayer (no particle pool needed). Enhanced base trail particles
+// emit through the existing 'line' kind in orbTrailParticles. Replaces
+// the streak system from r6 which still read as directional and got
+// pulled in the wrong direction during auto-recenter.
 
 function emitOrbTrail() {
   if (state !== 'playing') return;
@@ -16930,11 +16975,12 @@ function emitOrbTrailUnlocked(orb, intensity, sizeMul, alphaMul, px, py, bx, by,
       }, ORB_TRAIL_CAP);
     }
   } else if (orb === 'nebula') {
-    // REALITY TEAR — soft motion streaks (v1.7.0 polish round 6). The
-    // r5 lightning bolts read as a separate UI element rather than trail;
-    // replaced with subtle blue motion-blur streaks that fade in from the
-    // orb edge. See _reference/trails/warp_lightning_streaks.png.
-    spawnWarpStreaks(intensity, sizeMul, alphaMul, hyperOn, stacks, bx, by);
+    // REALITY TEAR — orbital rings (v1.7.0 polish round 7). Trail-side
+    // is just an enhanced 'line' base trail (brighter, additive, soft
+    // cyan-blue); the rings themselves are drawn directly by drawPlayer
+    // around the orb so they always sit centered, never trail in a
+    // direction the player didn't expect.
+    emitWarpBaseTrail(intensity, sizeMul, alphaMul, hyperOn, stacks, bx, by);
   } else if (orb === 'asteroid') {
     // AEGIS SHARDS — 5 fragments orbit close to the player. Trail itself
     // adapts to shield state (no separate hex shield UI element):
@@ -16978,171 +17024,164 @@ function emitOrbTrailUnlocked(orb, intensity, sizeMul, alphaMul, px, py, bx, by,
   }
 }
 
-// v1.7.0 polish r6: Warp soft motion streaks.
+// v1.7.0 polish r7: Warp Reality Tear is now ORBITAL RINGS.
 //
-// Each streak is a smooth gently-curved polyline of 4 vertices (3 sub-
-// segments). Originates AT the orb edge in the motion-reversed direction,
-// trails backward with ±20° random spread + a slight wavy curve. The
-// alpha gradient along the length goes 0 (head/orb edge) → peak (middle)
-// → 0 (tail), so the streak fades INTO existence as it trails away from
-// the orb instead of popping in. Color is soft blue (140,200,255), NOT
-// white — that's why the previous lightning iteration read as too bright.
+// Two parts: an enhanced base trail (soft cyan-blue 'line' particles with
+// brighter alpha + additive blending) emitted into the existing trail
+// pool, and 3 intersecting elliptical rings drawn directly from drawPlayer
+// around the orb. Rings are state-gated (idle = invisible, hyperspeed =
+// dramatic) and use per-ring rotation around different axes so they
+// intersect like an atom or planetary orbit visualization.
 //
-// HARD CAP: ≤ 3 streaks per emit cycle regardless of hyperspeed stacks.
-// Stacks scale alpha + length, NOT count. Render uses additive blending.
-function spawnWarpStreaks(intensity, sizeMul, alphaMul, hyperOn, stacks, bx, by) {
-  // Spawn count: hard cap at 3 regardless of stacks.
-  let spawnCount;
+// No separate particle array. Rings are a stateless render — angles are
+// computed from Date.now() and stack count each frame.
+
+// Enhanced base trail emitter for Warp unlocked. Spawns soft cyan-blue
+// 'line' particles with the brighter `additive: true` flag. Density
+// scales mildly with intensity, capped at 4 per emit. Hyperspeed adds
+// a small alpha boost.
+function emitWarpBaseTrail(intensity, sizeMul, alphaMul, hyperOn, stacks, bx, by) {
+  const speedT = Math.max(0, Math.min(1, intensity / 4));
+  let lineCount;
+  if (!hyperOn) {
+    if (intensity < 0.5)      lineCount = 1 + (Math.random() < 0.45 ? 1 : 0); // idle: 1-2
+    else if (intensity < 1.5) lineCount = 2;                                  // slow: 2
+    else                      lineCount = 2 + (Math.random() < 0.55 ? 1 : 0); // active: 2-3
+  } else {
+    lineCount = 3 + (Math.random() < 0.55 ? 1 : 0);                            // hyperspeed: 3-4
+  }
+  if (lineCount > 4) lineCount = 4;
+  const px = player.x + bx * (PLAYER_R + 2);
+  const py = player.y + by * (PLAYER_R + 2);
+  const lineHue = '160,200,255';
+  const baseLen = (12 + Math.random() * 14) * sizeMul;
+  const lenScale = 1.0 + speedT * 0.4 + (hyperOn ? Math.min(0.3, stacks * 0.04) : 0);
+  const baseAlpha = Math.min(1, alphaMul * (hyperOn ? 1.05 : 0.95));
+  for (let i = 0; i < lineCount; i++) {
+    const jx = px + (Math.random() - 0.5) * 8;
+    const jy = py + (Math.random() - 0.5) * 8;
+    pushCapped(orbTrailParticles, {
+      kind: 'line',
+      x: jx, y: jy,
+      vx: bx * (0.9 + Math.random() * 0.8),
+      vy: by * (0.9 + Math.random() * 0.8),
+      dx: bx, dy: by,
+      len: baseLen * lenScale,
+      hue: lineHue,
+      additive: true,                        // line render path checks this
+      life: 1, alphaMul: baseAlpha,
+      startTime: Date.now(), maxLifeMs: 420 + Math.random() * 120,
+    }, ORB_TRAIL_CAP);
+  }
+}
+
+// v1.7.0 polish r7: orbital rings around the Warp orb. Three intersecting
+// ellipses, each rotating around its own axis at a slightly different
+// rate. Speed thresholds gate visibility (idle invisible → hyperspeed
+// peak full). Subtle ~3 Hz alpha+scale pulse on top.
+//
+// Math: each ring is a circle of radius R in 3-D, viewed orthographically
+// in screen-space. Rotating around an axis foreshortens the perpendicular
+// dimension by |cos(phase)|. So:
+//   Ring 1 (rotates around X-axis): horizontal major, vertical minor =
+//     R * |cos(phase1)|. Edge-on at phase = π/2.
+//   Ring 2 (rotates around Y-axis): vertical major, horizontal minor =
+//     R * |cos(phase2)|.
+//   Ring 3 (rotates around 45°-axis): apply a 45° rotation to the canvas,
+//     then ring 1's parametric equations.
+function drawWarpOrbitalRings(ctx, cx, cy, intensity, hyperOn, stacks, radiusOverride) {
+  // Speed-gated visibility. ringTier 0 = idle (no rings), 1 = slow (1
+  // ring faint), 2 = active (2 rings), 3 = hyperspeed.
+  let ringTier;
+  let baseAlpha;
   if (!hyperOn) {
     if (intensity < 0.5) {
-      spawnCount = 0;                                                 // idle: NONE
+      ringTier = 0; baseAlpha = 0;
     } else if (intensity < 1.5) {
-      spawnCount = Math.random() < 0.45 ? 1 : 0;                      // slow: 0-1
+      // Fade-in window: alpha ramps from ~0 → 0.2 across the slow band.
+      ringTier = 1;
+      baseAlpha = 0.05 + Math.min(0.15, (intensity - 0.5) * 0.2);
     } else {
-      spawnCount = 1 + (Math.random() < 0.55 ? 1 : 0);                // active: 1-2
+      ringTier = 2; baseAlpha = 0.4;
     }
   } else {
-    if (stacks >= 7) {
-      spawnCount = 3;                                                 // peak: always 3
-    } else if (stacks >= 4) {
-      spawnCount = 2 + (Math.random() < 0.5 ? 1 : 0);                 // 2-3
-    } else {
-      spawnCount = 2 + (Math.random() < 0.3 ? 1 : 0);                 // 2-3
-    }
+    if (stacks >= 7)      { ringTier = 3; baseAlpha = 1.0; }
+    else if (stacks >= 4) { ringTier = 3; baseAlpha = 0.8; }
+    else                  { ringTier = 3; baseAlpha = 0.6; }
   }
-  if (spawnCount <= 0) return;
-  if (spawnCount > 3) spawnCount = 3;
+  if (baseAlpha <= 0.01) return;
 
-  const orbR = (typeof PLAYER_R === 'number' ? PLAYER_R : 12);
+  const t = Date.now() * 0.001; // seconds
+  const R = (typeof radiusOverride === 'number' && radiusOverride > 0)
+    ? radiusOverride
+    : PLAYER_R * 2.5;     // ring base radius
 
-  for (let s = 0; s < spawnCount; s++) {
-    // ±20° spread off the pure backward direction (was ±30° for lightning;
-    // tighter so the streaks read as a coherent trail).
-    const baseAngle = Math.atan2(by, bx) + (Math.random() - 0.5) * (Math.PI / 4.5);
-    const dx = Math.cos(baseAngle);
-    const dy = Math.sin(baseAngle);
-    // Perpendicular to the streak direction, used for the wavy-curve.
-    const perpX = -dy, perpY = dx;
-    // Origin AT orb edge.
-    const ox = player.x + dx * (orbR + 1);
-    const oy = player.y + dy * (orbR + 1);
-    // Length scales gently with stacks (50-90 base → up to ~120 at 7+).
-    const lenBase = hyperOn ? (60 + Math.random() * 30) : (50 + Math.random() * 30);
-    const lenScale = hyperOn ? (1.0 + Math.min(0.4, stacks * 0.05)) : 1.0;
-    const totalLen = lenBase * lenScale;
-    // Smooth curve: 4 vertices = 3 sub-segments. Plenty for a gentle wave.
-    const N = 4;
-    const wobblePhase = Math.random() * Math.PI * 2;
-    const wobbleAmp = 4 + Math.random() * 4;            // ±4-8 px peak
-    const wobbleFreq = 0.04 + Math.random() * 0.025;
-    const pts = new Array(N * 2);
-    for (let i = 0; i < N; i++) {
-      const t = i / (N - 1);                            // 0 (head) → 1 (tail)
-      const longPos = t * totalLen;
-      // Wobble grows from 0 at the head (anchored to orb) to peak at tail.
-      const w = Math.sin(longPos * wobbleFreq + wobblePhase) * wobbleAmp * t;
-      const sx = ox + dx * longPos + perpX * w;
-      const sy = oy + dy * longPos + perpY * w;
-      pts[i * 2]     = sx;
-      pts[i * 2 + 1] = sy;
-    }
-    // Alpha + width tuned per state. Stacks scale alpha (0.7 → ~0.95) and
-    // width (1.2 → 2.0) without bumping count.
-    let peakAlpha;
-    if (!hyperOn) {
-      peakAlpha = 0.55;
-    } else {
-      peakAlpha = 0.7 + Math.min(0.25, stacks * 0.035);
-    }
-    const width = (hyperOn ? 1.5 : 1.3) + Math.min(0.7, stacks * 0.07);
-    const lifeMs = 400 + Math.random() * 200;
-    pushCapped(warpStreaks, {
-      pts, N,
-      width,
-      startTime: Date.now(),
-      maxLifeMs: lifeMs,
-      peakAlpha: Math.min(0.95, peakAlpha * Math.max(0.6, alphaMul)),
-    }, WARP_STREAK_CAP);
-  }
+  // Per-ring rotation rates (rad/sec). Slightly desynchronized so the
+  // ellipses don't lock-step. Hyperspeed 7+ accelerates rotation 1.5×.
+  const speedMul = (hyperOn && stacks >= 7) ? 1.5 : 1.0;
+  const phase1 = t * 0.8 * speedMul;
+  const phase2 = t * 1.0 * speedMul;
+  const phase3 = t * 1.2 * speedMul;
 
-  // Spark accents — small soft cyan dots emitted alongside the streaks.
-  // These drift in the existing orbTrailParticles pool (kind 'cyan' with
-  // a soft-blue hue override). HARD cap 4 sparks per emit.
-  let sparkCount = 0;
-  if (!hyperOn) {
-    if (intensity >= 1.5) sparkCount = 1 + (Math.random() < 0.45 ? 1 : 0);
-    else if (intensity >= 0.5) sparkCount = Math.random() < 0.5 ? 1 : 0;
-  } else {
-    sparkCount = stacks >= 4 ? 3 : 2;
-  }
-  if (sparkCount > 4) sparkCount = 4;
-  if (sparkCount > 0) {
-    for (let k = 0; k < sparkCount; k++) {
-      const sa = Math.atan2(by, bx) + (Math.random() - 0.5) * (Math.PI / 3);
-      const sx = player.x + Math.cos(sa) * (orbR + 2);
-      const sy = player.y + Math.sin(sa) * (orbR + 2);
-      pushCapped(orbTrailParticles, {
-        kind: 'cyan',
-        x: sx, y: sy,
-        vx: Math.cos(sa) * (1.2 + Math.random() * 0.8),
-        vy: Math.sin(sa) * (1.2 + Math.random() * 0.8),
-        hue: '180,220,255',
-        life: 1, size: (1.3 + Math.random() * 0.9) * sizeMul,
-        alphaMul: Math.min(1, alphaMul * (hyperOn ? 1.0 : 0.85)),
-        startTime: Date.now(), maxLifeMs: 300 + Math.random() * 200,
-      }, ORB_TRAIL_CAP);
-    }
-  }
-}
+  // Subtle ~3 Hz pulse: ±10 % alpha, ±5 % scale. More dramatic at high
+  // tiers (hyperspeed 7+ gets ±15 % alpha pulse).
+  const pulseDepth = (ringTier === 3 && stacks >= 7) ? 0.15 : 0.10;
+  const pulse = 1 + Math.sin(t * Math.PI * 6) * pulseDepth;
+  const scaleMul = 1 + Math.sin(t * Math.PI * 6) * 0.05;
 
-// Cull expired streaks.
-function updateWarpStreaks() {
-  if (!warpStreaks.length) return;
-  const now = Date.now();
-  for (let i = warpStreaks.length - 1; i >= 0; i--) {
-    if (now - warpStreaks[i].startTime >= warpStreaks[i].maxLifeMs) {
-      warpStreaks.splice(i, 1);
-    }
-  }
-}
-
-// Canvas 2D streak render. Per streak: build a linear gradient from head
-// (alpha 0) → middle (peakAlpha) → tail (alpha 0), apply to a single
-// stroke. Uses `lighter` composite for the soft additive glow.
-function drawWarpStreaks(tctx) {
-  if (!warpStreaks.length) return;
-  const ctx = tctx;
-  const now = Date.now();
   ctx.save();
-  ctx.lineCap = 'round';
-  ctx.lineJoin = 'round';
+  ctx.translate(cx, cy);
   const prevComp = ctx.globalCompositeOperation;
   ctx.globalCompositeOperation = 'lighter';
-  for (const sk of warpStreaks) {
-    const age = (now - sk.startTime) / sk.maxLifeMs;
-    if (age >= 1) continue;
-    // Life envelope: ramp in over first 15 %, then ease out over remainder.
-    const lifeMul = age < 0.15 ? (age / 0.15) : (1 - (age - 0.15) / 0.85);
-    const a = Math.max(0, Math.min(1, lifeMul)) * sk.peakAlpha;
-    if (a <= 0.02) continue;
-    // Linear gradient from head → tail. Mid-stop carries the peak, head
-    // and tail both clamp to 0 for the fade-in/fade-out look.
-    const x0 = sk.pts[0],          y0 = sk.pts[1];
-    const x1 = sk.pts[(sk.N - 1) * 2], y1 = sk.pts[(sk.N - 1) * 2 + 1];
-    const grad = ctx.createLinearGradient(x0, y0, x1, y1);
-    grad.addColorStop(0,    `rgba(140,200,255,0)`);
-    grad.addColorStop(0.45, `rgba(140,200,255,${a})`);
-    grad.addColorStop(0.55, `rgba(170,220,255,${a})`);
-    grad.addColorStop(1,    `rgba(140,200,255,0)`);
-    ctx.strokeStyle = grad;
-    ctx.lineWidth = sk.width;
+  ctx.lineCap = 'round';
+
+  // Helper: draw a 30-segment polygon approximation of an ellipse (rx, ry).
+  // PIXI parity uses the same formula in updatePixiPlayerLayer. Canvas 2D
+  // could use ctx.ellipse() but the polygon approach matches Pixi behavior
+  // exactly so the same shape renders on both backends.
+  function strokeEllipse(rx, ry, alpha, width) {
+    if (alpha <= 0.01 || rx <= 0.5 || ry <= 0.5) return;
+    ctx.strokeStyle = `rgba(180,220,255,${Math.min(1, alpha)})`;
+    ctx.lineWidth = width;
     ctx.beginPath();
-    ctx.moveTo(x0, y0);
-    for (let i = 1; i < sk.N; i++) {
-      ctx.lineTo(sk.pts[i * 2], sk.pts[i * 2 + 1]);
+    const segs = 30;
+    for (let i = 0; i <= segs; i++) {
+      const a = (i / segs) * Math.PI * 2;
+      const x = Math.cos(a) * rx;
+      const y = Math.sin(a) * ry;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
     }
     ctx.stroke();
   }
+
+  const lineWidth = 1 + Math.min(0.5, (hyperOn && stacks >= 7) ? 0.5 : 0);
+  const Rs = R * scaleMul;
+  const ringCount = ringTier === 1 ? 1 : (ringTier === 2 ? 2 : 3);
+  const aBase = baseAlpha * pulse;
+
+  // Ring 1: rotation around X-axis. Major horizontal (Rs), minor vertical (Rs * |cos(phase1)|).
+  if (ringCount >= 1) {
+    const rx = Rs;
+    const ry = Rs * Math.abs(Math.cos(phase1));
+    strokeEllipse(rx, ry, aBase, lineWidth);
+  }
+  // Ring 2: rotation around Y-axis. Major vertical (Rs), minor horizontal.
+  if (ringCount >= 2) {
+    const rx = Rs * Math.abs(Math.cos(phase2));
+    const ry = Rs;
+    strokeEllipse(rx, ry, aBase, lineWidth);
+  }
+  // Ring 3: 45°-axis rotation. Rotate canvas first, then ring-1 formula.
+  if (ringCount >= 3) {
+    ctx.save();
+    ctx.rotate(Math.PI / 4);
+    const rx = Rs;
+    const ry = Rs * Math.abs(Math.cos(phase3));
+    strokeEllipse(rx, ry, aBase, lineWidth);
+    ctx.restore();
+  }
+
   ctx.globalCompositeOperation = prevComp;
   ctx.restore();
 }
@@ -17346,11 +17385,9 @@ function drawOrbTrailParticles(tctx = ctx) {
 
 // drawTrail now renders the orb particle stream only. The legacy cyan position
 // trail was replaced per spec — every orb shares the same particle system.
-// v1.7.0 polish r6: Warp streaks render after the particle stream so the
-// gradient strokes glow on top with additive blending.
+// v1.7.0 polish r7: Warp orbital rings are drawn from drawPlayer, not here.
 function drawTrail() {
   drawOrbTrailParticles();
-  drawWarpStreaks(ctx);
 }
 
 function drawPlayer(tctx = ctx) {
@@ -17547,6 +17584,21 @@ function drawPlayer(tctx = ctx) {
     ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(-player.vx*2.8,-player.vy*2.8); ctx.stroke();
   }
   ctx.restore(); ctx.globalAlpha = 1;
+
+  // v1.7.0 polish r7: WARP ORBITAL RINGS — three intersecting elliptical
+  // rings around the orb, speed-gated. Drawn AFTER drawPlayer's restore so
+  // the rings are NOT rotated with the player.angle (the ship faces its
+  // motion direction; rings should stay independently rotating). Pixi gets
+  // its own copy in updatePixiPlayerLayer's trail block.
+  if (activeOrb === 'nebula'
+      && stats.unlockedTrails && stats.unlockedTrails.nebula
+      && stats.equippedTrails && stats.equippedTrails.nebula === 'unlocked') {
+    const _hyperOnRings = activeEffects.hyperspeed > 0;
+    const _stacksRings  = hyperSpeedStacks | 0;
+    const _moveMagRings = Math.hypot(player.vx, player.vy);
+    const _intensityRings = scrollSpeed() * 0.3 + _moveMagRings * 0.5;
+    drawWarpOrbitalRings(ctx, player.x, player.y, _intensityRings, _hyperOnRings, _stacksRings);
+  }
 }
 
 // v1.7.0 polish r6: Bulwark electric-ball overlay. Draws a glowing halo +
@@ -18761,8 +18813,7 @@ function loop() {
         destroyEffects = [];
         deathShards = [];
         orbTrailParticles = [];
-        warpStreaks = [];
-        crackFragments = [];
+              crackFragments = [];
 
       }
     }
@@ -19676,7 +19727,6 @@ function goToMainMenu() {
   ghostlightPendingKills = [];
   beyondAfterimage = null;
   orbTrailParticles = [];
-  warpStreaks = [];
   planetRipples = [];
   destroyEffects = [];
   deathShards = [];
@@ -20277,6 +20327,14 @@ function drawOrbPreview() {
       shieldOn: false, fortressOn: false, shieldHits: 0,
     });
   }
+
+  // v1.7.0 polish r7: Warp + Tectonic preview gets the orbital rings.
+  // Use intensity 1.6 to land in the "active" tier (2 rings, alpha 0.4),
+  // and pass an explicit radius (40 px) so the rings encircle the larger
+  // preview orb (which renders at 20 px vs gameplay's PLAYER_R=6).
+  if (key === 'nebula' && useUnlocked) {
+    drawWarpOrbitalRings(orbPreviewCtx, cx, cy, 1.6, false, 0, 40);
+  }
 }
 
 // v1.7.0: unlocked-variant rendering for the orb-preview canvas. Uses the
@@ -20326,35 +20384,18 @@ function drawOrbPreviewUnlocked(particles, orbKey, color, cx, cy, t) {
       });
     }
   } else if (orbKey === 'nebula') {
-    // v1.7.0 polish r6: soft motion streak preview. Smooth curved polyline
-    // with gradient alpha (head 0 → middle peak → tail 0), additive blend.
-    if (Math.random() < 0.45) {
-      // Backward in the preview is downward (orb bobs upward).
-      const baseAngle = Math.PI / 2 + (Math.random() - 0.5) * (Math.PI / 4.5);
-      const dx = Math.cos(baseAngle), dy = Math.sin(baseAngle);
-      const perpX = -dy, perpY = dx;
-      const ox = cx + dx * 24;
-      const oy = cy + dy * 24;
-      const totalLen = 70 + Math.random() * 30;
-      const N = 4;
-      const wobblePhase = Math.random() * Math.PI * 2;
-      const wobbleAmp = 5 + Math.random() * 4;
-      const wobbleFreq = 0.05 + Math.random() * 0.025;
-      const pts = [];
-      for (let i = 0; i < N; i++) {
-        const t = i / (N - 1);
-        const longPos = t * totalLen;
-        const w = Math.sin(longPos * wobbleFreq + wobblePhase) * wobbleAmp * t;
-        pts.push(ox + dx * longPos + perpX * w, oy + dy * longPos + perpY * w);
-      }
+    // v1.7.0 polish r7: orbital rings preview — soft cyan-blue 'line'
+    // particles emitted as the base trail, with the rings themselves
+    // drawn after the orb core (see drawOrbPreview below).
+    if (Math.random() < 0.55) {
       particles.push({
-        kind: 'streak',
-        pts, N,
-        width: 1.4 + Math.random() * 0.4,
-        peakAlpha: 0.65,
-        startTime: performance.now(),
-        maxLifeMs: 500,
-        life: 1,
+        x: cx + (Math.random() - 0.5) * 30,
+        y: cy + (Math.random() - 0.5) * 30,
+        vx: 0, vy: 4 + Math.random() * 3,
+        life: 1, size: 2,
+        lineLen: 22 + Math.random() * 18,
+        hue: '160,200,255',
+        kind: 'speedline',
       });
     }
   } else if (orbKey === 'asteroid') {
@@ -20390,16 +20431,18 @@ function drawOrbPreviewUnlocked(particles, orbKey, color, cx, cy, t) {
       p.x += p.vx; p.y += p.vy;
       p.vy += 0.05; p.vx *= 0.985;
       if (p.flicker !== undefined) p.flicker += 0.28;
-    } else if (p.kind === 'streamline' || p.kind === 'lightning' || p.kind === 'streak') {
+    } else if (p.kind === 'streamline' || p.kind === 'lightning') {
       // Wall-clock age so the preview cadence matches gameplay. Polylines
-      // are baked at spawn, so position never updates.
+      // are baked at spawn, so position never updates. Legacy fallback —
+      // current code paths spawn neither kind, but keep the branch for
+      // particles that might persist across an equip change.
       const age = (nowPrev - p.startTime) / p.maxLifeMs;
       p.life = Math.max(0, 1 - age);
     } else {
       p.x += p.vx; p.y += p.vy;
       if (p.drift) p.x += p.drift;
     }
-    if (p.kind !== 'streamline' && p.kind !== 'lightning' && p.kind !== 'streak') p.life -= ageDecay;
+    if (p.kind !== 'streamline' && p.kind !== 'lightning') p.life -= ageDecay;
     if (p.life <= 0) particles.splice(i, 1);
   }
   if (particles.length > 40) particles.splice(0, particles.length - 40);
@@ -20443,34 +20486,6 @@ function drawOrbPreviewUnlocked(particles, orbKey, color, cx, cy, t) {
       ctx.moveTo(p.x, p.y);
       ctx.lineTo(p.x, p.y - (p.lineLen || 20));
       ctx.stroke();
-    } else if (p.kind === 'streak') {
-      // v1.7.0 polish r6: soft motion streak preview. Linear gradient stroke,
-      // additive blend. Same envelope as gameplay (rise then ease-out).
-      const age = 1 - Math.max(0, p.life);
-      const lifeMul = age < 0.15 ? (age / 0.15) : (1 - (age - 0.15) / 0.85);
-      const a = Math.max(0, Math.min(1, lifeMul)) * (p.peakAlpha || 0.65);
-      if (a > 0.02) {
-        const prevComp = ctx.globalCompositeOperation;
-        ctx.globalCompositeOperation = 'lighter';
-        ctx.lineCap = 'round';
-        ctx.lineJoin = 'round';
-        const x0 = p.pts[0],            y0 = p.pts[1];
-        const x1 = p.pts[(p.N - 1) * 2], y1 = p.pts[(p.N - 1) * 2 + 1];
-        const grad = ctx.createLinearGradient(x0, y0, x1, y1);
-        grad.addColorStop(0,    'rgba(140,200,255,0)');
-        grad.addColorStop(0.45, `rgba(140,200,255,${a})`);
-        grad.addColorStop(0.55, `rgba(170,220,255,${a})`);
-        grad.addColorStop(1,    'rgba(140,200,255,0)');
-        ctx.strokeStyle = grad;
-        ctx.lineWidth = p.width || 1.4;
-        ctx.beginPath();
-        ctx.moveTo(x0, y0);
-        for (let si = 1; si < p.N; si++) {
-          ctx.lineTo(p.pts[si * 2], p.pts[si * 2 + 1]);
-        }
-        ctx.stroke();
-        ctx.globalCompositeOperation = prevComp;
-      }
     } else if (p.kind === 'wisp') {
       ctx.fillStyle = `rgba(${p.hue || color},1)`;
       ctx.beginPath();
@@ -22568,7 +22583,6 @@ function exitDevMode() {
   pickupParticles = [];
   deathParticles = [];
   orbTrailParticles = [];
-  warpStreaks = [];
   planetRipples = [];
   destroyEffects = [];
   deathShards = [];
