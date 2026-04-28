@@ -4549,7 +4549,7 @@ const TREE_DEFS = {
         name: 'WRAITH',
         nodes: [
           { key: 'razorVeil',    name: 'Razor Veil',    tier: 1, max: 3, desc: 'Destroy-on-contact during ghost without needing a shield.', effect: r => `Every ${[3,2,1][r-1]||0}s` },
-          { key: 'ghostlight',   name: 'Ghostlight',    tier: 2, max: 3, desc: 'All ghost-flavored kills (ghost aura, Razor Veil, Phantom Blade) have a chance to spawn a 120px EMP-lite burst (no chain).', effect: r => `${[40,60,80][r-1]||0}% trigger` },
+          { key: 'ghostlight',   name: 'Ghostlight',    tier: 2, max: 3, desc: 'All ghost-flavored kills (ghost aura, Razor Veil, Phantom Blade) have a chance to spawn an EMP-lite burst (no chain). Radius scales 90 / 120 / 150 px per rank.', effect: r => `${[20,40,60][r-1]||0}% trigger, ${[90,120,150][r-1]||0}px radius` },
           { key: 'phantomBlade', name: 'Phantom Blade', tier: 3, max: 3, desc: 'During ghost or Eternal Phantom, periodically spawn blades that destroy bodies within 160px.', effect: r => `Every ${[3,2,1][r-1]||0}s` },
         ],
       },
@@ -5759,27 +5759,28 @@ function spawnButterflyEffectSplit(x, y, type) {
   treeLog('butterfly: split spawned ' + type + ' (10s CD)');
 }
 
-// v1.6.4 Ghostlight rework: 120 px radius circular burst expanding from
-// the kill position. Ghost-purple, fades over 300 ms. Kills any body
-// inside the 120 px radius on contact (design: "kills fragments AND
-// bodies, +1 streak"). Previously, ghostlightBurst only emitted a tiny
-// destroy-flash and cleared crack fragments, so the EMP-lite never
-// rendered visibly and never extended the kill chain.
+// Ghostlight: circular EMP-lite burst expanding from the kill position.
+// Ghost-purple, fades over 300 ms. Kills any body inside the radius on
+// contact (design: "kills fragments AND bodies, +1 streak"). Radius scales
+// per rank: 90 / 120 / 150 px at rank 1 / 2 / 3 — passed in by callers.
 let ghostlightBursts = [];
 const GHOSTLIGHT_BURST_LIFE_MS = 300;
-const GHOSTLIGHT_BURST_RADIUS = 120;
+const GHOSTLIGHT_RADII_BY_RANK = [90, 120, 150];
 const GHOSTLIGHT_BURSTS_CAP = 8;
 // Kill radii queued by ghostlightBurst, processed once per update tick
 // in resolveGhostlightPendingKills(). Deferring the body kills to the end
 // of the update avoids mutating `bodies` mid-iteration at the upstream
 // Razor Veil / Phantom Blade kill sites.
 let ghostlightPendingKills = [];
-function ghostlightBurst(x, y) {
-  // v1.6.4 visual rework: clones the shield-EMP burst structure (outer
-  // expanding ring + lightning bolts + center flash) so Ghostlight reads
-  // unmistakeably even when no shield is active. Bolt angles are baked
-  // into the burst so the flicker stays stable across frames; segment
-  // offsets are re-randomized at draw time for the lightning shimmer.
+function ghostlightBurst(x, y, rank) {
+  // Clones the shield-EMP burst structure (outer expanding ring + lightning
+  // bolts + center flash) so Ghostlight reads unmistakeably even when no
+  // shield is active. Bolt angles are baked into the burst so the flicker
+  // stays stable across frames; segment offsets are re-randomized at draw
+  // time for the lightning shimmer. v1.7.0: radius scales per rank via
+  // GHOSTLIGHT_RADII_BY_RANK; rank=0 falls back to the rank-1 value as a
+  // safety in case a future call site forgets to pass it.
+  const r = GHOSTLIGHT_RADII_BY_RANK[(rank | 0) - 1] || GHOSTLIGHT_RADII_BY_RANK[0];
   const boltCount = 4 + Math.floor(Math.random() * 3); // 4-6
   const bolts = [];
   for (let i = 0; i < boltCount; i++) {
@@ -5791,22 +5792,22 @@ function ghostlightBurst(x, y) {
   pushCapped(ghostlightBursts, {
     x, y,
     startTime: Date.now(),
-    maxR: GHOSTLIGHT_BURST_RADIUS,
+    maxR: r,
     bolts,
   }, GHOSTLIGHT_BURSTS_CAP);
   // Small particle flash on top so the impact reads instantly.
   emitDestroyBurst(x, y, POWERUP_COLORS.ghost.rgb);
   // Queue the radius for end-of-update body sweep.
-  ghostlightPendingKills.push({ x, y, r: GHOSTLIGHT_BURST_RADIUS });
+  ghostlightPendingKills.push({ x, y, r });
   // Crack fragments are safe to clear synchronously — no caller iterates
   // crackFragments around the upstream call sites.
-  const r2 = GHOSTLIGHT_BURST_RADIUS * GHOSTLIGHT_BURST_RADIUS;
+  const r2 = r * r;
   for (let i = crackFragments.length - 1; i >= 0; i--) {
     const f = crackFragments[i];
     const dx = f.x - x, dy = f.y - y;
     if (dx * dx + dy * dy < r2) crackFragments.splice(i, 1);
   }
-  treeLog('ghostlight: burst at ' + Math.round(x) + ',' + Math.round(y));
+  treeLog('ghostlight: burst r=' + r + ' at ' + Math.round(x) + ',' + Math.round(y));
 }
 // Resolves all queued Ghostlight kill radii against the current bodies
 // list. Called once per update tick at end-of-tick, after all primary
@@ -5839,13 +5840,14 @@ function resolveGhostlightPendingKills() {
   bodies = survivors;
   ghostlightPendingKills = [];
 }
-// v1.6.4 visual rework: clones drawEmpRings (outer ring + lightning bolts
-// + center flash) but in the ghost-purple palette and at the 120 px
-// Ghostlight radius. NO pixiActive early-return — production Android
-// runs pixiActive=true and the prior implementation invisibly returned
-// at the top, leaving Ghostlight rendering nothing on the device that
-// matters most. Drawing to #c overlays the pixi WebGL canvas correctly
-// because #c sits above #pixiCanvas in the stacking order.
+// Visual: clones drawEmpRings (outer ring + lightning bolts + center flash)
+// in the ghost-purple palette. Per-burst radius is read from g.maxR (set
+// by ghostlightBurst from the rank-scaled GHOSTLIGHT_RADII_BY_RANK table),
+// so each burst draws at its own size. NO pixiActive early-return —
+// production Android runs pixiActive=true and the prior implementation
+// invisibly returned at the top, leaving Ghostlight rendering nothing on
+// the device that matters most. Drawing to #c overlays the pixi WebGL
+// canvas correctly because #c sits above #pixiCanvas in the stacking order.
 function drawGhostlightBursts(tctx = ctx) {
   if (!ghostlightBursts.length) return;
   const now = Date.now();
@@ -11890,8 +11892,8 @@ function checkCollisions() {
     const wraith = activeEffects.shield > 0;
     const rvRank = (activeOrb === 'cosmic') ? rankOf('razorVeil') : 0;
     const glRank = (activeOrb === 'cosmic') ? rankOf('ghostlight') : 0;
-    // v1.6.3 buff: 30/50/70% → 40/60/80%.
-    const glChance = [0.40, 0.60, 0.80][glRank - 1] || 0;
+    // v1.7.0 rebalance: 40/60/80% → 20/40/60%.
+    const glChance = [0.20, 0.40, 0.60][glRank - 1] || 0;
     for (let i = bodies.length - 1; i >= 0; i--) {
       const b = bodies[i];
       if (bodyHits(b, 0)) {
@@ -11910,10 +11912,11 @@ function checkCollisions() {
             razorVeilNextArmTime = Date.now() + razorVeilRearmMs();
             treeLog('razorVeil: kill, rearm in ' + razorVeilRearmMs() + 'ms');
           }
-          // Ghostlight: chance per ghost-destroy to spawn a 90 px EMP-lite
-          // burst that clears crack fragments and streaks +1.
+          // Ghostlight: chance per ghost-destroy to spawn a rank-scaled
+          // EMP-lite burst (90/120/150 px) that clears crack fragments and
+          // streaks +1.
           if (glRank > 0 && Math.random() < glChance) {
-            ghostlightBurst(b.x, b.y);
+            ghostlightBurst(b.x, b.y, glRank);
             addDestroyPoints(); // +1 streak per Ghostlight design
           }
           shakeKill(b); // per-body shake for Razor Veil / Wraith contact kill
@@ -12677,8 +12680,8 @@ function update() {
     if (pbRank > 0 && Date.now() >= phantomBladeNextTickTime) {
       const reach = 160;
       const glRank = rankOf('ghostlight');
-      // v1.6.3 buff: 30/50/70% → 40/60/80%.
-      const glChance = [0.40, 0.60, 0.80][glRank - 1] || 0;
+      // v1.7.0 rebalance: 40/60/80% → 20/40/60%.
+      const glChance = [0.20, 0.40, 0.60][glRank - 1] || 0;
       const survivors = [];
       let killedAny = false;
       let pbKillCount = 0;
@@ -12690,7 +12693,7 @@ function update() {
           SFX.planetDestroyed('ghost');
           checkDestroyProc(b, 'ghost');
           if (glRank > 0 && Math.random() < glChance) {
-            ghostlightBurst(b.x, b.y);
+            ghostlightBurst(b.x, b.y, glRank);
             addDestroyPoints();
           }
           // v1.6.3 visual pass part 2: spawn a spinning purple blade visual
