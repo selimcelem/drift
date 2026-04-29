@@ -14,7 +14,7 @@
     "SystemBars": {
       "insetsHandling": "css",
       "style": "DARK",
-      "hidden": false,
+      "hidden": true,
       "animation": "NONE"
     }
   }
