@@ -165,13 +165,14 @@
      left:50% + translateX(-50%); contained width so the bar reads as a
      prominent floating UI widget, not a screen-wide strip. The bar's trough
      is fully transparent so the gameplay canvas remains visible behind it.
-     Bottom anchored at exactly --safe-bottom (no extra offset) so the bar
-     sits flush with the screen edge in immersive mode (where --safe-bottom
-     resolves to 0) — and lifts above the gesture pill on devices/modes
-     where SystemBars passthrough exposes a non-zero inset. */
+     Bottom anchored at --safe-bottom + 12px: in immersive mode (--safe-bottom
+     resolves to 0) the +12px gives a small visual margin from the screen
+     edge so the bar doesn't read as clipped. On devices/modes where
+     SystemBars passthrough exposes a non-zero inset, the bar still lifts
+     above the gesture pill, then adds the 12px breathing room on top. */
   #powerupTimer {
     position: fixed;
-    bottom: var(--safe-bottom);
+    bottom: calc(var(--safe-bottom) + 12px);
     left: 50%;
     transform: translateX(-50%);
     display: none;

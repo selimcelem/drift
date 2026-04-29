@@ -2,6 +2,7 @@ package com.selimcelem.drift;
 
 import android.os.Bundle;
 import android.view.View;
+import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
@@ -40,14 +41,19 @@ public class MainActivity extends BridgeActivity {
         // parent by getInsets(systemBars | displayCutout).bottom, which on
         // pre-passthrough devices (WebView <140 OR before onDOMReady resolves
         // hasViewportCover) leaves the WebView ~30 logical px short of the
-        // physical screen even when bars are hidden. Replace it with a
-        // zero-padding listener so the WebView fills the full window. We're
-        // in immersive mode and BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE keeps
-        // swipe-revealed bars from affecting layout, so insets are
-        // intentionally 0 throughout.
+        // physical screen even when bars are hidden.
+        //
+        // Replace it with a cutout-only padding listener: ignore systemBars
+        // insets (we hid them and want the WebView under their region), but
+        // keep the displayCutout insets so the score / streak / timer stack
+        // doesn't sit under a camera punch-hole or notch. Bottom is always
+        // 0 — we want the canvas flush with the screen edge in immersive
+        // mode, and there's no cutout you can land in at the bottom of a
+        // portrait phone anyway.
         View webViewParent = (View) bridge.getWebView().getParent();
         ViewCompat.setOnApplyWindowInsetsListener(webViewParent, (v, insets) -> {
-            v.setPadding(0, 0, 0, 0);
+            Insets cutoutInsets = insets.getInsets(WindowInsetsCompat.Type.displayCutout());
+            v.setPadding(cutoutInsets.left, cutoutInsets.top, cutoutInsets.right, 0);
             return WindowInsetsCompat.CONSUMED;
         });
         webViewParent.requestApplyInsets();
