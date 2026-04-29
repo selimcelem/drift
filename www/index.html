@@ -86,42 +86,57 @@
     pointer-events: none;
   }
 
-  #score {
+  /* v1.7.0 HUD: top-center compact stack — score+streak inline, timer below.
+     Wrapped in a flex column so the score row can grow with longer scores
+     without breaking the centered alignment. The hyperspeed banner ("Nx
+     HYPERSPEED") is canvas-rendered just below this stack. */
+  #topStack {
     position: absolute;
-    top: calc(var(--safe-top) + 24px);
+    top: calc(var(--safe-top) + 10px);
     left: 50%;
     transform: translateX(-50%);
-    color: rgba(255,255,255,0.9);
-    font-size: 28px;
-    font-weight: 700;
-    letter-spacing: 4px;
-    text-shadow: 0 0 20px rgba(100,200,255,0.8);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    pointer-events: none;
+    z-index: 4;
   }
-
+  #scoreRow {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+  }
+  #score {
+    color: rgba(255,255,255,0.92);
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: 3px;
+    text-shadow: 0 0 16px rgba(100,200,255,0.75);
+  }
   #runTimer {
-    position: absolute;
-    top: calc(var(--safe-top) + 56px);
-    left: 50%;
-    transform: translateX(-50%);
     font-family: 'Orbitron', monospace;
-    font-size: 16px;
+    font-size: 13px;
     font-weight: 700;
     letter-spacing: 3px;
     color: rgba(255,255,255,0.8);
-    text-shadow: 0 0 12px rgba(255,255,255,0.4);
+    text-shadow: 0 0 10px rgba(255,255,255,0.4);
     pointer-events: none;
   }
 
+  /* v1.7.0: combo bar repositioned to bottom-center, anchored above the
+     bottom safe-area inset (S20 FE navbar / S23 Ultra gesture bar). */
   #powerupTimer {
     position: absolute;
-    top: calc(var(--safe-top) + 104px);
+    bottom: calc(var(--safe-bottom) + 14px);
     left: 50%;
     transform: translateX(-50%);
     display: none;
     flex-direction: column;
     align-items: center;
-    gap: 5px;
+    gap: 4px;
     pointer-events: none;
+    z-index: 5;
   }
   #powerupTimer.visible { display: flex; }
   .pt-label {
@@ -131,8 +146,17 @@
     color: rgba(255,255,255,0.7);
     text-transform: uppercase;
   }
+  .pt-combo {
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 2.5px;
+    text-transform: uppercase;
+    text-shadow: 0 0 8px currentColor;
+    display: none;
+  }
+  .pt-combo.visible { display: block; }
   .pt-bar {
-    width: 120px;
+    width: 160px;
     height: 4px;
     background: rgba(255,255,255,0.08);
     border-radius: 2px;
@@ -143,37 +167,16 @@
     width: 100%;
     border-radius: 2px;
   }
-  .pt-combo {
-    font-family: 'Space Mono', monospace;
-    font-size: 10px;
-    letter-spacing: 2.5px;
-    text-transform: uppercase;
-    text-shadow: 0 0 8px currentColor;
-    margin-top: 2px;
-    display: none;
-  }
 
-  /* Burst bar — sits below the powerup timer. Same bar style; label is a
-     smaller uppercase "BURST". */
-  #burstBar {
-    position: absolute;
-    top: calc(var(--safe-top) + 146px);
-    left: 50%;
-    transform: translateX(-50%);
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 3px;
-    pointer-events: none;
-  }
-  /* v1.6.3: capstone countdown rings, positioned below burst bar. */
+  /* v1.7.0: capstone cooldowns pinned bottom-left, horizontal stack. Visible
+     only when at least one capstone is on cooldown / armed for the active
+     orb. Same circle size as before (22 px). */
   #capstoneCountdowns {
     position: absolute;
-    top: calc(var(--safe-top) + 180px);
-    left: 50%;
-    transform: translateX(-50%);
+    bottom: calc(var(--safe-bottom) + 14px);
+    left: calc(var(--safe-left) + 16px);
     display: none;
-    gap: 10px;
+    gap: 12px;
     pointer-events: none;
     z-index: 6;
   }
@@ -217,36 +220,62 @@
     color: rgba(220,220,240,0.75);
     text-transform: uppercase;
   }
-  .burst-label {
+
+  /* v1.7.0: BURST as a circular cooldown indicator at bottom-right, mirroring
+     the capstone cooldown circle visual. Bright gold ring + glow when ready. */
+  #burstIndicator {
+    position: absolute;
+    bottom: calc(var(--safe-bottom) + 14px);
+    right: calc(var(--safe-right) + 16px);
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    pointer-events: none;
+    z-index: 6;
+  }
+  #burstIndicator.visible { display: flex; }
+  #burstIndicator .burst-ring {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: conic-gradient(
+      rgba(255,170,0,0.95) calc(var(--burst-progress, 0) * 360deg),
+      rgba(255,255,255,0.1) 0deg
+    );
+    position: relative;
+  }
+  #burstIndicator .burst-ring::after {
+    content: '';
+    position: absolute;
+    inset: 3px;
+    border-radius: 50%;
+    background: rgba(0,0,10,0.85);
+  }
+  #burstIndicator.ready .burst-ring {
+    background: rgba(255,170,0,0.95);
+    box-shadow: 0 0 14px rgba(255,170,0,0.85);
+  }
+  #burstIndicator .burst-lbl {
     font-family: 'Space Mono', monospace;
-    font-size: 8px;
-    letter-spacing: 3px;
-    color: rgba(255,255,255,0.5);
+    font-size: 7px;
+    letter-spacing: 1.5px;
+    color: rgba(220,220,240,0.75);
     text-transform: uppercase;
   }
-  .burst-bar-outer {
-    width: 120px;
-    height: 4px;
-    background: rgba(255,255,255,0.08);
-    border-radius: 2px;
-    overflow: hidden;
+  #burstIndicator.ready .burst-lbl {
+    color: rgba(255,210,140,0.95);
   }
-  .burst-bar-fill {
-    height: 100%;
-    width: 100%;
-    border-radius: 2px;
-    background: rgba(255,255,255,0.3);
-    transition: background 0.2s;
-  }
-  .pt-combo.visible { display: block; }
 
+  /* v1.7.0: ATTRACT/REPEL labels lifted above the new bottom UI row so they
+     don't compete visually with the combo bar / cooldown circles. */
   #hintLeft, #hintRight {
     position: absolute;
-    bottom: calc(var(--safe-bottom) + 80px);
+    bottom: calc(var(--safe-bottom) + 64px);
     font-family: 'Space Mono', monospace;
     font-size: 10px;
     letter-spacing: 2px;
-    color: rgba(255,255,255,0.35);
+    color: rgba(255,255,255,0.30);
     text-transform: uppercase;
   }
   #hintLeft { left: calc(var(--safe-left) + 20px); }
@@ -978,11 +1007,10 @@
     box-shadow: 0 0 30px rgba(100,200,255,0.3);
   }
 
+  /* v1.7.0: streakDisplay is now an inline child of #scoreRow (no absolute
+     positioning) so the fire icon + "x14" sit baseline-aligned next to the
+     score number. */
   #streakDisplay {
-    position: absolute;
-    top: calc(var(--safe-top) + 84px);
-    left: 50%;
-    transform: translateX(-50%);
     font-family: 'Space Mono', monospace;
     font-size: 13px;
     letter-spacing: 2px;
@@ -2802,21 +2830,26 @@
   <canvas id="pixiCanvas"></canvas>
   <canvas id="c"></canvas>
   <div id="ui">
-    <div id="score">0</div>
-    <div id="runTimer">00:00</div>
+    <!-- v1.7.0 HUD restructure: top stack compressed (score+streak inline,
+         timer below), bottom-left capstones, bottom-center combo bar,
+         bottom-right burst circle. -->
+    <div id="topStack">
+      <div id="scoreRow">
+        <div id="score">0</div>
+        <div id="streakDisplay"></div>
+      </div>
+      <div id="runTimer">00:00</div>
+    </div>
     <div id="powerupTimer">
       <div class="pt-label" id="ptLabel">SHIELD</div>
-      <div class="pt-bar"><div class="pt-fill" id="ptFill"></div></div>
       <div class="pt-combo" id="ptCombo"></div>
-    </div>
-    <div id="burstBar">
-      <div class="burst-label">BURST</div>
-      <div class="burst-bar-outer"><div class="burst-bar-fill" id="burstFill"></div></div>
+      <div class="pt-bar"><div class="pt-fill" id="ptFill"></div></div>
     </div>
     <!-- v1.6.3 visual pass: capstone countdown rings. Each shows progress
          toward the next auto-fire for NIGHT SHADE / SUN FORGE / AEGIS or
          the armed state of SHROUD. Visibility is toggled per-orb via the
-         updateCapstoneCountdowns() tick. -->
+         updateCapstoneCountdowns() tick. v1.7.0: anchored bottom-left,
+         horizontal stack (was top-center, vertical-ish stack). -->
     <div id="capstoneCountdowns">
       <div class="cap-cd" id="capCdShroud"    data-cap="shroud"><div class="cap-cd-ring"></div><div class="cap-cd-lbl">SHROUD</div></div>
       <div class="cap-cd" id="capCdNightShade" data-cap="nightShade"><div class="cap-cd-ring"></div><div class="cap-cd-lbl">NIGHT</div></div>
@@ -2824,7 +2857,13 @@
       <div class="cap-cd" id="capCdAegis"     data-cap="aegis"><div class="cap-cd-ring"></div><div class="cap-cd-lbl">AEGIS</div></div>
       <div class="cap-cd" id="capCdEventHorizon" data-cap="eventHorizon"><div class="cap-cd-ring"></div><div class="cap-cd-lbl">HORIZON</div></div>
     </div>
-    <div id="streakDisplay"></div>
+    <!-- v1.7.0: burst replaced with a circular indicator at bottom-right,
+         same size/style as a capstone cooldown circle. Fills clockwise as
+         the burst recharges; bright orange ring + glow when ready. -->
+    <div id="burstIndicator">
+      <div class="burst-ring"></div>
+      <div class="burst-lbl">BURST</div>
+    </div>
     <div id="hintLeft">◀ ATTRACT</div>
     <div id="hintRight">REPEL ▶</div>
   </div>
@@ -12266,11 +12305,13 @@ function updateRunTimerDisplay() {
     const blinkHigh = Math.floor(frame / stage.blink) % 2 === 0;
     const low = Math.max(0, 1 - stage.pulse);
     el.style.opacity = blinkHigh ? '1' : String(low);
+    // v1.7.0 HUD: timer is now a flex child of #topStack (no -50% transform
+    // for centering); apply plain translateX for the danger-zone shake.
     const shake = (Math.random() - 0.5) * stage.shake * 2;
-    el.style.transform = `translateX(calc(-50% + ${shake.toFixed(2)}px))`;
+    el.style.transform = `translateX(${shake.toFixed(2)}px)`;
   } else {
     el.style.opacity = '1';
-    el.style.transform = 'translateX(-50%)';
+    el.style.transform = '';
   }
 }
 
@@ -18241,8 +18282,12 @@ const powerupTimerEl = document.getElementById('powerupTimer');
 const ptLabelEl = document.getElementById('ptLabel');
 const ptFillEl = document.getElementById('ptFill');
 const ptComboEl = document.getElementById('ptCombo');
-const burstFillEl = document.getElementById('burstFill');
-const burstBarEl = document.getElementById('burstBar');
+// v1.7.0 HUD: burst is now a circular indicator at bottom-right (was a bar
+// in the top stack). burstReadyPrev tracks the previous-frame ready state so
+// we can fire a one-shot SFX cue exactly on the not-ready → ready transition.
+const burstIndicatorEl = document.getElementById('burstIndicator');
+const burstRingEl = burstIndicatorEl ? burstIndicatorEl.querySelector('.burst-ring') : null;
+let burstReadyPrev = false;
 
 // v1.6.3 visual pass: capstone countdown rings tick. Per-orb visibility
 // gates on hasCapstone(); only shows rings for the currently-equipped orb
@@ -18322,25 +18367,27 @@ function updateCapstoneCountdowns() {
 }
 
 function updateBurstBar() {
-  if (!burstBarEl || !burstFillEl) return;
+  if (!burstIndicatorEl || !burstRingEl) return;
   // Only visible in gameplay.
   const visible = (state === 'playing' || state === 'paused');
-  burstBarEl.style.display = visible ? 'flex' : 'none';
-  if (!visible) return;
+  burstIndicatorEl.classList.toggle('visible', visible);
+  if (!visible) return; // preserve burstReadyPrev across pause/death so the
+                        // resume frame doesn't false-positive the cue.
   const ready = (burstCooldownEnd === 0) || (Date.now() >= burstCooldownEnd);
   const pct = ready
     ? 1
     : Math.max(0, Math.min(1, (Date.now() - (burstCooldownEnd - burstCooldownDuration)) / burstCooldownDuration));
-  burstFillEl.style.width = (pct * 100) + '%';
-  if (ready) {
-    // Ready: bright gold/orange so it reads clearly against the grey cooldown
-    // state regardless of the active orb (asteroid's orb color is near-grey).
-    burstFillEl.style.background = '#ffaa00';
-    burstFillEl.style.boxShadow = '0 0 10px rgba(255,170,0,0.85)';
-  } else {
-    burstFillEl.style.background = 'rgba(180,180,180,0.45)';
-    burstFillEl.style.boxShadow = 'none';
+  burstRingEl.style.setProperty('--burst-progress', String(pct));
+  burstIndicatorEl.classList.toggle('ready', ready);
+  // v1.7.0: one-shot cue on not-ready → ready transition. Reuses the existing
+  // 'mirror' SFX buffer (already loaded for Butterfly Effect splits) at low
+  // volume so it reads as a subtle UI ping rather than an action sound. The
+  // burstCooldownEnd > 0 gate suppresses the cue at game start (when
+  // burstCooldownEnd is 0 and ready is trivially true).
+  if (ready && !burstReadyPrev && burstCooldownEnd > 0) {
+    try { SFX.playSfxBuffer('mirror', 0.16); } catch {}
   }
+  burstReadyPrev = ready;
 }
 
 function updatePowerupTimer() {
