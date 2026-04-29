@@ -9,25 +9,25 @@
         <item name="colorAccent">@color/colorAccent</item>
     </style>
 
-    <!-- Edge-to-edge: transparent system bars so the WebView fills the full
-         window (MainActivity calls WindowCompat.setDecorFitsSystemWindows(false)).
-         Opaque statusBarColor / navigationBarColor were carving layout space on
-         API 35+ instead of overlaying, leaving the WebView ~78 logical px short
-         (innerHeight 722 on S20 FE vs ~800). windowFullscreen removed: deprecated
-         since API 30, no effect under enforced edge-to-edge on API 35+. -->
+    <!-- Edge-to-edge per the official Capacitor SystemBars plugin (auto-registered
+         in @capacitor/core 8.x via Bridge.java) and the AndroidX edge-to-edge
+         guidance. Transparent system bars; SystemBars plugin manages icon style
+         (light/dark) at runtime via setStyle, so windowLight*Bar items are
+         intentionally omitted here. windowFullscreen is intentionally absent:
+         deprecated since API 30 and incompatible with edge-to-edge inset
+         handling. cutoutMode=shortEdges keeps the canvas painting under display
+         notches/punch-holes. -->
     <style name="AppTheme.NoActionBar" parent="Theme.AppCompat.DayNight.NoActionBar">
         <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
-        <item name="android:windowLightStatusBar">false</item>
-        <item name="android:windowLightNavigationBar">false</item>
     </style>
 
 
     <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
         <item name="android:background">@drawable/splash</item>
         <!-- Hand off to the real app theme after the splash animation finishes
-             so our status/nav bar colors and cutout mode actually apply at
+             so our cutout mode and transparent bar colors actually apply at
              runtime instead of the Theme.SplashScreen defaults. -->
         <item name="postSplashScreenTheme">@style/AppTheme.NoActionBar</item>
         <!-- Mirror the transparent-bar overrides so the splash frame itself
@@ -36,7 +36,5 @@
              read as a continuous dark backdrop. -->
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
-        <item name="android:windowLightStatusBar">false</item>
-        <item name="android:windowLightNavigationBar">false</item>
     </style>
 </resources>

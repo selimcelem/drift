@@ -11,10 +11,11 @@
     "overrideUserAgent": null
   },
   "plugins": {
-    "StatusBar": {
+    "SystemBars": {
+      "insetsHandling": "css",
       "style": "DARK",
-      "backgroundColor": "#00000a",
-      "overlaysWebView": true
+      "hidden": false,
+      "animation": "NONE"
     }
   }
 }

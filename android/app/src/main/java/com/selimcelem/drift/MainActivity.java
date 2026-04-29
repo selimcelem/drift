@@ -10,11 +10,14 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(PgsSavedGamesPlugin.class);
         super.onCreate(savedInstanceState);
-        // Edge-to-edge: lets WindowInsets propagate to the WebView so
-        // env(safe-area-inset-bottom) resolves to a non-zero value when the
-        // gesture-pill area is present. Without this, safe-area CSS padding
-        // collapses to 0 on Android and bottom UI (SHOP, DRIFT AGAIN, etc.)
-        // sits underneath the gesture bar on devices with gesture nav.
+        // Edge-to-edge per the official Android guidance
+        // (https://developer.android.com/develop/ui/views/layout/edge-to-edge).
+        // Inset handling itself is delegated to the Capacitor SystemBars plugin
+        // (auto-registered by @capacitor/core 8.x). On modern WebView (≥140) +
+        // viewport-fit=cover the plugin runs in passthrough mode and the WebView
+        // fills the full window with env(safe-area-inset-*) resolving to the
+        // status/gesture-bar regions. On older WebViews it pads the WebView
+        // host so children stay clear of the system bars.
         WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
         PlayGamesSdk.initialize(this);
     }
