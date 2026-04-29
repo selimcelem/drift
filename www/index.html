@@ -86,33 +86,41 @@
     pointer-events: none;
   }
 
-  /* v1.7.0 HUD: top-center compact stack — score+streak inline, timer below.
-     Wrapped in a flex column so the score row can grow with longer scores
-     without breaking the centered alignment. The hyperspeed banner ("Nx
-     HYPERSPEED") is canvas-rendered just below this stack. */
+  /* v1.7.0 HUD (second pass): top-center compact stack — score dead-centered
+     via grid (1fr auto 1fr), streak floats in the right column so it doesn't
+     shift the score off-center, timer + hyperspeed-banner stack below. The
+     hyperspeed banner is canvas-rendered just below this stack. */
   #topStack {
     position: absolute;
     top: calc(var(--safe-top) + 10px);
-    left: 50%;
-    transform: translateX(-50%);
+    left: 0;
+    right: 0;
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 2px;
+    gap: 4px;
     pointer-events: none;
     z-index: 4;
   }
   #scoreRow {
-    display: flex;
+    /* 1fr | auto | 1fr keeps #score dead-center regardless of #streakDisplay
+       width. Padding reserves space for the top-corner buttons (settings cog
+       at left, pause/FPS at right) so the streak can't slide under them. */
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
     align-items: baseline;
-    gap: 12px;
+    width: 100%;
+    padding: 0 60px;
+    box-sizing: border-box;
   }
   #score {
+    grid-column: 2;
     color: rgba(255,255,255,0.92);
     font-size: 20px;
     font-weight: 700;
     letter-spacing: 3px;
     text-shadow: 0 0 16px rgba(100,200,255,0.75);
+    text-align: center;
   }
   #runTimer {
     font-family: 'Orbitron', monospace;
@@ -124,13 +132,15 @@
     pointer-events: none;
   }
 
-  /* v1.7.0: combo bar repositioned to bottom-center, anchored above the
-     bottom safe-area inset (S20 FE navbar / S23 Ultra gesture bar). */
+  /* v1.7.0 second pass: combo bar promoted — wider, bigger combo-name font.
+     Anchored at the very bottom (above safe-area), the cyan progress bar
+     sits visually as a baseline strip with the SHIELD/COMBO text floating
+     above it. Cooldown circles sit ABOVE the combo bar (further up). */
   #powerupTimer {
     position: absolute;
-    bottom: calc(var(--safe-bottom) + 14px);
-    left: 50%;
-    transform: translateX(-50%);
+    bottom: calc(var(--safe-bottom) + 6px);
+    left: 0;
+    right: 0;
     display: none;
     flex-direction: column;
     align-items: center;
@@ -141,23 +151,25 @@
   #powerupTimer.visible { display: flex; }
   .pt-label {
     font-family: 'Space Mono', monospace;
-    font-size: 9px;
+    font-size: 10px;
     letter-spacing: 3px;
     color: rgba(255,255,255,0.7);
     text-transform: uppercase;
   }
   .pt-combo {
     font-family: 'Space Mono', monospace;
-    font-size: 10px;
-    letter-spacing: 2.5px;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 3px;
     text-transform: uppercase;
-    text-shadow: 0 0 8px currentColor;
+    text-shadow: 0 0 10px currentColor;
     display: none;
   }
   .pt-combo.visible { display: block; }
   .pt-bar {
-    width: 160px;
-    height: 4px;
+    width: calc(100% - 32px);
+    max-width: 480px;
+    height: 5px;
     background: rgba(255,255,255,0.08);
     border-radius: 2px;
     overflow: hidden;
@@ -168,15 +180,14 @@
     border-radius: 2px;
   }
 
-  /* v1.7.0: capstone cooldowns pinned bottom-left, horizontal stack. Visible
-     only when at least one capstone is on cooldown / armed for the active
-     orb. Same circle size as before (22 px). */
+  /* v1.7.0 second pass: capstone cooldowns +27 % bigger (22 → 28 px), pushed
+     above the combo bar so the bar can hug the bottom edge full-width. */
   #capstoneCountdowns {
     position: absolute;
-    bottom: calc(var(--safe-bottom) + 14px);
+    bottom: calc(var(--safe-bottom) + 36px);
     left: calc(var(--safe-left) + 16px);
     display: none;
-    gap: 12px;
+    gap: 14px;
     pointer-events: none;
     z-index: 6;
   }
@@ -185,12 +196,12 @@
     display: none;
     flex-direction: column;
     align-items: center;
-    gap: 2px;
+    gap: 3px;
   }
   .cap-cd.visible { display: flex; }
   .cap-cd-ring {
-    width: 22px;
-    height: 22px;
+    width: 28px;
+    height: 28px;
     border-radius: 50%;
     background: conic-gradient(
       var(--cap-color, rgba(200,150,255,0.95)) calc(var(--cap-progress, 0) * 360deg),
@@ -201,43 +212,43 @@
   .cap-cd-ring::after {
     content: '';
     position: absolute;
-    inset: 3px;
+    inset: 4px;
     border-radius: 50%;
     background: rgba(0,0,10,0.85);
   }
   .cap-cd.primed .cap-cd-ring {
     background: var(--cap-color, rgba(200,150,255,0.95));
-    box-shadow: 0 0 10px var(--cap-color, rgba(200,150,255,0.95));
+    box-shadow: 0 0 12px var(--cap-color, rgba(200,150,255,0.95));
   }
   .cap-cd.firing .cap-cd-ring {
     background: rgba(255,255,255,0.95);
-    box-shadow: 0 0 14px rgba(255,255,255,0.95);
+    box-shadow: 0 0 16px rgba(255,255,255,0.95);
   }
   .cap-cd-lbl {
     font-family: 'Space Mono', monospace;
-    font-size: 7px;
+    font-size: 8px;
     letter-spacing: 1.5px;
     color: rgba(220,220,240,0.75);
     text-transform: uppercase;
   }
 
-  /* v1.7.0: BURST as a circular cooldown indicator at bottom-right, mirroring
-     the capstone cooldown circle visual. Bright gold ring + glow when ready. */
+  /* v1.7.0 second pass: BURST circle matched to capstone size (28 px),
+     pushed above the combo bar to match the capstone vertical position. */
   #burstIndicator {
     position: absolute;
-    bottom: calc(var(--safe-bottom) + 14px);
+    bottom: calc(var(--safe-bottom) + 36px);
     right: calc(var(--safe-right) + 16px);
     display: none;
     flex-direction: column;
     align-items: center;
-    gap: 2px;
+    gap: 3px;
     pointer-events: none;
     z-index: 6;
   }
   #burstIndicator.visible { display: flex; }
   #burstIndicator .burst-ring {
-    width: 22px;
-    height: 22px;
+    width: 28px;
+    height: 28px;
     border-radius: 50%;
     background: conic-gradient(
       rgba(255,170,0,0.95) calc(var(--burst-progress, 0) * 360deg),
@@ -248,17 +259,17 @@
   #burstIndicator .burst-ring::after {
     content: '';
     position: absolute;
-    inset: 3px;
+    inset: 4px;
     border-radius: 50%;
     background: rgba(0,0,10,0.85);
   }
   #burstIndicator.ready .burst-ring {
     background: rgba(255,170,0,0.95);
-    box-shadow: 0 0 14px rgba(255,170,0,0.85);
+    box-shadow: 0 0 16px rgba(255,170,0,0.85);
   }
   #burstIndicator .burst-lbl {
     font-family: 'Space Mono', monospace;
-    font-size: 7px;
+    font-size: 8px;
     letter-spacing: 1.5px;
     color: rgba(220,220,240,0.75);
     text-transform: uppercase;
@@ -267,11 +278,12 @@
     color: rgba(255,210,140,0.95);
   }
 
-  /* v1.7.0: ATTRACT/REPEL labels lifted above the new bottom UI row so they
-     don't compete visually with the combo bar / cooldown circles. */
+  /* v1.7.0 second pass: ATTRACT/REPEL pushed noticeably higher (was +64,
+     now +110 above safe-bottom). Sits well above the cooldown row so they
+     read as input hints, not as part of the bottom UI strip. */
   #hintLeft, #hintRight {
     position: absolute;
-    bottom: calc(var(--safe-bottom) + 64px);
+    bottom: calc(var(--safe-bottom) + 110px);
     font-family: 'Space Mono', monospace;
     font-size: 10px;
     letter-spacing: 2px;
@@ -1007,10 +1019,13 @@
     box-shadow: 0 0 30px rgba(100,200,255,0.3);
   }
 
-  /* v1.7.0: streakDisplay is now an inline child of #scoreRow (no absolute
-     positioning) so the fire icon + "x14" sit baseline-aligned next to the
-     score number. */
+  /* v1.7.0 second pass: streakDisplay floats in the right grid column of
+     #scoreRow, anchored to its start so it sits just to the right of the
+     dead-centered score (and never pushes the score off-center). */
   #streakDisplay {
+    grid-column: 3;
+    justify-self: start;
+    padding-left: 12px;
     font-family: 'Space Mono', monospace;
     font-size: 13px;
     letter-spacing: 2px;
@@ -18560,9 +18575,10 @@ function drawDeathParticles() {
 }
 
 // Stacked hyperspeed banner — only shows for 2+ stacks. Drawn in canvas
-// space so we don't have to retrofit DOM layout. Sits between the score
-// (top ~24px) and the streak counter (top ~58px). Blink rate gets faster
-// as stacks climb so 4× feels noticeably more frantic than 2×.
+// space so we don't have to retrofit DOM layout. v1.7.0 HUD second pass:
+// sits cleanly BELOW the timer (~y=58 + safe-top) so it doesn't overlap the
+// "00:28" line of the new compressed top stack. Blink rate gets faster as
+// stacks climb so 4× feels noticeably more frantic than 2×.
 function drawHyperStackText(tctx = ctx) {
   const ctx = tctx;
   if (hyperSpeedStacks < 2) return;
@@ -18603,9 +18619,9 @@ function drawHyperStackText(tctx = ctx) {
     // Thicker outline via stroke-then-fill.
     ctx.strokeStyle = `rgba(${tint.edgeR},${tint.edgeG},${tint.edgeB},0.9)`;
     ctx.lineWidth = 2.6;
-    ctx.strokeText(label, W / 2, 50 + safeAreaTop);
+    ctx.strokeText(label, W / 2, 58 + safeAreaTop);
   }
-  ctx.fillText(label, W / 2, 50 + safeAreaTop);
+  ctx.fillText(label, W / 2, 58 + safeAreaTop);
   ctx.restore();
   ctx.globalAlpha = 1;
 }
