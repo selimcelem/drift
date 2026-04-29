@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Each version header links to its GitHub release; see the release notes for full
 detail beyond the summaries here.
 
+## v1.6.5.1 — Hotfix
+
+### Fixes
+- Top HUD elements no longer appear on main menu
+- Switched to fully immersive mode (system bars hidden during gameplay, swipe-to-reveal)
+- Fixed black band at bottom of screen by overriding Capacitor SystemBars listener
+- Top HUD now respects display cutout (camera punch hole / notch) on devices with cutouts
+- Combo bar has 12px breathing room from screen bottom edge
+
 ## [1.6.5] - 2026-04-29
 
 ### Polish & Game Feel
@@ -707,6 +716,7 @@ dashboard, draw-call optimizations, powerup rebalancing, stability hardening) in
 - GitHub Pages live demo
 - Source-available license
 
+[1.6.5.1]: https://github.com/selimcelem/drift/releases/tag/v1.6.5.1
 [1.6.5]: https://github.com/selimcelem/drift/releases/tag/v1.6.5
 [1.6.4]: https://github.com/selimcelem/drift/releases/tag/v1.6.4
 [1.6.3]: https://github.com/selimcelem/drift/releases/tag/v1.6.3
