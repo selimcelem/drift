@@ -1,6 +1,6 @@
 # Drift — Portfolio
 
-**Current version:** v1.6.4
+**Current version:** v1.6.5
 
 ## What it is
 

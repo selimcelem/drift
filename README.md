@@ -154,7 +154,7 @@ Pipeline: `terraform init` → `plan` → `apply -auto-approve`
 
 ## Roadmap
 
-Post-v1.6.4 plans:
+Post-v1.6.5 plans:
 
 - **Codex** — body types unlock on first destruction with a lore entry attached to each. Progression state syncs to Google Play Games cloud save (shipped in v1.6.2), so the codex will ride on the same snapshot
 - **Visual upgrades** — fragment shaders for body auras, smoother tentacle animation via per-segment interpolation, denser particle effects on top of the WebGL pipeline

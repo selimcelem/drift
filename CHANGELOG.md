@@ -6,6 +6,95 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Each version header links to its GitHub release; see the release notes for full
 detail beyond the summaries here.
 
+## [1.6.5] - 2026-04-29
+
+### Polish & Game Feel
+- Screen shake redesign with wall-clock decay and intensity tiers
+- Hitstop primitive on player death, EMP shield breaks, AEGIS, SUN FORGE,
+  CRITICAL MASS, and large nova kills
+- Death particles use the equipped orb's color and are sized as debris
+  rather than orb-sized boulders
+- Bug fix: settings → restart now properly resumes gameplay music
+
+### Stats & Unlockable Trails
+- Persistent stats tracking: total kills, bodies passed, crystals, runs,
+  longest streak, time survived, plus per-orb breakdowns
+- Stats screen accessible from Settings
+- 5 cosmetic unlock trails — one per orb — with adaptive responses to
+  game state. Unlock thresholds: Drifter / Phantom 1 000 kills,
+  Bulwark 2 000, Inferno / Warp 3 000
+
+### End-of-Run Dopamine
+- Animated crystal counter on the death screen
+- Milestone banners for trail unlocks, difficulty first-clears, and
+  all-time milestones
+- BEST tags on personal-best stats in the run summary
+
+### Wall Mechanics
+- Shield active + wall hit: bounce + EMP burst, consumes 1 stack
+  (instead of dying)
+- Ghost active + wall hit: bounce, no death, no duration consumed
+- Hyperspeed alone (without shield/ghost) at a wall is still lethal —
+  walls remain a real risk during offensive Warp play
+
+### Powerup Rebalance
+- Powerups now scale at 0.65 × body speed (was 0.85 ×) so they're
+  consistently catchable at higher difficulties
+- Per-difficulty minimum spawn spacing replaces the static 1500 ms
+  guard: NORMAL 2000 ms, HARD 2500 ms, EXTREME 3000 ms,
+  IMPOSSIBLE 4000 ms
+- The 2-min powerup-frequency ramp now applies to the floor (up to
+  −25 % by 12 min) so long runs gradually loosen scarcity
+- Powerup density now genuinely scales with difficulty
+
+### Balance — Warp
+- LINGERING HORIZON cooldown 90 s → 120 s
+- BREAKAWAY +25 / 50 / 75 % → +15 / 30 / 45 %
+- WARP HARMONIC cooldown 20 s → 30 s
+- MOMENTUM −0.1 / 0.2 / 0.3 % → −0.05 / 0.1 / 0.2 % per kill
+- SUPERLUMINAL refactored: was a hard override to 10 stacks, now an
+  additive +2 on top of the base + Overdrive (max possible 8)
+- OVERDRIVE max ranks 3 → 2 (caps 5 / 6 instead of 5 / 6 / 7), with a
+  per-node cost override so the path's total cost matches the original
+- SUPERLUMINAL gating: now unlocks when ANY single Warp path is fully
+  maxed (was: Overdrive at rank ≥ 2)
+- Capstone cycle constants centralised — single source of truth shared
+  by the auto-fire tick and the HUD progress rings (fixes the v1.7.0
+  Lingering Horizon UI ring lagging the actual cooldown)
+
+### Balance — Drifter
+- DEAD CENTER + DOUBLE OR NOTHING anti-synergy fixed: DOUBLE OR
+  NOTHING now also rolls after DEAD CENTER's player-picked effect
+  resolves, so investing in both no longer wastes the T3 ranks
+- ORACLE EDGE additive (+1.5 pp / rank) → multiplicative
+  (× 1.10 / rank), closing the cross-difficulty gap
+
+### Balance — Phantom
+- GHOSTLIGHT proc chance 40 / 60 / 80 % → 20 / 40 / 60 %
+- GHOSTLIGHT radius now scales 90 / 120 / 150 px per rank
+- GHOSTLIGHT kill check uses body-edge instead of body-center
+
+### Local Leaderboard
+- Fixed duplicate scores bug on PGS sync relaunch
+
+### HUD Restructure
+- Top-center: compressed score + streak inline, timer + state below,
+  hyperspeed banner cleanly under the timer
+- Bottom-center: prominent active combo bar, single bar at a time
+- Bottom-left: capstone cooldown circles, horizontal stack, only shown
+  when on cooldown
+- Bottom-right: BURST readiness circle, same size as capstone circles,
+  bright gold + glow when ready
+- Subtle audio cue when burst becomes ready (reuses the existing
+  `mirror` SFX buffer at low volume)
+- ATTRACT / REPEL hint labels lifted noticeably above the bottom UI
+  row, faded styling preserved
+- Trail unlock thresholds doubled: Drifter / Phantom 1 000,
+  Bulwark 2 000, Inferno / Warp 3 000
+- Canvas stretches full viewport (eliminates the body-bg gap that
+  appeared on Capacitor edge-to-edge builds where
+  `window.innerHeight < 100dvh`)
+
 ## [1.6.4] - 2026-04-27
 
 ### Added
@@ -618,6 +707,7 @@ dashboard, draw-call optimizations, powerup rebalancing, stability hardening) in
 - GitHub Pages live demo
 - Source-available license
 
+[1.6.5]: https://github.com/selimcelem/drift/releases/tag/v1.6.5
 [1.6.4]: https://github.com/selimcelem/drift/releases/tag/v1.6.4
 [1.6.3]: https://github.com/selimcelem/drift/releases/tag/v1.6.3
 [1.6.2]: https://github.com/selimcelem/drift/releases/tag/v1.6.2
