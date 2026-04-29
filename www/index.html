@@ -79,6 +79,19 @@
     display: block;
     border-radius: 4px;
   }
+  /* v1.7.0 fix: stretch the main gameplay canvas to fill #gameWrapper, mirroring
+     #pixiCanvas. Without this, #c's CSS render size = its attribute size = the
+     init-time window.innerHeight, which on Capacitor edge-to-edge builds is
+     ~80 px shorter than 100dvh — leaving a body-bg gap at the bottom that the
+     combo bar fell into. Backing buffer (W × H) is unchanged; only the display
+     size stretches. ~3 % vertical stretch is imperceptible for circular sprites. */
+  #c {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+  }
 
   #ui {
     position: absolute;
