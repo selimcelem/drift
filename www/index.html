@@ -132,21 +132,25 @@
     pointer-events: none;
   }
 
-  /* v1.7.0 second pass: combo bar promoted — wider, bigger combo-name font.
-     Anchored at the very bottom (above safe-area), the cyan progress bar
-     sits visually as a baseline strip with the SHIELD/COMBO text floating
-     above it. Cooldown circles sit ABOVE the combo bar (further up). */
+  /* v1.7.0 second pass + fix: combo bar overlay. position: fixed so it
+     anchors to the viewport directly (independent of #gameWrapper / #ui
+     ancestors) — guarantees no parent sizing or layout-flow oddity can push
+     the bar into a band BELOW the canvas. Centered horizontally via
+     left:50% + translateX(-50%); contained width so the bar reads as a
+     prominent floating UI widget, not a screen-wide strip. The bar's trough
+     is fully transparent so the gameplay canvas remains visible behind it. */
   #powerupTimer {
-    position: absolute;
-    bottom: calc(var(--safe-bottom) + 6px);
-    left: 0;
-    right: 0;
+    position: fixed;
+    bottom: calc(var(--safe-bottom) + 8px);
+    left: 50%;
+    transform: translateX(-50%);
     display: none;
     flex-direction: column;
     align-items: center;
     gap: 4px;
     pointer-events: none;
     z-index: 5;
+    background: transparent;
   }
   #powerupTimer.visible { display: flex; }
   .pt-label {
@@ -167,10 +171,10 @@
   }
   .pt-combo.visible { display: block; }
   .pt-bar {
-    width: calc(100% - 32px);
-    max-width: 480px;
-    height: 5px;
-    background: rgba(255,255,255,0.08);
+    width: 280px;
+    max-width: calc(100vw - 80px);
+    height: 4px;
+    background: rgba(255,255,255,0.10);
     border-radius: 2px;
     overflow: hidden;
   }
