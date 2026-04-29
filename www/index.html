@@ -103,18 +103,24 @@
      via grid (1fr auto 1fr), streak floats in the right column so it doesn't
      shift the score off-center, timer + hyperspeed-banner stack below. The
      hyperspeed banner is canvas-rendered just below this stack. */
+  /* v1.6.5 hotfix: gate visibility behind .visible (mirrors #powerupTimer /
+     #capstoneCountdowns / #burstIndicator). The HUD restructure gave this
+     stack z-index: 4, which lifted it above #overlay (z-index: auto), so
+     score/timer/streak bled through onto the main menu. JS toggles .visible
+     during 'playing' / 'paused' only. */
   #topStack {
     position: absolute;
     top: calc(var(--safe-top) + 10px);
     left: 0;
     right: 0;
-    display: flex;
+    display: none;
     flex-direction: column;
     align-items: center;
     gap: 4px;
     pointer-events: none;
     z-index: 4;
   }
+  #topStack.visible { display: flex; }
   #scoreRow {
     /* 1fr | auto | 1fr keeps #score dead-center regardless of #streakDisplay
        width. Padding reserves space for the top-corner buttons (settings cog
@@ -18439,6 +18445,16 @@ function updateBurstBar() {
   burstReadyPrev = ready;
 }
 
+// v1.6.5 hotfix: gate the top HUD stack (score / streak / timer) on gameplay
+// states only. Mirrors updateBurstBar / updateCapstoneCountdowns. Without this,
+// the stack's z-index: 4 lets it sit above the main-menu overlay (z-index: auto).
+function updateTopStackVisibility() {
+  const el = document.getElementById('topStack');
+  if (!el) return;
+  const visible = (state === 'playing' || state === 'paused');
+  el.classList.toggle('visible', visible);
+}
+
 function updatePowerupTimer() {
   // Priority: shield > ghost > hyperspeed (most game-relevant first)
   let label = null, remaining = 0, max = 0, fillColor = '';
@@ -18891,6 +18907,7 @@ function render() {
   updatePowerupTimer();
   updateBurstBar();
   updateCapstoneCountdowns();
+  updateTopStackVisibility();
   updateFps();
   ctx.restore();
 }
