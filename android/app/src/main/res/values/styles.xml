@@ -9,11 +9,16 @@
         <item name="colorAccent">@color/colorAccent</item>
     </style>
 
+    <!-- Edge-to-edge: transparent system bars so the WebView fills the full
+         window (MainActivity calls WindowCompat.setDecorFitsSystemWindows(false)).
+         Opaque statusBarColor / navigationBarColor were carving layout space on
+         API 35+ instead of overlaying, leaving the WebView ~78 logical px short
+         (innerHeight 722 on S20 FE vs ~800). windowFullscreen removed: deprecated
+         since API 30, no effect under enforced edge-to-edge on API 35+. -->
     <style name="AppTheme.NoActionBar" parent="Theme.AppCompat.DayNight.NoActionBar">
-        <item name="android:windowFullscreen">true</item>
         <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
-        <item name="android:statusBarColor">#000000</item>
-        <item name="android:navigationBarColor">#00000a</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:windowLightStatusBar">false</item>
         <item name="android:windowLightNavigationBar">false</item>
     </style>
@@ -22,13 +27,15 @@
     <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
         <item name="android:background">@drawable/splash</item>
         <!-- Hand off to the real app theme after the splash animation finishes
-             so our status/nav bar colors, fullscreen, and cutout mode actually
-             apply at runtime instead of the Theme.SplashScreen defaults. -->
+             so our status/nav bar colors and cutout mode actually apply at
+             runtime instead of the Theme.SplashScreen defaults. -->
         <item name="postSplashScreenTheme">@style/AppTheme.NoActionBar</item>
-        <!-- Mirror the dark bar overrides so the splash frame itself renders
-             with #00000a bars + light icons, no white flash on launch. -->
-        <item name="android:statusBarColor">#000000</item>
-        <item name="android:navigationBarColor">#00000a</item>
+        <!-- Mirror the transparent-bar overrides so the splash frame itself
+             renders edge-to-edge (no white/colored bar at launch). The
+             splash drawable already paints #00000a, so the system bars
+             read as a continuous dark backdrop. -->
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:windowLightStatusBar">false</item>
         <item name="android:windowLightNavigationBar">false</item>
     </style>
