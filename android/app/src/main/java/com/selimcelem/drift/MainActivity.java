@@ -1,6 +1,8 @@
 package com.selimcelem.drift;
 
 import android.os.Bundle;
+import android.view.View;
+import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
@@ -32,6 +34,24 @@ public class MainActivity extends BridgeActivity {
         controller.setSystemBarsBehavior(
             WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
         controller.hide(WindowInsetsCompat.Type.systemBars());
+
+        // Override the Capacitor SystemBars plugin's parent-padding listener
+        // (registered during super.onCreate). The plugin pads the WebView's
+        // parent by getInsets(systemBars | displayCutout).bottom, which on
+        // pre-passthrough devices (WebView <140 OR before onDOMReady resolves
+        // hasViewportCover) leaves the WebView ~30 logical px short of the
+        // physical screen even when bars are hidden. Replace it with a
+        // zero-padding listener so the WebView fills the full window. We're
+        // in immersive mode and BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE keeps
+        // swipe-revealed bars from affecting layout, so insets are
+        // intentionally 0 throughout.
+        View webViewParent = (View) bridge.getWebView().getParent();
+        ViewCompat.setOnApplyWindowInsetsListener(webViewParent, (v, insets) -> {
+            v.setPadding(0, 0, 0, 0);
+            return WindowInsetsCompat.CONSUMED;
+        });
+        webViewParent.requestApplyInsets();
+
         PlayGamesSdk.initialize(this);
     }
 
