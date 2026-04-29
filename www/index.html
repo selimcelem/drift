@@ -5665,6 +5665,17 @@ function bastion2Proc() {
   treeLog('bastion2: shield stacked → ' + shieldHits);
 }
 
+// Capstone cycle durations — single source of truth shared by the auto-fire
+// tick (tickCapstoneTimers) and the bottom-left HUD progress rings
+// (updateCapstoneCountdowns). Previously each value was duplicated at both
+// sites, which let the v1.7.0 Lingering Horizon rebalance (90 s → 120 s)
+// drift the ring out of sync until this consolidation.
+const SHROUD_FLAG_ARM_MS         = 30000;
+const NIGHT_SHADE_CYCLE_MS       = 20000;
+const SUN_FORGE_CYCLE_MS         = 45000;
+const AEGIS_CYCLE_MS             = 45000;
+const LINGERING_HORIZON_CYCLE_MS = 120000;
+
 // Per-frame capstone auto-fire tick. NIGHT SHADE / SUN FORGE / AEGIS each
 // have their own cadence; fires silently if conditions aren't met. Timers
 // are shifted on pause via applyPauseDeltaShift so they don't drift during
@@ -5676,7 +5687,7 @@ function tickCapstoneTimers() {
   // does not reset on re-tick, so a 30 s gap between pickups still yields
   // one armed fire.
   if (activeOrb === 'cosmic' && hasCapstone('shroud')) {
-    if (!shroudFlagSet && now - shroudLastFireTime >= 30000) {
+    if (!shroudFlagSet && now - shroudLastFireTime >= SHROUD_FLAG_ARM_MS) {
       shroudFlagSet = true;
       shakeCapstone('shroud');
       treeLog('shroud: flag armed');
@@ -5693,7 +5704,7 @@ function tickCapstoneTimers() {
       } else {
         treeLog('nightShade: ghost already active, skipping');
       }
-      nightShadeNextFireTime = now + 20000;
+      nightShadeNextFireTime = now + NIGHT_SHADE_CYCLE_MS;
     }
   }
   // SUN FORGE (Inferno): auto-supernova every 15 s. Bypasses nova-overload
@@ -5704,7 +5715,7 @@ function tickCapstoneTimers() {
       shakeCapstone('sunForge');
       triggerHitstop(50);
       treeLog('sunForge: auto-supernova');
-      sunForgeNextFireTime = now + 45000;
+      sunForgeNextFireTime = now + SUN_FORGE_CYCLE_MS;
     }
   }
   // AEGIS (Fortress): auto Fortress Shield every 45 s. Skip + reschedule
@@ -5719,7 +5730,7 @@ function tickCapstoneTimers() {
       } else {
         treeLog('aegis: Fortress already active, skipping');
       }
-      aegisNextFireTime = now + 45000;
+      aegisNextFireTime = now + AEGIS_CYCLE_MS;
     }
   }
   // LINGERING HORIZON (Warp capstone) v1.7.0 rebalance: cadence stretched
@@ -5736,7 +5747,7 @@ function tickCapstoneTimers() {
       activateHyperspeed(undefined, undefined, 'lingeringHorizon');
       shakeCapstone('lingeringHorizon');
       lingeringHorizonLastFireTime = now;
-      lingeringHorizonNextFireTime = now + 120000;
+      lingeringHorizonNextFireTime = now + LINGERING_HORIZON_CYCLE_MS;
       treeLog('lingeringHorizon: auto full-stack hyperspeed (stacks ' + hyperSpeedStacks + ')');
     }
   }
@@ -5933,13 +5944,16 @@ function resetTreeNodeState() {
   novaCastKillCount = 0;
   criticalMassCooldownEnd = 0;
   const now = Date.now();
-  lingeringHorizonNextFireTime = now + 90000;
+  // First-fire arming uses the same cycle constants as the auto-fire tick
+  // and the HUD progress rings — ensures the v1.7.0 Lingering Horizon
+  // 90 → 120 s rebalance lands on every site, not just tickCapstoneTimers.
+  lingeringHorizonNextFireTime = now + LINGERING_HORIZON_CYCLE_MS;
   lingeringHorizonLastFireTime = 0;
   shroudFlagSet = false;
   shroudLastFireTime = now;
-  nightShadeNextFireTime = now + 20000;
-  sunForgeNextFireTime   = now + 45000;
-  aegisNextFireTime      = now + 45000;
+  nightShadeNextFireTime = now + NIGHT_SHADE_CYCLE_MS;
+  sunForgeNextFireTime   = now + SUN_FORGE_CYCLE_MS;
+  aegisNextFireTime      = now + AEGIS_CYCLE_MS;
   for (const id of butterflyPending) clearTimeout(id);
   butterflyPending = [];
   butterflyEffectNextProcTime = 0;
@@ -18351,46 +18365,49 @@ function updateCapstoneCountdowns() {
     let primed = false;
     if (owned) {
       if (shroudFlagSet) { primed = true; progress = 1; }
-      else progress = Math.max(0, Math.min(1, (now - shroudLastFireTime) / 30000));
+      else progress = Math.max(0, Math.min(1, (now - shroudLastFireTime) / SHROUD_FLAG_ARM_MS));
     }
     set('capCdShroud', owned, progress, 'rgba(200,150,255,0.95)', primed, false);
   }
-  // NIGHT SHADE — Phantom. 20s cycle (v1.6.3 buff).
+  // NIGHT SHADE — Phantom. Cycle constant shared with tickCapstoneTimers.
   {
     const owned = activeOrb === 'cosmic' && hasCapstone('nightShade');
     const fireTs = nightShadeNextFireTime || now;
-    const elapsed = 20000 - Math.max(0, fireTs - now);
-    const progress = Math.max(0, Math.min(1, elapsed / 20000));
+    const elapsed = NIGHT_SHADE_CYCLE_MS - Math.max(0, fireTs - now);
+    const progress = Math.max(0, Math.min(1, elapsed / NIGHT_SHADE_CYCLE_MS));
     const firing = owned && (now - (capCdLastFired.nightShade || 0) < 300);
     if (owned && fireTs > 0 && fireTs <= now + 50) capCdLastFired.nightShade = now;
     set('capCdNightShade', owned, progress, 'rgba(200,150,255,0.95)', false, firing);
   }
-  // SUN FORGE — Inferno. 45s cycle.
+  // SUN FORGE — Inferno. Cycle constant shared with tickCapstoneTimers.
   {
     const owned = activeOrb === 'solar' && hasCapstone('sunForge');
     const fireTs = sunForgeNextFireTime || now;
-    const elapsed = 45000 - Math.max(0, fireTs - now);
-    const progress = Math.max(0, Math.min(1, elapsed / 45000));
+    const elapsed = SUN_FORGE_CYCLE_MS - Math.max(0, fireTs - now);
+    const progress = Math.max(0, Math.min(1, elapsed / SUN_FORGE_CYCLE_MS));
     const firing = owned && (now - (capCdLastFired.sunForge || 0) < 300);
     if (owned && fireTs > 0 && fireTs <= now + 50) capCdLastFired.sunForge = now;
     set('capCdSunForge', owned, progress, 'rgba(255,180,80,0.95)', false, firing);
   }
-  // AEGIS — Bulwark. 45s cycle.
+  // AEGIS — Bulwark. Cycle constant shared with tickCapstoneTimers.
   {
     const owned = activeOrb === 'asteroid' && hasCapstone('aegis');
     const fireTs = aegisNextFireTime || now;
-    const elapsed = 45000 - Math.max(0, fireTs - now);
-    const progress = Math.max(0, Math.min(1, elapsed / 45000));
+    const elapsed = AEGIS_CYCLE_MS - Math.max(0, fireTs - now);
+    const progress = Math.max(0, Math.min(1, elapsed / AEGIS_CYCLE_MS));
     const firing = owned && (now - (capCdLastFired.aegis || 0) < 300);
     if (owned && fireTs > 0 && fireTs <= now + 50) capCdLastFired.aegis = now;
     set('capCdAegis', owned, progress, 'rgba(120,230,255,0.95)', false, firing);
   }
-  // LINGERING HORIZON — Warp. 90 s cycle. Auto full-stack hyperspeed.
+  // LINGERING HORIZON — Warp. Cycle constant shared with tickCapstoneTimers
+  // (v1.7.0 rebalance: 90 → 120 s). Was previously hardcoded to 90 s here,
+  // which left the ring stuck at 100 % progress for the first 30 s of every
+  // real 120 s cycle (then "stuck full" until the actual fire).
   {
     const owned = activeOrb === 'nebula' && hasCapstone('eventHorizon');
     const fireTs = lingeringHorizonNextFireTime || now;
-    const elapsed = 90000 - Math.max(0, fireTs - now);
-    const progress = Math.max(0, Math.min(1, elapsed / 90000));
+    const elapsed = LINGERING_HORIZON_CYCLE_MS - Math.max(0, fireTs - now);
+    const progress = Math.max(0, Math.min(1, elapsed / LINGERING_HORIZON_CYCLE_MS));
     const firing = owned && lingeringHorizonLastFireTime > 0
       && (now - lingeringHorizonLastFireTime < 300);
     if (owned && firing) capCdLastFired.eventHorizon = lingeringHorizonLastFireTime;
