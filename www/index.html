@@ -4792,7 +4792,7 @@ const TREE_DEFS = {
       convergence: {
         name: 'CONVERGENCE',
         nodes: [
-          { key: 'oracleEdge', name: 'Oracle Edge', tier: 1, max: 3, desc: 'Pair spawn chance +1.5 percentage points per rank.', effect: r => `+${(1.5*r).toFixed(1)}% pair spawn` },
+          { key: 'oracleEdge', name: 'Oracle Edge', tier: 1, max: 3, desc: 'Pair spawn chance +10% (multiplicative) per rank.', effect: r => `+${10*r}% pair spawn` },
           { key: 'siphon',     name: 'Siphon',      tier: 2, max: 5, desc: 'On body destroyed, chance to grant a random powerup. (1.5s global cooldown)', effect: r => `${[2,4,6,8,10][r-1]||0}% per destroy` },
           { key: 'keystone',   name: 'Keystone',    tier: 3, max: 3, desc: 'Pair combos have a chance to also grant a random bonus single powerup of a different type.', effect: r => `${[10,20,30][r-1]||0}% bonus chance` },
         ],
@@ -4881,28 +4881,28 @@ const TREE_DEFS = {
         nodes: [
           { key: 'thrust',    name: 'Thrust',    tier: 1, max: 3, desc: 'Hyperspeed peak multiplier coefficient +10% per rank.', effect: r => `+${10*r}% peak coefficient` },
           { key: 'afterburn', name: 'Afterburn', tier: 2, max: 3, desc: 'Launch forward barrier discs when hyperspeed ends. Discs travel, expand, and destroy bodies they pass through.', effect: r => `${r} disc${r===1?'':'s'} at landing` },
-          { key: 'breakaway', name: 'Breakaway', tier: 3, max: 3, desc: 'At max stacks, peak multiplier +25% per rank.', effect: r => `+${25*r}% at max stacks` },
+          { key: 'breakaway', name: 'Breakaway', tier: 3, max: 3, desc: 'At max stacks, peak multiplier +15/30/45% per rank.', effect: r => `+${[15,30,45][r-1]||0}% at max stacks` },
         ],
       },
       endurance: {
         name: 'ENDURANCE',
         nodes: [
           { key: 'reservoir',    name: 'Reservoir',    tier: 1, max: 3, desc: 'Hyperspeed duration +0.5s per rank (3s baseline, shared timer).', effect: r => `+${0.5*r}s total (${3 + 0.5*r}s)` },
-          { key: 'overdrive',    name: 'Overdrive',    tier: 2, max: 3, desc: 'Hyperspeed stack cap +1/+2/+3 at ranks 1/2/3 (Warp baseline 4).', effect: r => `Cap ${4+r} stacks` },
+          { key: 'overdrive',    name: 'Overdrive',    tier: 2, max: 2, desc: 'Hyperspeed stack cap +1/+2 at ranks 1/2 (Warp baseline 4).', effect: r => `Cap ${4+r} stacks`, costOverride: [21000, 42000] },
           { key: 'infiniteGate', name: 'Infinite Gate', tier: 3, max: 3, desc: 'At 5+ hyperspeed stacks, natural pickup extends shared timer +0.5/1/1.5s at ranks 1/2/3. 25s cooldown between triggers.', effect: r => `+${[0.5,1,1.5][r-1]||0}s at 5+ (25s CD)` },
         ],
       },
       drift: {
         name: 'DRIFT',
         nodes: [
-          { key: 'smoothEntry',  name: 'Momentum',      tier: 1, max: 3, desc: 'Kills during hyperspeed reduce burst cooldown.', effect: r => `-${[0.1,0.2,0.3][r-1]||0}% burst CD per hyperspeed kill` },
+          { key: 'smoothEntry',  name: 'Momentum',      tier: 1, max: 3, desc: 'Kills during hyperspeed reduce burst cooldown.', effect: r => `-${[0.05,0.1,0.2][r-1]||0}% burst CD per hyperspeed kill` },
           { key: 'slipstream',   name: 'Slipstream',    tier: 2, max: 5, desc: 'On body destroyed, chance to grant a hyperspeed stack. (20s cooldown)', effect: r => `${[1,2,3,4,6][r-1]||0}% per destroy` },
-          { key: 'warpHarmonic', name: 'Warp Harmonic', tier: 3, max: 3, desc: 'Hyperspeed pair combos grant bonus free stacks. 20s cooldown.', effect: r => `+${r} free stacks` },
+          { key: 'warpHarmonic', name: 'Warp Harmonic', tier: 3, max: 3, desc: 'Hyperspeed pair combos grant bonus free stacks. 30s cooldown.', effect: r => `+${r} free stacks` },
         ],
       },
     },
     capstones: [
-      { key: 'superluminal', name: 'SUPERLUMINAL',  desc: 'Raises max hyperspeed stack cap to 10.' },
+      { key: 'superluminal', name: 'SUPERLUMINAL',  desc: 'Hyperspeed stack cap +2 (stacks with Overdrive).' },
       { key: 'eventHorizon', name: 'LINGERING HORIZON', desc: 'Every 90s, gain full-stacked hyperspeed automatically.' },
     ],
   },
@@ -5158,10 +5158,19 @@ function orbCostScale(orbKey) {
 function roundCrystals500(n) {
   return Math.round(n / 500) * 500;
 }
-function nodeCost(tier, nextRank, orbKey) {
-  const table = TREE_NODE_COSTS[tier];
-  if (!table) return 0;
-  const base = table[nextRank - 1] || 0;
+function nodeCost(tier, nextRank, orbKey, node) {
+  // v1.7.0: per-node costOverride lets specific nodes price independently of
+  // the tier table — needed when a node's max-ranks differs from its peers
+  // (e.g. Overdrive at 2 ranks needs to price the path closer to the
+  // original 3-rank total). costOverride is rank-1 indexed.
+  let base = 0;
+  if (node && Array.isArray(node.costOverride)) {
+    base = node.costOverride[nextRank - 1] || 0;
+  } else {
+    const table = TREE_NODE_COSTS[tier];
+    if (!table) return 0;
+    base = table[nextRank - 1] || 0;
+  }
   if (!base) return 0;
   return roundCrystals500(base * orbCostScale(orbKey));
 }
@@ -5212,7 +5221,7 @@ function purchaseNodeRank(orbKey, pathKey, nodeIdx) {
   const current = state[pathKey][nodeIdx] | 0;
   if (current >= node.max) return false;
   if (!pathPrereqMet(state, pathKey, nodeIdx)) return false;
-  const cost = nodeCost(node.tier, current + 1, orbKey);
+  const cost = nodeCost(node.tier, current + 1, orbKey, node);
   if (totalCrystals < cost) return false;
   totalCrystals = Math.max(0, totalCrystals - cost);
   state[pathKey][nodeIdx] = current + 1;
@@ -5262,6 +5271,19 @@ function capstonePrereqMet(orbKey, capKey) {
     }
     return c;
   };
+  // v1.7.0: any single path (all of T1/T2/T3) maxed — used for SUPERLUMINAL.
+  const anyPathMaxed = (o) => {
+    const def = TREE_DEFS[o];
+    for (const pKey of Object.keys(def.paths)) {
+      const nodes = def.paths[pKey].nodes;
+      let allMaxed = true;
+      for (let i = 0; i < nodes.length; i++) {
+        if ((s[pKey][i] | 0) < nodes[i].max) { allMaxed = false; break; }
+      }
+      if (allMaxed) return true;
+    }
+    return false;
+  };
   if (orbKey === 'cyan') {
     if (capKey === 'deadCenter')      return anyT3('cyan');
     if (capKey === 'calculatedDrift') return !!s.capstones.deadCenter;
@@ -5276,7 +5298,9 @@ function capstonePrereqMet(orbKey, capKey) {
     if (capKey === 'criticalMass') return anyT3('solar');
   }
   if (orbKey === 'nebula') {
-    if (capKey === 'superluminal') return (s.endurance[1] | 0) >= 2;
+    // v1.7.0: SUPERLUMINAL now gated by ANY single Warp path fully maxed
+    // (was Overdrive rank ≥ 2). Reduces lock-in to a specific node.
+    if (capKey === 'superluminal') return anyPathMaxed('nebula');
     if (capKey === 'eventHorizon') return anyT3('nebula');
   }
   if (orbKey === 'asteroid') {
@@ -5298,7 +5322,7 @@ function respecNode(orbKey, pathKey, nodeIdx) {
   if (totalCrystals < TREE_RESPEC_SINGLE) return false;
   totalCrystals = Math.max(0, totalCrystals - TREE_RESPEC_SINGLE);
   // Refund all rank costs spent on this node.
-  for (let r = 1; r <= current; r++) totalCrystals += nodeCost(node.tier, r, orbKey);
+  for (let r = 1; r <= current; r++) totalCrystals += nodeCost(node.tier, r, orbKey, node);
   state[pathKey][nodeIdx] = 0;
   // Cascading capstone invalidation: if refunding this node violates any
   // purchased capstone's prereq, refund the capstone too.
@@ -5335,7 +5359,7 @@ function respecTree(orbKey) {
     const nodes = def.paths[pKey].nodes;
     const arr = state[pKey];
     for (let i = 0; i < nodes.length; i++) {
-      for (let r = 1; r <= (arr[i] | 0); r++) totalCrystals += nodeCost(nodes[i].tier, r, orbKey);
+      for (let r = 1; r <= (arr[i] | 0); r++) totalCrystals += nodeCost(nodes[i].tier, r, orbKey, nodes[i]);
       arr[i] = 0;
     }
   }
@@ -5627,12 +5651,12 @@ function tickCapstoneTimers() {
       aegisNextFireTime = now + 45000;
     }
   }
-  // LINGERING HORIZON (Warp capstone) v1.6.3 rework: every 90 s, grant a
-  // fully stacked hyperspeed activation. Source flag 'lingeringHorizon'
-  // keeps Smooth Entry's destroy-radius and Infinite Gate's bonus-time
-  // gate from re-triggering off the auto-fire (both gate on
-  // source === 'natural'). Stacks are jumped straight to cap-1 so the
-  // single activateHyperspeed call lands at max stacks (one whoosh
+  // LINGERING HORIZON (Warp capstone) v1.7.0 rebalance: cadence stretched
+  // 90 s → 120 s to reduce Warp's free-output dominance.
+  // Source flag 'lingeringHorizon' keeps Momentum's per-kill CD reduction and
+  // Infinite Gate's bonus-time gate from re-triggering off the auto-fire
+  // (both gate on source === 'natural'). Stacks are jumped straight to cap-1
+  // so the single activateHyperspeed call lands at max stacks (one whoosh
   // restart + one Sentry breadcrumb instead of N).
   if (activeOrb === 'nebula' && hasCapstone('eventHorizon')) {
     if (now >= lingeringHorizonNextFireTime) {
@@ -5641,7 +5665,7 @@ function tickCapstoneTimers() {
       activateHyperspeed(undefined, undefined, 'lingeringHorizon');
       shakeCapstone('lingeringHorizon');
       lingeringHorizonLastFireTime = now;
-      lingeringHorizonNextFireTime = now + 90000;
+      lingeringHorizonNextFireTime = now + 120000;
       treeLog('lingeringHorizon: auto full-stack hyperspeed (stacks ' + hyperSpeedStacks + ')');
     }
   }
@@ -5694,10 +5718,11 @@ function checkDestroyProc(body, source) {
     // matches the prompt's "active hyperspeed" gate (the v1.6.3 rework
     // removed the post-hyperspeed echo phase; only active hyperspeed
     // remains as a state).
+    // v1.7.0 rebalance: -0.1/-0.2/-0.3 % → -0.05/-0.1/-0.2 % per kill.
     const momRank = rankOf('smoothEntry');
     if (momRank > 0 && activeEffects.hyperspeed > 0
         && burstCooldownEnd > Date.now()) {
-      const pct = [0.001, 0.002, 0.003][momRank - 1] || 0;
+      const pct = [0.0005, 0.001, 0.002][momRank - 1] || 0;
       const reduce = Math.floor(pct * BURST_COOLDOWN_MS);
       if (reduce > 0) {
         burstCooldownEnd = Math.max(Date.now(), burstCooldownEnd - reduce);
@@ -5946,6 +5971,38 @@ function resolveDeadCenter(pickedType) {
   } else {
     activatePowerup(pickedType, player.x, player.y);
     treeLog('deadCenter: ' + pickedType);
+  }
+  // v1.7.0: Double or Nothing now also rolls after DEAD CENTER's resolve so
+  // the Chance T3 investment isn't wasted by the capstone. Mirrors the
+  // executeBurst DON flow at :12747-12768; the player-picked type fills the
+  // role of the random first-fire. Fires regardless of whether CALCULATED
+  // DRIFT is owned (the second-fire is always a single, never a combo).
+  if (activeOrb === 'cyan') {
+    const donRank = rankOf('doubleNothing');
+    if (donRank > 0) {
+      const donChance = [0.30, 0.60, 0.90][donRank - 1] || 0;
+      if (Math.random() < donChance) {
+        const donTypes = ['shield','nova','hyperspeed','ghost'];
+        const donRemaining = donTypes.filter(t => t !== pickedType);
+        let donSecond = donRemaining[Math.floor(Math.random() * donRemaining.length)];
+        if (donSecond === 'nova') {
+          const novaActive = novaRings.length > 0
+            || activeCombos.nova_nova || activeCombos.nova_hyperspeed
+            || activeCombos.nova_ghost || activeCombos.nova_shield;
+          if (novaActive) {
+            const altDon = donRemaining.filter(t => t !== 'nova');
+            donSecond = altDon.length ? altDon[Math.floor(Math.random() * altDon.length)] : null;
+          }
+        }
+        if (donSecond) {
+          activatePowerup(donSecond, player.x, player.y);
+          powerupLastActivated[donSecond] = Date.now();
+          treeLog('doubleNothing: second fire ' + donSecond + ' (post-deadCenter)');
+        } else {
+          treeLog('doubleNothing: suppressed by nova-overload (post-deadCenter)');
+        }
+      }
+    }
   }
   shakeCapstone('deadCenter');
   runBurstCount++;
@@ -6870,17 +6927,22 @@ let hyperspeedWhooshNodes = null; // audio nodes for sustained whoosh
 // and resets the single shared hyperspeedEndTime timer. Stacks only affect
 // peak speed multiplier; the shared timer controls total duration, and all
 // stacks clear simultaneously on expiry.
-// v1.6.3 caps: base 2 default / 4 Warp. Overdrive +1/rank (v1.6.4: max +3; 3 ranks).
-// SUPERLUMINAL raises the cap TO 10 (override, not additive). v1.6.4.
-const HYPERSPEED_MAX_STACKS_DEFAULT = 2;  // v1.6.3 nerf, was 4
-const HYPERSPEED_MAX_STACKS_NEBULA = 4;   // v1.6.3 nerf, was 6
+// v1.6.3 caps: base 2 default / 4 Warp. Overdrive +1/rank.
+// v1.7.0 SUPERLUMINAL refactor: was an override-to-10 cap; now additive +2
+// on top of base + Overdrive. Combines with Overdrive instead of replacing
+// it. Resulting Warp caps:
+//   Base                   = 4
+//   Overdrive 1/2          = 5/6
+//   SUPERLUMINAL alone     = 6 (4 + 2)
+//   SUPERLUMINAL + OD 1/2  = 7/8 (max possible)
+const HYPERSPEED_MAX_STACKS_DEFAULT = 2;
+const HYPERSPEED_MAX_STACKS_NEBULA = 4;
 function HYPERSPEED_MAX_STACKS() {
-  // SUPERLUMINAL (Warp capstone) v1.6.4 buff: absolute cap of 10 stacks —
-  // overrides Overdrive/base. Not additive.
-  if (activeOrb === 'nebula' && hasCapstone('superluminal')) return 10;
   let base = activeOrb === 'nebula' ? HYPERSPEED_MAX_STACKS_NEBULA : HYPERSPEED_MAX_STACKS_DEFAULT;
-  // Skill tree: Overdrive (+1/rank), Warp-only.
-  if (activeOrb === 'nebula') base += rankOf('overdrive');
+  if (activeOrb === 'nebula') {
+    base += rankOf('overdrive');
+    if (hasCapstone('superluminal')) base += 2;
+  }
   return base;
 }
 function HYPERSPEED_DURATION() {
@@ -10601,7 +10663,10 @@ function spawnPowerup() {
   // for the lower baseline powerup frequency pressure.
   // Skill tree: Oracle Edge adds +1.5pp/rank (Drifter-only).
   let pairChance = diff().pairSpawnChance;
-  if (activeOrb === 'cyan') pairChance += 0.015 * rankOf('oracleEdge');
+  // v1.7.0: Oracle Edge changed additive (+1.5 pp/rank) → multiplicative
+  // (+10 %/rank). Closes the cross-difficulty gap (additive over-rewarded
+  // the lower-base-rate difficulties at max rank).
+  if (activeOrb === 'cyan') pairChance *= 1 + 0.10 * rankOf('oracleEdge');
   if (Math.random() < pairChance) {
     // Pair-combo selection weighted by active orb's specialty: combos that
     // include the orb's bias type get 2x weight so they spawn more often.
@@ -11679,14 +11744,14 @@ function activateCombo(key, x, y) {
     fortressShield = true;
     activeCombos[key] = { def, deps: ['shield'] };
   }
-  // Warp Harmonic (Warp Drift T3) v1.6.3: +N bonus stacks on hyperspeed
-  // pair combos, now with a 15 s cooldown between applications.
+  // Warp Harmonic (Warp Drift T3): +N bonus stacks on hyperspeed pair combos.
+  // v1.7.0 rebalance: 20 s → 30 s cooldown between applications.
   if (activeOrb === 'nebula' && (key === 'nova_hyperspeed' || key === 'hyperspeed_ghost' || key === 'hyperspeed_shield')) {
     const whRank = rankOf('warpHarmonic');
     if (whRank > 0 && Date.now() >= warpHarmonicNextFireTime) {
       for (let i = 0; i < whRank; i++) activateHyperspeed(undefined, undefined, 'warp_harmonic');
-      warpHarmonicNextFireTime = Date.now() + 20000;
-      treeLog('warpHarmonic: +' + whRank + ' bonus stacks on ' + key + ' (20s CD)');
+      warpHarmonicNextFireTime = Date.now() + 30000;
+      treeLog('warpHarmonic: +' + whRank + ' bonus stacks on ' + key + ' (30s CD)');
     }
   }
   // Keystone (Drifter Convergence T3): any pair combo rolls for a bonus
@@ -12024,10 +12089,10 @@ function computeHyperspeedPeakMult(stacks, peakScale) {
   let thrustMult = 1;
   if (activeOrb === 'nebula') thrustMult += 0.10 * rankOf('thrust');
   let basePeak = Math.max(3.5 * thrustMult * s, (6.0 * thrustMult * s) / Math.max(normSpd, 0.01));
-  // Breakaway: at-max-stacks bonus +25%/rank (Warp-only).
+  // Breakaway: at-max-stacks bonus. v1.7.0 rebalance: +25/50/75 % → +15/30/45 %.
   if (activeOrb === 'nebula') {
     const cap = HYPERSPEED_MAX_STACKS();
-    if (s >= cap) basePeak *= (1 + 0.25 * rankOf('breakaway'));
+    if (s >= cap) basePeak *= (1 + ([0.15, 0.30, 0.45][rankOf('breakaway') - 1] || 0));
   }
   return basePeak * (peakScale || 1);
 }
@@ -18461,10 +18526,12 @@ function drawHyperStackText(tctx = ctx) {
 
   // v1.6.4 stack-count escalation:
   //   7+ stacks: emphasis tier (brighter color + thicker outline).
-  //   10 stacks (SUPERLUMINAL max on Warp): replace numeric counter with
-  //     "WARP CORE" label + pulsing glow animation.
+  //   At cap with SUPERLUMINAL owned: replace numeric counter with
+  //     "WARP CORE" label + pulsing glow animation. v1.7.0: gates on
+  //     player's personal cap instead of literal 10 (cap is now additive
+  //     +2 on top of Overdrive, max 8).
   const hasSuperluminal = activeOrb === 'nebula' && hasCapstone('superluminal');
-  const coreLabel = hasSuperluminal && hyperSpeedStacks >= 10;
+  const coreLabel = hasSuperluminal && hyperSpeedStacks >= HYPERSPEED_MAX_STACKS();
   const emphasized = hyperSpeedStacks >= 7;
   const label = coreLabel ? 'WARP CORE' : (hyperSpeedStacks + '× HYPERSPEED');
   ctx.save();
@@ -21670,7 +21737,7 @@ function buildNodePill(orbKey, pathKey, nodeIdx) {
     // LOCKED (never bought) and from the standard rank/cost display.
     metaText = `${current}/${node.max} · 🔒`;
   } else {
-    const nextCost = maxed ? 'MAX' : (formatCrystals(nodeCost(node.tier, current + 1, orbKey)) + ' 💎');
+    const nextCost = maxed ? 'MAX' : (formatCrystals(nodeCost(node.tier, current + 1, orbKey, node)) + ' 💎');
     metaText = `${current}/${node.max} · ${nextCost}`;
   }
   metaEl.textContent = metaText;
@@ -21740,11 +21807,11 @@ function renderTreeDetail() {
     let ranksHtml = '';
     for (let r = 1; r <= node.max; r++) {
       const cls = r <= current ? 'current' : (r === current + 1 ? 'next' : '');
-      ranksHtml += `<div class="rank-row ${cls}">Rank ${r}: ${node.effect(r)} · ${formatCrystals(nodeCost(node.tier, r, t.orbKey))} 💎</div>`;
+      ranksHtml += `<div class="rank-row ${cls}">Rank ${r}: ${node.effect(r)} · ${formatCrystals(nodeCost(node.tier, r, t.orbKey, node))} 💎</div>`;
     }
     ranksEl.innerHTML = ranksHtml;
     const maxed = current >= node.max;
-    const nextCost = maxed ? 0 : nodeCost(node.tier, current + 1, t.orbKey);
+    const nextCost = maxed ? 0 : nodeCost(node.tier, current + 1, t.orbKey, node);
     // v1.6.4 fix: a node with ranks but unmet prereq is "frozen" — its
     // ranks still apply in gameplay, but additional ranks can't be
     // purchased until the prereq tier is re-invested. Surface this on
