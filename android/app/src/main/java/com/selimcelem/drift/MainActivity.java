@@ -43,17 +43,37 @@ public class MainActivity extends BridgeActivity {
         // hasViewportCover) leaves the WebView ~30 logical px short of the
         // physical screen even when bars are hidden.
         //
-        // Replace it with a cutout-only padding listener: ignore systemBars
-        // insets (we hid them and want the WebView under their region), but
-        // keep the displayCutout insets so the score / streak / timer stack
-        // doesn't sit under a camera punch-hole or notch. Bottom is always
-        // 0 — we want the canvas flush with the screen edge in immersive
-        // mode, and there's no cutout you can land in at the bottom of a
-        // portrait phone anyway.
+        // Replace it with a zero-padding listener so the WebView fills the
+        // full window edge-to-edge — the gameplay canvas paints under the
+        // (hidden) status / gesture-bar regions and under display cutouts.
+        // Cutout inset values are still relevant for *individual UI elements*
+        // (the top HUD shouldn't sit under a camera punch-hole), so we
+        // expose them to CSS as `--cutout-top` / `--cutout-left` /
+        // `--cutout-right` custom properties via evaluateJavascript. CSS
+        // consumers can then offset on a per-element basis without losing
+        // the edge-to-edge canvas. Re-runs on every inset dispatch
+        // (rotation, fold, etc.) so the values stay in sync.
         View webViewParent = (View) bridge.getWebView().getParent();
         ViewCompat.setOnApplyWindowInsetsListener(webViewParent, (v, insets) -> {
             Insets cutoutInsets = insets.getInsets(WindowInsetsCompat.Type.displayCutout());
-            v.setPadding(cutoutInsets.left, cutoutInsets.top, cutoutInsets.right, 0);
+
+            v.setPadding(0, 0, 0, 0);
+
+            float density = getResources().getDisplayMetrics().density;
+            int cutoutTopPx = (int) (cutoutInsets.top / density);
+            int cutoutLeftPx = (int) (cutoutInsets.left / density);
+            int cutoutRightPx = (int) (cutoutInsets.right / density);
+
+            String js = String.format(
+                "document.documentElement.style.setProperty('--cutout-top', '%dpx');" +
+                "document.documentElement.style.setProperty('--cutout-left', '%dpx');" +
+                "document.documentElement.style.setProperty('--cutout-right', '%dpx');",
+                cutoutTopPx, cutoutLeftPx, cutoutRightPx
+            );
+            if (bridge != null && bridge.getWebView() != null) {
+                bridge.getWebView().evaluateJavascript(js, null);
+            }
+
             return WindowInsetsCompat.CONSUMED;
         });
         webViewParent.requestApplyInsets();

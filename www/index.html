@@ -32,12 +32,22 @@
        2. env(safe-area-inset-*) — the standard CSS API. Resolves on iOS,
           and on Android in passthrough mode (modern WebView ≥140 +
           viewport-fit=cover).
-       3. 0px fallback for non-notched desktop / older Android. */
+       3. 0px fallback for non-notched desktop / older Android.
+
+     --cutout-top / --cutout-left / --cutout-right are written by
+     MainActivity's OnApplyWindowInsetsListener (in logical px). They
+     reflect the display-cutout area (camera punch-hole, notch, side
+     waterfall) on top of which the WebView paints edge-to-edge. CSS
+     consumers (e.g. the top HUD stack) add this to their offset so they
+     don't sit under the cutout. Default 0px until the listener fires. */
   :root {
     --safe-top: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
     --safe-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
     --safe-left: var(--safe-area-inset-left, env(safe-area-inset-left, 0px));
     --safe-right: var(--safe-area-inset-right, env(safe-area-inset-right, 0px));
+    --cutout-top: 0px;
+    --cutout-left: 0px;
+    --cutout-right: 0px;
   }
 
   /* On-device debug log overlay (temporary — gated by DEBUG_RESUME in JS).
@@ -117,7 +127,11 @@
      during 'playing' / 'paused' only. */
   #topStack {
     position: absolute;
-    top: calc(var(--safe-top) + 10px);
+    /* +var(--cutout-top, 0px): WebView paints edge-to-edge under the camera
+       punch-hole / notch (good for the gameplay canvas), but the score /
+       streak / timer stack must clear that cutout region. The cutout
+       inset is written by MainActivity's WindowInsetsListener. */
+    top: calc(var(--safe-top) + var(--cutout-top, 0px) + 10px);
     left: 0;
     right: 0;
     display: none;
