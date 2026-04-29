@@ -8353,7 +8353,7 @@ function saveScore(s, d) {
 // unlocks use OR-merge. PGS sync applies the same rules in mergeStats.
 const DRIFT_STATS_KEY = 'drift_stats';
 const TRAIL_UNLOCK_THRESHOLDS = {
-  cyan: 500, cosmic: 500, solar: 1500, nebula: 1500, asteroid: 1000,
+  cyan: 1000, cosmic: 1000, solar: 3000, nebula: 3000, asteroid: 2000,
 };
 // Display names for the unlocked alternative trail per orb (shown in the
 // orb-preview dropdown and the unlock banner).
@@ -12548,11 +12548,46 @@ function checkCollisions() {
   // hyperspeed stack, player is immune to body contact. Applies to ALL
   // orbs (not just Warp/nebula). Borders are still lethal (handled below).
   const hyperInvuln = activeEffects.hyperspeed > 0 && hyperSpeedStacks >= 1;
-  // Borders are always lethal — shield/ghost only protect against bodies
-  if (player.x < PLAYER_R+3) { lastDeathCause = 'wall_left'; return true; }
-  if (player.x > W-PLAYER_R-3) { lastDeathCause = 'wall_right'; return true; }
-  if (player.y < -50) { lastDeathCause = 'wall_top'; return true; }
-  if (player.y > H+50) { lastDeathCause = 'wall_bottom'; return true; }
+  // Wall hits — v1.7.0 defensive layer:
+  //   SHIELD active: absorb 1 charge, fire EMP at player, bounce + clamp.
+  //   GHOST  active: bounce + clamp, no consumption.
+  //   Otherwise: still lethal (preserves the prior contract). Hyperspeed
+  //   alone does NOT confer wall immunity — walls remain a real risk during
+  //   offensive Warp play.
+  const hitLeft   = player.x < PLAYER_R + 3;
+  const hitRight  = player.x > W - PLAYER_R - 3;
+  const hitTop    = player.y < -50;
+  const hitBottom = player.y > H + 50;
+  if (hitLeft || hitRight || hitTop || hitBottom) {
+    if (activeEffects.shield > 0) {
+      spawnEmpRing(player.x, player.y);
+      shakeKill({ radius: 22 });
+      triggerHitstop(40);
+      lastBulwarkEmpFlashTime = Date.now();
+      if (hitLeft)   { player.x = PLAYER_R + 4;     player.vx =  Math.abs(player.vx) * 0.6 + 1.5; }
+      if (hitRight)  { player.x = W - PLAYER_R - 4; player.vx = -(Math.abs(player.vx) * 0.6 + 1.5); }
+      if (hitTop)    { player.y = -40;              player.vy =  Math.abs(player.vy) * 0.6 + 1.5; }
+      if (hitBottom) { player.y = H + 40;           player.vy = -(Math.abs(player.vy) * 0.6 + 1.5); }
+      shieldHits--;
+      if (shieldHits <= 0) {
+        shieldEndTime = 0;
+        activeEffects.shield = 0;
+        shieldBroken = true;
+        fortressShield = false;
+        shieldHits = 0;
+      }
+    } else if (activeEffects.ghost > 0) {
+      if (hitLeft)   { player.x = PLAYER_R + 4;     player.vx =  Math.abs(player.vx) * 0.6 + 1.5; }
+      if (hitRight)  { player.x = W - PLAYER_R - 4; player.vx = -(Math.abs(player.vx) * 0.6 + 1.5); }
+      if (hitTop)    { player.y = -40;              player.vy =  Math.abs(player.vy) * 0.6 + 1.5; }
+      if (hitBottom) { player.y = H + 40;           player.vy = -(Math.abs(player.vy) * 0.6 + 1.5); }
+    } else {
+      if (hitLeft)   { lastDeathCause = 'wall_left';   return true; }
+      if (hitRight)  { lastDeathCause = 'wall_right';  return true; }
+      if (hitTop)    { lastDeathCause = 'wall_top';    return true; }
+      if (hitBottom) { lastDeathCause = 'wall_bottom'; return true; }
+    }
+  }
 
   // v1.6.3: during any active hyperspeed stack, body contact is not lethal
   // for ANY orb. Borders above still lethal; shield/ghost/wraith logic
@@ -13538,7 +13573,7 @@ function update() {
   // old literal 6px bumper so near-misses feel consistent with the visual.
   // Powerups scroll slightly slower than the world so the player always has
   // a touch more time to grab them, regardless of game speed.
-  const powerupScrollSpeed = spd * 0.85 * dtScale;
+  const powerupScrollSpeed = spd * 0.65 * dtScale;
   for (const p of powerups) {
     p.y += powerupScrollSpeed;
     p.pulse += 0.11;
