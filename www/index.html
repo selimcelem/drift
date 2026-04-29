@@ -4637,13 +4637,13 @@ const FORCE = 0.18;
 
 // --- Difficulty ---
 const DIFFICULTIES = {
-  NORMAL:     { startSpeed: 1.2, maxSpeed: 2.5, speedCapScore: 120, maxBodies: 3, maxBodiesCap: 5, bodySpacing: 180, powerupFrequency: 2.0,  pairSpawnChance: 0.16, crystalMult: 0.75 },
-  HARD:       { startSpeed: 1.6, maxSpeed: 3.5, speedCapScore: 120, maxBodies: 4, maxBodiesCap: 6, bodySpacing: 180, powerupFrequency: 1.7,  pairSpawnChance: 0.13, crystalMult: 1.0 },
-  EXTREME:    { startSpeed: 2.0, maxSpeed: 4.0, speedCapScore: 120, maxBodies: 4, maxBodiesCap: 7, bodySpacing: 180, powerupFrequency: 1.44, pairSpawnChance: 0.10, crystalMult: 1.25 },
+  NORMAL:     { startSpeed: 1.2, maxSpeed: 2.5, speedCapScore: 120, maxBodies: 3, maxBodiesCap: 5, bodySpacing: 180, powerupFrequency: 2.0,  pairSpawnChance: 0.16, minSpawnIntervalMs: 2000, crystalMult: 0.75 },
+  HARD:       { startSpeed: 1.6, maxSpeed: 3.5, speedCapScore: 120, maxBodies: 4, maxBodiesCap: 6, bodySpacing: 180, powerupFrequency: 1.7,  pairSpawnChance: 0.13, minSpawnIntervalMs: 2500, crystalMult: 1.0 },
+  EXTREME:    { startSpeed: 2.0, maxSpeed: 4.0, speedCapScore: 120, maxBodies: 4, maxBodiesCap: 7, bodySpacing: 180, powerupFrequency: 1.44, pairSpawnChance: 0.10, minSpawnIntervalMs: 3000, crystalMult: 1.25 },
   // v1.6.3 IMPOSSIBLE: Extreme's numbers but cap hit in 60s instead of
   // 180s, then +10%/min post-cap speed growth and +1 body every 2 min
   // post-cap. Gated by beatDifficulty.EXTREME in the UI.
-  IMPOSSIBLE: { startSpeed: 2.0, maxSpeed: 4.0, speedCapScore: 60,  maxBodies: 4, maxBodiesCap: 7, bodySpacing: 180, powerupFrequency: 1.44, pairSpawnChance: 0.10, crystalMult: 1.5 },
+  IMPOSSIBLE: { startSpeed: 2.0, maxSpeed: 4.0, speedCapScore: 60,  maxBodies: 4, maxBodiesCap: 7, bodySpacing: 180, powerupFrequency: 1.44, pairSpawnChance: 0.10, minSpawnIntervalMs: 4000, crystalMult: 1.5 },
 };
 let difficulty = 'NORMAL';
 if (typeof Sentry !== 'undefined') Sentry.setTag('difficulty', difficulty);
@@ -13614,22 +13614,26 @@ function update() {
     bodies.push(b);
   }
 
-  // Powerup spawning: cooldown scales with frequency, max 2 visible at once.
-  // After 2 minutes, frequency scales +5% per extra minute survived, capped at
-  // a +50% total boost above the base difficulty rate.
-  const minutesOver = Math.max(0, Math.floor((elapsedProgressionSeconds() - 120) / 60));
-  const effectivePowerupFrequency = d.powerupFrequency * Math.min(1.5, 1 + 0.05 * minutesOver);
-  // ms-based at the 120fps baseline: 220 frames * 8.33ms = 1833ms per unit
-  // of (1 / effectivePowerupFrequency). Was a frame-count comparison.
-  const spawnIntervalMs = (220 / effectivePowerupFrequency) * 8.33;
-  // Vertical spacing guard: 180-frame window = 1500ms; extra 120-frame
-  // delay = 1000ms when triggered. All at 120fps baseline.
+  // Powerup spawning: per-difficulty minimum spacing, max 2 visible at once.
+  // v1.7.0 rework: the legacy static 1500ms vertical-spacing guard dominated
+  // every difficulty's spawnIntervalMs (NORMAL through IMPOSSIBLE all spaced
+  // at ~1.83 s, regardless of powerupFrequency). Replaced with a per-difficulty
+  // minSpawnIntervalMs floor so difficulty actually scales powerup density:
+  //   NORMAL 2.0s / HARD 2.5s / EXTREME 3.0s / IMPOSSIBLE 4.0s.
+  // The 2-min +5%/min ramp now applies to the FLOOR (gradually shortening it
+  // up to 25 % by 12 min) — so long runs gradually loosen scarcity without
+  // breaking the difficulty ladder. Old +50% effectivePowerupFrequency ramp
+  // removed: it was dead code because spawnIntervalMs never crossed the floor.
+  const minutesOver = Math.max(0, (elapsedProgressionSeconds() - 120) / 60);
+  const rampMultiplier = Math.max(0.75, 1 - 0.025 * minutesOver);
+  const baseSpawnIntervalMs = (220 / d.powerupFrequency) * 8.33;
+  const effectiveMinSpacing = (d.minSpawnIntervalMs || 1500) * rampMultiplier;
+  const spawnIntervalMs = Math.max(baseSpawnIntervalMs, effectiveMinSpacing);
   const timeSinceSpawn = Date.now() - lastPowerupSpawn;
-  const extraSpacingMs = timeSinceSpawn < 1500 ? 1000 : 0;
-  // Per-frame Math.random() probability also dt-scaled so attempts/second
-  // stays constant across frame rates. 0.025 @ 120fps = 3 attempts/sec avg.
+  // Per-frame Math.random() probability dt-scaled so attempts/second stays
+  // constant across frame rates. 0.025 @ 120fps = 3 attempts/sec avg.
   // Devmode disables auto-spawn — user spawns powerups manually from the panel.
-  if (state === 'playing' && powerups.length < 2 && timeSinceSpawn > spawnIntervalMs + extraSpacingMs && Math.random() < 0.025 * dtScale) {
+  if (state === 'playing' && powerups.length < 2 && timeSinceSpawn > spawnIntervalMs && Math.random() < 0.025 * dtScale) {
     spawnPowerup();
     lastPowerupSpawn = Date.now();
   }
