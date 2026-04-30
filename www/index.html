@@ -4927,7 +4927,7 @@ const TREE_DEFS = {
       veil: {
         name: 'VEIL',
         nodes: [
-          { key: 'shadowRegen', name: 'Shadow Regen', tier: 1, max: 3, desc: 'Ghost pickups stack additively rather than refreshing. Cap: 2× base duration.', effect: r => `${[15,20,25][r-1]||0}% additive` },
+          { key: 'shadowRegen', name: 'Shadow Regen', tier: 1, max: 3, desc: 'Ghost pickups stack on top of the default reset (whichever ends later wins). Cap: 2× base duration.', effect: r => `+${[15,20,25][r-1]||0}% stack on reset` },
           { key: 'soulbound',   name: 'Soulbound',    tier: 2, max: 5, desc: 'On body destroyed, chance to extend ghost by +1s. 5s cooldown. Cap: 2× base ghost duration.', effect: r => `${[2,4,6,8,10][r-1]||0}% per destroy` },
           { key: 'beyond',      name: 'Beyond',       tier: 3, max: 3, desc: 'When ghost ends, remain invulnerable for an afterimage window.', effect: r => `${[0.5,1,1.5][r-1]||0}s afterimage` },
         ],
@@ -11936,8 +11936,13 @@ function rawActivate(type, x, y) {
     activateHyperspeed(undefined, undefined, 'natural');
     if (activeOrb === 'nebula') activateHyperspeed(undefined, undefined, 'natural');
   } else if (type === 'ghost') {
-    // Shadow Regen (Phantom Veil T1): ghost pickups stack additively rather
-    // than refreshing, at rank-scaled fractions of the pickup duration.
+    // Shadow Regen (Phantom Veil T1) v1.6.6 rework: take the larger of
+    // {default reset, additive stack} so the node is strictly non-detrimental.
+    // Pre-rework, picking up a ghost with low remaining time replaced a fresh
+    // 5s reset with a 1-2s additive stack — a silent nerf in the common case.
+    // The max() preserves the rapid-pickup stacking benefit (can climb past
+    // base duration up to ghostDurationCap) while restoring the default-reset
+    // floor for sparse pickups.
     const now = Date.now();
     const add = GHOST_DURATION();
     const srRank = (activeOrb === 'cosmic') ? rankOf('shadowRegen') : 0;
@@ -11948,9 +11953,11 @@ function rawActivate(type, x, y) {
       // 2× base duration (also prevents Shadow Regen + Soulbound/Eternal
       // Ember/Twilight Echo from cascading past the ceiling).
       const cap = ghostDurationCap();
-      ghostEndTime = Math.min(ghostEndTime + addMs, now + cap);
+      const reset = now + add;
+      const stacked = ghostEndTime + addMs;
+      ghostEndTime = Math.min(Math.max(reset, stacked), now + cap);
       activeEffects.ghost = ghostEndTime - now;
-      treeLog('shadowRegen: +' + addMs + 'ms stacked (total remaining ' + activeEffects.ghost + 'ms, cap ' + cap + ')');
+      treeLog('shadowRegen: +' + addMs + 'ms (max of reset/stacked → ' + activeEffects.ghost + 'ms, cap ' + cap + ')');
     } else {
       ghostEndTime = Math.min(now + add, now + ghostDurationCap());
       activeEffects.ghost = ghostEndTime - now;
