@@ -3435,15 +3435,22 @@ try {
 // canvas coordinates (hyperspeed stack label, etc.) must shift down by this
 // amount to stay visible. HTML HUD elements use calc(var(--safe-*) + Xpx) and
 // don't need this value. Resize listener refreshes it on orientation change.
+// cutoutTop mirrors --cutout-top (camera punch-hole / notch inset written by
+// MainActivity). The DOM top stack already adds it; canvas-rendered HUD
+// items that anchor below the stack must stack the same offset on top of
+// safeAreaTop or they'll bleed up into the timer row.
 let safeAreaTop = 0;
 let safeAreaBottom = 0;
+let cutoutTop = 0;
 function refreshSafeAreaInsets() {
   try {
     const cs = getComputedStyle(document.documentElement);
     const t = parseFloat(cs.getPropertyValue('--safe-top'))    || 0;
     const b = parseFloat(cs.getPropertyValue('--safe-bottom')) || 0;
+    const c = parseFloat(cs.getPropertyValue('--cutout-top'))  || 0;
     if (Number.isFinite(t)) safeAreaTop = t;
     if (Number.isFinite(b)) safeAreaBottom = b;
+    if (Number.isFinite(c)) cutoutTop = c;
   } catch {}
 }
 refreshSafeAreaInsets();
@@ -4750,19 +4757,19 @@ const ORB_DEFS = {
   },
   cosmic: {
     name: 'Phantom', desc: 'Longer ghost. Ghosts spawn more often.',
-    color: '192,132,252', cost: 20000, streakCap: 8, trail: 'cosmic', bias: 'ghost',
+    color: '192,132,252', cost: 10000, streakCap: 8, trail: 'cosmic', bias: 'ghost',
   },
   solar: {
     name: 'Inferno', desc: 'Bigger novas. Novas spawn more often.',
-    color: '251,146,60', cost: 40000, streakCap: 8, trail: 'solar', bias: 'nova',
+    color: '251,146,60', cost: 20000, streakCap: 8, trail: 'solar', bias: 'nova',
   },
   nebula: {
     name: 'Warp', desc: 'Hyperspeed stacks faster. Higher cap.',
-    color: '96,165,250', cost: 100000, streakCap: 8, trail: 'nebula', bias: 'hyperspeed',
+    color: '96,165,250', cost: 40000, streakCap: 8, trail: 'nebula', bias: 'hyperspeed',
   },
   asteroid: {
     name: 'Bulwark', desc: 'Durable shields. Shields spawn more often.',
-    color: '168,162,158', cost: 150000, streakCap: 8, trail: 'asteroid', bias: 'shield',
+    color: '168,162,158', cost: 80000, streakCap: 8, trail: 'asteroid', bias: 'shield',
   },
 };
 const ORB_ORDER = ['cyan', 'cosmic', 'solar', 'nebula', 'asteroid'];
@@ -4972,7 +4979,7 @@ const TREE_DEFS = {
       velocity: {
         name: 'VELOCITY',
         nodes: [
-          { key: 'thrust',    name: 'Thrust',    tier: 1, max: 3, desc: 'Hyperspeed peak multiplier coefficient +10% per rank.', effect: r => `+${10*r}% peak coefficient` },
+          { key: 'thrust',    name: 'Thrust',    tier: 1, max: 3, desc: 'Hyperspeed peak multiplier coefficient buff per rank.', effect: r => `+${[20,30,40][r-1]||0}% peak coefficient` },
           { key: 'afterburn', name: 'Afterburn', tier: 2, max: 3, desc: 'Launch forward barrier discs when hyperspeed ends. Discs travel, expand, and destroy bodies they pass through.', effect: r => `${r} disc${r===1?'':'s'} at landing` },
           { key: 'breakaway', name: 'Breakaway', tier: 3, max: 3, desc: 'At max stacks, peak multiplier +15/30/45% per rank.', effect: r => `+${[15,30,45][r-1]||0}% at max stacks` },
         ],
@@ -4982,15 +4989,15 @@ const TREE_DEFS = {
         nodes: [
           { key: 'reservoir',    name: 'Reservoir',    tier: 1, max: 3, desc: 'Hyperspeed duration +0.5s per rank (3s baseline, shared timer).', effect: r => `+${0.5*r}s total (${3 + 0.5*r}s)` },
           { key: 'overdrive',    name: 'Overdrive',    tier: 2, max: 2, desc: 'Hyperspeed stack cap +1/+2 at ranks 1/2 (Warp baseline 4).', effect: r => `Cap ${4+r} stacks`, costOverride: [21000, 42000] },
-          { key: 'infiniteGate', name: 'Infinite Gate', tier: 3, max: 3, desc: 'At 5+ hyperspeed stacks, natural pickup extends shared timer +0.5/1/1.5s at ranks 1/2/3. 25s cooldown between triggers.', effect: r => `+${[0.5,1,1.5][r-1]||0}s at 5+ (25s CD)` },
+          { key: 'infiniteGate', name: 'Infinite Gate', tier: 3, max: 3, desc: 'At 5+ hyperspeed stacks, natural pickup extends shared timer +0.5/1/1.5s at ranks 1/2/3. 20s cooldown between triggers.', effect: r => `+${[0.5,1,1.5][r-1]||0}s at 5+ (20s CD)` },
         ],
       },
       drift: {
         name: 'DRIFT',
         nodes: [
-          { key: 'smoothEntry',  name: 'Momentum',      tier: 1, max: 3, desc: 'Kills during hyperspeed reduce burst cooldown.', effect: r => `-${[0.05,0.1,0.2][r-1]||0}% burst CD per hyperspeed kill` },
+          { key: 'smoothEntry',  name: 'Momentum',      tier: 1, max: 3, desc: 'Kills during hyperspeed reduce burst cooldown.', effect: r => `-${[0.1,0.2,0.3][r-1]||0}% burst CD per hyperspeed kill` },
           { key: 'slipstream',   name: 'Slipstream',    tier: 2, max: 5, desc: 'On body destroyed, chance to grant a hyperspeed stack. (20s cooldown)', effect: r => `${[1,2,3,4,6][r-1]||0}% per destroy` },
-          { key: 'warpHarmonic', name: 'Warp Harmonic', tier: 3, max: 3, desc: 'Hyperspeed pair combos grant bonus free stacks. 30s cooldown.', effect: r => `+${r} free stacks` },
+          { key: 'warpHarmonic', name: 'Warp Harmonic', tier: 3, max: 3, desc: 'Hyperspeed pair combos grant bonus free stacks. 20s cooldown.', effect: r => `+${r} free stacks` },
         ],
       },
     },
@@ -5022,15 +5029,16 @@ const TREE_DEFS = {
       opportunism: {
         name: 'OPPORTUNISM',
         nodes: [
-          { key: 'salvage',      name: 'Salvage',      tier: 1, max: 3, desc: 'Chance per destroy to grant +1 crystal to the run payout.', effect: r => `${[2,5,10][r-1]||0}% per destroy` },
-          { key: 'bastion2',     name: 'Bastion II',   tier: 2, max: 5, desc: 'On body destroyed, chance to grant a shield pickup. Overflow at cap → +0.5s duration.', effect: r => `${[1,2,4,6,8][r-1]||0}% per destroy` },
+          { key: 'salvage',      name: 'Salvage',      tier: 1, max: 3, desc: 'Kills during shield reduce burst cooldown.', effect: r => `-${[0.25,0.5,1.0][r-1]||0}% burst CD per shield kill` },
+          { key: 'bastion2',     name: 'Bastion II',   tier: 2, max: 5, desc: 'On body destroyed, chance to grant a shield pickup. Overflow at cap → +1s duration.', effect: r => `${[2,4,6,8,10][r-1]||0}% per destroy` },
           { key: 'gravityWell',  name: 'Gravity Well', tier: 3, max: 3, desc: 'During shield, bodies are attracted toward the player.', effect: r => `Force ${[0.2,0.5,0.8][r-1]||0}` },
         ],
       },
     },
     capstones: [
-      { key: 'phalanx', name: 'PHALANX', desc: 'EMP chain depth uncapped if each hop kills. Radius decays 80% per hop.' },
-      { key: 'aegis',   name: 'AEGIS',   desc: 'Full Fortress Shield (4 hits, 8s) auto-fires every 45s.' },
+      { key: 'phalanx',   name: 'PHALANX',    desc: 'EMP chain depth uncapped if each hop kills. Radius decays 50% per hop.' },
+      { key: 'aegis',     name: 'AEGIS',      desc: 'Full Fortress Shield (4 hits, 8s) auto-fires every 45s.' },
+      { key: 'blackHole', name: 'BLACK HOLE', desc: "Gravity Well's force and radius both ×2. Requires Gravity Well rank 3." },
     ],
   },
 };
@@ -5397,8 +5405,12 @@ function capstonePrereqMet(orbKey, capKey) {
     if (capKey === 'eventHorizon') return anyT3('nebula');
   }
   if (orbKey === 'asteroid') {
-    if (capKey === 'phalanx') return (s.devastation[1] | 0) >= 3 && anyT3('asteroid');
-    if (capKey === 'aegis')   return (s.fortification[2] | 0) >= 1 && (s.fortification[1] | 0) >= 1;
+    if (capKey === 'phalanx')   return (s.devastation[1] | 0) >= 3 && anyT3('asteroid');
+    if (capKey === 'aegis')     return (s.fortification[2] | 0) >= 1 && (s.fortification[1] | 0) >= 1;
+    // Black Hole gates on Gravity Well max rank. Checked again at effect-
+    // application time so respec'ing GW below 3 immediately suspends the
+    // capstone (gameplay + UI lock state).
+    if (capKey === 'blackHole') return (s.opportunism[2] | 0) >= 3;
   }
   return false;
 }
@@ -5661,7 +5673,7 @@ function slipstreamProc() {
   activateHyperspeed(undefined, undefined, 'slipstream');
   if (activeOrb === 'nebula') activateHyperspeed(undefined, undefined, 'slipstream');
   spawnDestroyProcFlash('hyperspeed');
-  slipstreamNextProcTime = now + 20000;
+  slipstreamNextProcTime = now + 15000;
   treeLog('slipstream: +' + (activeOrb === 'nebula' ? 2 : 1) + ' stack (15s CD)');
 }
 
@@ -5670,10 +5682,10 @@ function bastion2Proc() {
   const cap = shieldHitsCap();
   if (shieldHits >= cap) {
     if (activeEffects.shield > 0) {
-      shieldEndTime += 500;
-      activeEffects.shield += 500;
+      shieldEndTime += 1000;
+      activeEffects.shield += 1000;
       spawnDestroyProcFlash('shield');
-      treeLog('bastion2: cap overflow → +0.5s shield');
+      treeLog('bastion2: cap overflow → +1s shield');
     } else {
       treeLog('bastion2: cap-blocked (no active shield to extend)');
     }
@@ -5691,12 +5703,13 @@ function bastion2Proc() {
 // tick (tickCapstoneTimers) and the bottom-left HUD progress rings
 // (updateCapstoneCountdowns). Previously each value was duplicated at both
 // sites, which let the v1.7.0 Lingering Horizon rebalance (90 s → 120 s)
-// drift the ring out of sync until this consolidation.
+// drift the ring out of sync until this consolidation. v1.6.6 reverts the
+// Lingering Horizon nerf — back to 90 s cadence.
 const SHROUD_FLAG_ARM_MS         = 30000;
 const NIGHT_SHADE_CYCLE_MS       = 20000;
 const SUN_FORGE_CYCLE_MS         = 45000;
 const AEGIS_CYCLE_MS             = 45000;
-const LINGERING_HORIZON_CYCLE_MS = 120000;
+const LINGERING_HORIZON_CYCLE_MS = 90000;
 
 // Per-frame capstone auto-fire tick. NIGHT SHADE / SUN FORGE / AEGIS each
 // have their own cadence; fires silently if conditions aren't met. Timers
@@ -5740,23 +5753,21 @@ function tickCapstoneTimers() {
       sunForgeNextFireTime = now + SUN_FORGE_CYCLE_MS;
     }
   }
-  // AEGIS (Fortress): auto Fortress Shield every 45 s. Skip + reschedule
-  // if the shield_shield combo is already active.
+  // AEGIS (Fortress): auto Fortress Shield every 45 s. v1.6.6: always fire
+  // through activateCombo — its shield_shield refresh path resets
+  // shieldEndTime/shieldHits/fortressShield, so re-firing while a shield is
+  // still active extends duration instead of wasting the cycle.
   if (activeOrb === 'asteroid' && hasCapstone('aegis')) {
     if (now >= aegisNextFireTime) {
-      if (!activeCombos.shield_shield) {
-        activateCombo('shield_shield', player.x, player.y);
-        shakeCapstone('aegis');
-        triggerHitstop(40);
-        treeLog('aegis: auto Fortress Shield');
-      } else {
-        treeLog('aegis: Fortress already active, skipping');
-      }
+      activateCombo('shield_shield', player.x, player.y);
+      shakeCapstone('aegis');
+      triggerHitstop(40);
+      treeLog('aegis: auto Fortress Shield');
       aegisNextFireTime = now + AEGIS_CYCLE_MS;
     }
   }
-  // LINGERING HORIZON (Warp capstone) v1.7.0 rebalance: cadence stretched
-  // 90 s → 120 s to reduce Warp's free-output dominance.
+  // LINGERING HORIZON (Warp capstone): cadence held at 90 s. v1.7.0 stretched
+  // it to 120 s; v1.6.6 reverts as part of the Warp buff pass.
   // Source flag 'lingeringHorizon' keeps Momentum's per-kill CD reduction and
   // Infinite Gate's bonus-time gate from re-triggering off the auto-fire
   // (both gate on source === 'natural'). Stacks are jumped straight to cap-1
@@ -5780,21 +5791,18 @@ function tickCapstoneTimers() {
 // Bastion II feedback loop that would otherwise trigger when PHALANX ships.
 function checkDestroyProc(body, source) {
   if (state !== 'playing' && state !== 'devmode') return;
-  // Salvage (Fortress Opportunism T1): per-destroy chance to grant +1 crystal
-  // to the run's final payout. Fires on ALL player-originated destroys
-  // including EMP chains — salvage isn't a "proc" under the cascade guards,
-  // it's just a passive crystal trickle.
+  // Salvage (Fortress Opportunism T1) v1.6.6 rework: while a shield is up,
+  // every body destroyed shaves a % of the Warp burst base off the live
+  // cooldown. Pattern matches Warp Momentum (smoothEntry); the shield-active
+  // gate covers regular shield, fortress stacks, and the shield_shield combo.
   if (activeOrb === 'asteroid') {
     const sRank = rankOf('salvage');
-    if (sRank > 0) {
-      // v1.6.3: Salvage buffed from 1/2/3% → 2/5/10%.
-      const chance = [0.02, 0.05, 0.10][sRank - 1] || 0;
-      if (Math.random() < chance) {
-        salvageBonusThisRun++;
-        // v1.6.3 visual pass: small cyan crystal sparkle at the destroyed
-        // body's position that drifts upward. Uses salvageSparkles (managed
-        // in update/draw + per-frame dt-scaled drift).
-        spawnSalvageSparkle(body.x, body.y);
+    const shieldActive = activeEffects.shield > 0 || shieldHits > 0 || !!fortressShield;
+    if (sRank > 0 && shieldActive && burstCooldownEnd > Date.now()) {
+      const pct = [0.0025, 0.005, 0.01][sRank - 1] || 0;
+      const reduce = Math.floor(pct * BURST_COOLDOWN_MS);
+      if (reduce > 0) {
+        burstCooldownEnd = Math.max(Date.now(), burstCooldownEnd - reduce);
       }
     }
   }
@@ -5822,11 +5830,12 @@ function checkDestroyProc(body, source) {
     // matches the prompt's "active hyperspeed" gate (the v1.6.3 rework
     // removed the post-hyperspeed echo phase; only active hyperspeed
     // remains as a state).
-    // v1.7.0 rebalance: -0.1/-0.2/-0.3 % → -0.05/-0.1/-0.2 % per kill.
+    // v1.6.6: Momentum reverted to -0.1/-0.2/-0.3 % per kill (was -0.05/
+    // -0.1/-0.2 % from the v1.7.0 nerf).
     const momRank = rankOf('smoothEntry');
     if (momRank > 0 && activeEffects.hyperspeed > 0
         && burstCooldownEnd > Date.now()) {
-      const pct = [0.0005, 0.001, 0.002][momRank - 1] || 0;
+      const pct = [0.001, 0.002, 0.003][momRank - 1] || 0;
       const reduce = Math.floor(pct * BURST_COOLDOWN_MS);
       if (reduce > 0) {
         burstCooldownEnd = Math.max(Date.now(), burstCooldownEnd - reduce);
@@ -5835,8 +5844,8 @@ function checkDestroyProc(body, source) {
   } else if (activeOrb === 'asteroid') {
     if (source === 'emp') return; // exclude EMP-chain destroys (anti-loop)
     const r = rankOf('bastion2');
-    // v1.6.3 FIX B2: Bastion II nerfed to 1/2/4/6/8% (was 2/4/6/8/10%).
-    const b2Chances = [0.01, 0.02, 0.04, 0.06, 0.08];
+    // v1.6.6: Bastion II restored to 2/4/6/8/10% per rank.
+    const b2Chances = [0.02, 0.04, 0.06, 0.08, 0.10];
     if (r > 0 && Math.random() < b2Chances[r - 1]) bastion2Proc();
   }
 }
@@ -10410,13 +10419,18 @@ function updatePixiOverlayLayer() {
     ofx.save();
     ofx.setTransform(1, 0, 0, 1, 0, 0);
     ofx.clearRect(0, 0, PIXI_HYPER_STACK_W, PIXI_HYPER_STACK_H);
-    // drawHyperStackText draws at (W/2, 50 + safeAreaTop) absolute — bias so
-    // it lands at canvas (W/2, 0) inside the stack canvas.
-    ofx.translate(PIXI_HYPER_STACK_W / 2 - W / 2, -(50 + safeAreaTop));
+    // drawHyperStackText draws at (W/2, 50 + safeAreaTop + cutoutTop)
+    // absolute — bias so it lands at canvas (W/2, 0) inside the stack
+    // canvas. cutoutTop matches the DOM top stack's `--cutout-top` offset
+    // so the banner stays anchored to row 3 (below the timer) instead of
+    // bleeding into the score/timer rows when the WebView paints under a
+    // camera punch-hole.
+    const hyperStackTopY = 50 + safeAreaTop + cutoutTop;
+    ofx.translate(PIXI_HYPER_STACK_W / 2 - W / 2, -hyperStackTopY);
     try { drawHyperStackText(ofx); } catch (err) { console.error('[pixi-overlay] stack text threw', err); }
     ofx.restore();
     pixiHyperStackSprite.x = W / 2;
-    pixiHyperStackSprite.y = 50 + safeAreaTop;
+    pixiHyperStackSprite.y = hyperStackTopY;
     pixiHyperStackSprite.visible = true;
     if (pixiHyperStackSprite.texture && pixiHyperStackSprite.texture.baseTexture) {
       try { pixiHyperStackSprite.texture.baseTexture.update(); } catch {}
@@ -11029,8 +11043,12 @@ function drawGravityWellLines() {
   if (!bodies || !bodies.length) return;
   // Cheapest: sort by distance with a quick partial-sort / just iterate
   // and track the 8 nearest. Use a simple insertion pattern to cap cost.
+  // BLACK HOLE (Bulwark capstone) v1.6.6: doubles the visual pull radius
+  // alongside the gameplay force buff, so the "felt" reach matches the
+  // stronger pull. Suspended if Gravity Well is respec'd below rank 3.
+  const blackHoleActive = hasCapstone('blackHole') && gwRank >= 3;
   const MAX_LINES = 8;
-  const MAX_DIST = 260; // don't draw lines for distant bodies
+  const MAX_DIST = 260 * (blackHoleActive ? 2 : 1); // don't draw lines for distant bodies
   const nearest = [];
   for (const b of bodies) {
     const dx = player.x - b.x, dy = player.y - b.y;
@@ -11857,8 +11875,8 @@ function activateCombo(key, x, y) {
     const whRank = rankOf('warpHarmonic');
     if (whRank > 0 && Date.now() >= warpHarmonicNextFireTime) {
       for (let i = 0; i < whRank; i++) activateHyperspeed(undefined, undefined, 'warp_harmonic');
-      warpHarmonicNextFireTime = Date.now() + 30000;
-      treeLog('warpHarmonic: +' + whRank + ' bonus stacks on ' + key + ' (30s CD)');
+      warpHarmonicNextFireTime = Date.now() + 20000;
+      treeLog('warpHarmonic: +' + whRank + ' bonus stacks on ' + key + ' (20s CD)');
     }
   }
   // Keystone (Drifter Convergence T3): any pair combo rolls for a bonus
@@ -12175,9 +12193,9 @@ function spawnEmpRing(x, y, isChain, depth) {
     maxRadius: isChain
       ? (
           120 * (activeOrb === 'asteroid' ? (1 + 0.30 * rankOf('detonation')) : 1)
-          // PHALANX radius decay: 80 %/hop beyond the first secondary (depth 2).
+          // PHALANX radius decay: 50 %/hop beyond the first secondary (depth 2).
           * ((activeOrb === 'asteroid' && hasCapstone('phalanx') && (depth || 1) > 2)
-              ? Math.pow(0.8, (depth || 1) - 2) : 1)
+              ? Math.pow(0.5, (depth || 1) - 2) : 1)
         )
       : EMP_MAX_RADIUS * (activeOrb === 'asteroid' ? (1 + 0.10 * rankOf('chainReaction')) : 1),
     opacity: isChain ? 0.6 : 1,
@@ -12192,9 +12210,12 @@ function spawnEmpRing(x, y, isChain, depth) {
 function computeHyperspeedPeakMult(stacks, peakScale) {
   const normSpd = normalScrollSpeed();
   const s = Math.max(1, stacks || 1);
-  // Skill tree: Thrust scales the two coefficients (3.5 and 6.0) by +10%/rank (Warp-only).
+  // Skill tree: Thrust scales the two coefficients (3.5 and 6.0) by a
+  // rank-table bonus (Warp-only). v1.6.6: +10/20/30 % → +20/30/40 %.
   let thrustMult = 1;
-  if (activeOrb === 'nebula') thrustMult += 0.10 * rankOf('thrust');
+  if (activeOrb === 'nebula') {
+    thrustMult += ([0.20, 0.30, 0.40][rankOf('thrust') - 1] || 0);
+  }
   let basePeak = Math.max(3.5 * thrustMult * s, (6.0 * thrustMult * s) / Math.max(normSpd, 0.01));
   // Breakaway: at-max-stacks bonus. v1.7.0 rebalance: +25/50/75 % → +15/30/45 %.
   if (activeOrb === 'nebula') {
@@ -12230,8 +12251,8 @@ function activateHyperspeed(durationOverride, peakScale, source) {
     if (igRank > 0 && now >= infiniteGateNextFireTime) {
       const bonusMs = [500, 1000, 1500][igRank - 1] || 0;
       hyperspeedEndTime += bonusMs;
-      infiniteGateNextFireTime = now + 25000;
-      treeLog('infiniteGate: +' + bonusMs + 'ms shared timer (stacks ' + hyperSpeedStacks + ', 15s CD)');
+      infiniteGateNextFireTime = now + 20000;
+      treeLog('infiniteGate: +' + bonusMs + 'ms shared timer (stacks ' + hyperSpeedStacks + ', 20s CD)');
     }
   }
   if (hyperSpeedStacks > peakHyperSpeedStacks) peakHyperSpeedStacks = hyperSpeedStacks;
@@ -13617,8 +13638,13 @@ function update() {
   // Gravity Well (Fortress Opportunism T3): while shield is active, nudge
   // bodies toward the player every frame at a rank-scaled force. Complements
   // Chain Reaction II by pulling bodies INTO the shield's kill range.
+  // BLACK HOLE (Bulwark capstone) v1.6.6: doubles the force when Gravity
+  // Well is at max rank. The rank guard mirrors capstonePrereqMet so a
+  // respec below rank 3 immediately suspends the bonus.
+  const gwRankApplied = rankOf('gravityWell');
+  const blackHoleActive = activeOrb === 'asteroid' && hasCapstone('blackHole') && gwRankApplied >= 3;
   const gravityWellForce = (activeOrb === 'asteroid' && activeEffects.shield > 0)
-    ? ([0.2, 0.5, 0.8][rankOf('gravityWell') - 1] || 0)
+    ? (([0.2, 0.5, 0.8][gwRankApplied - 1] || 0) * (blackHoleActive ? 2 : 1))
     : 0;
   for (const b of bodies) {
     b.y += spd * dtScale;
@@ -18421,10 +18447,10 @@ function updateCapstoneCountdowns() {
     if (owned && fireTs > 0 && fireTs <= now + 50) capCdLastFired.aegis = now;
     set('capCdAegis', owned, progress, 'rgba(120,230,255,0.95)', false, firing);
   }
-  // LINGERING HORIZON — Warp. Cycle constant shared with tickCapstoneTimers
-  // (v1.7.0 rebalance: 90 → 120 s). Was previously hardcoded to 90 s here,
-  // which left the ring stuck at 100 % progress for the first 30 s of every
-  // real 120 s cycle (then "stuck full" until the actual fire).
+  // LINGERING HORIZON — Warp. Cycle constant shared with tickCapstoneTimers.
+  // v1.7.0 stretched it to 120 s; v1.6.6 reverts to 90 s. Single-constant
+  // refactor keeps this ring in sync with the auto-fire cadence — the prior
+  // hardcode here desynced the ring from the actual fire time.
   {
     const owned = activeOrb === 'nebula' && hasCapstone('eventHorizon');
     const fireTs = lingeringHorizonNextFireTime || now;
@@ -18642,9 +18668,13 @@ function drawDeathParticles() {
 
 // Stacked hyperspeed banner — only shows for 2+ stacks. Drawn in canvas
 // space so we don't have to retrofit DOM layout. v1.7.0 HUD second pass:
-// sits cleanly BELOW the timer (~y=58 + safe-top) so it doesn't overlap the
-// "00:28" line of the new compressed top stack. Blink rate gets faster as
-// stacks climb so 4× feels noticeably more frantic than 2×.
+// sits cleanly BELOW the timer (~y=58 + safe-top + cutout-top) so it doesn't
+// overlap the "00:28" line of the new compressed top stack. v1.6.6 fix:
+// added cutoutTop to the Y so the banner moves WITH the score/timer rows
+// when the WebView paints under a camera punch-hole — previously hardcoded
+// without cutoutTop, the banner stayed put while the rows shifted down,
+// landing it between score and timer. Blink rate gets faster as stacks
+// climb so 4× feels noticeably more frantic than 2×.
 function drawHyperStackText(tctx = ctx) {
   const ctx = tctx;
   if (hyperSpeedStacks < 2) return;
@@ -18685,9 +18715,9 @@ function drawHyperStackText(tctx = ctx) {
     // Thicker outline via stroke-then-fill.
     ctx.strokeStyle = `rgba(${tint.edgeR},${tint.edgeG},${tint.edgeB},0.9)`;
     ctx.lineWidth = 2.6;
-    ctx.strokeText(label, W / 2, 58 + safeAreaTop);
+    ctx.strokeText(label, W / 2, 58 + safeAreaTop + cutoutTop);
   }
-  ctx.fillText(label, W / 2, 58 + safeAreaTop);
+  ctx.fillText(label, W / 2, 58 + safeAreaTop + cutoutTop);
   ctx.restore();
   ctx.globalAlpha = 1;
 }
@@ -21888,8 +21918,16 @@ function buildCapstonePill(orbKey, cap) {
   const owned = !!state.capstones[cap.key];
   const prereqOk = capstonePrereqMet(orbKey, cap.key);
   const comingSoon = isCapstoneComingSoon(cap.key);
+  // v1.6.6: capstones can be "frozen" — owned but their prereq tier was
+  // refunded (e.g., BLACK HOLE owned with Gravity Well respec'd below 3).
+  // The capstone effect is suppressed at runtime; the pill flags the lock
+  // state so the player can see why nothing is happening.
+  const frozen = owned && !prereqOk;
   const el = document.createElement('button');
-  el.className = 'tree-node' + (!prereqOk && !owned && !comingSoon ? ' locked' : '') + (owned ? ' maxed' : '');
+  el.className = 'tree-node'
+    + (!prereqOk && !owned && !comingSoon ? ' locked' : '')
+    + (owned ? ' maxed' : '')
+    + (frozen ? ' frozen' : '');
   el.style.color = owned ? `rgba(${def.color},1)` : '';
   if (owned) el.style.borderColor = `rgba(${def.color},0.8)`;
   const nameEl = document.createElement('div');
@@ -21898,11 +21936,13 @@ function buildCapstonePill(orbKey, cap) {
   el.appendChild(nameEl);
   const metaEl = document.createElement('div');
   metaEl.className = 'tree-node-meta';
-  metaEl.textContent = owned
-    ? 'UNLOCKED'
-    : comingSoon
-      ? 'COMING SOON'
-      : (prereqOk ? (formatCrystals(capstoneCost(orbKey)) + ' 💎') : 'LOCKED');
+  metaEl.textContent = frozen
+    ? 'UNLOCKED · 🔒'
+    : owned
+      ? 'UNLOCKED'
+      : comingSoon
+        ? 'COMING SOON'
+        : (prereqOk ? (formatCrystals(capstoneCost(orbKey)) + ' 💎') : 'LOCKED');
   el.appendChild(metaEl);
   // Tap always opens the detail popup so players can read what's planned,
   // even for coming-soon capstones. The detail popup disables the Unlock
@@ -21985,14 +22025,18 @@ function renderTreeDetail() {
     const cap = def.capstones.find(c => c.key === t.capKey);
     const owned = !!state.capstones[t.capKey];
     const comingSoon = isCapstoneComingSoon(t.capKey);
+    const prereqOkCap = capstonePrereqMet(t.orbKey, t.capKey);
+    const frozen = owned && !prereqOkCap;
     titleEl.textContent = '★ ' + cap.name;
     titleEl.style.color = `rgba(${def.color},1)`;
     descEl.textContent = cap.desc;
-    ranksEl.innerHTML = owned
-      ? '<div class="rank-row current">Unlocked</div>'
-      : comingSoon
-        ? '<div class="rank-row next">Coming soon — effect ships in a future update</div>'
-        : `<div class="rank-row next">${formatCrystals(capstoneCost(t.orbKey))} 💎</div>`;
+    ranksEl.innerHTML = frozen
+      ? '<div class="rank-row next">Unlocked · effect suspended (prereq missing)</div>'
+      : owned
+        ? '<div class="rank-row current">Unlocked</div>'
+        : comingSoon
+          ? '<div class="rank-row next">Coming soon — effect ships in a future update</div>'
+          : `<div class="rank-row next">${formatCrystals(capstoneCost(t.orbKey))} 💎</div>`;
     upBtn.style.display = owned ? 'none' : '';
     upBtn.textContent = owned
       ? 'UNLOCKED'
