@@ -2466,6 +2466,16 @@
     opacity: 0.3;
     cursor: default;
   }
+  .username-error {
+    min-height: 16px;
+    margin: -8px 0 14px;
+    color: rgba(255,120,140,0.95);
+    font-family: 'Space Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-align: center;
+    text-transform: uppercase;
+  }
 
   /* Leaderboard tabs */
   .lb-tabs {
@@ -3229,6 +3239,7 @@
   <div id="usernameOverlay">
     <div class="username-title">ENTER YOUR PILOT NAME</div>
     <input type="text" id="usernameInput" maxlength="20" placeholder="pilot name" autocomplete="off" spellcheck="false">
+    <div id="usernameError" class="username-error"></div>
     <button id="usernameConfirm" disabled>CONFIRM</button>
   </div>
 </div>
@@ -8698,7 +8709,62 @@ function setUsername(name) {
   if (typeof Sentry !== 'undefined') Sentry.setUser({ username: localStorage.getItem('drift_username') });
 }
 
+// Profanity filter for pilot names. Inline blocklist, zero deps. The input is
+// already restricted to /^[A-Za-z0-9]{1,20}$/ by the overlay's input listener,
+// so we only have to defend against l33t-speak swaps and stretched repeats
+// ("fuuuck", "n1iiiigger"). Trade-off: substring matching means real names
+// containing a slur fragment ("Cocker", "Therapy") get blocked too — accepted
+// because the rejection message lets users pick another, and false positives
+// are far cheaper than slurs on the leaderboard.
+const PROFANITY_BLOCKLIST = [
+  'nigger', 'nigga', 'chink', 'kike', 'spic', 'gook', 'wetback', 'tranny',
+  'faggot', 'fagot', 'fag', 'retard',
+  'cunt', 'twat', 'pussy', 'cock', 'dick', 'penis', 'vagina', 'boobs',
+  'tits', 'whore', 'slut', 'jizz', 'rape', 'rapist', 'cum',
+  'fuck', 'shit', 'asshole', 'bastard', 'wanker', 'douche', 'bitch',
+  'killall', 'killjews', 'killniggers', 'gaskike', 'hitler', 'nazi', 'kkk',
+  'bigpenis', 'bigdick', 'bigcock',
+];
+function _profanityNormalize(s) {
+  return String(s || '').toLowerCase()
+    .replace(/[1!|]/g, 'i')
+    .replace(/0/g, 'o')
+    .replace(/3/g, 'e')
+    .replace(/[4@]/g, 'a')
+    .replace(/[5$]/g, 's')
+    .replace(/7/g, 't')
+    .replace(/8/g, 'b')
+    .replace(/[69]/g, 'g')
+    .replace(/2/g, 'z');
+}
+function _profanityCollapse(s) {
+  return s.replace(/(.)\1+/g, '$1');
+}
+function isProfaneName(name) {
+  if (!name) return false;
+  // Spam-style names: 5+ identical chars in a row in the raw input.
+  if (/(.)\1{4,}/i.test(name)) return true;
+  const norm = _profanityNormalize(name);
+  const collapsed = _profanityCollapse(norm);
+  for (const term of PROFANITY_BLOCKLIST) {
+    if (norm.includes(term)) return true;
+    // Stretched-repeat bypass ("niiigger", "fuuuck"): also compare with
+    // consecutive duplicates flattened on both sides. Only applied when the
+    // collapsed term is ≥ 4 chars — otherwise short terms like "kkk" (which
+    // collapses to "k") would match every name containing that single letter.
+    const collapsedTerm = _profanityCollapse(term);
+    if (collapsedTerm.length >= 4 && collapsed.includes(collapsedTerm)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function submitScoreOnline(username, s, d) {
+  // Server-side guard rejects 'dev' and the saved name may be legacy-profane
+  // from before the filter shipped — drop those locally so we never fire the
+  // request at all.
+  if (isProfaneName(username)) return;
   try {
     fetch(API_URL + '/score', {
       method: 'POST',
@@ -8712,13 +8778,15 @@ function submitScoreOnline(username, s, d) {
 // down the death screen still renders normally.
 async function sendAnalytics() {
   try {
+    const pilot = (typeof localStorage !== 'undefined' && localStorage.getItem('drift_username')) || 'unknown';
+    if (isProfaneName(pilot)) return;
     const crystalMult = (DIFFICULTIES[difficulty] && DIFFICULTIES[difficulty].crystalMult) || 1;
     const longestStreak = streakHistory.length
       ? Math.max(0, ...streakHistory)
       : (destroyStreak || 0);
     const payload = {
       sessionId,
-      pilotName: (typeof localStorage !== 'undefined' && localStorage.getItem('drift_username')) || 'unknown',
+      pilotName: pilot,
       timestamp: Date.now(),
       appVersion: GAME_VERSION,
       difficulty,
@@ -22203,12 +22271,18 @@ document.getElementById('lbDiffTabs').addEventListener('click', e => {
 const usernameOverlay = document.getElementById('usernameOverlay');
 const usernameInput = document.getElementById('usernameInput');
 const usernameConfirm = document.getElementById('usernameConfirm');
+const usernameError = document.getElementById('usernameError');
 let usernameCallback = null;
+
+function setUsernameError(msg) {
+  if (usernameError) usernameError.textContent = msg || '';
+}
 
 function showUsernamePrompt(onDone) {
   usernameCallback = onDone || null;
   usernameInput.value = getUsername();
   usernameConfirm.disabled = !usernameInput.value.length;
+  setUsernameError('');
   usernameOverlay.classList.add('visible');
   usernameInput.focus();
 }
@@ -22216,6 +22290,7 @@ function showUsernamePrompt(onDone) {
 usernameInput.addEventListener('input', () => {
   usernameInput.value = usernameInput.value.replace(/[^a-zA-Z0-9]/g, '');
   usernameConfirm.disabled = !usernameInput.value.length;
+  setUsernameError('');
 });
 
 usernameInput.addEventListener('keydown', e => {
@@ -22225,6 +22300,10 @@ usernameInput.addEventListener('keydown', e => {
 function confirmUsername() {
   const name = usernameInput.value.trim();
   if (!name) return;
+  if (isProfaneName(name)) {
+    setUsernameError('This name is not allowed. Please choose another.');
+    return;
+  }
   setUsername(name);
   usernameOverlay.classList.remove('visible');
   if (usernameCallback) usernameCallback();

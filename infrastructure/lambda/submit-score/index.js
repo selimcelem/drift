@@ -3,7 +3,6 @@ const {
   DynamoDBDocumentClient,
   PutCommand,
   QueryCommand,
-  UpdateCommand,
 } = require("@aws-sdk/lib-dynamodb");
 
 const client = new DynamoDBClient({});
@@ -16,7 +15,8 @@ const CORS_HEADERS = {
 };
 
 const VALID_DIFFICULTIES = ["NORMAL", "HARD", "EXTREME", "IMPOSSIBLE"];
-const SHORT_TTL_SECONDS = 7 * 24 * 60 * 60;
+const TOP_TEN_TTL_SECONDS = 30 * 24 * 60 * 60;
+const SHORT_TTL_SECONDS = 24 * 60 * 60;
 
 exports.handler = async (event) => {
   if (event.requestContext?.http?.method === "OPTIONS") {
@@ -35,6 +35,16 @@ exports.handler = async (event) => {
   }
 
   const { username, score, difficulty } = body;
+
+  // Dev pilot exclusion — author's own playtests never touch the board. Done
+  // before validation so a typo in the dev build can't accidentally land.
+  if (typeof username === "string" && username.toLowerCase().trim() === "dev") {
+    return {
+      statusCode: 200,
+      headers: CORS_HEADERS,
+      body: JSON.stringify({ skipped: "dev pilot" }),
+    };
+  }
 
   // Validate username: string, 1-20 chars, alphanumeric
   if (
@@ -79,8 +89,28 @@ exports.handler = async (event) => {
     };
   }
 
+  // TTL is decided at write time, then never revisited. Query the current
+  // top 10 (one extra read per write — cheap, free-tier safe). If the new
+  // score lands in the top 10 it gets 30 days; otherwise 1 day. We do NOT
+  // rebalance existing items: scores knocked out of the top 10 keep their
+  // old long TTL but are filtered out by get-leaderboard's Limit:10 query,
+  // so they're invisible to players. Trade-off: small residue in DynamoDB
+  // until original TTLs expire — accepted to avoid a cron Lambda.
+  const topTen = await ddb.send(
+    new QueryCommand({
+      TableName: "drift-leaderboard",
+      KeyConditionExpression: "difficulty = :d",
+      ExpressionAttributeValues: { ":d": difficulty },
+      ScanIndexForward: false,
+      Limit: 10,
+    })
+  );
+  const topTenItems = topTen.Items || [];
+  const tenthScore =
+    topTenItems.length >= 10 ? topTenItems[topTenItems.length - 1].score || 0 : 0;
+  const inTopTen = score >= tenthScore;
   const now = Math.floor(Date.now() / 1000);
-  const shortTtl = now + SHORT_TTL_SECONDS;
+  const ttl = now + (inTopTen ? TOP_TEN_TTL_SECONDS : SHORT_TTL_SECONDS);
 
   await ddb.send(
     new PutCommand({
@@ -89,46 +119,9 @@ exports.handler = async (event) => {
         difficulty,
         score,
         username,
-        ttl: shortTtl,
+        ttl,
         timestamp: new Date().toISOString(),
       },
-    })
-  );
-
-  // Query all scores for this difficulty, descending, and rebalance TTLs.
-  // Top 10 become permanent: REMOVE the ttl attribute so DynamoDB TTL never
-  // touches them. Positions 11+ get a fresh 7-day ttl. Scores falling out of
-  // the top 10 transition from no-ttl back to the 7-day window.
-  const all = await ddb.send(
-    new QueryCommand({
-      TableName: "drift-leaderboard",
-      KeyConditionExpression: "difficulty = :d",
-      ExpressionAttributeValues: { ":d": difficulty },
-      ScanIndexForward: false,
-    })
-  );
-  const items = all.Items || [];
-  await Promise.all(
-    items.map((item, index) => {
-      if (index < 10) {
-        return ddb.send(
-          new UpdateCommand({
-            TableName: "drift-leaderboard",
-            Key: { difficulty: item.difficulty, score: item.score },
-            UpdateExpression: "REMOVE #ttl",
-            ExpressionAttributeNames: { "#ttl": "ttl" },
-          })
-        );
-      }
-      return ddb.send(
-        new UpdateCommand({
-          TableName: "drift-leaderboard",
-          Key: { difficulty: item.difficulty, score: item.score },
-          UpdateExpression: "SET #ttl = :ttl",
-          ExpressionAttributeNames: { "#ttl": "ttl" },
-          ExpressionAttributeValues: { ":ttl": shortTtl },
-        })
-      );
     })
   );
 

@@ -74,6 +74,15 @@ async function handlePost(event) {
     return json(400, { error: "Invalid JSON" });
   }
 
+  // Dev pilot exclusion — author's own playtests don't pollute analytics.
+  // Returns 200 so the client's fire-and-forget fetch never errors.
+  if (
+    typeof body.pilotName === "string" &&
+    body.pilotName.toLowerCase().trim() === "dev"
+  ) {
+    return json(200, { skipped: "dev pilot" });
+  }
+
   const required = ["sessionId", "pilotName", "difficulty", "score", "timeSurvived"];
   for (const k of required) {
     if (body[k] === undefined || body[k] === null) {
