@@ -6,6 +6,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Each version header links to its GitHub release; see the release notes for full
 detail beyond the summaries here.
 
+## v1.6.6 — Balance Pass + Black Hole Capstone
+
+### New
+- Bulwark BLACK HOLE capstone — doubles Gravity Well force and radius (requires Gravity Well rank 3)
+
+### Bulwark Balance
+- AEGIS now refreshes shield duration when triggered while shield is already active
+- SALVAGE reworked: kills during active shield reduce burst cooldown by 0.25/0.50/1.00% per rank
+- BASTION II buffed: +1s shield duration on cap overflow, percentages increased to 2/4/6/8/10%
+- PHALANX buffed: chain ring radius decay 80% → 50% per hop
+
+### Warp Balance
+- MOMENTUM restored to -0.1/-0.2/-0.3% per kill
+- THRUST buffed to +20/+30/+40% peak coefficient
+- INFINITE GATE cooldown reduced 25s → 20s
+- WARP HARMONIC cooldown reduced 30s → 20s
+- LINGERING HORIZON cycle restored to 90s
+- SLIPSTREAM cooldown reduced 20s → 15s
+
+### Phantom Balance
+- SHADOW REGEN fix: now uses max of default reset vs additive stack (was silently a nerf in common pickup scenarios)
+
+### Economy
+- Orb unlock costs reduced significantly: 10k / 20k / 40k / 80k crystals (was 20k / 40k / 100k / 150k)
+
+### Fixes
+- Hyperspeed banner now correctly positioned below timer on devices with display cutouts
+
 ## v1.6.5.1 — Hotfix
 
 ### Fixes
