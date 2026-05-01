@@ -5047,7 +5047,7 @@ const TREE_DEFS = {
       },
     },
     capstones: [
-      { key: 'phalanx',   name: 'PHALANX',    desc: 'EMP chain depth uncapped if each hop kills. Radius decays 50% per hop.' },
+      { key: 'phalanx',   name: 'PHALANX',    desc: 'EMP chain depth uncapped if each hop kills. Radius decays 10% per hop.' },
       { key: 'aegis',     name: 'AEGIS',      desc: 'Full Fortress Shield (4 hits, 8s) auto-fires every 45s.' },
       { key: 'blackHole', name: 'BLACK HOLE', desc: "Gravity Well's force and radius both ×2. Requires Gravity Well rank 3." },
     ],
@@ -6729,7 +6729,7 @@ let runStats = { totalPassed: 0, totalDestroyed: 0, pointsFromPassing: 0, points
 // Example: TIME_DILATION = 60 → 1 real second = 60 in-game seconds for
 // progression, apocalypse triggers in ~10 real seconds.
 const TIME_DILATION = 1;
-const GAME_VERSION = '1.6.6';
+const GAME_VERSION = '1.6.6.1';
 try {
   const vl = document.getElementById('versionLabel');
   if (vl) vl.textContent = 'v' + GAME_VERSION;
@@ -12268,9 +12268,9 @@ function spawnEmpRing(x, y, isChain, depth) {
     maxRadius: isChain
       ? (
           120 * (activeOrb === 'asteroid' ? (1 + 0.30 * rankOf('detonation')) : 1)
-          // PHALANX radius decay: 50 %/hop beyond the first secondary (depth 2).
+          // PHALANX radius decay: 10 %/hop beyond the first secondary (depth 2).
           * ((activeOrb === 'asteroid' && hasCapstone('phalanx') && (depth || 1) > 2)
-              ? Math.pow(0.5, (depth || 1) - 2) : 1)
+              ? Math.pow(0.9, (depth || 1) - 2) : 1)
         )
       : EMP_MAX_RADIUS * (activeOrb === 'asteroid' ? (1 + 0.10 * rankOf('chainReaction')) : 1),
     opacity: isChain ? 0.6 : 1,
@@ -14058,7 +14058,7 @@ function update() {
             // spawns a depth-(N+1) ring on its kill, up to the rank-based cap.
             // PHALANX (Fortress capstone) removes the cap entirely: the chain
             // continues as long as each new hop kills a body, with radius
-            // decay (80 %/hop past the first secondary) applied in
+            // decay (10 %/hop past the first secondary) applied in
             // spawnEmpRing. The `source:'emp'` flag on each kill keeps
             // Bastion II's destroy-to-shield proc excluded, preventing the
             // PHALANX + Bastion II infinite-shield feedback loop.

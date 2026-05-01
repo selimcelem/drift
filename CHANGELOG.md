@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Each version header links to its GitHub release; see the release notes for full
 detail beyond the summaries here.
 
+## v1.6.6.1 — Hotfix
+
+### Fixes
+- Phalanx radius decay was inverted in v1.6.6 — chain rings shrunk too fast. Now 10% decay per hop (90% retention) for actual buff over pre-v1.6.6 behavior.
+
 ## v1.6.6 — Balance Pass + Black Hole Capstone
 
 ### New
