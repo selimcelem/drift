@@ -5040,14 +5040,14 @@ const TREE_DEFS = {
       opportunism: {
         name: 'OPPORTUNISM',
         nodes: [
-          { key: 'salvage',      name: 'Salvage',      tier: 1, max: 3, desc: 'Kills during shield reduce burst cooldown.', effect: r => `-${[0.25,0.5,1.0][r-1]||0}% burst CD per shield kill` },
+          { key: 'salvage',      name: 'Salvage',      tier: 1, max: 3, desc: 'Kills during shield reduce burst cooldown.', effect: r => `-${[0.1,0.2,0.5][r-1]||0}% burst CD per shield kill` },
           { key: 'bastion2',     name: 'Bastion II',   tier: 2, max: 5, desc: 'On body destroyed, chance to grant a shield pickup. Overflow at cap → +1s duration.', effect: r => `${[2,4,6,8,10][r-1]||0}% per destroy` },
           { key: 'gravityWell',  name: 'Gravity Well', tier: 3, max: 3, desc: 'During shield, bodies are attracted toward the player.', effect: r => `Force ${[0.2,0.5,0.8][r-1]||0}` },
         ],
       },
     },
     capstones: [
-      { key: 'phalanx',   name: 'PHALANX',    desc: 'EMP chain depth uncapped if each hop kills. Radius decays 10% per hop.' },
+      { key: 'phalanx',   name: 'PHALANX',    desc: 'EMP chain depth uncapped if each hop kills. Radius decays 20% per hop.' },
       { key: 'aegis',     name: 'AEGIS',      desc: 'Full Fortress Shield (4 hits, 8s) auto-fires every 45s.' },
       { key: 'blackHole', name: 'BLACK HOLE', desc: "Gravity Well's force and radius both ×2. Requires Gravity Well rank 3." },
     ],
@@ -5810,7 +5810,7 @@ function checkDestroyProc(body, source) {
     const sRank = rankOf('salvage');
     const shieldActive = activeEffects.shield > 0 || shieldHits > 0 || !!fortressShield;
     if (sRank > 0 && shieldActive && burstCooldownEnd > Date.now()) {
-      const pct = [0.0025, 0.005, 0.01][sRank - 1] || 0;
+      const pct = [0.001, 0.002, 0.005][sRank - 1] || 0;
       const reduce = Math.floor(pct * BURST_COOLDOWN_MS);
       if (reduce > 0) {
         burstCooldownEnd = Math.max(Date.now(), burstCooldownEnd - reduce);
@@ -6729,7 +6729,7 @@ let runStats = { totalPassed: 0, totalDestroyed: 0, pointsFromPassing: 0, points
 // Example: TIME_DILATION = 60 → 1 real second = 60 in-game seconds for
 // progression, apocalypse triggers in ~10 real seconds.
 const TIME_DILATION = 1;
-const GAME_VERSION = '1.6.6.1';
+const GAME_VERSION = '1.6.6.2';
 try {
   const vl = document.getElementById('versionLabel');
   if (vl) vl.textContent = 'v' + GAME_VERSION;
@@ -12268,9 +12268,9 @@ function spawnEmpRing(x, y, isChain, depth) {
     maxRadius: isChain
       ? (
           120 * (activeOrb === 'asteroid' ? (1 + 0.30 * rankOf('detonation')) : 1)
-          // PHALANX radius decay: 10 %/hop beyond the first secondary (depth 2).
+          // PHALANX radius decay: 20 %/hop beyond the first secondary (depth 2).
           * ((activeOrb === 'asteroid' && hasCapstone('phalanx') && (depth || 1) > 2)
-              ? Math.pow(0.9, (depth || 1) - 2) : 1)
+              ? Math.pow(0.8, (depth || 1) - 2) : 1)
         )
       : EMP_MAX_RADIUS * (activeOrb === 'asteroid' ? (1 + 0.10 * rankOf('chainReaction')) : 1),
     opacity: isChain ? 0.6 : 1,

@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Each version header links to its GitHub release; see the release notes for full
 detail beyond the summaries here.
 
+## v1.6.6.2 — Hotfix
+
+### Balance
+- SALVAGE nerfed: -0.1/-0.2/-0.5% burst CD per shield kill (was -0.25/-0.5/-1.0%)
+- PHALANX adjusted: 20% radius decay per hop (was 10% retention buff in v1.6.6.1)
+
 ## v1.6.6.1 — Hotfix
 
 ### Fixes
