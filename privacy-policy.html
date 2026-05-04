@@ -29,7 +29,7 @@
 <a href="index.html" class="back-link">← Back to Drift</a>
 
 <h1>Privacy Policy for Drift</h1>
-<p class="updated">Last updated: 23 April 2026</p>
+<p class="updated">Last updated: 4 May 2026</p>
 
 <p>
   Drift is a free single-player mobile game developed by Selim Celem.
@@ -37,53 +37,79 @@
 </p>
 
 <h2>Data we collect</h2>
-<p>Drift collects the following data when you use the online leaderboard:</p>
+<p>Drift collects the following data when you use the online leaderboard or contribute to gameplay analytics:</p>
 <ul>
-  <li><strong>Username</strong> — a name you choose freely on first launch. This is not your real name, email, or any account identifier. You can change it at any time from the pause menu.</li>
-  <li><strong>Score and difficulty</strong> — your score and the difficulty mode you were playing when the score was achieved.</li>
+  <li><strong>Username</strong> — a name you choose freely on first launch. This is not your real name, email, or any account identifier. You can change it at any time from the pause menu. A profanity filter prevents offensive names.</li>
+  <li><strong>Score, difficulty, and run statistics</strong> — your score, difficulty mode, kills, time survived, and orb used.</li>
 </ul>
-<p>That's it. Drift does not collect your real name, email address, device identifiers, IP addresses, usage analytics, advertising IDs, or telemetry of any kind. No account registration is required.</p>
+<p>That's it. Drift does not collect your real name, email address, IP address, advertising IDs, or any other personally identifying data. No account registration is required.</p>
+
+<h2>Crash reporting</h2>
+<p>Drift uses <strong>Sentry</strong> for crash reporting to identify and fix bugs. When the app crashes, Sentry receives:</p>
+<ul>
+  <li>Stack traces and error messages</li>
+  <li>Device model and Android version</li>
+  <li>App version</li>
+  <li>Anonymized crash context</li>
+</ul>
+<p>No personally identifying information is sent to Sentry. You can review Sentry's privacy practices at <a href="https://sentry.io/privacy">sentry.io/privacy</a>.</p>
 
 <h2>Data stored on your device</h2>
 <p>Drift stores the following locally on your device using the browser's <code>localStorage</code> API:</p>
 <ul>
   <li>Your chosen username</li>
-  <li>Your top 5 local high scores</li>
-  <li>Your mute preference</li>
+  <li>Local high scores per difficulty</li>
+  <li>Mute preference and other settings</li>
+  <li>Persistent stats (total kills, bodies passed, runs played, time survived, personal bests, per-orb breakdown)</li>
+  <li>Skill tree progress and unlocked orbs</li>
+  <li>Cosmetic unlock progress (trail unlocks)</li>
+  <li>Drift crystal balance</li>
+  <li>Difficulty completion flags</li>
+  <li>Tutorial completion flag</li>
 </ul>
-<p>This data never leaves your device except for the username and scores submitted to the online leaderboard as described below. Uninstalling the app or clearing its storage removes it permanently.</p>
+<p>This data never leaves your device except for the leaderboard submissions, anonymized analytics, and optional cloud save described below. Uninstalling the app or clearing its storage removes all of it permanently.</p>
 
 <h2>Online leaderboard</h2>
 <p>When you die in the game, your username, score, and difficulty are submitted to an online leaderboard. This data is:</p>
 <ul>
   <li>Sent to an API hosted on Amazon Web Services (AWS) in the <strong>eu-west-1 (Ireland)</strong> region</li>
-  <li>Stored in AWS DynamoDB with a <strong>90-day time-to-live (TTL)</strong>, after which it is automatically deleted</li>
+  <li>Stored in AWS DynamoDB with a <strong>time-to-live (TTL) of 1 day for non-top-10 entries and 30 days for top-10 entries</strong>, after which it is automatically deleted</li>
   <li>Visible to other players on the global leaderboard (username and score only)</li>
 </ul>
 <p>The leaderboard submission is fire-and-forget — if you are offline or the request fails, no data is sent and the game continues normally.</p>
 
+<h2>Aggregate analytics</h2>
+<p>Drift collects anonymized gameplay analytics (run duration, orb selection, difficulty distribution, death causes) to help understand how the game is played and identify balance issues. This data:</p>
+<ul>
+  <li>Is sent to an AWS-hosted API in the eu-west-1 region</li>
+  <li>Is stored in AWS DynamoDB</li>
+  <li>Is not linked to your identity beyond the username you chose</li>
+  <li>Is used solely for game balance and improvement</li>
+</ul>
+
 <h2>Google Play Games Services cloud save (optional)</h2>
 <p>Drift offers optional cloud save backup via Google Play Games Services (PGS). This feature is entirely opt-in — you must explicitly sign in with your Google account from the in-game menu to enable it.</p>
 <ul>
-  <li><strong>What is synced</strong> — if you sign in, the following progress data is stored in your Google Play Games Saved Games slot for Drift: your drift crystal balance, the list of orbs you have unlocked, your currently equipped orb, and your top 5 high scores for each difficulty (Normal, Hard, Extreme).</li>
-  <li><strong>Opt-in only</strong> — sign-in is not required to play. If you do not sign in, Drift stays fully local-only: no progress data leaves your device and the game works identically to before. You can stop syncing at any time by signing out from the in-game menu.</li>
+  <li><strong>What is synced</strong> — if you sign in, your local progress (drift crystal balance, unlocked orbs, equipped orb, skill tree investments, top high scores per difficulty, beat-difficulty flags) is synced to your Google Play Games Saved Games slot for Drift.</li>
+  <li><strong>Opt-in only</strong> — sign-in is not required to play. If you do not sign in, Drift stays fully local-only: no progress data leaves your device and the game works identically. You can stop syncing at any time by signing out from the in-game menu.</li>
   <li><strong>You control your data</strong> — saved game data lives in your own Google Play Games account under the Drift app entry, not on any server operated by the developer. You can review and delete saved game data at any time from Google's account controls at <a href="https://myaccount.google.com/dashboard">myaccount.google.com/dashboard</a> → Play Games → Manage saved games.</li>
   <li><strong>Scope</strong> — Drift only requests access to its own Saved Games slot. It does not read other games' data, your Google profile details, your email address, or any other account information.</li>
 </ul>
 
 <h2>Third-party services</h2>
-<p>Drift does not integrate with any third-party analytics, advertising networks, or crash reporters. The only external services used are:</p>
+<p>The only external services used are:</p>
 <ul>
-  <li><strong>AWS API Gateway + Lambda + DynamoDB</strong> — for the online leaderboard, hosted in eu-west-1 (Ireland)</li>
+  <li><strong>AWS API Gateway + Lambda + DynamoDB</strong> — for the online leaderboard and analytics, hosted in eu-west-1 (Ireland)</li>
+  <li><strong>Sentry</strong> — for crash reporting</li>
   <li><strong>Google Play Games Services</strong> — only if you opt in to cloud save, as described above</li>
   <li><strong>Google Fonts</strong> — a web font loaded on first launch if a connection is available; if offline, a system fallback is used</li>
 </ul>
 
 <h2>Permissions</h2>
-<p>Drift does not request any Android runtime permissions. It does not access your camera, microphone, location, contacts, storage, or any other sensitive APIs. An internet connection is used for the leaderboard and optional cloud save but is not required to play.</p>
+<p>Drift does not request any Android runtime permissions. It does not access your camera, microphone, location, contacts, storage, or any other sensitive APIs. An internet connection is used for the leaderboard, analytics, crash reporting, and optional cloud save but is not required to play.</p>
 
 <h2>Children's privacy</h2>
-<p>Drift is safe for all ages. The only data collected is a self-chosen username and game scores — no personal information, no real names, no contact details. The app is compliant with COPPA and similar regulations protecting children's privacy.</p>
+<p>Drift is safe for all ages. The only data collected is a self-chosen username and gameplay metrics — no personal information, no real names, no contact details. The app is compliant with COPPA and similar regulations protecting children's privacy.</p>
 
 <h2>Changes to this policy</h2>
 <p>If this policy changes, the updated version will be posted at this URL with a new "Last updated" date.</p>
