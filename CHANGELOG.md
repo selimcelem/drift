@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Each version header links to its GitHub release; see the release notes for full
 detail beyond the summaries here.
 
+## v1.6.6.3 — Hotfix
+
+### Fixes
+- Powerup combo banner no longer persists through death screen (especially after apocalypse cutscene)
+- Death screen now properly scrollable — all milestone banners and leaderboard entries accessible
+- Leaderboard displays full top 10 via outer scroll instead of cramped inner scroll
+- Reserved layout space for future ad placement
+
 ## v1.6.6.2 — Hotfix
 
 ### Balance
