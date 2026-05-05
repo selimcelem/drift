@@ -13,7 +13,7 @@ detail beyond the summaries here.
 - Cosmetic trail unlocks now sync via cloud save
 - Reinstalling no longer resets stats progress for signed-in players
 - Merge logic preserves highest values (kills/time/scores never regress on sync)
-- Main menu DRIFT title and crystal balance HUD now respect display cutout (camera punch hole / notch) on supported devices
+- Main menu DRIFT title now respects display cutout (camera punch hole / notch) on supported devices
 
 ## v1.6.6.3 — Hotfix
 

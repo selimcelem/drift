@@ -404,14 +404,10 @@
   /* Crystal balance HUD. Anchored top-right of #overlay, mirroring the
      settings gear at top-left for visual balance. Only shown on the main
      menu (#overlay.menu-mode) so it doesn't appear on death or leaderboard
-     views. Respects safe-area insets for notched devices.
-     v1.6.6.4: +var(--cutout-top, 0px) so on devices with a top-right
-     punch-hole / notch the crystal pill sits below the cutout instead
-     of behind it. Companion to the #overlay padding-top fix; mirrors the
-     same cutout-aware offset pattern used by #topStack. */
+     views. Respects safe-area insets for notched devices. */
   #orbCrystalBalance {
     position: absolute;
-    top: calc(var(--safe-top) + var(--cutout-top, 0px) + 16px);
+    top: calc(var(--safe-top) + 16px);
     right: calc(var(--safe-right) + 16px);
     font-family: 'Space Mono', monospace;
     font-size: 12px;
