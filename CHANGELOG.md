@@ -6,13 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Each version header links to its GitHub release; see the release notes for full
 detail beyond the summaries here.
 
-## v1.6.6.4 — Cloud Save
+## v1.6.6.4 — Cloud Save & UI Fixes
 
 ### Fixes
 - Stats tracking (totals, personal bests, per-orb breakdown, difficulty completions) now syncs via Google Play Games cloud save
 - Cosmetic trail unlocks now sync via cloud save
 - Reinstalling no longer resets stats progress for signed-in players
 - Merge logic preserves highest values (kills/time/scores never regress on sync)
+- Main menu DRIFT title and crystal balance HUD now respect display cutout (camera punch hole / notch) on supported devices
 
 ## v1.6.6.3 — Hotfix
 
