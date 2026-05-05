@@ -6461,6 +6461,12 @@ const PGS = (() => {
     // Deep-clone tree state so the snapshot is a frozen point-in-time copy.
     const treesSnapshot = {};
     try { Object.keys(orbTrees).forEach(k => { treesSnapshot[k] = JSON.parse(JSON.stringify(orbTrees[k])); }); } catch {}
+    // v1.6.6.3: include drift_stats (totals, personal bests, per-orb breakdown,
+    // difficulty completions, cosmetic-trail unlocks + equipped selections).
+    // Deep-cloned for the same reason as orbTrees — frozen point-in-time copy
+    // so an in-flight write doesn't observe a mid-mutation `stats` object.
+    let statsSnapshot = null;
+    try { if (typeof stats !== 'undefined' && stats) statsSnapshot = JSON.parse(JSON.stringify(stats)); } catch {}
     return {
       version: SAVE_VERSION,
       crystals: Math.max(0, totalCrystals | 0),
@@ -6481,6 +6487,7 @@ const PGS = (() => {
         asteroid: !!treesUnlocked.asteroid,
       },
       tutorialCompleted: !!tutorialCompleted,
+      stats: statsSnapshot,
     };
   }
 
@@ -6489,6 +6496,8 @@ const PGS = (() => {
   //  - unlockedOrbs: set union (validated against ORB_DEFS)
   //  - scores: combine and keep top 5 per difficulty
   //  - activeOrb: local wins (user's current selection on this device)
+  //  - stats: element-wise max for counters/bests, OR for unlockedTrails,
+  //    local-wins for equippedTrails (mirrors activeOrb policy)
   //  - version: remote authoritative if remote.version > local.version
   function merge(local, remote) {
     if (!remote) return local;
@@ -6504,6 +6513,7 @@ const PGS = (() => {
         beatDifficulty: mergeBeat(local.beatDifficulty, remote.beatDifficulty),
         treesUnlocked: mergeTreesUnlocked(local.treesUnlocked, remote.treesUnlocked),
         tutorialCompleted: !!(local.tutorialCompleted || remote.tutorialCompleted),
+        stats: mergeStats(local.stats, remote.stats),
       };
     }
     return {
@@ -6516,7 +6526,67 @@ const PGS = (() => {
       beatDifficulty: mergeBeat(local.beatDifficulty, remote.beatDifficulty),
       treesUnlocked: mergeTreesUnlocked(local.treesUnlocked, remote.treesUnlocked),
       tutorialCompleted: !!(local.tutorialCompleted || remote.tutorialCompleted),
+      stats: mergeStats(local.stats, remote.stats),
     };
+  }
+  // v1.6.6.3: stats merge — element-wise MAX so totals never go backwards
+  // across devices. Counters (totalKills, totalRunsPlayed, …), personal bests
+  // (longestStreak, mostKillsInRun, …), per-orb counters, and difficulty-
+  // completion counts all take the larger of (local, remote). unlockedTrails
+  // OR-merge so a trail unlocked on either device stays unlocked. equipped-
+  // Trails take local — mirrors the activeOrb policy (don't clobber the
+  // user's current per-device selection from a remote write).
+  function mergeStats(a, b) {
+    const def = (typeof defaultStats === 'function') ? defaultStats() : null;
+    if (!a && !b) return def;
+    a = a || def || {};
+    b = b || def || {};
+    const ORBS = ['cyan', 'cosmic', 'solar', 'nebula', 'asteroid'];
+    const DIFFS = ['NORMAL', 'HARD', 'EXTREME', 'IMPOSSIBLE'];
+    const out = {
+      totalKills:                 Math.max(a.totalKills                 | 0, b.totalKills                 | 0),
+      totalPassed:                Math.max(a.totalPassed                | 0, b.totalPassed                | 0),
+      totalCrystalsEarned:        Math.max(a.totalCrystalsEarned        | 0, b.totalCrystalsEarned        | 0),
+      totalCombosTriggered:       Math.max(a.totalCombosTriggered       | 0, b.totalCombosTriggered       | 0),
+      totalRunsPlayed:            Math.max(a.totalRunsPlayed            | 0, b.totalRunsPlayed            | 0),
+      totalDeaths:                Math.max(a.totalDeaths                | 0, b.totalDeaths                | 0),
+      totalTimePlayedSeconds:     Math.max(a.totalTimePlayedSeconds     | 0, b.totalTimePlayedSeconds     | 0),
+      longestStreak:              Math.max(a.longestStreak              | 0, b.longestStreak              | 0),
+      longestTimeSurvivedSeconds: Math.max(a.longestTimeSurvivedSeconds | 0, b.longestTimeSurvivedSeconds | 0),
+      mostKillsInRun:             Math.max(a.mostKillsInRun             | 0, b.mostKillsInRun             | 0),
+      mostBodiesPassedInRun:      Math.max(a.mostBodiesPassedInRun      | 0, b.mostBodiesPassedInRun      | 0),
+      mostCrystalsInRun:          Math.max(a.mostCrystalsInRun          | 0, b.mostCrystalsInRun          | 0),
+      highestScore:               Math.max(a.highestScore               | 0, b.highestScore               | 0),
+      perOrb: {},
+      difficultyCompletions: {},
+      unlockedTrails: {},
+      equippedTrails: {},
+    };
+    for (const k of ORBS) {
+      const ao = (a.perOrb && a.perOrb[k]) || {};
+      const bo = (b.perOrb && b.perOrb[k]) || {};
+      out.perOrb[k] = {
+        kills: Math.max(ao.kills | 0, bo.kills | 0),
+        runs:  Math.max(ao.runs  | 0, bo.runs  | 0),
+      };
+    }
+    for (const d of DIFFS) {
+      const av = (a.difficultyCompletions && a.difficultyCompletions[d]) | 0;
+      const bv = (b.difficultyCompletions && b.difficultyCompletions[d]) | 0;
+      out.difficultyCompletions[d] = Math.max(av, bv);
+    }
+    for (const k of ORBS) {
+      const av = !!(a.unlockedTrails && a.unlockedTrails[k]);
+      const bv = !!(b.unlockedTrails && b.unlockedTrails[k]);
+      out.unlockedTrails[k] = av || bv;
+    }
+    // Local wins for equippedTrails. `a` is the local payload by caller
+    // convention (merge(local, remote)), so we read from `a` directly and
+    // ignore `b`. Default to 'default' for any missing entry.
+    for (const k of ORBS) {
+      out.equippedTrails[k] = (a.equippedTrails && a.equippedTrails[k]) || 'default';
+    }
+    return out;
   }
   // Tree state merge: per-orb, max-per-rank across node arrays; union of
   // capstones. Unrecognized orbs/paths/nodes are dropped.
@@ -6647,7 +6717,19 @@ const PGS = (() => {
         try { localStorage.setItem('drift_tutorial_completed', '1'); } catch {}
       }
     }
+    // v1.6.6.3: drift_stats — counters/bests/per-orb/difficulty completions
+    // and cosmetic-trail unlocks. mergeStats already produced a sanitized,
+    // element-wise-max-merged shape, so we replace `stats` directly and
+    // persist. Future statsOn* writes will continue from these merged values
+    // so a max-merged kill count never regresses on the next saveStats().
+    if (payload.stats && typeof payload.stats === 'object') {
+      stats = payload.stats;
+      try { localStorage.setItem('drift_stats', JSON.stringify(stats)); } catch {}
+    }
     // activeOrb intentionally NOT applied from remote.
+    // equippedTrails intentionally NOT applied from remote (mergeStats picks
+    // the local copy, so even though stats are written above, the equipped-
+    // trail subfield reflects this device's existing selection).
   }
 
   async function checkAuth() {
