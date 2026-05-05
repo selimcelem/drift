@@ -346,12 +346,13 @@
     display: none;
     margin-bottom: 16px;
     width: 220px;
-    /* ~5 rows visible (row ≈ 18px: 10px font + ~1.2 line-height + 4px padding
-       + 1px border). 100px leaves a sliver of row 6 as a scroll affordance.
-       Full list stays accessible via overflow-y scrolling on touch + desktop. */
-    max-height: 100px;
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
+    /* v1.6.6.3: 100px max-height + inner overflow removed. Death screen now
+       uses .death-mode (justify-content: flex-start) and the outer #overlay
+       handles overflow, so the leaderboard renders all rows inline and the
+       user reaches the bottom by scrolling the page. Eliminates the
+       scroll-in-scroll UX where only ~2-5 rows of a top-10 list were ever
+       visible. The menu-mode leaderboard view also benefits — the same
+       outer-scroll model applies. */
   }
   .hs-row {
     display: flex;
@@ -557,6 +558,32 @@
     gap: 10px;
     margin-top: 10px;
   }
+  /* v1.6.6.3: AdMob banner reservation. Hidden by default so it never
+     shows on the menu / leaderboard / pause; revealed only when the
+     overlay is in .death-mode. min-height reserves ~50px (the standard
+     AdMob banner height) so the slot doesn't shift layout when a real
+     banner fills it later. The placeholder span is dim + small so it
+     reads as a layout marker, not as actual ad content. */
+  #deathAdSlot {
+    display: none;
+    width: 100%;
+    max-width: 320px;
+    min-height: 50px;
+    margin: 8px 0;
+    align-items: center;
+    justify-content: center;
+    border: 1px dashed rgba(255,255,255,0.10);
+    border-radius: 3px;
+    box-sizing: border-box;
+  }
+  #overlay.death-mode #deathAdSlot { display: flex; }
+  #deathAdSlot .ad-placeholder {
+    font-family: 'Space Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 3px;
+    color: rgba(255,255,255,0.22);
+    text-transform: uppercase;
+  }
   #shopBtn {
     background: transparent;
     border: 1px solid rgba(255,200,60,0.6);
@@ -731,6 +758,21 @@
     #overlay.menu-mode #orbAction { min-height: 28px; }
     #overlay.menu-mode #guideBtn,
     #overlay.menu-mode #leaderboardBtn { padding: 8px 30px; }
+  }
+
+  /* v1.6.6.3: death-screen layout. The base #overlay rule centers content
+     vertically (justify-content: center), which on tall death screens (lots
+     of milestone banners + stats + leaderboard) leaves the *top* of the
+     content unreachable when content > viewport — flex-center + overflow
+     hides the overflow on both ends symmetrically. .death-mode anchors the
+     column at the top so the outer overlay's overflow-y: auto can scroll
+     all content into reach. Mirrors .menu-mode's pattern but without the
+     menu-specific child rules. */
+  #overlay.death-mode {
+    justify-content: flex-start;
+    min-height: 100dvh;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
   }
 
   #overlay.hidden {
@@ -2508,11 +2550,9 @@
     width: 220px;
     display: none;
     margin-bottom: 16px;
-    /* Matches #highscores: ~5 rows visible, rest scrollable. Keeps the DRIFT
-       title on-screen on mid-height devices in both death and menu views. */
-    max-height: 100px;
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
+    /* v1.6.6.3: 100px max-height + inner overflow removed for the same
+       reason as #highscores — outer #overlay scroll under .death-mode owns
+       the scroll model now, so all top-10 rows render inline. */
   }
   .gs-row {
     display: flex;
@@ -2981,6 +3021,14 @@
     </div>
     <div id="highscores"></div>
     <div id="globalScores"></div>
+    <!-- v1.6.6.3: reserved layout slot for the v1.7.0 AdMob banner. Visible
+         only on the death screen (.death-mode toggles display). Placed in
+         the natural reading flow between the leaderboard and the DRIFT
+         AGAIN CTA so the post-game banner pattern matches mobile arcade
+         conventions and doesn't overlap the SHOP button. The banner-fill
+         path can replace the inner span content; the slot itself stays a
+         flow element so the outer overlay scroll absorbs it cleanly. -->
+    <div id="deathAdSlot"><span class="ad-placeholder">ADVERTISEMENT</span></div>
     <div class="controls-hint" id="controlsHint">
       <span>LEFT</span> — pull toward nearest body<br>
       <span>RIGHT</span> — push away from nearest body<br>
@@ -14698,6 +14746,31 @@ function triggerDeath() {
   // Crossfade gameplay → results over 0.3s.
   SFX.playTrack('results', 0.3);
   clearPendingNovaTimeouts();
+  // v1.6.6.3: clear active-effect + combo state on death so the powerup HUD
+  // (and anything else reading these) starts the death screen clean. Without
+  // this, activeEffects values freeze at the moment update() stops running
+  // (state !== 'playing'), and updatePowerupTimer would render a stale
+  // SHIELD/GHOST/HYPERSPEED bar over the death overlay. Mirrors the
+  // matching subset of resetGame() at the resetGame call-site so a fresh
+  // run still gets its own re-init pass; this one is just the on-death
+  // cleanup for HUD coherence. Hyperspeed whoosh nodes are stopped here
+  // too — they otherwise loop into the results screen.
+  activeEffects = { shield: 0, hyperspeed: 0, ghost: 0 };
+  shieldEndTime = 0;
+  ghostEndTime = 0;
+  hyperspeedEndTime = 0;
+  hyperSpeedStacks = 0;
+  hyperspeedCurrentMult = 1;
+  hyperspeedTargetSpeed = 0;
+  if (hyperspeedWhooshNodes) {
+    try { hyperspeedWhooshNodes.stop(0.1); } catch {}
+    hyperspeedWhooshNodes = null;
+  }
+  shieldBroken = false;
+  shieldHits = 0;
+  fortressShield = false;
+  activeCombos = {};
+  lastComboLabel = null;
 
   // Time bonus: every 30s survived = score * 0.03 bonus, capped at 20 intervals
   // (= 10 minutes, the apocalypse mark).
@@ -14927,10 +15000,14 @@ function triggerDeath() {
     // Resume snapshot was already cleared in triggerDeath; sync the DOM.
     document.getElementById('resumeRunBtn').style.display = 'none';
     document.getElementById('resumeRunInfo').style.display = 'none';
-    // Death screen uses the overlay's default justify-content:center layout,
-    // not the main-menu column-flex rules.
+    // v1.6.6.3: death screen anchors content at the top via .death-mode so
+    // a tall column (milestone banners + stats + leaderboard + ad slot)
+    // scrolls inside the outer #overlay's overflow-y: auto instead of being
+    // clipped by justify-content: center. Menu-mode is removed for the
+    // same reason (different layout regime).
     overlay.classList.remove('menu-mode');
     overlay.classList.remove('resume-visible');
+    overlay.classList.add('death-mode');
     leaderboardFromMenu = false;
 
     // Render local scores filtered by difficulty
@@ -18573,6 +18650,17 @@ function updateTopStackVisibility() {
 }
 
 function updatePowerupTimer() {
+  // Gameplay-only: hide outside playing/paused so the banner never bleeds
+  // onto the death screen (where it would overlap the SHOP button) or any
+  // other overlay state. Mirrors updateBurstBar / updateCapstoneCountdowns /
+  // updateTopStackVisibility — the rest of the HUD already gates this way.
+  if (state !== 'playing' && state !== 'paused') {
+    if (powerupTimerEl.classList.contains('visible'))
+      powerupTimerEl.classList.remove('visible');
+    if (ptComboEl.classList.contains('visible'))
+      ptComboEl.classList.remove('visible');
+    return;
+  }
   // Priority: shield > ghost > hyperspeed (most game-relevant first)
   let label = null, remaining = 0, max = 0, fillColor = '';
   if (activeEffects.shield > 0) {
@@ -19332,7 +19420,11 @@ document.getElementById('startBtn').addEventListener('click', ()=>{
   const fade = state === 'dead' ? 0.3 : 0.5;
   resetGame(); state='playing';
   SFX.playTrack('gameplay', fade);
-  document.getElementById('overlay').classList.add('hidden');
+  const _ov = document.getElementById('overlay');
+  // Strip the death-screen layout class on a DRIFT AGAIN restart so the
+  // next overlay state (next death / future menu visit) starts clean.
+  _ov.classList.remove('death-mode');
+  _ov.classList.add('hidden');
   pauseBtn.classList.add('visible');
 });
 
@@ -20139,6 +20231,7 @@ function goToMainMenu() {
   runStartTime = 0; updateRunTimerDisplay();
   refreshOrbBrowser();
   const ov = document.getElementById('overlay');
+  ov.classList.remove('death-mode');
   ov.classList.add('menu-mode');
   refreshResumeButton();
   ov.classList.remove('hidden');
@@ -21066,8 +21159,11 @@ function openLeaderboardFromMenu() {
   document.getElementById('difficultySelect').style.display = 'none';
   document.getElementById('deathActions').style.display = 'none';
   // Leaderboard view uses centered layout, not the menu's column-flex rules.
+  // Strip death-mode too — defensive in case a stale class lingered from a
+  // prior death-screen visit.
   document.getElementById('overlay').classList.remove('menu-mode');
   document.getElementById('overlay').classList.remove('resume-visible');
+  document.getElementById('overlay').classList.remove('death-mode');
   document.getElementById('resumeRunBtn').style.display = 'none';
   document.getElementById('resumeRunInfo').style.display = 'none';
   // Show the leaderboard pieces.
