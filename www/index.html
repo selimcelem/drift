@@ -14508,6 +14508,7 @@ function startApocalypse() {
   if (state === 'apocalypse' || state === 'dead') return;
   if (typeof Sentry !== 'undefined') Sentry.addBreadcrumb({ category: 'apocalypse', message: 'sequence start', level: 'info' });
   state = 'apocalypse';
+  if (typeof AdManager !== 'undefined') AdManager.hideBanner();
   apocalypseStart = Date.now();
   apocalypseImpactTriggered = false;
   apocalypseImpactStart = 0;
@@ -14830,6 +14831,7 @@ function triggerDeath() {
   clearResumeState();
   state = 'dead';
   if (typeof syncUpdateBanner === 'function') syncUpdateBanner();
+  if (typeof AdManager !== 'undefined') AdManager.showDeathBanner();
   pauseBtn.classList.remove('visible');
   SFX.death();
   // Crossfade gameplay → results over 0.3s.
@@ -19508,6 +19510,7 @@ document.getElementById('startBtn').addEventListener('click', ()=>{
   // menu→play uses the 0.5s menu→gameplay crossfade.
   const fade = state === 'dead' ? 0.3 : 0.5;
   resetGame(); state='playing';
+  if (typeof AdManager !== 'undefined') AdManager.hideBanner();
   SFX.playTrack('gameplay', fade);
   const _ov = document.getElementById('overlay');
   // Strip the death-screen layout class on a DRIFT AGAIN restart so the
@@ -19532,6 +19535,7 @@ document.getElementById('resumeRunBtn').addEventListener('click', () => {
   document.getElementById('resumeRunBtn').style.display = 'none';
   document.getElementById('resumeRunInfo').style.display = 'none';
   document.getElementById('overlay').classList.add('hidden');
+  if (typeof AdManager !== 'undefined') AdManager.hideBanner();
   const overlay = document.getElementById('resumeCountdownOverlay');
   const num     = document.getElementById('resumeCountdownNumber');
   overlay.classList.add('visible');
@@ -20233,6 +20237,7 @@ function restartFromPause() {
 
 function goToMainMenu() {
   state = 'idle';
+  if (typeof AdManager !== 'undefined') AdManager.hideBanner();
   leftDown = false; rightDown = false;
   lastSpawnZone = -1;
   powerups = [];
@@ -20454,6 +20459,7 @@ try {
         if (state === 'playing') pauseGame();
         if (SFX && SFX.suspendCtx) SFX.suspendCtx();
         lastFrameTime = null;
+        if (typeof AdManager !== 'undefined') AdManager.hideBanner();
       } catch (err) { recordError('cap-pause', err); }
     });
     App.addListener('resume', () => {
@@ -20461,6 +20467,7 @@ try {
         appHidden = false;
         if (SFX && SFX.resumeCtx) SFX.resumeCtx();
         lastFrameTime = performance.now();
+        if (state === 'dead' && typeof AdManager !== 'undefined') AdManager.showDeathBanner();
       } catch (err) { recordError('cap-resume', err); }
     });
   }
@@ -22399,6 +22406,151 @@ async function checkPlayStoreUpdate() {
   }
 }
 if (state === 'idle') checkPlayStoreUpdate();
+
+// --- AdMob banner manager (v1.7.0) ---
+// Reserved #deathAdSlot is shown only on the death screen; the actual AdMob
+// banner is rendered as a native overlay at BOTTOM_CENTER while state==='dead',
+// hidden everywhere else. All hooks are no-ops on web/desktop builds and
+// degrade gracefully if the plugin is missing or init fails.
+const AdManager = (function () {
+  const PROD_BANNER_ID = 'ca-app-pub-3393387329663730/1683205222';
+  const TEST_BANNER_ID = 'ca-app-pub-3940256099942544/6300978111';
+  const CONSENT_FLAG_KEY = 'drift.admob.consent.v1';
+  // TEST vs PROD detection: the spec asks for __DEV__ OR localhost. Capacitor
+  // builds load from a custom http://localhost origin on Android too, so we
+  // treat localhost as dev and rely on real production builds being served
+  // from a non-localhost origin (or having __DEV__=false explicitly set).
+  const isDev = (typeof window.__DEV__ !== 'undefined' ? !!window.__DEV__ : false)
+    || /(^|\.)localhost$|^127\.0\.0\.1$|^$/.test(location.hostname);
+  const adId = isDev ? TEST_BANNER_ID : PROD_BANNER_ID;
+
+  let _initialized = false;
+  let _initFailed = false;
+  let _bannerShown = false;
+  let _showInFlight = false;
+  let _hideInFlight = false;
+
+  function _plugin() {
+    const Cap = window.Capacitor;
+    return Cap && Cap.Plugins && Cap.Plugins.AdMob;
+  }
+  function _isNative() {
+    const Cap = window.Capacitor;
+    return !!(Cap && typeof Cap.isNativePlatform === 'function' && Cap.isNativePlatform());
+  }
+  function _setPlaceholder(visible) {
+    try {
+      const slot = document.getElementById('deathAdSlot');
+      if (!slot) return;
+      const ph = slot.querySelector('.ad-placeholder');
+      if (!ph) return;
+      ph.style.visibility = visible ? '' : 'hidden';
+    } catch {}
+  }
+
+  async function init() {
+    if (_initialized || _initFailed) return;
+    const AdMob = _plugin();
+    if (!AdMob || !_isNative() || typeof AdMob.initialize !== 'function') {
+      _initFailed = true;
+      return;
+    }
+    try {
+      await AdMob.initialize({});
+      _initialized = true;
+      // Defer consent flow — non-blocking, don't gate ad init on it.
+      setTimeout(_maybeRequestConsent, 0);
+    } catch (err) {
+      _initFailed = true;
+      console.warn('[admob] init failed:', err && err.message);
+    }
+  }
+
+  async function _maybeRequestConsent() {
+    try {
+      if (localStorage.getItem(CONSENT_FLAG_KEY) === '1') return;
+      const AdMob = _plugin();
+      if (!AdMob) return;
+      if (typeof AdMob.requestConsentInfo === 'function') {
+        const info = await AdMob.requestConsentInfo();
+        // Plugin reports 'REQUIRED' for EU users; show the form if available.
+        const required = info && (info.status === 'REQUIRED' || info.consentStatus === 'REQUIRED');
+        const formAvail = info && (info.isConsentFormAvailable || info.consentInformation === 'AVAILABLE');
+        if (required && formAvail && typeof AdMob.showConsentForm === 'function') {
+          try { await AdMob.showConsentForm(); } catch (err) {
+            console.warn('[admob] consent form error:', err && err.message);
+          }
+        }
+      }
+      // Mark handled so we don't re-prompt every launch even when not in EU.
+      localStorage.setItem(CONSENT_FLAG_KEY, '1');
+    } catch (err) {
+      console.warn('[admob] consent flow failed:', err && err.message);
+    }
+  }
+
+  async function showDeathBanner() {
+    if (_initFailed) return;
+    if (!_isNative()) return;
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
+    if (!_initialized) {
+      await init();
+      if (!_initialized) return;
+    }
+    if (_bannerShown || _showInFlight) return;
+    const AdMob = _plugin();
+    if (!AdMob || typeof AdMob.showBanner !== 'function') return;
+    _showInFlight = true;
+    try {
+      await AdMob.showBanner({
+        adId: adId,
+        adSize: 'ADAPTIVE_BANNER',
+        position: 'BOTTOM_CENTER',
+        margin: 0,
+        isTesting: isDev,
+      });
+      _bannerShown = true;
+      _setPlaceholder(false);
+    } catch (err) {
+      console.warn('[admob] showBanner failed:', err && err.message);
+      _setPlaceholder(true); // keep placeholder if real ad failed
+    } finally {
+      _showInFlight = false;
+    }
+  }
+
+  async function hideBanner() {
+    _setPlaceholder(true);
+    if (!_bannerShown && !_showInFlight) return;
+    const AdMob = _plugin();
+    if (!AdMob || typeof AdMob.hideBanner !== 'function') {
+      _bannerShown = false;
+      return;
+    }
+    if (_hideInFlight) return;
+    _hideInFlight = true;
+    try {
+      await AdMob.hideBanner();
+    } catch (err) {
+      console.warn('[admob] hideBanner failed:', err && err.message);
+    } finally {
+      _bannerShown = false;
+      _hideInFlight = false;
+    }
+  }
+
+  return {
+    init,
+    showDeathBanner,
+    hideBanner,
+    get isDev() { return isDev; },
+    get adId() { return adId; },
+    get bannerShown() { return _bannerShown; },
+  };
+})();
+
+// Kick off init alongside the update-check; fully async, never blocks boot.
+AdManager.init();
 
 // Initialize the audio context on the very first user gesture so the
 // browser autoplay policy is satisfied even if the player taps the canvas
