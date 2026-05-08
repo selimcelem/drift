@@ -780,6 +780,13 @@
     min-height: 100dvh;
     overflow-x: hidden;
     -webkit-overflow-scrolling: touch;
+    /* v1.7.0: AdMob banner sits as a native overlay at screen bottom
+       (BOTTOM_CENTER, ~50dp tall). Reserve clearance below the death-screen
+       content so DRIFT AGAIN / SHOP buttons sit above the banner area
+       instead of being covered by the native overlay. The +safe-bottom
+       term keeps the layout edge-to-edge correct on devices with a
+       gesture-bar inset. */
+    padding-bottom: calc(60px + var(--safe-bottom, 0px));
   }
 
   #overlay.hidden {
@@ -22504,7 +22511,7 @@ const AdManager = (function () {
     try {
       await AdMob.showBanner({
         adId: adId,
-        adSize: 'ADAPTIVE_BANNER',
+        adSize: 'BANNER',
         position: 'BOTTOM_CENTER',
         margin: 0,
         isTesting: isDev,
