@@ -558,32 +558,6 @@
     gap: 10px;
     margin-top: 10px;
   }
-  /* v1.6.6.3: AdMob banner reservation. Hidden by default so it never
-     shows on the menu / leaderboard / pause; revealed only when the
-     overlay is in .death-mode. min-height reserves ~50px (the standard
-     AdMob banner height) so the slot doesn't shift layout when a real
-     banner fills it later. The placeholder span is dim + small so it
-     reads as a layout marker, not as actual ad content. */
-  #deathAdSlot {
-    display: none;
-    width: 100%;
-    max-width: 320px;
-    min-height: 50px;
-    margin: 8px 0;
-    align-items: center;
-    justify-content: center;
-    border: 1px dashed rgba(255,255,255,0.10);
-    border-radius: 3px;
-    box-sizing: border-box;
-  }
-  #overlay.death-mode #deathAdSlot { display: flex; }
-  #deathAdSlot .ad-placeholder {
-    font-family: 'Space Mono', monospace;
-    font-size: 9px;
-    letter-spacing: 3px;
-    color: rgba(255,255,255,0.22);
-    text-transform: uppercase;
-  }
   #shopBtn {
     background: transparent;
     border: 1px solid rgba(255,200,60,0.6);
@@ -3035,14 +3009,6 @@
     </div>
     <div id="highscores"></div>
     <div id="globalScores"></div>
-    <!-- v1.6.6.3: reserved layout slot for the v1.7.0 AdMob banner. Visible
-         only on the death screen (.death-mode toggles display). Placed in
-         the natural reading flow between the leaderboard and the DRIFT
-         AGAIN CTA so the post-game banner pattern matches mobile arcade
-         conventions and doesn't overlap the SHOP button. The banner-fill
-         path can replace the inner span content; the slot itself stays a
-         flow element so the outer overlay scroll absorbs it cleanly. -->
-    <div id="deathAdSlot"><span class="ad-placeholder">ADVERTISEMENT</span></div>
     <div class="controls-hint" id="controlsHint">
       <span>LEFT</span> — pull toward nearest body<br>
       <span>RIGHT</span> — push away from nearest body<br>
@@ -22415,10 +22381,11 @@ async function checkPlayStoreUpdate() {
 if (state === 'idle') checkPlayStoreUpdate();
 
 // --- AdMob banner manager (v1.7.0) ---
-// Reserved #deathAdSlot is shown only on the death screen; the actual AdMob
-// banner is rendered as a native overlay at BOTTOM_CENTER while state==='dead',
-// hidden everywhere else. All hooks are no-ops on web/desktop builds and
-// degrade gracefully if the plugin is missing or init fails.
+// Native AdMob banner overlays at BOTTOM_CENTER while state==='dead', hidden
+// everywhere else. The death overlay reserves screen-bottom clearance via
+// .death-mode { padding-bottom } so DRIFT AGAIN / SHOP buttons sit above the
+// banner zone. All hooks are no-ops on web/desktop builds and degrade
+// gracefully if the plugin is missing or init fails.
 const AdManager = (function () {
   const PROD_BANNER_ID = 'ca-app-pub-3393387329663730/1683205222';
   const TEST_BANNER_ID = 'ca-app-pub-3940256099942544/6300978111';
@@ -22445,16 +22412,6 @@ const AdManager = (function () {
     const Cap = window.Capacitor;
     return !!(Cap && typeof Cap.isNativePlatform === 'function' && Cap.isNativePlatform());
   }
-  function _setPlaceholder(visible) {
-    try {
-      const slot = document.getElementById('deathAdSlot');
-      if (!slot) return;
-      const ph = slot.querySelector('.ad-placeholder');
-      if (!ph) return;
-      ph.style.visibility = visible ? '' : 'hidden';
-    } catch {}
-  }
-
   async function init() {
     if (_initialized || _initFailed) return;
     const AdMob = _plugin();
@@ -22517,17 +22474,14 @@ const AdManager = (function () {
         isTesting: isDev,
       });
       _bannerShown = true;
-      _setPlaceholder(false);
     } catch (err) {
       console.warn('[admob] showBanner failed:', err && err.message);
-      _setPlaceholder(true); // keep placeholder if real ad failed
     } finally {
       _showInFlight = false;
     }
   }
 
   async function hideBanner() {
-    _setPlaceholder(true);
     if (!_bannerShown && !_showInFlight) return;
     const AdMob = _plugin();
     if (!AdMob || typeof AdMob.hideBanner !== 'function') {
