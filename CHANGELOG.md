@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Each version header links to its GitHub release; see the release notes for full
 detail beyond the summaries here.
 
+## v1.7.0 — Banner Ads
+
+### New
+- Banner advertisements on death screen (Google AdMob)
+- Drift remains free; ads support continued development
+
+### Backend
+- Updated privacy policy with AdMob disclosure
+- Patched AdMob plugin for Capacitor 8 layout compatibility
+
 ## v1.6.6.4 — Cloud Save & UI Fixes
 
 ### Fixes
