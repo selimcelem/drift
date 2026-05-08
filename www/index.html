@@ -22390,12 +22390,16 @@ const AdManager = (function () {
   const PROD_BANNER_ID = 'ca-app-pub-3393387329663730/1683205222';
   const TEST_BANNER_ID = 'ca-app-pub-3940256099942544/6300978111';
   const CONSENT_FLAG_KEY = 'drift.admob.consent.v1';
-  // TEST vs PROD detection: the spec asks for __DEV__ OR localhost. Capacitor
-  // builds load from a custom http://localhost origin on Android too, so we
-  // treat localhost as dev and rely on real production builds being served
-  // from a non-localhost origin (or having __DEV__=false explicitly set).
-  const isDev = (typeof window.__DEV__ !== 'undefined' ? !!window.__DEV__ : false)
-    || /(^|\.)localhost$|^127\.0\.0\.1$|^$/.test(location.hostname);
+  // TEST vs PROD detection: Capacitor 8 Android serves the WebView from a
+  // localhost origin in production too, so location.hostname can't
+  // distinguish web preview from native. Use Capacitor.isNativePlatform() —
+  // it's only true inside the native shell. Anything outside the shell
+  // (browser preview, file://, dev server) is treated as dev and gets
+  // Google's official test inventory.
+  const _isNativeBuild = typeof window.Capacitor !== 'undefined'
+    && typeof window.Capacitor.isNativePlatform === 'function'
+    && window.Capacitor.isNativePlatform();
+  const isDev = !_isNativeBuild;
   const adId = isDev ? TEST_BANNER_ID : PROD_BANNER_ID;
 
   let _initialized = false;
