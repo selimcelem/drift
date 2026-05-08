@@ -1,0 +1,37 @@
+diff --git a/node_modules/@capacitor-community/admob/android/src/main/java/com/getcapacitor/community/admob/banner/BannerExecutor.java b/node_modules/@capacitor-community/admob/android/src/main/java/com/getcapacitor/community/admob/banner/BannerExecutor.java
+index 2d05a1e..0418fa9 100644
+--- a/node_modules/@capacitor-community/admob/android/src/main/java/com/getcapacitor/community/admob/banner/BannerExecutor.java
++++ b/node_modules/@capacitor-community/admob/android/src/main/java/com/getcapacitor/community/admob/banner/BannerExecutor.java
+@@ -8,9 +8,9 @@ import android.view.Gravity;
+ import android.view.View;
+ import android.view.ViewGroup;
+ import android.view.WindowManager;
++import android.widget.FrameLayout;
+ import android.widget.RelativeLayout;
+ import androidx.annotation.NonNull;
+-import androidx.coordinatorlayout.widget.CoordinatorLayout;
+ import androidx.core.util.Supplier;
+ import com.getcapacitor.JSObject;
+ import com.getcapacitor.PluginCall;
+@@ -84,9 +84,9 @@ public class BannerExecutor extends Executor {
+             mAdViewLayout.setHorizontalGravity(Gravity.CENTER_HORIZONTAL);
+             mAdViewLayout.setVerticalGravity(Gravity.BOTTOM);
+ 
+-            final CoordinatorLayout.LayoutParams mAdViewLayoutParams = new CoordinatorLayout.LayoutParams(
+-                CoordinatorLayout.LayoutParams.WRAP_CONTENT,
+-                CoordinatorLayout.LayoutParams.WRAP_CONTENT
++            final FrameLayout.LayoutParams mAdViewLayoutParams = new FrameLayout.LayoutParams(
++                FrameLayout.LayoutParams.WRAP_CONTENT,
++                FrameLayout.LayoutParams.WRAP_CONTENT
+             );
+ 
+             // TODO: Make an enum like the AdSizeEnum?
+@@ -98,7 +98,7 @@ public class BannerExecutor extends Executor {
+                     mAdViewLayoutParams.gravity = Gravity.CENTER;
+                     break;
+                 default:
+-                    mAdViewLayoutParams.gravity = Gravity.BOTTOM;
++                    mAdViewLayoutParams.gravity = Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL;
+                     break;
+             }
+ 
