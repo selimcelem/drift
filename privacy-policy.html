@@ -29,7 +29,7 @@
 <a href="index.html" class="back-link">← Back to Drift</a>
 
 <h1>Privacy Policy for Drift</h1>
-<p class="updated">Last updated: 4 May 2026</p>
+<p class="updated">Last updated: 8 May 2026</p>
 
 <p>
   Drift is a free single-player mobile game developed by Selim Celem.
@@ -42,7 +42,18 @@
   <li><strong>Username</strong> — a name you choose freely on first launch. This is not your real name, email, or any account identifier. You can change it at any time from the pause menu. A profanity filter prevents offensive names.</li>
   <li><strong>Score, difficulty, and run statistics</strong> — your score, difficulty mode, kills, time survived, and orb used.</li>
 </ul>
-<p>That's it. Drift does not collect your real name, email address, IP address, advertising IDs, or any other personally identifying data. No account registration is required.</p>
+<p>Drift does not collect your real name, email address, IP address, or any other directly personally identifying data. No account registration is required.</p>
+
+<h2>Advertising</h2>
+<p>Drift displays banner ads on the death screen using <strong>Google AdMob</strong>. AdMob may collect:</p>
+<ul>
+  <li>Your device's advertising ID</li>
+  <li>General device information (model, OS version)</li>
+  <li>Approximate location (country/region)</li>
+  <li>Ad interaction data (impressions, clicks)</li>
+</ul>
+<p>This data is used by Google to serve relevant ads. You can opt out of personalized ads via your device settings → Privacy → Ads → Reset advertising ID / Opt out of ads personalization.</p>
+<p>Google's AdMob privacy practices: <a href="https://policies.google.com/privacy">policies.google.com/privacy</a></p>
 
 <h2>Crash reporting</h2>
 <p>Drift uses <strong>Sentry</strong> for crash reporting to identify and fix bugs. When the app crashes, Sentry receives:</p>
@@ -67,7 +78,7 @@
   <li>Difficulty completion flags</li>
   <li>Tutorial completion flag</li>
 </ul>
-<p>This data never leaves your device except for the leaderboard submissions, anonymized analytics, and optional cloud save described below. Uninstalling the app or clearing its storage removes all of it permanently.</p>
+<p>This data never leaves your device except for the leaderboard submissions, anonymized analytics, advertising data, and optional cloud save described below. Uninstalling the app or clearing its storage removes all of it permanently.</p>
 
 <h2>Online leaderboard</h2>
 <p>When you die in the game, your username, score, and difficulty are submitted to an online leaderboard. This data is:</p>
@@ -90,7 +101,7 @@
 <h2>Google Play Games Services cloud save (optional)</h2>
 <p>Drift offers optional cloud save backup via Google Play Games Services (PGS). This feature is entirely opt-in — you must explicitly sign in with your Google account from the in-game menu to enable it.</p>
 <ul>
-  <li><strong>What is synced</strong> — if you sign in, your local progress (drift crystal balance, unlocked orbs, equipped orb, skill tree investments, top high scores per difficulty, beat-difficulty flags) is synced to your Google Play Games Saved Games slot for Drift.</li>
+  <li><strong>What is synced</strong> — if you sign in, your local progress (drift crystal balance, unlocked orbs, equipped orb, skill tree investments, top high scores per difficulty, beat-difficulty flags, persistent stats, cosmetic trail unlocks) is synced to your Google Play Games Saved Games slot for Drift.</li>
   <li><strong>Opt-in only</strong> — sign-in is not required to play. If you do not sign in, Drift stays fully local-only: no progress data leaves your device and the game works identically. You can stop syncing at any time by signing out from the in-game menu.</li>
   <li><strong>You control your data</strong> — saved game data lives in your own Google Play Games account under the Drift app entry, not on any server operated by the developer. You can review and delete saved game data at any time from Google's account controls at <a href="https://myaccount.google.com/dashboard">myaccount.google.com/dashboard</a> → Play Games → Manage saved games.</li>
   <li><strong>Scope</strong> — Drift only requests access to its own Saved Games slot. It does not read other games' data, your Google profile details, your email address, or any other account information.</li>
@@ -100,16 +111,27 @@
 <p>The only external services used are:</p>
 <ul>
   <li><strong>AWS API Gateway + Lambda + DynamoDB</strong> — for the online leaderboard and analytics, hosted in eu-west-1 (Ireland)</li>
+  <li><strong>Google AdMob</strong> — for banner advertisements on the death screen</li>
   <li><strong>Sentry</strong> — for crash reporting</li>
-  <li><strong>Google Play Games Services</strong> — only if you opt in to cloud save, as described above</li>
+  <li><strong>Google Play Games Services</strong> — only if you opt in to cloud save</li>
   <li><strong>Google Fonts</strong> — a web font loaded on first launch if a connection is available; if offline, a system fallback is used</li>
 </ul>
 
 <h2>Permissions</h2>
-<p>Drift does not request any Android runtime permissions. It does not access your camera, microphone, location, contacts, storage, or any other sensitive APIs. An internet connection is used for the leaderboard, analytics, crash reporting, and optional cloud save but is not required to play.</p>
+<p>Drift does not request any Android runtime permissions. It does not access your camera, microphone, location, contacts, storage, or any other sensitive APIs. An internet connection is used for the leaderboard, analytics, advertising, crash reporting, and optional cloud save but is not required to play.</p>
 
 <h2>Children's privacy</h2>
-<p>Drift is safe for all ages. The only data collected is a self-chosen username and gameplay metrics — no personal information, no real names, no contact details. The app is compliant with COPPA and similar regulations protecting children's privacy.</p>
+<p>Drift is rated for general audiences (PEGI 3) and is suitable for all ages. The only data collected directly by the developer is a self-chosen username and gameplay metrics — no personal information, no real names, no contact details. Banner ads served by Google AdMob are filtered to general-audience-appropriate content (with sensitive categories such as alcohol, dating, and gambling blocked). The app is compliant with COPPA and similar regulations protecting children's privacy.</p>
+
+<h2>Data deletion</h2>
+<p>Most data Drift handles is automatically deleted on a short timeline:</p>
+<ul>
+  <li>Leaderboard entries: deleted automatically within 1 to 30 days (TTL)</li>
+  <li>Local data: removed when you uninstall the app or clear its storage</li>
+  <li>Cloud save data: managed by you via your Google account at <a href="https://myaccount.google.com/dashboard">myaccount.google.com/dashboard</a></li>
+  <li>AdMob data: managed by you via Android Privacy → Ads settings</li>
+</ul>
+<p>For any other data deletion requests, contact <a href="mailto:selim.celem@gmail.com">selim.celem@gmail.com</a>.</p>
 
 <h2>Changes to this policy</h2>
 <p>If this policy changes, the updated version will be posted at this URL with a new "Last updated" date.</p>
