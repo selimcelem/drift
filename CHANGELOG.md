@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Each version header links to its GitHub release; see the release notes for full
 detail beyond the summaries here.
 
+## v1.8.0 — Rainbow Awakening
+
+### New
+- First-death intro cutscene with cosmic dialogue and reverse-death animation
+- Rainbow Orb one-time run with all capstones active simultaneously
+- Game speed reaches max at 1 minute (was 2 minutes)
+- Tutorial now explains walls + shield/ghost interactions
+- Tutorial now explains gravity distance scaling
+
+### Bulwark Balance
+- GRAVITY WELL nerfed: 0.1/0.2/0.5 force per rank (was higher)
+- BASTION II overhauled: chance per body destroyed during shield to grant +1.0s duration (5s CD, 2x base cap), per-rank 2/4/6/8/10%
+- Cascade kills (EMP, Phalanx hops, Chain Reaction 2) now correctly trigger Bastion II and Salvage
+- SALVAGE nerfed: -0.1/-0.2/-0.3% burst CD per kill (rebalanced for cascade kills counting)
+- AEGIS cooldown increased: 60s (was 45s)
+
 ## v1.7.0 — Banner Ads
 
 ### New

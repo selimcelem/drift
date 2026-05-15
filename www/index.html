@@ -2428,6 +2428,94 @@
   }
   .tut-hud-arrow.visible { display: block; }
 
+  /* v1.8.0 Rainbow Orb intro cutscene overlay. Triggered on the player's
+     VERY FIRST death after tutorial completion. Stops music, displays a
+     typewriter-style dialogue sequence, then plays a reverse-death effect
+     before handing control back to a special Rainbow Orb run.
+     Opacity is intentionally low so the death animation / reverse-particle
+     effect remain visible behind the dialogue. A localized dark pad behind
+     the text element keeps the typewriter readable. */
+  #rainbowOverlay {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    display: none;
+    pointer-events: auto;
+    z-index: 90;
+    /* Default (typewriter-dialogue phase): canvas dimmed but visible. */
+    background: rgba(0, 0, 4, 0.55);
+    cursor: pointer;
+    transition: background 0.6s ease;
+  }
+  /* Reverse-particle + post-dialogue phase: even more transparent so the
+     inward-flowing rainbow particles read clearly through the overlay. */
+  #rainbowOverlay.particle-phase {
+    background: rgba(0, 0, 4, 0.35);
+  }
+  #rainbowOverlay.visible { display: block; }
+  /* v1.8.0 PART B: visual-novel-style dialogue banner. Spans most of the
+     viewport width, anchored to the bottom of the screen. The full-width
+     bar reads as a JRPG dialogue box rather than the previous cramped pod. */
+  #rainbowDialogue {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    bottom: 6%;
+    width: 90%;
+    max-width: 800px;
+    padding: 24px 32px 22px;
+    box-sizing: border-box;
+    text-align: center;
+    /* Solid dark backing keeps text legible against the dim overlay /
+       reverse-particle effect underneath. */
+    background: rgba(0, 0, 4, 0.85);
+    border-radius: 8px;
+    box-shadow: 0 0 32px rgba(0, 0, 12, 0.7);
+    border: 1px solid rgba(120, 180, 220, 0.18);
+  }
+  /* Narrow-viewport refinement: phones get a slightly tighter bar that still
+     reads cleanly without overflowing. */
+  @media (max-width: 480px) {
+    #rainbowDialogue {
+      width: 94%;
+      bottom: 5%;
+      padding: 18px 20px 16px;
+      border-radius: 6px;
+    }
+  }
+  #rainbowSpeaker {
+    font-family: 'Orbitron', monospace;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 6px;
+    color: rgba(180, 240, 255, 0.85);
+    margin-bottom: 14px;
+    text-transform: uppercase;
+    text-shadow: 0 0 20px rgba(120, 200, 255, 0.5);
+  }
+  #rainbowText {
+    font-family: 'Space Mono', monospace;
+    font-size: 16px;
+    line-height: 1.55;
+    letter-spacing: 2px;
+    color: rgba(235, 245, 255, 0.95);
+    margin: 0 auto 18px;
+    min-height: 52px;
+    text-shadow: 0 0 12px rgba(180, 220, 255, 0.4);
+  }
+  @media (max-width: 480px) {
+    #rainbowText { font-size: 14px; letter-spacing: 1.5px; min-height: 48px; }
+    #rainbowSpeaker { font-size: 11px; letter-spacing: 4px; margin-bottom: 10px; }
+  }
+  #rainbowContinue {
+    font-family: 'Orbitron', monospace;
+    font-size: 10px;
+    letter-spacing: 4px;
+    color: rgba(150, 220, 255, 0.7);
+    text-transform: uppercase;
+    animation: tutContinuePulse 1.4s ease-in-out infinite;
+  }
+  #rainbowContinue.hidden { visibility: hidden; }
+
   /* Username prompt overlay */
   #usernameOverlay {
     position: absolute;
@@ -3055,6 +3143,15 @@
       <div id="tutorialTitle"></div>
       <div id="tutorialBody"></div>
       <div id="tutorialContinue">TAP TO CONTINUE</div>
+    </div>
+  </div>
+  <!-- v1.8.0 Rainbow Orb intro cutscene. One-time, gated by
+       drift_rainbow_orb_used and tutorial completion. -->
+  <div id="rainbowOverlay">
+    <div id="rainbowDialogue">
+      <div id="rainbowSpeaker">???</div>
+      <div id="rainbowText"></div>
+      <div id="rainbowContinue">TAP TO CONTINUE</div>
     </div>
   </div>
   <button id="settingsBtn" aria-label="Settings">⚙</button>
@@ -4776,9 +4873,12 @@ const FORCE = 0.18;
 
 // --- Difficulty ---
 const DIFFICULTIES = {
-  NORMAL:     { startSpeed: 1.2, maxSpeed: 2.5, speedCapScore: 120, maxBodies: 3, maxBodiesCap: 5, bodySpacing: 180, powerupFrequency: 2.0,  pairSpawnChance: 0.16, minSpawnIntervalMs: 2000, crystalMult: 0.75 },
-  HARD:       { startSpeed: 1.6, maxSpeed: 3.5, speedCapScore: 120, maxBodies: 4, maxBodiesCap: 6, bodySpacing: 180, powerupFrequency: 1.7,  pairSpawnChance: 0.13, minSpawnIntervalMs: 2500, crystalMult: 1.0 },
-  EXTREME:    { startSpeed: 2.0, maxSpeed: 4.0, speedCapScore: 120, maxBodies: 4, maxBodiesCap: 7, bodySpacing: 180, powerupFrequency: 1.44, pairSpawnChance: 0.10, minSpawnIntervalMs: 3000, crystalMult: 1.25 },
+  // v1.8.0: time-to-max speed halved (120 s → 60 s) across NORMAL/HARD/EXTREME.
+  // Max-speed VALUES unchanged per difficulty — only the ramp duration shrank.
+  // IMPOSSIBLE was already at 60 s (post-cap growth handled separately below).
+  NORMAL:     { startSpeed: 1.2, maxSpeed: 2.5, speedCapScore: 60,  maxBodies: 3, maxBodiesCap: 5, bodySpacing: 180, powerupFrequency: 2.0,  pairSpawnChance: 0.16, minSpawnIntervalMs: 2000, crystalMult: 0.75 },
+  HARD:       { startSpeed: 1.6, maxSpeed: 3.5, speedCapScore: 60,  maxBodies: 4, maxBodiesCap: 6, bodySpacing: 180, powerupFrequency: 1.7,  pairSpawnChance: 0.13, minSpawnIntervalMs: 2500, crystalMult: 1.0 },
+  EXTREME:    { startSpeed: 2.0, maxSpeed: 4.0, speedCapScore: 60,  maxBodies: 4, maxBodiesCap: 7, bodySpacing: 180, powerupFrequency: 1.44, pairSpawnChance: 0.10, minSpawnIntervalMs: 3000, crystalMult: 1.25 },
   // v1.6.3 IMPOSSIBLE: Extreme's numbers but cap hit in 60s instead of
   // 180s, then +10%/min post-cap speed growth and +1 body every 2 min
   // post-cap. Gated by beatDifficulty.EXTREME in the UI.
@@ -4859,10 +4959,19 @@ function getOrbBonus() { return ORB_DEFS[activeOrb] || ORB_DEFS.cyan; }
 function getStreakCap() {
   // Skill tree: Prime Mover (+1/rank), Drifter-only. Activates the previously
   // inert streakCap:10 on cyan and extends up to 12.
-  if (activeOrb === 'cyan') return 8 + rankOf('primeMover');
+  if (activeOrb === 'cyan' || rainbowRunActive) return 8 + rankOf('primeMover');
   return 8;
 }
-function activeOrbColor() { return getOrbBonus().color; }
+function activeOrbColor() {
+  // v1.8.0: rainbow run paints the orb body in cycling hue. Frame-driven
+  // so the orb visibly shifts each tick across the spectrum. Returns the
+  // standard rgb 'R,G,B' string format used by every consumer.
+  if (rainbowRunActive) {
+    const hue = (typeof frame === 'number' ? frame : 0) * 2 % 360;
+    return hslToRgbStr(hue, 95, 60);
+  }
+  return getOrbBonus().color;
+}
 function formatCrystals(n) {
   return (n || 0).toLocaleString('en-US');
 }
@@ -5068,15 +5177,15 @@ const TREE_DEFS = {
       opportunism: {
         name: 'OPPORTUNISM',
         nodes: [
-          { key: 'salvage',      name: 'Salvage',      tier: 1, max: 3, desc: 'Kills during shield reduce burst cooldown.', effect: r => `-${[0.1,0.2,0.5][r-1]||0}% burst CD per shield kill` },
-          { key: 'bastion2',     name: 'Bastion II',   tier: 2, max: 5, desc: 'On body destroyed, chance to grant a shield pickup. Overflow at cap → +1s duration.', effect: r => `${[2,4,6,8,10][r-1]||0}% per destroy` },
-          { key: 'gravityWell',  name: 'Gravity Well', tier: 3, max: 3, desc: 'During shield, bodies are attracted toward the player.', effect: r => `Force ${[0.2,0.5,0.8][r-1]||0}` },
+          { key: 'salvage',      name: 'Salvage',      tier: 1, max: 3, desc: 'Kills during shield reduce burst cooldown.', effect: r => `-${[0.1,0.2,0.3][r-1]||0}% burst CD per shield kill` },
+          { key: 'bastion2',     name: 'Bastion II',   tier: 2, max: 5, desc: 'On body destroyed (during shield), chance to grant +1.0s shield duration. 5s cooldown.', effect: r => `${[2,4,6,8,10][r-1]||0}% per destroy` },
+          { key: 'gravityWell',  name: 'Gravity Well', tier: 3, max: 3, desc: 'During shield, bodies are attracted toward the player.', effect: r => `Force ${[0.1,0.2,0.5][r-1]||0}` },
         ],
       },
     },
     capstones: [
       { key: 'phalanx',   name: 'PHALANX',    desc: 'EMP chain depth uncapped if each hop kills. Radius decays 20% per hop.' },
-      { key: 'aegis',     name: 'AEGIS',      desc: 'Full Fortress Shield (4 hits, 8s) auto-fires every 45s.' },
+      { key: 'aegis',     name: 'AEGIS',      desc: 'Full Fortress Shield (4 hits, 8s) auto-fires every 60s.' },
       { key: 'blackHole', name: 'BLACK HOLE', desc: "Gravity Well's force and radius both ×2. Requires Gravity Well rank 3." },
     ],
   },
@@ -5145,8 +5254,14 @@ function refreshActiveTreeCache() {
     activeTreeRanks[cap.key] = state.capstones && state.capstones[cap.key] ? 1 : 0;
   }
 }
-function rankOf(nodeKey) { return activeTreeRanks[nodeKey] | 0; }
-function hasCapstone(capKey) { return !!activeTreeRanks[capKey]; }
+function rankOf(nodeKey) {
+  if (rainbowRunActive) return rainbowMaxRankFor(nodeKey);
+  return activeTreeRanks[nodeKey] | 0;
+}
+function hasCapstone(capKey) {
+  if (rainbowRunActive) return RAINBOW_CAPSTONES.has(capKey);
+  return !!activeTreeRanks[capKey];
+}
 
 function loadTreeState() {
   try {
@@ -5259,6 +5374,21 @@ function saveTutorialCompleted(v) {
   pgsScheduleWrite();
 }
 loadTutorialCompleted();
+
+// v1.8.0: Rainbow Orb intro cutscene one-time flag. Persists to
+// localStorage 'drift_rainbow_orb_used' and to PGS payload (OR-merge).
+// Set permanently on first cutscene fire; never re-fires once true.
+let rainbowOrbUsed = false;
+function loadRainbowOrbUsed() {
+  try { rainbowOrbUsed = localStorage.getItem('drift_rainbow_orb_used') === '1'; }
+  catch { rainbowOrbUsed = false; }
+}
+function saveRainbowOrbUsed(v) {
+  rainbowOrbUsed = !!v;
+  try { localStorage.setItem('drift_rainbow_orb_used', rainbowOrbUsed ? '1' : '0'); } catch {}
+  pgsScheduleWrite();
+}
+loadRainbowOrbUsed();
 // Attempt to unlock the given orb's skill tree. Returns true if the
 // purchase succeeded (enough crystals, not already unlocked).
 function purchaseTreeUnlock(orbKey) {
@@ -5592,6 +5722,7 @@ function siphonProc() {
     shieldEndTime = now + SHIELD_DURATION();
     activeEffects.shield = SHIELD_DURATION();
     shieldBroken = false;
+    bastion2BonusMs = 0; // fresh shield → reset duration-bonus accumulator
     if (activeOrb === 'asteroid') shieldHits = Math.min(shieldHitsCap(), shieldHits + 2);
     else shieldHits = Math.min(2, shieldHits + 1);
   } else if (pick === 'nova') {
@@ -5710,32 +5841,42 @@ function slipstreamProc() {
   // Slipstream-sourced hyperspeed is NOT a natural pickup — Infinite Gate
   // won't trigger from it (source='slipstream').
   activateHyperspeed(undefined, undefined, 'slipstream');
-  if (activeOrb === 'nebula') activateHyperspeed(undefined, undefined, 'slipstream');
+  if (activeOrb === 'nebula' || rainbowRunActive) activateHyperspeed(undefined, undefined, 'slipstream');
   spawnDestroyProcFlash('hyperspeed');
   slipstreamNextProcTime = now + 15000;
-  treeLog('slipstream: +' + (activeOrb === 'nebula' ? 2 : 1) + ' stack (15s CD)');
+  treeLog('slipstream: +' + ((activeOrb === 'nebula' || rainbowRunActive) ? 2 : 1) + ' stack (15s CD)');
 }
 
+// v1.8.0 rework: Bastion II is now a duration-extension proc — on body
+// destroyed while a shield is active, chance per rank grants +1.0s shield
+// duration. 5s cooldown between procs. Cap: accumulated Bastion II bonus
+// per shield instance cannot exceed base SHIELD_DURATION (so total shield
+// duration on a single instance cannot exceed 2× base). The cap tracker
+// (bastion2BonusMs) resets to 0 on fresh shield pickup, AEGIS auto-fire,
+// and shield-duration expiry so fresh shields always restore full duration
+// regardless of prior Bastion II state.
 function bastion2Proc() {
   if (activeOrb !== 'asteroid') return;
-  const cap = shieldHitsCap();
-  if (shieldHits >= cap) {
-    if (activeEffects.shield > 0) {
-      shieldEndTime += 1000;
-      activeEffects.shield += 1000;
-      spawnDestroyProcFlash('shield');
-      treeLog('bastion2: cap overflow → +1s shield');
-    } else {
-      treeLog('bastion2: cap-blocked (no active shield to extend)');
-    }
+  if (activeEffects.shield <= 0) {
+    treeLog('bastion2: no active shield to extend');
     return;
   }
-  shieldEndTime = Date.now() + SHIELD_DURATION();
-  activeEffects.shield = SHIELD_DURATION();
-  shieldBroken = false;
-  shieldHits = Math.min(cap, shieldHits + 2);
+  const now = Date.now();
+  if (now < bastion2NextProcTime) {
+    treeLog('bastion2: cooldown-blocked');
+    return;
+  }
+  const baseDur = SHIELD_DURATION();
+  if (bastion2BonusMs + 1000 > baseDur) {
+    treeLog('bastion2: cap-blocked (' + bastion2BonusMs + '/' + baseDur + ')');
+    return;
+  }
+  shieldEndTime += 1000;
+  activeEffects.shield += 1000;
+  bastion2BonusMs += 1000;
+  bastion2NextProcTime = now + 5000;
   spawnDestroyProcFlash('shield');
-  treeLog('bastion2: shield stacked → ' + shieldHits);
+  treeLog('bastion2: +1s shield duration (bonus ' + bastion2BonusMs + '/' + baseDur + ')');
 }
 
 // Capstone cycle durations — single source of truth shared by the auto-fire
@@ -5747,7 +5888,7 @@ function bastion2Proc() {
 const SHROUD_FLAG_ARM_MS         = 30000;
 const NIGHT_SHADE_CYCLE_MS       = 20000;
 const SUN_FORGE_CYCLE_MS         = 45000;
-const AEGIS_CYCLE_MS             = 45000;
+const AEGIS_CYCLE_MS             = 60000;
 const LINGERING_HORIZON_CYCLE_MS = 90000;
 
 // Per-frame capstone auto-fire tick. NIGHT SHADE / SUN FORGE / AEGIS each
@@ -5760,7 +5901,9 @@ function tickCapstoneTimers() {
   // stays armed until consumed by the next single pickup — the interval
   // does not reset on re-tick, so a 30 s gap between pickups still yields
   // one armed fire.
-  if (activeOrb === 'cosmic' && hasCapstone('shroud')) {
+  // v1.8.0: rainbow run bypasses the activeOrb gate so all 4 target
+  // capstones fire simultaneously regardless of equipped orb.
+  if ((activeOrb === 'cosmic' || rainbowRunActive) && hasCapstone('shroud')) {
     if (!shroudFlagSet && now - shroudLastFireTime >= SHROUD_FLAG_ARM_MS) {
       shroudFlagSet = true;
       shakeCapstone('shroud');
@@ -5768,6 +5911,7 @@ function tickCapstoneTimers() {
     }
   }
   // NIGHT SHADE (Phantom) v1.6.3 buff: auto-ghost 3 s every 20 s.
+  // (Not in the rainbow capstone set, so no rainbow-run bypass.)
   if (activeOrb === 'cosmic' && hasCapstone('nightShade')) {
     if (now >= nightShadeNextFireTime) {
       if (activeEffects.ghost <= 0) {
@@ -5783,7 +5927,8 @@ function tickCapstoneTimers() {
   }
   // SUN FORGE (Inferno): auto-supernova every 15 s. Bypasses nova-overload
   // guard — nova_nova is the documented exception that always re-fires.
-  if (activeOrb === 'solar' && hasCapstone('sunForge')) {
+  // v1.8.0: rainbow run bypasses the activeOrb gate.
+  if ((activeOrb === 'solar' || rainbowRunActive) && hasCapstone('sunForge')) {
     if (now >= sunForgeNextFireTime) {
       activateCombo('nova_nova', player.x, player.y);
       shakeCapstone('sunForge');
@@ -5792,11 +5937,12 @@ function tickCapstoneTimers() {
       sunForgeNextFireTime = now + SUN_FORGE_CYCLE_MS;
     }
   }
-  // AEGIS (Fortress): auto Fortress Shield every 45 s. v1.6.6: always fire
+  // AEGIS (Fortress): auto Fortress Shield every 60 s (v1.8.0; was 45 s).
+  // v1.6.6: always fire
   // through activateCombo — its shield_shield refresh path resets
   // shieldEndTime/shieldHits/fortressShield, so re-firing while a shield is
   // still active extends duration instead of wasting the cycle.
-  if (activeOrb === 'asteroid' && hasCapstone('aegis')) {
+  if ((activeOrb === 'asteroid' || rainbowRunActive) && hasCapstone('aegis')) {
     if (now >= aegisNextFireTime) {
       activateCombo('shield_shield', player.x, player.y);
       shakeCapstone('aegis');
@@ -5825,36 +5971,45 @@ function tickCapstoneTimers() {
   }
 }
 
-// Entry point called from every body-destroy site. `source` tag gates certain
-// procs — Bastion II excludes source === 'emp' to break the PHALANX +
-// Bastion II feedback loop that would otherwise trigger when PHALANX ships.
+// Entry point called from every body-destroy site. `source` tag is still
+// passed in for callers that want to differentiate (cosmetic SFX, debug
+// logging). v1.8.0: Bastion II is now source-agnostic — the prior
+// `source === 'emp'` exclusion is no longer needed because the rework
+// only extends an active shield (5s CD, 2× base cap), removing the
+// PHALANX feedback-loop risk that motivated the original guard.
 function checkDestroyProc(body, source) {
   if (state !== 'playing' && state !== 'devmode') return;
   // Salvage (Fortress Opportunism T1) v1.6.6 rework: while a shield is up,
   // every body destroyed shaves a % of the Warp burst base off the live
   // cooldown. Pattern matches Warp Momentum (smoothEntry); the shield-active
   // gate covers regular shield, fortress stacks, and the shield_shield combo.
-  if (activeOrb === 'asteroid') {
+  // v1.8.0: rainbow run bypasses every activeOrb gate so all five orbs'
+  // destroy-procs (Salvage, Siphon, Soulbound, Firebrand, Slipstream/
+  // Momentum, Bastion II) fire in parallel.
+  if (activeOrb === 'asteroid' || rainbowRunActive) {
     const sRank = rankOf('salvage');
     const shieldActive = activeEffects.shield > 0 || shieldHits > 0 || !!fortressShield;
     if (sRank > 0 && shieldActive && burstCooldownEnd > Date.now()) {
-      const pct = [0.001, 0.002, 0.005][sRank - 1] || 0;
+      const pct = [0.001, 0.002, 0.003][sRank - 1] || 0;
       const reduce = Math.floor(pct * BURST_COOLDOWN_MS);
       if (reduce > 0) {
         burstCooldownEnd = Math.max(Date.now(), burstCooldownEnd - reduce);
       }
     }
   }
-  if (activeOrb === 'cyan') {
+  if (activeOrb === 'cyan' || rainbowRunActive) {
     const r = rankOf('siphon');
     if (r > 0 && Math.random() < TREE_PROC_CHANCES[r - 1]) siphonProc();
-  } else if (activeOrb === 'cosmic') {
+  }
+  if (activeOrb === 'cosmic' || rainbowRunActive) {
     const r = rankOf('soulbound');
     if (r > 0 && Math.random() < TREE_PROC_CHANCES[r - 1]) soulboundProc();
-  } else if (activeOrb === 'solar') {
+  }
+  if (activeOrb === 'solar' || rainbowRunActive) {
     const r = rankOf('firebrand');
     if (r > 0 && Math.random() < TREE_PROC_CHANCES[r - 1]) firebrandProc(body.x, body.y);
-  } else if (activeOrb === 'nebula') {
+  }
+  if (activeOrb === 'nebula' || rainbowRunActive) {
     const r = rankOf('slipstream');
     // v1.6.3 FIX W8: Slipstream nerfed to 1/2/3/4/6% (was 2/4/6/8/10%).
     const slipChances = [0.01, 0.02, 0.03, 0.04, 0.06];
@@ -5880,10 +6035,16 @@ function checkDestroyProc(body, source) {
         burstCooldownEnd = Math.max(Date.now(), burstCooldownEnd - reduce);
       }
     }
-  } else if (activeOrb === 'asteroid') {
-    if (source === 'emp') return; // exclude EMP-chain destroys (anti-loop)
+  }
+  if (activeOrb === 'asteroid' || rainbowRunActive) {
+    // v1.8.0: Bastion II is now source-agnostic. The v1.6.6 anti-loop EMP
+    // exclusion was needed when Bastion II could *grant* a new shield from
+    // a PHALANX kill (infinite shield feedback). The v1.8.0 rework only
+    // extends an already-active shield by +1s with a 5s CD and a 2× base
+    // duration cap, so cascade kills (EMP, Phalanx, Chain Reaction 2) can
+    // safely contribute. Salvage's burst-CD reduction is already source-
+    // agnostic, so cascade kills now feed both procs.
     const r = rankOf('bastion2');
-    // v1.6.6: Bastion II restored to 2/4/6/8/10% per rank.
     const b2Chances = [0.02, 0.04, 0.06, 0.08, 0.10];
     if (r > 0 && Math.random() < b2Chances[r - 1]) bastion2Proc();
   }
@@ -5926,6 +6087,67 @@ let conflagrationNextApplyTime = 0;
 // Salvage (Fortress Opportunism T1): crystals accumulated mid-run, added to
 // the post-death crystal payout on the same run.
 let salvageBonusThisRun = 0;
+// Bastion II (Fortress Opportunism T2) v1.8.0 rework: per-shield-instance
+// accumulator for the duration bonus stack. Reset to 0 on shield pickup,
+// AEGIS auto-fire, and shield expiry — fresh shields/AEGIS always restore
+// full duration regardless of Bastion II state. The +1s proc only applies
+// when (bastion2BonusMs + 1000) <= base SHIELD_DURATION().
+let bastion2BonusMs = 0;
+// 5 s per-proc cooldown between Bastion II duration-extension procs.
+let bastion2NextProcTime = 0;
+
+// v1.8.0 Rainbow Orb run state. `rainbowCutsceneActive` covers the
+// pre-run intro dialogue; `rainbowRunActive` is set true for the
+// one-shot maxed-out run that follows. Both clear at run end.
+//   - During the rainbow run, rankOf/hasCapstone return overridden
+//     values via the rainbow helpers (max ranks; all 4 target
+//     capstones enabled simultaneously regardless of activeOrb).
+//   - Game-state overrides: 2× timer multiplier, forced extreme-max
+//     scroll speed, distortion visual always-on, leaderboard/stats
+//     writes skipped.
+let rainbowCutsceneActive = false;
+let rainbowRunActive = false;
+let rainbowOutcome = null; // 'died' | 'reachedEnd' | null
+
+// Set of capstones unlocked during a Rainbow Orb run.
+const RAINBOW_CAPSTONES = new Set(['sunForge', 'superluminal', 'aegis', 'shroud']);
+
+// v1.8.0 PART A rebalance: returns rank 1 for any known tree node during
+// the rainbow run (was previously max rank, which made the run feel
+// infinite — burst CDs refreshed instantly, Phantom procs were near-
+// guaranteed, etc.). Capstones remain unchanged — all four
+// (Sun Forge / Superluminal / AEGIS / Shroud) still fire on their normal
+// cadence via the RAINBOW_CAPSTONES allow-list in hasCapstone().
+// Unknown keys still return 0 so per-orb node lookups that don't exist in
+// TREE_DEFS short-circuit cleanly.
+//
+// v1.8.0 (later refinement): per-kill burst-CD-reduction skills are forced
+// to rank 0 during rainbow. Three orbs each contribute one such skill, and
+// because the rainbow run drops every orb's destroy-procs into the same
+// run, they STACK and shred burst cooldown to zero on any frame with kills.
+// The Drifter Restless Orb (flat % reduction, not per-kill) and Loaded
+// Dice (chance to reset on burst use, not per-kill) stay at rank 1 — those
+// don't compound with kill volume.
+//   - 'salvage'      → Bulwark Opportunism T1 (-0.1/-0.2/-0.3 % per kill during shield)
+//   - 'smoothEntry'  → Warp Drift T1 / "Momentum" (-0.1/-0.2/-0.3 % per kill during hyperspeed)
+//   - 'coronalHold'  → Inferno Corona T3 (-0.25/-0.5/-1.0 % per nova kill)
+const RAINBOW_PER_KILL_BURST_CD_KEYS = new Set(['salvage', 'smoothEntry', 'coronalHold']);
+let _rainbowRankMap = null;
+function rainbowMaxRankFor(key) {
+  if (RAINBOW_PER_KILL_BURST_CD_KEYS.has(key)) return 0;
+  if (!_rainbowRankMap) {
+    _rainbowRankMap = {};
+    for (const orb of Object.keys(TREE_DEFS)) {
+      const def = TREE_DEFS[orb];
+      for (const pKey of Object.keys(def.paths)) {
+        for (const node of def.paths[pKey].nodes) {
+          _rainbowRankMap[node.key] = 1; // rank-1 cap during rainbow run
+        }
+      }
+    }
+  }
+  return _rainbowRankMap[key] | 0;
+}
 // Cinder (Inferno Inferno T1): persistent burn zones left by nova-kills.
 let burnZones = [];
 const BURN_ZONE_LIFETIME_MS = 3000;
@@ -5959,7 +6181,7 @@ let lingeringHorizonNextFireTime = 0;
 // flash the ring briefly (mirrors capCdLastFired pattern for other
 // capstones).
 let lingeringHorizonLastFireTime = 0;
-// Capstone auto-fire timers (NIGHT SHADE 60 s, SUN FORGE 15 s, AEGIS 45 s).
+// Capstone auto-fire timers (NIGHT SHADE 20 s, SUN FORGE 45 s, AEGIS 60 s).
 // Initialised to +interval in resetTreeNodeState so first fire waits the
 // full cadence after run start.
 let nightShadeNextFireTime = 0;
@@ -6038,7 +6260,9 @@ function resetTreeNodeState() {
 // old radius-scaling was removed in v1.6.3 — it now reduces burst cooldown
 // per supernova kill instead.
 function novaScale(r) {
-  if (activeOrb !== 'solar') return 1;
+  // v1.8.0: rainbow run picks up Solar Flare even though activeOrb is forced
+  // to 'asteroid' — Inferno tree effects all apply during rainbow runs.
+  if (activeOrb !== 'solar' && !rainbowRunActive) return 1;
   // v1.6.3: Solar Flare nerfed from +15%/rank to +10/20/30% (ranks 1-3).
   const sfRank = rankOf('solarFlare');
   return 1 + ([0.10, 0.20, 0.30][sfRank - 1] || 0);
@@ -6467,6 +6691,10 @@ const PGS = (() => {
         asteroid: !!treesUnlocked.asteroid,
       },
       tutorialCompleted: !!tutorialCompleted,
+      // v1.8.0: Rainbow Orb cutscene one-time flag. OR-merged across devices
+      // so a player who saw it on one device cannot re-trigger on another
+      // (e.g. reinstall + sign in).
+      rainbowOrbUsed: !!rainbowOrbUsed,
       stats: statsSnapshot,
     };
   }
@@ -6493,6 +6721,7 @@ const PGS = (() => {
         beatDifficulty: mergeBeat(local.beatDifficulty, remote.beatDifficulty),
         treesUnlocked: mergeTreesUnlocked(local.treesUnlocked, remote.treesUnlocked),
         tutorialCompleted: !!(local.tutorialCompleted || remote.tutorialCompleted),
+        rainbowOrbUsed: !!(local.rainbowOrbUsed || remote.rainbowOrbUsed),
         stats: mergeStats(local.stats, remote.stats),
       };
     }
@@ -6697,6 +6926,13 @@ const PGS = (() => {
         try { localStorage.setItem('drift_tutorial_completed', '1'); } catch {}
       }
     }
+    // v1.8.0: rainbow-orb-used flag — OR-merged. Local true never reverts.
+    if (typeof payload.rainbowOrbUsed === 'boolean') {
+      if (payload.rainbowOrbUsed && !rainbowOrbUsed) {
+        rainbowOrbUsed = true;
+        try { localStorage.setItem('drift_rainbow_orb_used', '1'); } catch {}
+      }
+    }
     // v1.6.6.3: drift_stats — counters/bests/per-orb/difficulty completions
     // and cosmetic-trail unlocks. mergeStats already produced a sanitized,
     // element-wise-max-merged shape, so we replace `stats` directly and
@@ -6839,7 +7075,7 @@ let runStats = { totalPassed: 0, totalDestroyed: 0, pointsFromPassing: 0, points
 // Example: TIME_DILATION = 60 → 1 real second = 60 in-game seconds for
 // progression, apocalypse triggers in ~10 real seconds.
 const TIME_DILATION = 1;
-const GAME_VERSION = '1.7.0';
+const GAME_VERSION = '1.8.0';
 try {
   const vl = document.getElementById('versionLabel');
   if (vl) vl.textContent = 'v' + GAME_VERSION;
@@ -7060,7 +7296,7 @@ let burstCooldownDuration = BURST_COOLDOWN_MS;
 function BURST_COOLDOWN() {
   let cd = BURST_COOLDOWN_MS;
   // Skill tree: Restless Orb -10%/rank (Drifter-only).
-  if (activeOrb === 'cyan') cd *= (1 - 0.10 * rankOf('restlessOrb'));
+  if (activeOrb === 'cyan' || rainbowRunActive) cd *= (1 - 0.10 * rankOf('restlessOrb'));
   return Math.max(5000, Math.floor(cd));
 }
 let burstTriggered = false;
@@ -7125,15 +7361,20 @@ function SHIELD_DURATION() {
   return base;
 }
 function GHOST_DURATION() {
-  let base = activeOrb === 'cosmic' ? GHOST_DURATION_MS_COSMIC : GHOST_DURATION_MS_DEFAULT;
+  // v1.8.0: rainbow run takes the Phantom (cosmic) baseline + Lingering Veil
+  // even though activeOrb is forced to 'asteroid' — Phantom-tree effects
+  // should all apply during rainbow runs.
+  const cosmicLike = activeOrb === 'cosmic' || rainbowRunActive;
+  let base = cosmicLike ? GHOST_DURATION_MS_COSMIC : GHOST_DURATION_MS_DEFAULT;
   // Skill tree: Lingering Veil (+0.5s/rank), Phantom-only.
-  if (activeOrb === 'cosmic') base += 500 * rankOf('lingeringVeil');
+  if (cosmicLike) base += 500 * rankOf('lingeringVeil');
   return base;
 }
 function GHOST_ETERNAL_DURATION() {
-  let base = activeOrb === 'cosmic' ? GHOST_ETERNAL_DURATION_COSMIC : GHOST_ETERNAL_DURATION_DEFAULT;
+  const cosmicLike = activeOrb === 'cosmic' || rainbowRunActive;
+  let base = cosmicLike ? GHOST_ETERNAL_DURATION_COSMIC : GHOST_ETERNAL_DURATION_DEFAULT;
   // Skill tree: Eternal Ember (+1s/rank), Phantom-only.
-  if (activeOrb === 'cosmic') {
+  if (cosmicLike) {
     const eeRank = rankOf('eternalEmber');
     // v1.6.3 nerf: +0.5/1/1.5/2 s at ranks 1-4 (was +1 per rank flat).
     base += [500, 1000, 1500, 2000][eeRank - 1] || 0;
@@ -7175,8 +7416,8 @@ let hyperspeedWhooshNodes = null; // audio nodes for sustained whoosh
 const HYPERSPEED_MAX_STACKS_DEFAULT = 2;
 const HYPERSPEED_MAX_STACKS_NEBULA = 4;
 function HYPERSPEED_MAX_STACKS() {
-  let base = activeOrb === 'nebula' ? HYPERSPEED_MAX_STACKS_NEBULA : HYPERSPEED_MAX_STACKS_DEFAULT;
-  if (activeOrb === 'nebula') {
+  let base = (activeOrb === 'nebula' || rainbowRunActive) ? HYPERSPEED_MAX_STACKS_NEBULA : HYPERSPEED_MAX_STACKS_DEFAULT;
+  if (activeOrb === 'nebula' || rainbowRunActive) {
     base += rankOf('overdrive');
     if (hasCapstone('superluminal')) base += 2;
   }
@@ -7185,7 +7426,7 @@ function HYPERSPEED_MAX_STACKS() {
 function HYPERSPEED_DURATION() {
   // Skill tree: Reservoir (+0.5s/rank), Warp-only.
   let base = HYPERSPEED_DURATION_MS;
-  if (activeOrb === 'nebula') base += 500 * rankOf('reservoir');
+  if (activeOrb === 'nebula' || rainbowRunActive) base += 500 * rankOf('reservoir');
   return base;
 }
 let hyperSpeedStacks = 0;
@@ -8940,6 +9181,10 @@ function fetchLeaderboard(d, callback) {
 }
 
 function normalScrollSpeed() {
+  // v1.8.0: rainbow run forces visual speed to a chaos-tier flat value
+  // (EXTREME's max × 1.5 = 6.0) from frame 1. Decoupled from the inflated
+  // 2× internal timer. Difficulty-agnostic per spec.
+  if (rainbowRunActive) return DIFFICULTIES.EXTREME.maxSpeed * 1.5;
   const d = diff();
   // Ramp is wall-clock based — frame count drifts under hitches, but players
   // should feel a consistent "it's been 5 minutes, top speed" regardless of
@@ -10908,6 +11153,24 @@ function spawnBody(yBase, opts) {
 // the late-game density bump comes from more bodies filling the H/4 grid
 // rather than runaway counts.
 function effectiveMaxBodies() {
+  // v1.8.0 F1: rainbow run uses a fixed chaos-tier body density independent
+  // of the player's selected difficulty. Same experience whether the player
+  // came in from NORMAL or IMPOSSIBLE.
+  //   Start: 6 (EXTREME 4 + 50 % chaos)
+  //   Cap:   10 (EXTREME 7 + 50 % chaos)
+  //   Post-cap: +1 every 120 s (IMPOSSIBLE-style growth), bypasses cap.
+  if (rainbowRunActive) {
+    const _baseStart = 6;
+    const _baseCap = 10;
+    const elapsed = elapsedProgressionSeconds();
+    const ramped = _baseStart + Math.max(0, Math.floor((elapsed - 180) / 90));
+    let capped = Math.min(ramped, _baseCap);
+    if (elapsed > 60) {
+      const extra = Math.floor((elapsed - 60) / 120);
+      capped = Math.max(capped, Math.min(_baseCap + extra, _baseStart + 10));
+    }
+    return capped;
+  }
   const d = diff();
   // v1.7.4 tuning: ramp starts at 3:00 (was 2:00) and steps every 90s (was
   // 60s). Caps are unchanged. Gives the player a full minute of steady
@@ -10965,7 +11228,7 @@ function spawnPowerup() {
   // v1.7.0: Oracle Edge changed additive (+1.5 pp/rank) → multiplicative
   // (+10 %/rank). Closes the cross-difficulty gap (additive over-rewarded
   // the lower-base-rate difficulties at max rank).
-  if (activeOrb === 'cyan') pairChance *= 1 + 0.10 * rankOf('oracleEdge');
+  if (activeOrb === 'cyan' || rainbowRunActive) pairChance *= 1 + 0.10 * rankOf('oracleEdge');
   if (Math.random() < pairChance) {
     // Pair-combo selection weighted by active orb's specialty: combos that
     // include the orb's bias type get 2x weight so they spawn more often.
@@ -11000,7 +11263,7 @@ function spawnPowerup() {
   // rank-specific chance to override the random roll with the longest-expired
   // type. Uses powerupLastActivated timestamps (also set by activatePowerup).
   let ffBiased = false;
-  if (activeOrb === 'cyan') {
+  if (activeOrb === 'cyan' || rainbowRunActive) {
     const ffRank = rankOf('fortuneFavors');
     if (ffRank > 0) {
       const biasChance = [0.25, 0.50, 0.75][ffRank - 1] || 0;
@@ -11047,7 +11310,7 @@ function spawnPowerup() {
   // v1.6.3 rework: 10 s cooldown on successful procs only. Failed rolls
   // do NOT stamp the cooldown. The longest-expired-type bias above has
   // no cooldown.
-  if (activeOrb === 'cyan' && Date.now() >= fortuneFavorsNextProcTime) {
+  if ((activeOrb === 'cyan' || rainbowRunActive) && Date.now() >= fortuneFavorsNextProcTime) {
     const ffRank = rankOf('fortuneFavors');
     if (ffRank > 0) {
       const extraChance = [0.10, 0.20, 0.30][ffRank - 1] || 0;
@@ -11833,6 +12096,7 @@ function activateCombo(key, x, y) {
       shieldEndTime = Date.now() + SHIELD_DURATION();
       activeEffects.shield = SHIELD_DURATION();
       shieldBroken = false;
+      bastion2BonusMs = 0;
     } else if (key === 'hyperspeed_ghost') {
       activateHyperspeed(HYPERSPEED_COMBO_DURATION, 2);
       // Don't downgrade ghost if Eternal Phantom's longer timer is running.
@@ -11847,12 +12111,12 @@ function activateCombo(key, x, y) {
       // extension to shield's 6s. Keeps re-casts at the same cadence as
       // fresh casts.
       if (activeEffects.hyperspeed <= 0) activateHyperspeed(HYPERSPEED_COMBO_DURATION);
-      if (activeEffects.shield <= 0) { shieldEndTime = Date.now() + SHIELD_DURATION(); activeEffects.shield = SHIELD_DURATION(); shieldBroken = false; }
+      if (activeEffects.shield <= 0) { shieldEndTime = Date.now() + SHIELD_DURATION(); activeEffects.shield = SHIELD_DURATION(); shieldBroken = false; bastion2BonusMs = 0; }
     } else if (key === 'ghost_shield') {
       // Wraith refresh wasn't previously handled — make sure both halves
       // come up to whichever timer is longest so the combo doesn't die mid-effect.
       if (activeEffects.ghost <= 0) { ghostEndTime = Date.now() + GHOST_DURATION(); activeEffects.ghost = GHOST_DURATION(); }
-      if (activeEffects.shield <= 0) { shieldEndTime = Date.now() + SHIELD_DURATION(); activeEffects.shield = SHIELD_DURATION(); shieldBroken = false; }
+      if (activeEffects.shield <= 0) { shieldEndTime = Date.now() + SHIELD_DURATION(); activeEffects.shield = SHIELD_DURATION(); shieldBroken = false; bastion2BonusMs = 0; }
       syncComboDurations('ghost', 'shield');
     } else if (key === 'ghost_ghost') {
       // Eternal Phantom refresh: reset to GHOST_ETERNAL_DURATION when a
@@ -11871,6 +12135,7 @@ function activateCombo(key, x, y) {
       shieldEndTime = Date.now() + FORTRESS_SHIELD_DURATION_MS;
       activeEffects.shield = FORTRESS_SHIELD_DURATION_MS;
       shieldBroken = false;
+      bastion2BonusMs = 0;
       if (activeOrb === 'asteroid') {
         shieldHits = shieldHitsCap();
       } else {
@@ -11908,12 +12173,15 @@ function activateCombo(key, x, y) {
     // CRITICAL MASS: fresh cast resets the kill counter.
     novaCastKillCount = 0;
     // v1.6.3: supernova wave count nerfed from 4→3 default, 6→4 Inferno.
-    let supernovaWaves = activeOrb === 'solar' ? 4 : 3;
+    // v1.8.0: rainbow run takes the Inferno baseline (Inferno-tree effects
+    // all apply during rainbow runs).
+    const _solarLike = activeOrb === 'solar' || rainbowRunActive;
+    let supernovaWaves = _solarLike ? 4 : 3;
     // Conflagration (Corona T2) v1.6.3 rework: 2 ranks, +1/+2 waves,
     // 15s cooldown. Applies to ANY supernova source (this activateCombo
     // path covers player burst, pair combo, SUN FORGE, CRITICAL MASS via
     // historical wiring, and DEAD CENTER calculated-drift path).
-    if (activeOrb === 'solar' && rankOf('conflagration') > 0
+    if (_solarLike && rankOf('conflagration') > 0
         && Date.now() >= conflagrationNextApplyTime) {
       const cfRank = rankOf('conflagration');
       const bonus = [1, 2][cfRank - 1] || 0;
@@ -11925,7 +12193,7 @@ function activateCombo(key, x, y) {
     // 1/2/3 bonus waves cap, 2s expiry window, 15s cooldown between
     // consumptions. If on cooldown, the counter can still hold accumulated
     // casts but consumption is gated.
-    if (activeOrb === 'solar' && rankOf('combustion') > 0 && Date.now() < combustionBonusExpiry
+    if (_solarLike && rankOf('combustion') > 0 && Date.now() < combustionBonusExpiry
         && Date.now() >= combustionNextConsumeTime) {
       const cap = [1, 2, 3][rankOf('combustion') - 1] || 0;
       const add = Math.min(combustionBonus, cap);
@@ -11938,13 +12206,13 @@ function activateCombo(key, x, y) {
       }
     }
     // Tally this supernova cast for Combustion's next consumption.
-    if (activeOrb === 'solar' && rankOf('combustion') > 0) {
+    if (_solarLike && rankOf('combustion') > 0) {
       combustionBonus++;
       combustionBonusExpiry = Date.now() + 2000;
     }
     // v1.6.3: step coefficient nerfed from 0.15 → 0.10 (per-wave +10%
     // growth instead of +15%). Halo still adds +0.033/rank on top.
-    const stepCoef = 0.10 + ((activeOrb === 'solar') ? 0.033 * rankOf('halo') : 0);
+    const stepCoef = 0.10 + (_solarLike ? 0.033 * rankOf('halo') : 0);
     // v1.7.0: punctuation shake at supernova start (one-shot, value 7).
     // The previous per-wave 10+i stacking dominated the screen for the
     // entire 1.6-2.4s wave sequence. The kill loops in update() now drive
@@ -11990,6 +12258,7 @@ function activateCombo(key, x, y) {
     shieldEndTime = Date.now() + SHIELD_DURATION();
     activeEffects.shield = SHIELD_DURATION();
     shieldBroken = false;
+    bastion2BonusMs = 0;
     pulsarNextNovaTime = Date.now();
     activeCombos[key] = { def, deps: ['shield'] };
   } else if (key === 'hyperspeed_ghost') {
@@ -12011,7 +12280,7 @@ function activateCombo(key, x, y) {
     // combo feel ~70% longer than the other two. Signature mechanic (the
     // juggernautPendingShieldRefresh post-landing refresh) is preserved.
     if (activeEffects.hyperspeed <= 0) activateHyperspeed(HYPERSPEED_COMBO_DURATION);
-    if (activeEffects.shield <= 0) { shieldEndTime = Date.now() + SHIELD_DURATION(); activeEffects.shield = SHIELD_DURATION(); shieldBroken = false; }
+    if (activeEffects.shield <= 0) { shieldEndTime = Date.now() + SHIELD_DURATION(); activeEffects.shield = SHIELD_DURATION(); shieldBroken = false; bastion2BonusMs = 0; }
     juggernautPendingShieldRefresh = true;
     // v1.7.0: armored ram needs more weight on activation. Barrier kills
     // are already shake-covered via shakeMassDestroy in the barrier sweep.
@@ -12020,7 +12289,7 @@ function activateCombo(key, x, y) {
   } else if (key === 'ghost_shield') {
     // WRAITH: during ghost destroy on contact; when ghost ends, shield absorbs 1 hit
     if (activeEffects.ghost <= 0) { ghostEndTime = Date.now() + GHOST_DURATION(); activeEffects.ghost = GHOST_DURATION(); }
-    if (activeEffects.shield <= 0) { shieldEndTime = Date.now() + SHIELD_DURATION(); activeEffects.shield = SHIELD_DURATION(); shieldBroken = false; }
+    if (activeEffects.shield <= 0) { shieldEndTime = Date.now() + SHIELD_DURATION(); activeEffects.shield = SHIELD_DURATION(); shieldBroken = false; bastion2BonusMs = 0; }
     syncComboDurations('ghost', 'shield');
     activeCombos[key] = { def, deps: ['ghost'] };
   } else if (key === 'ghost_ghost') {
@@ -12039,6 +12308,7 @@ function activateCombo(key, x, y) {
     shieldEndTime = Date.now() + FORTRESS_SHIELD_DURATION_MS;
     activeEffects.shield = FORTRESS_SHIELD_DURATION_MS;
     shieldBroken = false;
+    bastion2BonusMs = 0;
     if (activeOrb === 'asteroid') {
       shieldHits = shieldHitsCap();
     } else {
@@ -12049,7 +12319,7 @@ function activateCombo(key, x, y) {
   }
   // Warp Harmonic (Warp Drift T3): +N bonus stacks on hyperspeed pair combos.
   // v1.7.0 rebalance: 20 s → 30 s cooldown between applications.
-  if (activeOrb === 'nebula' && (key === 'nova_hyperspeed' || key === 'hyperspeed_ghost' || key === 'hyperspeed_shield')) {
+  if ((activeOrb === 'nebula' || rainbowRunActive) && (key === 'nova_hyperspeed' || key === 'hyperspeed_ghost' || key === 'hyperspeed_shield')) {
     const whRank = rankOf('warpHarmonic');
     if (whRank > 0 && Date.now() >= warpHarmonicNextFireTime) {
       for (let i = 0; i < whRank; i++) activateHyperspeed(undefined, undefined, 'warp_harmonic');
@@ -12098,6 +12368,7 @@ function rawActivate(type, x, y) {
     shieldEndTime = Date.now() + SHIELD_DURATION();
     activeEffects.shield = SHIELD_DURATION();
     shieldBroken = false;
+    bastion2BonusMs = 0; // fresh pickup → reset duration-bonus accumulator
     // Shield pickup rules:
     //   - Asteroid orb: +2 hits per pickup, cap 4.
     //   - Other orbs:   +1 hit  per pickup, cap 2.
@@ -12112,7 +12383,7 @@ function rawActivate(type, x, y) {
   } else if (type === 'hyperspeed') {
     // Natural hyperspeed pickup — source tag enables Infinite Gate.
     activateHyperspeed(undefined, undefined, 'natural');
-    if (activeOrb === 'nebula') activateHyperspeed(undefined, undefined, 'natural');
+    if (activeOrb === 'nebula' || rainbowRunActive) activateHyperspeed(undefined, undefined, 'natural');
   } else if (type === 'ghost') {
     // Shadow Regen (Phantom Veil T1) v1.6.6 rework: take the larger of
     // {default reset, additive stack} so the node is strictly non-detrimental.
@@ -12123,7 +12394,7 @@ function rawActivate(type, x, y) {
     // floor for sparse pickups.
     const now = Date.now();
     const add = GHOST_DURATION();
-    const srRank = (activeOrb === 'cosmic') ? rankOf('shadowRegen') : 0;
+    const srRank = (activeOrb === 'cosmic' || rainbowRunActive) ? rankOf('shadowRegen') : 0;
     if (srRank > 0 && ghostEndTime > now) {
       const frac = [0.15, 0.20, 0.25][srRank - 1] || 0;
       const addMs = Math.floor(add * frac);
@@ -12167,12 +12438,15 @@ function fireTripleNova(px, py, source, waveOverride) {
   // v1.6.3: base single-nova waves nerfed from 3→2 default, 6→4 Inferno.
   // waveOverride (e.g. CRITICAL MASS=6) forces an exact count, bypassing
   // Kindling/Combustion bonuses.
+  // v1.8.0: rainbow run takes the Inferno baseline + Kindling/Combustion
+  // bonuses regardless of activeOrb (Inferno-tree effects all apply).
+  const _solarLike = activeOrb === 'solar' || rainbowRunActive;
   let waves;
   if (typeof waveOverride === 'number' && waveOverride > 0) {
     waves = waveOverride;
   } else {
-    waves = activeOrb === 'solar' ? 4 : 2;
-    if (activeOrb === 'solar') waves += rankOf('kindling');
+    waves = _solarLike ? 4 : 2;
+    if (_solarLike) waves += rankOf('kindling');
   }
   // Combustion (Inferno T3) v1.6.3 rework: per-cast accumulator (not
   // per-kill). 1/2/3 cap, 2s expiry window, 15s CD. Single-nova path
@@ -12181,7 +12455,7 @@ function fireTripleNova(px, py, source, waveOverride) {
   // the Combustion path (it uses waveOverride above).
   const isFirebrand = source === 'firebrand_proc';
   const isCriticalMass = source === 'critical_mass';
-  if (!isFirebrand && !isCriticalMass && activeOrb === 'solar' && rankOf('combustion') > 0 && Date.now() < combustionBonusExpiry
+  if (!isFirebrand && !isCriticalMass && _solarLike && rankOf('combustion') > 0 && Date.now() < combustionBonusExpiry
       && Date.now() >= combustionNextConsumeTime) {
     const cap = [1, 2, 3][rankOf('combustion') - 1] || 0;
     const add = Math.min(combustionBonus, cap);
@@ -12194,7 +12468,7 @@ function fireTripleNova(px, py, source, waveOverride) {
     }
   }
   // Tally this cast (per-cast accumulator, excludes Firebrand + CM).
-  if (!isFirebrand && !isCriticalMass && activeOrb === 'solar' && rankOf('combustion') > 0) {
+  if (!isFirebrand && !isCriticalMass && _solarLike && rankOf('combustion') > 0) {
     combustionBonus++;
     combustionBonusExpiry = Date.now() + 2000;
   }
@@ -12398,12 +12672,12 @@ function computeHyperspeedPeakMult(stacks, peakScale) {
   // Skill tree: Thrust scales the two coefficients (3.5 and 6.0) by a
   // rank-table bonus (Warp-only). v1.6.6: +10/20/30 % → +20/30/40 %.
   let thrustMult = 1;
-  if (activeOrb === 'nebula') {
+  if (activeOrb === 'nebula' || rainbowRunActive) {
     thrustMult += ([0.20, 0.30, 0.40][rankOf('thrust') - 1] || 0);
   }
   let basePeak = Math.max(3.5 * thrustMult * s, (6.0 * thrustMult * s) / Math.max(normSpd, 0.01));
   // Breakaway: at-max-stacks bonus. v1.7.0 rebalance: +25/50/75 % → +15/30/45 %.
-  if (activeOrb === 'nebula') {
+  if (activeOrb === 'nebula' || rainbowRunActive) {
     const cap = HYPERSPEED_MAX_STACKS();
     if (s >= cap) basePeak *= (1 + ([0.15, 0.30, 0.45][rankOf('breakaway') - 1] || 0));
   }
@@ -12431,7 +12705,7 @@ function activateHyperspeed(durationOverride, peakScale, source) {
   // hyperspeed pickups qualify (not combo-fired, Slipstream, Warp Harmonic,
   // or DEAD CENTER picks). Gates at 7+ stacks with a 10s cooldown. Adds
   // +0.5/1/1.5 s at ranks 1-3 to the shared timer.
-  if (activeOrb === 'nebula' && source === 'natural' && hyperSpeedStacks >= 5) {
+  if ((activeOrb === 'nebula' || rainbowRunActive) && source === 'natural' && hyperSpeedStacks >= 5) {
     const igRank = rankOf('infiniteGate');
     if (igRank > 0 && now >= infiniteGateNextFireTime) {
       const bonusMs = [500, 1000, 1500][igRank - 1] || 0;
@@ -12483,7 +12757,7 @@ function activatePowerup(type, x, y) {
   // via tickCapstoneTimers) consumes the next single pickup — it fires as
   // a ghost pair combo (or Eternal Phantom for a ghost pickup). Only fires
   // when no natural combo is already forming; natural combos take priority.
-  if (!key && activeOrb === 'cosmic' && hasCapstone('shroud') && shroudFlagSet) {
+  if (!key && (activeOrb === 'cosmic' || rainbowRunActive) && hasCapstone('shroud') && shroudFlagSet) {
     const shroudKey = (type === 'ghost') ? 'ghost_ghost' : comboKey(type, 'ghost');
     if (shroudKey) {
       key = shroudKey;
@@ -12529,7 +12803,12 @@ function elapsedRunSeconds() {
 // the apocalypse trigger. Physics (scroll speed), animation, analytics, and
 // real-time cadence checks keep using elapsedRunSeconds() directly.
 function elapsedProgressionSeconds() {
-  return elapsedRunSeconds() * TIME_DILATION;
+  // v1.8.0: rainbow run advances the progression clock at 2× wall-clock,
+  // so the timer display (and apocalypse trigger) reads ~30 s after 15 real
+  // seconds have passed. Scroll speed is overridden separately to keep the
+  // visual pace at extreme-max regardless of the inflated timer.
+  const mult = rainbowRunActive ? 2 : 1;
+  return elapsedRunSeconds() * TIME_DILATION * mult;
 }
 function formatRunTime(seconds) {
   const mm = Math.floor(seconds / 60);
@@ -12539,6 +12818,14 @@ function formatRunTime(seconds) {
 // Stage descriptor for the timer: tier (color), per-frame visual effects.
 // tier 0 = white, 1 = orange, 2 = red.
 function runTimerStage(s) {
+  // v1.8.0: rainbow run force-enables late-game distortion (tier 2, glitch,
+  // shake, pulse) regardless of elapsed time. The entire run reads as
+  // "apocalypse-imminent" visually, while the actual apocalypse still fires
+  // off the normal progression-seconds threshold (arrives in half wall-clock
+  // time due to the 2× rainbow timer).
+  if (rainbowRunActive) {
+    return { tier: 2, blink: 3, shake: 10, glitch: 2, pulse: 0.8 };
+  }
   if (s < 120) return { tier: 0, blink: 0, shake: 0, glitch: 0, pulse: 0 };
   if (s < 180) return { tier: 1, blink: 0, shake: 0, glitch: 0, pulse: 0 };
   if (s < 240) return { tier: 2, blink: 10, shake: 3, glitch: 0, pulse: 0.3 };
@@ -12654,6 +12941,8 @@ function resetGame() {
   shieldBroken = false;
   shieldHits = 0;
   fortressShield = false;
+  bastion2BonusMs = 0;
+  bastion2NextProcTime = 0;
   activeCombos = {};
   lastComboLabel = null;
   recentNovaFrames = 0;
@@ -12980,8 +13269,8 @@ function checkCollisions() {
   //   without a shield, on a rearm cooldown per rank.
   if (activeEffects.ghost > 0) {
     const wraith = activeEffects.shield > 0;
-    const rvRank = (activeOrb === 'cosmic') ? rankOf('razorVeil') : 0;
-    const glRank = (activeOrb === 'cosmic') ? rankOf('ghostlight') : 0;
+    const rvRank = (activeOrb === 'cosmic' || rainbowRunActive) ? rankOf('razorVeil') : 0;
+    const glRank = (activeOrb === 'cosmic' || rainbowRunActive) ? rankOf('ghostlight') : 0;
     // v1.7.0 rebalance: 40/60/80% → 20/40/60%.
     const glChance = [0.20, 0.40, 0.60][glRank - 1] || 0;
     for (let i = bodies.length - 1; i >= 0; i--) {
@@ -13102,6 +13391,36 @@ function checkCollisions() {
 // player is holding both sides simultaneously.
 function executeBurst() {
   if (typeof Sentry !== 'undefined') Sentry.addBreadcrumb({ category: 'burst', message: 'burst: ' + activeOrb, level: 'info' });
+  // v1.8.0 D1: Rainbow Orb burst fires ALL FOUR orb bursts simultaneously
+  // for the power-fantasy peak moment. Order: Bulwark fortress (gives the
+  // shield baseline first so the supernova has armored cover) → Warp (two
+  // hyperspeed stacks) → Inferno (supernova combo) → Phantom (Eternal
+  // Phantom combo). Each path mirrors the per-orb branch below. Skips
+  // Drifter (the random single is redundant when all four signature
+  // bursts fire at once).
+  if (rainbowRunActive) {
+    // Bulwark: instant Fortress Shield (matches the asteroid branch below).
+    shieldEndTime = Date.now() + FORTRESS_SHIELD_DURATION_MS;
+    activeEffects.shield = FORTRESS_SHIELD_DURATION_MS;
+    shieldHits = shieldHitsCap();
+    shieldBroken = false;
+    bastion2BonusMs = 0;
+    fortressShield = true;
+    const _fortDef = COMBO_DEFS.shield_shield;
+    activeCombos.shield_shield = { def: _fortDef, deps: ['shield'] };
+    // Warp: two hyperspeed stacks.
+    activateHyperspeed();
+    activateHyperspeed();
+    SFX.pickup('hyperspeed', { stacks: hyperSpeedStacks });
+    // Inferno: supernova combo.
+    activateCombo('nova_nova', player.x, player.y);
+    // Phantom: Eternal Phantom combo.
+    activateCombo('ghost_ghost', player.x, player.y);
+    lastComboLabel = 'shield_shield';
+    shakeBurst('asteroid');
+    runBurstCount++;
+    return true;
+  }
   if (activeOrb === 'cyan') {
     // DEAD CENTER capstone: open radial picker instead of random roll.
     // The overlay freezes the game; powerup fires on dismissal via
@@ -13167,6 +13486,7 @@ function executeBurst() {
     activeEffects.shield = FORTRESS_SHIELD_DURATION_MS;
     shieldHits = shieldHitsCap();
     shieldBroken = false;
+    bastion2BonusMs = 0;
     fortressShield = true;
     const def = COMBO_DEFS.shield_shield;
     activeCombos.shield_shield = { def, deps: ['shield'] };
@@ -13564,7 +13884,7 @@ function update() {
     // chance to instantly reset the burst cooldown to 0 (burst available
     // immediately again). 15 s internal cooldown. Failed rolls do NOT
     // stamp the cooldown — player keeps rolling on subsequent bursts.
-    if (activeOrb === 'cyan') {
+    if (activeOrb === 'cyan' || rainbowRunActive) {
       const ldRank = rankOf('loadedDice');
       if (ldRank > 0 && Date.now() >= loadedDiceNextProcTime) {
         const chance = [0.10, 0.20, 0.30][ldRank - 1] || 0;
@@ -13603,6 +13923,11 @@ function update() {
   const nowMs = Date.now();
   activeEffects.shield = Math.max(0, shieldEndTime - nowMs);
   activeEffects.ghost  = Math.max(0, ghostEndTime  - nowMs);
+  // Bastion II (Fortress Opportunism T2) v1.8.0: when the shield instance
+  // fully expires (or has been consumed to 0), reset the accumulated
+  // duration-bonus so the next shield pickup/AEGIS/combo refresh starts
+  // from zero again.
+  if (activeEffects.shield <= 0 && bastion2BonusMs !== 0) bastion2BonusMs = 0;
 
   // Phantom tree: ghost-end edge detect for Twilight Echo + Beyond.
   // - Twilight Echo refreshes ghost at half base if a combo ended within 3 s.
@@ -13611,7 +13936,7 @@ function update() {
   //   this frame (it will fire when THIS refreshed timer eventually ends).
   // - Beyond opens a post-ghost invulnerability window (handled in the
   //   collision-kill gate).
-  if (prevGhostActive && activeEffects.ghost <= 0 && activeOrb === 'cosmic') {
+  if (prevGhostActive && activeEffects.ghost <= 0 && (activeOrb === 'cosmic' || rainbowRunActive)) {
     const teRank = rankOf('twilightEcho');
     if (teRank > 0 && nowMs - lastComboEndTime < 2000 && nowMs >= twilightEchoNextFireTime) {
       const chance = [0.10, 0.25, 0.40][teRank - 1] || 0;
@@ -13668,7 +13993,7 @@ function update() {
       if (hyperspeedWhooshNodes) { try { hyperspeedWhooshNodes.stop(0.5); } catch {} hyperspeedWhooshNodes = null; }
       // Afterburn (Warp Velocity T2) v1.6.3 rework: launch landing discs.
       let abRankLocal = 0;
-      if (activeOrb === 'nebula') {
+      if (activeOrb === 'nebula' || rainbowRunActive) {
         abRankLocal = rankOf('afterburn');
         if (abRankLocal > 0) {
           scheduleAfterburnDiscs(abRankLocal);
@@ -13769,7 +14094,7 @@ function update() {
   // Ghostlight synergy (matches Razor Veil kill source). Visual passes
   // the purple ghost-destroy burst; dedicated blade visual + SFX is a
   // CRITICAL flag for the visual pass.
-  if (activeOrb === 'cosmic' && activeEffects.ghost > 0) {
+  if ((activeOrb === 'cosmic' || rainbowRunActive) && activeEffects.ghost > 0) {
     const pbRank = rankOf('phantomBlade');
     if (pbRank > 0 && Date.now() >= phantomBladeNextTickTime) {
       const reach = 160;
@@ -13829,7 +14154,7 @@ function update() {
   const gwRankApplied = rankOf('gravityWell');
   const blackHoleActive = activeOrb === 'asteroid' && hasCapstone('blackHole') && gwRankApplied >= 3;
   const gravityWellForce = (activeOrb === 'asteroid' && activeEffects.shield > 0)
-    ? (([0.2, 0.5, 0.8][gwRankApplied - 1] || 0) * (blackHoleActive ? 2 : 1))
+    ? (([0.1, 0.2, 0.5][gwRankApplied - 1] || 0) * (blackHoleActive ? 2 : 1))
     : 0;
   for (const b of bodies) {
     b.y += spd * dtScale;
@@ -13946,8 +14271,14 @@ function update() {
   // removed: it was dead code because spawnIntervalMs never crossed the floor.
   const minutesOver = Math.max(0, (elapsedProgressionSeconds() - 120) / 60);
   const rampMultiplier = Math.max(0.75, 1 - 0.025 * minutesOver);
-  const baseSpawnIntervalMs = (220 / d.powerupFrequency) * 8.33;
-  const effectiveMinSpacing = (d.minSpawnIntervalMs || 1500) * rampMultiplier;
+  // v1.8.0 F3: rainbow run pegs powerup spawn frequency at NORMAL-difficulty
+  // values (most permissive) regardless of player's chosen difficulty —
+  // gives the chaos run a steady pickup stream and lots of fuel for Shroud,
+  // Warp Harmonic, Keystone, etc. to chain.
+  const _powerupFreq = rainbowRunActive ? 2.0 : d.powerupFrequency;
+  const _minSpacingFloor = rainbowRunActive ? 2000 : (d.minSpawnIntervalMs || 1500);
+  const baseSpawnIntervalMs = (220 / _powerupFreq) * 8.33;
+  const effectiveMinSpacing = _minSpacingFloor * rampMultiplier;
   const spawnIntervalMs = Math.max(baseSpawnIntervalMs, effectiveMinSpacing);
   const timeSinceSpawn = Date.now() - lastPowerupSpawn;
   // Per-frame Math.random() probability dt-scaled so attempts/second stays
@@ -14053,7 +14384,7 @@ function update() {
           // Math sanity at r3: supernova killing 15 bodies = 15% × 30000 ms
           // = 4500 ms reduction per supernova. Bounded only by per-kill
           // nature.
-          if (activeOrb === 'solar') {
+          if (activeOrb === 'solar' || rainbowRunActive) {
             const chRank = rankOf('coronalHold');
             if (chRank > 0 && burstCooldownEnd > Date.now()) {
               const pct = [0.0025, 0.005, 0.01][chRank - 1] || 0;
@@ -14088,7 +14419,7 @@ function update() {
           }
           // Cinder (Inferno T1): nova-killed bodies leave a burn zone that
           // destroys anything entering it for its 1 s lifetime.
-          if (activeOrb === 'solar' && rankOf('cinder') > 0) {
+          if ((activeOrb === 'solar' || rainbowRunActive) && rankOf('cinder') > 0) {
             const chance = [0.10, 0.20, 0.30][rankOf('cinder') - 1] || 0;
             if (Math.random() < chance) {
               burnZones.push({
@@ -14793,6 +15124,74 @@ function resetApocalypse() {
 
 function triggerDeath() {
   if (typeof Sentry !== 'undefined') Sentry.addBreadcrumb({ category: 'death', message: 'died at score ' + score, level: 'info' });
+  // v1.8.0: Rainbow Orb intro cutscene — fires on the player's VERY FIRST
+  // death after the tutorial. Replaces the normal death flow on that one
+  // run. The cutscene then begins a special maxed-out rainbow run, which
+  // routes through this function again at its own end (rainbowRunActive
+  // will be true; handled below to skip leaderboard + stats writes and
+  // award the cutscene crystal reward).
+  if (rainbowCutsceneEligible()) {
+    const _wasApoc = !!apocalypseDeathFlag;
+    // Snapshot elapsed wall-clock at the moment of death so the rainbow run
+    // can later resume the timer mid-flight (run continues from current
+    // progression time, advances at 2× thereafter — cutscene time is "free").
+    _rainbowDeathElapsedMs = runStartTime ? (Date.now() - runStartTime) : 0;
+    shakePlayerDeath(_wasApoc ? 'apocalypse' : (lastDeathCause || 'body'));
+    triggerHitstop(_wasApoc ? 150 : 100);
+    clearResumeState();
+    SFX.death();
+    // Stop gameplay music — results-music crossfade is intentionally skipped
+    // here so silence carries cleanly into the cutscene's typewriter intro.
+    try { SFX.playTrack(null, 0.3); } catch {}
+    pauseBtn.classList.remove('visible');
+    if (typeof AdManager !== 'undefined') try { AdManager.hideBanner(); } catch {}
+    // Death animation matches the normal-death visual flow: orb shatter
+    // shards → 1-frame white flash → 1.2 s-delayed particle burst.
+    spawnDeathShards(player.x, player.y);
+    deathFlashFrames = 1;
+    // Clear live effects so the canvas reads clean once the death animation
+    // begins. Mirrors the cleanup further down in the normal death path.
+    activeEffects = { shield: 0, hyperspeed: 0, ghost: 0 };
+    shieldEndTime = 0; ghostEndTime = 0; hyperspeedEndTime = 0;
+    hyperSpeedStacks = 0; hyperspeedCurrentMult = 1; hyperspeedTargetSpeed = 0;
+    if (hyperspeedWhooshNodes) { try { hyperspeedWhooshNodes.stop(0.1); } catch {} hyperspeedWhooshNodes = null; }
+    shieldBroken = false; shieldHits = 0; fortressShield = false;
+    activeCombos = {}; lastComboLabel = null;
+    clearPendingNovaTimeouts();
+    // Pre-cutscene freeze: update() exits early on unknown states, so the
+    // world stops scrolling while the death animation plays. render() keeps
+    // ticking, so shards/flash/particles animate normally.
+    state = 'rainbow_predeath';
+    // Particle burst at 1.2 s, matching the normal death-flow setTimeout at
+    // line ~15171. Rainbow-tinted across the hue spectrum.
+    if (pendingDeathBurstTimer) { clearTimeout(pendingDeathBurstTimer); }
+    pendingDeathBurstTimer = setTimeout(() => {
+      pendingDeathBurstTimer = null;
+      if (state !== 'rainbow_predeath') return;
+      deathParticles = [];
+      const deathCount = Math.min(50, DEATH_PART_CAP);
+      const nowDpSpawn = Date.now();
+      for (let i = 0; i < deathCount; i++) {
+        const a = Math.random() * Math.PI * 2, s = Math.random() * 3.5 + 0.8;
+        const rgb = hslToRgbStr(Math.floor((i / deathCount) * 360), 95, 60);
+        pushCapped(deathParticles, {
+          x: player.x, y: player.y,
+          vx: Math.cos(a) * s, vy: Math.sin(a) * s,
+          life: 1, startTime: nowDpSpawn,
+          maxLifeMs: DEATH_PART_LIFE_MS,
+          size: Math.random() * 2.5 + 0.8, rgb,
+        }, DEATH_PART_CAP);
+      }
+    }, 1200);
+    // Cutscene fires once the death animation has played out (~1.7 s).
+    // Player has seen the explosion, particles are still expanding behind
+    // the (now dimmer) overlay when the typewriter begins.
+    setTimeout(() => {
+      if (state !== 'rainbow_predeath') return;
+      rainbowStartCutscene();
+    }, 1700);
+    return;
+  }
   // v1.7.0 game-feel: hard impact spike on death — scaled by cause. The
   // apocalypse path delivers a bigger shake (35) on top of the existing
   // ramp; standard deaths get 14. Hitstop is similar — 150ms on the sun
@@ -14833,6 +15232,8 @@ function triggerDeath() {
   shieldBroken = false;
   shieldHits = 0;
   fortressShield = false;
+  bastion2BonusMs = 0;
+  bastion2NextProcTime = 0;
   activeCombos = {};
   lastComboLabel = null;
 
@@ -14850,11 +15251,24 @@ function triggerDeath() {
   const baseScore = score;
   score += timeBonus;
 
-  const scores = saveScore(score, difficulty);
+  // v1.8.0: Rainbow Orb run — skip leaderboard, skip stats, award a
+  // fixed crystal payout based on outcome (apocalypse fully consuming the
+  // player = 40 000; any earlier death = 20 000). Flag is cleared at the
+  // end of this function so subsequent normal runs aren't affected.
+  const _wasRainbow = rainbowRunActive;
+  const _rainbowReachedEnd = _wasRainbow && !!apocalypseDeathFlag;
+  if (_wasRainbow) {
+    rainbowOutcome = _rainbowReachedEnd ? 'reachedEnd' : 'died';
+  }
 
-  // Crystal earning: floor(final score * difficulty multiplier)
+  const scores = _wasRainbow ? [] : saveScore(score, difficulty);
+
+  // Crystal earning: floor(final score * difficulty multiplier) — except for
+  // Rainbow runs, which receive the fixed 20 000 / 40 000 reward instead.
   const crystalMult = DIFFICULTIES[difficulty].crystalMult || 1;
-  const crystalsEarned = Math.max(0, Math.floor(score * crystalMult));
+  const crystalsEarned = _wasRainbow
+    ? (_rainbowReachedEnd ? 40000 : 20000)
+    : Math.max(0, Math.floor(score * crystalMult));
   totalCrystals = Math.max(0, totalCrystals + crystalsEarned);
   // Salvage (Fortress Opportunism T1): accumulated mid-run crystal drops
   // added on top of the score-based payout. Cleared after the grant.
@@ -14873,7 +15287,8 @@ function triggerDeath() {
   // a given difficulty counts as beating that difficulty (reached the 10:00
   // mark and got through the scripted sequence). Unlock flags gate which
   // trees are visible/investable in the skill-trees menu.
-  if (apocalypseDeathFlag && beatDifficulty && !beatDifficulty[difficulty]) {
+  // Rainbow runs do not count toward this unlock (scripted event, not real).
+  if (!_wasRainbow && apocalypseDeathFlag && beatDifficulty && !beatDifficulty[difficulty]) {
     beatDifficulty[difficulty] = true;
     saveBeatFlags();
     treeLog('beat ' + difficulty + ' — trees unlocked');
@@ -14882,7 +15297,8 @@ function triggerDeath() {
   // v1.7.0 stats: capture run-final values, compare against existing personal
   // bests (returned as isBest map for the run-summary BEST tags), then merge
   // into all-time stats. runCrystalsTotal includes score payout + salvage.
-  const runIsBest = statsOnRunEnd({
+  // Rainbow runs are excluded — no stats writes per spec.
+  const runIsBest = _wasRainbow ? {} : statsOnRunEnd({
     streak:   runStats.longestStreak | 0,
     time:     elapsedAtDeath | 0,
     kills:    runStats.totalDestroyed | 0,
@@ -14916,14 +15332,18 @@ function triggerDeath() {
     const deathRgb = activeOrbColor();
     for (let i = 0; i < deathCount; i++) {
       const a = Math.random()*Math.PI*2, s = Math.random()*3.5+0.8;
-      pushCapped(deathParticles, { x: player.x, y: player.y, vx: Math.cos(a)*s, vy: Math.sin(a)*s, life: 1, startTime: nowDpSpawn, maxLifeMs: DEATH_PART_LIFE_MS, size: Math.random()*2.5+0.8, rgb: deathRgb }, DEATH_PART_CAP);
+      // v1.8.0: rainbow death tints each particle along the spectrum so the
+      // standard death burst plays with rainbow-colored debris.
+      const rgb = _wasRainbow ? hslToRgbStr(Math.floor((i / deathCount) * 360), 95, 60) : deathRgb;
+      pushCapped(deathParticles, { x: player.x, y: player.y, vx: Math.cos(a)*s, vy: Math.sin(a)*s, life: 1, startTime: nowDpSpawn, maxLifeMs: DEATH_PART_LIFE_MS, size: Math.random()*2.5+0.8, rgb }, DEATH_PART_CAP);
     }
   }, 1200);
   // Submit score online (fire and forget). Devmode runs do NOT submit or
-  // emit analytics — sandbox sessions are not real plays.
+  // emit analytics — sandbox sessions are not real plays. Rainbow runs
+  // similarly skip both per spec.
   const uname = getUsername();
-  if (uname && !devmodeActive) submitScoreOnline(uname, score, difficulty);
-  if (!devmodeActive) sendAnalytics();
+  if (uname && !devmodeActive && !_wasRainbow) submitScoreOnline(uname, score, difficulty);
+  if (!devmodeActive && !_wasRainbow) sendAnalytics();
 
   // Save run stats snapshot for the death screen
   const deathDifficulty = difficulty;
@@ -15095,6 +15515,21 @@ function triggerDeath() {
     document.getElementById('controlsHint').style.display = 'none';
     document.getElementById('startBtn').textContent = 'DRIFT AGAIN';
     overlay.classList.remove('hidden');
+    // v1.8.0 Rainbow run end — clear the active-run flag now that the
+    // death screen has rendered and restore the player's original orb so
+    // the next run starts on their own selection rather than the asteroid
+    // override. The dedicated crystal-reward banner was removed: the death
+    // screen's normal "+N crystals" line already communicates the payout,
+    // so the separate pop-up was redundant.
+    if (_wasRainbow) {
+      rainbowRunActive = false;
+      if (_rainbowPrevOrb && ORB_DEFS[_rainbowPrevOrb]) {
+        activeOrb = _rainbowPrevOrb;
+        _rainbowPrevOrb = null;
+        try { refreshActiveTreeCache(); } catch {}
+      }
+      rainbowOutcome = null;
+    }
   }, 800);
 }
 
@@ -17103,7 +17538,10 @@ function emitOrbTrail() {
   // particle churn (alloc + push + splice) adds up over a long run and shows
   // up as GC pauses; spacing emits out keeps the trail visible without the
   // steady allocation drip.
-  if (frame % 3 !== 0) return;
+  // v1.8.0: rainbow run emits every 2nd frame for a denser trail (~1.5×
+  // baseline). Standard orbs still emit every 3rd frame.
+  const _emitMod = rainbowRunActive ? 2 : 3;
+  if (frame % _emitMod !== 0) return;
   const orb = activeOrb;
   const pvx = player.vx, pvy = player.vy;
   const moveMag = Math.hypot(pvx, pvy);
@@ -17145,6 +17583,50 @@ function emitOrbTrail() {
     emitOrbTrailUnlocked(orb, intensity, sizeMul, alphaMul, px, py, bx, by, count);
     return;
   }
+  // v1.8.0: rainbow run paints the trail in shifting per-particle hues
+  // across the spectrum (frame-driven base hue, +random spread per particle).
+  // Bigger, longer-lived wisps than any normal orb + occasional bright
+  // sparkle bursts produce a visibly distinct "rainbow orb" trail.
+  if (rainbowRunActive) {
+    const nowOt = Date.now();
+    const rainbowCount = count + 2;  // ~2× emission
+    const rainbowSize = sizeMul * 1.6;
+    const baseHue = (frame * 4) % 360;
+    for (let i = 0; i < rainbowCount; i++) {
+      const jx = px + (Math.random() - 0.5) * 14;
+      const jy = py + (Math.random() - 0.5) * 14;
+      const hueOffset = (i / rainbowCount) * 120 + (Math.random() - 0.5) * 40;
+      const hue = (baseHue + hueOffset) % 360;
+      pushCapped(orbTrailParticles, {
+        kind: 'wisp',
+        x: jx, y: jy,
+        vx: bx * (0.4 + Math.random() * 0.7) + (Math.random() - 0.5) * 0.8,
+        vy: by * (0.4 + Math.random() * 0.7) + (Math.random() - 0.5) * 0.4,
+        drift: (Math.random() - 0.5) * 0.18,
+        life: 1, size: (3 + Math.random() * 3) * rainbowSize,
+        hue: hslToRgbStr(hue, 95, 60),
+        alphaMul: alphaMul * 1.1, startTime: nowOt, maxLifeMs: 750,
+      }, ORB_TRAIL_CAP);
+    }
+    // ~20 % chance per emission: spawn a bright sparkle of a random hue,
+    // larger and shorter-lived than the regular wisps.
+    if (Math.random() < 0.20) {
+      const sparkHue = Math.random() * 360;
+      pushCapped(orbTrailParticles, {
+        kind: 'wisp',
+        x: px + (Math.random() - 0.5) * 18,
+        y: py + (Math.random() - 0.5) * 18,
+        vx: bx * 0.5 + (Math.random() - 0.5) * 1.4,
+        vy: by * 0.5 + (Math.random() - 0.5) * 1.4,
+        drift: (Math.random() - 0.5) * 0.2,
+        life: 1, size: (5 + Math.random() * 3) * rainbowSize,
+        hue: hslToRgbStr(sparkHue, 100, 70),
+        alphaMul: Math.min(1, alphaMul * 1.4), startTime: nowOt, maxLifeMs: 420,
+      }, ORB_TRAIL_CAP);
+    }
+    return;
+  }
+
   for (let i = 0; i < count; i++) {
     // Small jitter around the behind-player spawn point.
     const jx = px + (Math.random() - 0.5) * 8;
@@ -18031,6 +18513,44 @@ function drawPlayer(tctx = ctx) {
     });
   }
 
+  // v1.8.0 E1: Rainbow Orb corona — three layered glow rings, each shifting
+  // through the hue spectrum at a different rate, painted ADDITIVELY over
+  // the orb core. Creates the multi-color halo that makes the rainbow orb
+  // visually unmistakable. Layered before the velocity streak so the streak
+  // stays sharp on top.
+  if (rainbowRunActive) {
+    const baseHue = frame * 3;
+    const prevComp = ctx.globalCompositeOperation;
+    ctx.globalCompositeOperation = 'lighter';
+    const ringSpecs = [
+      { rMul: 1.7, hueOffset: 0,   alpha: 0.55, width: 3.5 },
+      { rMul: 2.4, hueOffset: 120, alpha: 0.40, width: 2.8 },
+      { rMul: 3.2, hueOffset: 240, alpha: 0.28, width: 2.0 },
+    ];
+    for (const rs of ringSpecs) {
+      const hue = (baseHue + rs.hueOffset) % 360;
+      const rgb = hslToRgbStr(hue, 95, 60);
+      ctx.globalAlpha = rs.alpha * ghostAlpha;
+      ctx.strokeStyle = `rgba(${rgb},0.9)`;
+      ctx.lineWidth = rs.width;
+      const wobble = Math.sin(frame * 0.06 + rs.hueOffset * 0.02) * 0.18;
+      ctx.beginPath();
+      ctx.arc(0, 0, PLAYER_R * (rs.rMul + wobble), 0, 6.28);
+      ctx.stroke();
+    }
+    // Soft inner radial halo on the orb itself.
+    const innerHue = (baseHue + 60) % 360;
+    const innerRgb = hslToRgbStr(innerHue, 95, 70);
+    ctx.globalAlpha = 0.45 * ghostAlpha;
+    const haloG = ctx.createRadialGradient(0, 0, PLAYER_R * 0.3, 0, 0, PLAYER_R * 1.9);
+    haloG.addColorStop(0, `rgba(${innerRgb},0.85)`);
+    haloG.addColorStop(1, `rgba(${innerRgb},0)`);
+    ctx.fillStyle = haloG;
+    ctx.beginPath(); ctx.arc(0, 0, PLAYER_R * 1.9, 0, 6.28); ctx.fill();
+    ctx.globalCompositeOperation = prevComp;
+    ctx.globalAlpha = 1;
+  }
+
   const spd = Math.hypot(player.vx, player.vy);
   if (spd > 0.9) {
     ctx.globalAlpha = Math.min(spd/4,0.55) * ghostAlpha;
@@ -18623,8 +19143,11 @@ function updateCapstoneCountdowns() {
     el.classList.toggle('firing', !!firing);
   };
   // SHROUD — Phantom. Either counting up to flag-arm or flashing PRIMED.
+  // v1.8.0: rainbow run unlocks SHROUD/SUN FORGE/AEGIS rings (the four
+  // active capstones during rainbow) — `owned` predicate widens to include
+  // rainbowRunActive so the HUD reflects the actual auto-fire cadence.
   {
-    const owned = activeOrb === 'cosmic' && hasCapstone('shroud');
+    const owned = (activeOrb === 'cosmic' || rainbowRunActive) && hasCapstone('shroud');
     let progress = 0;
     let primed = false;
     if (owned) {
@@ -18635,7 +19158,7 @@ function updateCapstoneCountdowns() {
   }
   // NIGHT SHADE — Phantom. Cycle constant shared with tickCapstoneTimers.
   {
-    const owned = activeOrb === 'cosmic' && hasCapstone('nightShade');
+    const owned = (activeOrb === 'cosmic' || rainbowRunActive) && hasCapstone('nightShade');
     const fireTs = nightShadeNextFireTime || now;
     const elapsed = NIGHT_SHADE_CYCLE_MS - Math.max(0, fireTs - now);
     const progress = Math.max(0, Math.min(1, elapsed / NIGHT_SHADE_CYCLE_MS));
@@ -18645,7 +19168,7 @@ function updateCapstoneCountdowns() {
   }
   // SUN FORGE — Inferno. Cycle constant shared with tickCapstoneTimers.
   {
-    const owned = activeOrb === 'solar' && hasCapstone('sunForge');
+    const owned = (activeOrb === 'solar' || rainbowRunActive) && hasCapstone('sunForge');
     const fireTs = sunForgeNextFireTime || now;
     const elapsed = SUN_FORGE_CYCLE_MS - Math.max(0, fireTs - now);
     const progress = Math.max(0, Math.min(1, elapsed / SUN_FORGE_CYCLE_MS));
@@ -18655,7 +19178,7 @@ function updateCapstoneCountdowns() {
   }
   // AEGIS — Bulwark. Cycle constant shared with tickCapstoneTimers.
   {
-    const owned = activeOrb === 'asteroid' && hasCapstone('aegis');
+    const owned = (activeOrb === 'asteroid' || rainbowRunActive) && hasCapstone('aegis');
     const fireTs = aegisNextFireTime || now;
     const elapsed = AEGIS_CYCLE_MS - Math.max(0, fireTs - now);
     const progress = Math.max(0, Math.min(1, elapsed / AEGIS_CYCLE_MS));
@@ -18668,7 +19191,7 @@ function updateCapstoneCountdowns() {
   // refactor keeps this ring in sync with the auto-fire cadence — the prior
   // hardcode here desynced the ring from the actual fire time.
   {
-    const owned = activeOrb === 'nebula' && hasCapstone('eventHorizon');
+    const owned = (activeOrb === 'nebula' || rainbowRunActive) && hasCapstone('eventHorizon');
     const fireTs = lingeringHorizonNextFireTime || now;
     const elapsed = LINGERING_HORIZON_CYCLE_MS - Math.max(0, fireTs - now);
     const progress = Math.max(0, Math.min(1, elapsed / LINGERING_HORIZON_CYCLE_MS));
@@ -19104,7 +19627,7 @@ function render() {
     ctx.globalAlpha = 1;
   }
 
-  if (state==='playing'||state==='dead'||state==='paused'||state==='apocalypse'||state==='devmode'||state==='tutorial') {
+  if (state==='playing'||state==='dead'||state==='paused'||state==='apocalypse'||state==='devmode'||state==='tutorial'||state==='rainbow_predeath') {
     drawBurnZones();
     drawGravityWellLines();
     drawPowerups();
@@ -19144,6 +19667,16 @@ function render() {
   else if (!pixiActive && state === 'dead' && apocalypseDeathFlag) {
     ctx.fillStyle = 'rgba(0,0,0,1)';
     ctx.fillRect(0, 0, W, H);
+  }
+
+  // v1.8.0 PART D: Rainbow Orb reverse-death convergence. Particles fly
+  // INWARD toward the recorded death position, decelerating as they
+  // approach, then fading. Self-contained physics + render — does not
+  // depend on the state-gated drawDeathParticles pass above (so it runs
+  // cleanly during the 'rainbow_cutscene' state where the main game
+  // particle loop is dormant).
+  if (rainbowReverseParticles.length || rainbowReverseFlashUntil) {
+    drawRainbowReverseParticles();
   }
 
   // v1.6.4 tutorial — wall-flash overlay (step 11). Red gradient on each
@@ -19451,11 +19984,17 @@ document.getElementById('startBtn').addEventListener('click', ()=>{
     // v1.6.4: DRIFTRESET also clears the tutorial-completed flag so the
     // dev tester re-experiences the forced first-run tutorial on next start.
     saveTutorialCompleted(false);
+    // v1.8.0: also clear the Rainbow Orb one-time flag so the cutscene
+    // re-fires on the next post-tutorial first death. saveRainbowOrbUsed
+    // writes localStorage AND schedules a PGS write, so the cleared state
+    // also propagates up to cloud — preventing remote merge from re-locking
+    // the cutscene on the next sync.
+    saveRainbowOrbUsed(false);
     pgsScheduleWrite();
     refreshActiveTreeCache();
     if (typeof refreshOrbBrowser === 'function') { try { refreshOrbBrowser(); } catch {} }
     if (typeof refreshImpossibleVisibility === 'function') refreshImpossibleVisibility();
-    console.log('[DRIFTRESET] All progress wiped, tutorial flag cleared');
+    console.log('[DRIFTRESET] All progress wiped, tutorial + rainbow flags cleared');
     // Fall through — run starts normally on the now-reset profile.
   }
   // Sentry fire-test cheat: pilot name "SENTRY" triggers a tagged test event
@@ -19798,6 +20337,15 @@ const TUTORIAL_STEPS = [
     onSuccess: () => { tutHideArrows(); },
     onExit: () => { tutClearSpawned(); },
   },
+  // 3.5 GRAVITY DISTANCE SCALING — pro tip. Attract/repel force scales with
+  // proximity; this reveal teaches players to slingshot off nearby bodies
+  // rather than mashing the input from far away.
+  {
+    id: 'gravityTip',
+    title: 'PRO TIP',
+    body: 'Gravity scales with distance. Get close to a body for stronger pull/push effects. Use this to slingshot around planets.',
+    taskCheck: null,
+  },
   // 4 POWERUPS INTRO — info-only.
   {
     id: 'powerupsIntro',
@@ -19968,7 +20516,7 @@ const TUTORIAL_STEPS = [
   {
     id: 'walls',
     title: 'WALLS ARE DEADLY',
-    body: 'Drifting off any edge of the play area ends your run. Stay inside.',
+    body: 'Walls are deadly. But Shield bounces you off and consumes one stack. Ghost lets you phase through them safely.',
     taskCheck: null,
     onEnter: () => {
       // Flash for 2 s; render() reads the timer and draws the edges.
@@ -20173,6 +20721,488 @@ function tutorialFinish() {
   txt.addEventListener('touchstart', handler, { passive: false });
 })();
 
+// --- v1.8.0 Rainbow Orb intro cutscene ---
+// Fires exactly once per install: on the player's very first death after
+// completing the tutorial. Plays a six-screen dialogue followed by a
+// reverse-death particle effect, then drops the player into a maxed-out
+// "Rainbow Orb" run. Persistence flag is `rainbowOrbUsed` (localStorage +
+// PGS, OR-merged).
+const RAINBOW_DIALOGUE_PRE = [
+  // [speaker, body]
+  ['???', 'Wake up, {PILOT}.'],
+  ['???', "You felt that, didn't you?"],
+  ['???', 'The void is patient. It has waited longer than your stars.'],
+  ['???', 'But the void does not get to win.'],
+  ['???', 'Not today.'],
+  ['???', 'Take this. Feel what was. Feel what could be.'],
+];
+const RAINBOW_DIALOGUE_POST = ['???', 'Now go. The cosmos remembers those who dare.'];
+const RAINBOW_TYPE_INTERVAL_MS = 28; // letter-by-letter pace (arcade-fast)
+
+let rainbowCutsceneScreenIdx = 0;
+let rainbowCutsceneTyping = false;
+let rainbowCutsceneTimer = null;
+let rainbowCutsceneFullText = '';
+let rainbowCutsceneShownChars = 0;
+let rainbowCutscenePhase = 'pre'; // 'pre' | 'particle' | 'post'
+
+function rainbowPilotName() {
+  try {
+    const n = (typeof getUsername === 'function' && getUsername()) || '';
+    return n.trim() || 'Pilot';
+  } catch { return 'Pilot'; }
+}
+
+function rainbowSubstitute(text) {
+  return text.replace('{PILOT}', rainbowPilotName());
+}
+
+function rainbowSetSpeaker(s) {
+  const el = document.getElementById('rainbowSpeaker');
+  if (el) el.textContent = s;
+}
+
+function rainbowSetText(s) {
+  const el = document.getElementById('rainbowText');
+  if (el) el.textContent = s;
+}
+
+function rainbowShowContinue(show) {
+  const el = document.getElementById('rainbowContinue');
+  if (!el) return;
+  el.classList.toggle('hidden', !show);
+}
+
+// Arcade-style per-letter typing tick. Uses an existing short SFX as the
+// blip — `clickSecondary` is the lightest UI tick available; reuses a
+// shared SFX context instead of allocating new audio per letter.
+function rainbowTypeTick() {
+  // Every 2nd char only — keeps the per-letter blip from sounding manic.
+  if ((rainbowCutsceneShownChars & 1) === 0) {
+    try { if (typeof SFX !== 'undefined' && SFX.clickSecondary) SFX.clickSecondary(); } catch {}
+  }
+}
+
+function rainbowStartTyping(text) {
+  rainbowCutsceneFullText = text;
+  rainbowCutsceneShownChars = 0;
+  rainbowCutsceneTyping = true;
+  rainbowShowContinue(false);
+  rainbowSetText('');
+  function step() {
+    if (!rainbowCutsceneActive) { rainbowCutsceneTyping = false; return; }
+    rainbowCutsceneShownChars++;
+    rainbowSetText(rainbowCutsceneFullText.slice(0, rainbowCutsceneShownChars));
+    rainbowTypeTick();
+    if (rainbowCutsceneShownChars >= rainbowCutsceneFullText.length) {
+      rainbowCutsceneTyping = false;
+      rainbowShowContinue(true);
+      return;
+    }
+    rainbowCutsceneTimer = setTimeout(step, RAINBOW_TYPE_INTERVAL_MS);
+  }
+  step();
+}
+
+function rainbowShowScreen(idx) {
+  rainbowCutsceneScreenIdx = idx;
+  const entry = RAINBOW_DIALOGUE_PRE[idx];
+  if (!entry) return;
+  rainbowSetSpeaker(entry[0]);
+  rainbowStartTyping(rainbowSubstitute(entry[1]));
+}
+
+// Called when the player taps the cutscene overlay. Behavior depends on
+// the current phase + whether typing is mid-stream.
+function rainbowCutsceneTap() {
+  if (!rainbowCutsceneActive) return;
+  if (rainbowCutsceneTyping) {
+    // Mid-typewriter — fast-forward to end of current screen.
+    if (rainbowCutsceneTimer) { clearTimeout(rainbowCutsceneTimer); rainbowCutsceneTimer = null; }
+    rainbowCutsceneShownChars = rainbowCutsceneFullText.length;
+    rainbowSetText(rainbowCutsceneFullText);
+    rainbowCutsceneTyping = false;
+    rainbowShowContinue(true);
+    return;
+  }
+  if (rainbowCutscenePhase === 'pre') {
+    const next = rainbowCutsceneScreenIdx + 1;
+    if (next < RAINBOW_DIALOGUE_PRE.length) {
+      rainbowShowScreen(next);
+      return;
+    }
+    // Pre-dialogue finished → particle + post.
+    rainbowCutscenePhase = 'particle';
+    rainbowPlayReverseDeath();
+    return;
+  }
+  if (rainbowCutscenePhase === 'post') {
+    // Final tap after screen 7 → begin rainbow run.
+    rainbowCutsceneActive = false;
+    const _ov = document.getElementById('rainbowOverlay');
+    if (_ov) {
+      _ov.classList.remove('visible');
+      _ov.classList.remove('particle-phase');
+    }
+    rainbowBeginRun();
+  }
+}
+
+// Reverse-death particle + audio. Spawns a burst of inward-flowing rainbow
+// particles at the player position; emits a reversed swoosh via the SFX
+// helper, then displays Screen 7 during the effect tail.
+// v1.8.0 PART D: reverse-death convergence rewrite. Particles spawn in a
+// ring 200-400 px around the recorded death position, each carrying its own
+// target (the death position) and a per-particle "duration" (~1.5-2 s). On
+// each frame the particle eases from its spawn position toward the target
+// using a 1 - (1-t)^2 (ease-out) progression so it visibly decelerates as
+// it approaches. Once it reaches the target, life fades to 0 and the
+// particle expires. A brief rainbow burst flash at the target position
+// fires after the last particle arrives ("orb reformed"). The animation
+// total is ~1.7 s; the post-dialogue setTimeout below is tuned to that.
+const RAINBOW_CONVERGE_DURATION_MS = 1700;
+const RAINBOW_CONVERGE_COUNT = 80;
+function rainbowPlayReverseDeath() {
+  // Hide dialogue while the particles play. Cleared back to speaker text
+  // when post-dialogue starts below.
+  rainbowShowContinue(false);
+  rainbowSetSpeaker('');
+  rainbowSetText('');
+  // Drop the overlay opacity further so the inward-flowing rainbow
+  // particles read clearly through the dim. The class persists through
+  // post-dialogue (screen 7) so the particle tail stays visible while the
+  // final line types out.
+  const _ovEl = document.getElementById('rainbowOverlay');
+  if (_ovEl) _ovEl.classList.add('particle-phase');
+  // Target = the death position recorded in player.x/y. Cutscene runs with
+  // update() frozen, so player.x/y still hold the death-frame values.
+  const px = (typeof player !== 'undefined' && player) ? player.x : (W / 2);
+  const py = (typeof player !== 'undefined' && player) ? player.y : (H / 2);
+  const now = Date.now();
+  // Clear any prior reverse-particle batch (defensive — should be empty).
+  rainbowReverseParticles = [];
+  for (let i = 0; i < RAINBOW_CONVERGE_COUNT; i++) {
+    // Even angular distribution around the death point + small jitter so
+    // the ring doesn't look mechanical.
+    const a = (i / RAINBOW_CONVERGE_COUNT) * Math.PI * 2 + (Math.random() - 0.5) * 0.18;
+    const dist = 200 + Math.random() * 200;     // 200-400 px radius
+    const sx = px + Math.cos(a) * dist;
+    const sy = py + Math.sin(a) * dist;
+    // Per-particle duration ±15 % so they don't all arrive on the same
+    // frame — gives the convergence a natural "stragglers" feel and lets
+    // the burst flash land cleanly when the LAST particle arrives.
+    const dur = RAINBOW_CONVERGE_DURATION_MS * (0.85 + Math.random() * 0.3);
+    // Per-particle hue covers the spectrum; the wide spread keeps individual
+    // colors readable rather than blending into a muddy white at the center.
+    const hue = (i / RAINBOW_CONVERGE_COUNT) * 360 + Math.random() * 12;
+    rainbowReverseParticles.push({
+      sx, sy,             // spawn position (frozen)
+      tx: px, ty: py,     // target position (death point)
+      x: sx, y: sy,       // current position
+      startTime: now,
+      duration: dur,
+      size: 2.0 + Math.random() * 2.2,
+      rgb: hslToRgbStr(hue % 360, 95, 60),
+    });
+  }
+  // Audio: reversed swoosh sustains across the full convergence window.
+  // The barrier SFX is short (~0.5 s), so play it slightly delayed to peak
+  // when the particles are converging on center (~60-70 % through).
+  try { if (typeof SFX !== 'undefined' && SFX.playSfxBuffer) SFX.playSfxBuffer('hyperspeedBarrier', 0.55); } catch {}
+  setTimeout(() => {
+    try { if (typeof SFX !== 'undefined' && SFX.playSfxBuffer) SFX.playSfxBuffer('hyperspeedBarrier', 0.45); } catch {}
+  }, 700);
+  // Fade phase music back in slowly during the effect tail.
+  try { if (typeof SFX !== 'undefined' && SFX.playTrack) SFX.playTrack('gameplay', 1.2); } catch {}
+  // Schedule the rainbow "orb reformed" burst flash at the moment the last
+  // particle is expected to arrive. Triggers a wide rainbow circle that
+  // expands and fades over 350 ms.
+  setTimeout(() => {
+    if (!rainbowCutsceneActive) return;
+    rainbowReverseFlashX = px;
+    rainbowReverseFlashY = py;
+    rainbowReverseFlashUntil = Date.now() + 380;
+  }, Math.floor(RAINBOW_CONVERGE_DURATION_MS * 1.05));
+  // Post-dialogue starts shortly after the burst flash fades.
+  setTimeout(() => {
+    if (!rainbowCutsceneActive) return;
+    rainbowCutscenePhase = 'post';
+    rainbowSetSpeaker(RAINBOW_DIALOGUE_POST[0]);
+    rainbowStartTyping(rainbowSubstitute(RAINBOW_DIALOGUE_POST[1]));
+  }, Math.floor(RAINBOW_CONVERGE_DURATION_MS * 1.05) + 420);
+}
+
+// Per-frame physics + render for the reverse-death particles. Called from
+// render() unconditionally (the array is empty when no convergence is in
+// flight). Uses ease-out interpolation so each particle decelerates into
+// the death point.
+function drawRainbowReverseParticles() {
+  const now = Date.now();
+  // Particle physics + draw.
+  if (rainbowReverseParticles.length) {
+    const survivors = [];
+    ctx.save();
+    const prevComp = ctx.globalCompositeOperation;
+    ctx.globalCompositeOperation = 'lighter';
+    for (const p of rainbowReverseParticles) {
+      const tRaw = (now - p.startTime) / p.duration;
+      if (tRaw >= 1) continue; // arrived → drop
+      // Ease-out: 1 - (1 - t)^2 — fast start, decelerates toward target.
+      const t = 1 - Math.pow(1 - tRaw, 2);
+      p.x = p.sx + (p.tx - p.sx) * t;
+      p.y = p.sy + (p.ty - p.sy) * t;
+      // Alpha + size fade pattern: bright while approaching, fade in the
+      // last 15 % so the arrival "absorbs" cleanly into the target point.
+      const fadeT = tRaw > 0.85 ? (1 - tRaw) / 0.15 : 1;
+      const alpha = Math.max(0, Math.min(1, fadeT * (0.7 + tRaw * 0.3)));
+      const radius = p.size * (0.6 + tRaw * 0.5);
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = `rgba(${p.rgb},1)`;
+      ctx.beginPath(); ctx.arc(p.x, p.y, radius, 0, 6.28); ctx.fill();
+      // Soft motion-trail tail toward spawn position, fading.
+      const tailLen = Math.max(0, 14 * (1 - tRaw));
+      if (tailLen > 1) {
+        const tx2 = p.x - (p.tx - p.sx) / Math.hypot(p.tx - p.sx, p.ty - p.sy + 0.01) * tailLen;
+        const ty2 = p.y - (p.ty - p.sy) / Math.hypot(p.tx - p.sx, p.ty - p.sy + 0.01) * tailLen;
+        ctx.globalAlpha = alpha * 0.35;
+        ctx.strokeStyle = `rgba(${p.rgb},1)`;
+        ctx.lineWidth = radius * 0.9;
+        ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(tx2, ty2); ctx.stroke();
+      }
+      survivors.push(p);
+    }
+    ctx.globalCompositeOperation = prevComp;
+    ctx.globalAlpha = 1;
+    ctx.restore();
+    rainbowReverseParticles = survivors;
+  }
+  // Post-convergence "orb reformed" burst flash. Expanding rainbow ring,
+  // additive, fades over 380 ms. Hue cycles through spectrum across the
+  // ring stack so the read is unambiguously rainbow.
+  if (rainbowReverseFlashUntil && now < rainbowReverseFlashUntil) {
+    const remain = rainbowReverseFlashUntil - now;
+    const total = 380;
+    const t = 1 - remain / total; // 0 → 1
+    const alpha = (1 - t) * 0.95;
+    ctx.save();
+    const prevComp = ctx.globalCompositeOperation;
+    ctx.globalCompositeOperation = 'lighter';
+    // Five concentric expanding rings, each in a different hue.
+    const baseHue = (now * 0.6) % 360;
+    for (let i = 0; i < 5; i++) {
+      const ringT = t + i * 0.05;
+      if (ringT > 1) continue;
+      const r = 6 + ringT * 90;
+      const hue = (baseHue + i * 72) % 360;
+      const rgb = hslToRgbStr(hue, 95, 65);
+      ctx.globalAlpha = alpha * (1 - i * 0.15);
+      ctx.strokeStyle = `rgba(${rgb},1)`;
+      ctx.lineWidth = 3.5 - i * 0.4;
+      ctx.beginPath(); ctx.arc(rainbowReverseFlashX, rainbowReverseFlashY, r, 0, 6.28); ctx.stroke();
+    }
+    // Bright inner core that fades fast.
+    if (t < 0.5) {
+      const coreHue = baseHue;
+      const coreRgb = hslToRgbStr(coreHue, 95, 80);
+      ctx.globalAlpha = (1 - t * 2) * 0.9;
+      ctx.fillStyle = `rgba(${coreRgb},1)`;
+      ctx.beginPath(); ctx.arc(rainbowReverseFlashX, rainbowReverseFlashY, 18 * (1 - t * 2) + 6, 0, 6.28); ctx.fill();
+    }
+    ctx.globalCompositeOperation = prevComp;
+    ctx.globalAlpha = 1;
+    ctx.restore();
+  } else if (rainbowReverseFlashUntil && now >= rainbowReverseFlashUntil) {
+    rainbowReverseFlashUntil = 0;
+  }
+}
+
+// Tiny HSL→RGB-string helper for the rainbow particle tint. Sticks to the
+// rgb 'R,G,B' format the existing deathParticles renderer expects.
+function hslToRgbStr(h, s, l) {
+  s /= 100; l /= 100;
+  const c = (1 - Math.abs(2 * l - 1)) * s;
+  const hh = (h % 360) / 60;
+  const x = c * (1 - Math.abs((hh % 2) - 1));
+  let r1 = 0, g1 = 0, b1 = 0;
+  if      (hh < 1) { r1 = c; g1 = x; }
+  else if (hh < 2) { r1 = x; g1 = c; }
+  else if (hh < 3) { g1 = c; b1 = x; }
+  else if (hh < 4) { g1 = x; b1 = c; }
+  else if (hh < 5) { r1 = x; b1 = c; }
+  else             { r1 = c; b1 = x; }
+  const m = l - c / 2;
+  return `${Math.round((r1 + m) * 255)},${Math.round((g1 + m) * 255)},${Math.round((b1 + m) * 255)}`;
+}
+
+// Entry point: caller checks the gate (state was 'playing', tutorial done,
+// rainbowOrbUsed false). Stops music, hides death-screen affordances,
+// shows the overlay, starts the typewriter on screen 1.
+function rainbowStartCutscene() {
+  if (rainbowCutsceneActive) return;
+  rainbowCutsceneActive = true;
+  rainbowCutscenePhase = 'pre';
+  rainbowCutsceneScreenIdx = 0;
+  state = 'rainbow_cutscene';
+  // v1.8.0 PART C: clear residual death-animation visuals BEFORE switching
+  // to the cutscene state. The Canvas-2D render path is gated to specific
+  // states (drawDeathParticles / drawDeathShards don't run during
+  // 'rainbow_cutscene'), but the pixi path renders these arrays
+  // unconditionally — leaving a static colored blob at the death position
+  // because their physics also can't advance. Clearing the arrays here
+  // removes that frozen residue ("red dot") and gives the cutscene a clean
+  // canvas to fade the reverse-particle effect over. The 1.7s death
+  // animation that runs during 'rainbow_predeath' has already played out by
+  // the time this function fires, so nothing visible is lost.
+  deathParticles = [];
+  deathShards = [];
+  deathFlashFrames = 0;
+  if (pendingDeathBurstTimer) { clearTimeout(pendingDeathBurstTimer); pendingDeathBurstTimer = null; }
+  // Also clear other transient gameplay residue that would otherwise stay
+  // frozen on screen during the dialogue (orb trail particles, destroy
+  // effects, pickup particles, salvage sparkles, etc.).
+  pickupParticles = [];
+  salvageSparkles = [];
+  twilightEchoVisuals = [];
+  butterflyEffectVisuals = [];
+  phantomBlades = [];
+  ghostlightBursts = [];
+  destroyEffects = [];
+  orbTrailParticles = [];
+  // Defensive: also clear the reverse-particle batch (only populated once
+  // the player taps past screen 6; clearing here covers the edge case where
+  // a previous cutscene's particles never finished animating).
+  rainbowReverseParticles = [];
+  rainbowReverseFlashUntil = 0;
+  // Stop current music immediately.
+  try { if (typeof SFX !== 'undefined' && SFX.stopAllGameplayTracks) SFX.stopAllGameplayTracks(0.2); } catch {}
+  try { if (typeof SFX !== 'undefined' && SFX.playTrack) SFX.playTrack(null, 0.3); } catch {}
+  // Hide any death-screen affordances that might have rendered momentarily.
+  const overlayEl = document.getElementById('overlay');
+  if (overlayEl) overlayEl.classList.add('hidden');
+  document.getElementById('rainbowOverlay').classList.add('visible');
+  // Pause/ad chrome should not appear over the cutscene.
+  if (typeof pauseBtn !== 'undefined' && pauseBtn) pauseBtn.classList.remove('visible');
+  if (typeof AdManager !== 'undefined' && AdManager.hideBanner) try { AdManager.hideBanner(); } catch {}
+  rainbowShowScreen(0);
+}
+
+// Stash for restoring the player's normal orb after the rainbow run ends.
+let _rainbowPrevOrb = null;
+// Wall-clock ms elapsed at the moment of the death that triggered the
+// cutscene. Used in rainbowBeginRun to restore runStartTime so the timer
+// resumes from that point (cutscene time doesn't count).
+let _rainbowDeathElapsedMs = 0;
+
+// v1.8.0 PART D: reverse-death convergence particles. Self-contained
+// system separate from deathParticles so we can run physics + render
+// during the 'rainbow_cutscene' state (where the main particle loop is
+// dormant). Each particle stores its own target (death position) and
+// converges with decelerating motion. `rainbowReverseFlashUntil` is the
+// wall-clock end time of the post-convergence rainbow burst flash that
+// signals "orb reformed."
+let rainbowReverseParticles = [];
+let rainbowReverseFlashUntil = 0;
+let rainbowReverseFlashX = 0;
+let rainbowReverseFlashY = 0;
+
+// Begin the special Rainbow Orb run. Resets game state, flips rainbow
+// flag on, then pre-loads: 7 shield stacks, full burst, fortress active.
+function rainbowBeginRun() {
+  // Mark the one-time flag immediately so an interrupted run still locks
+  // out the cutscene on next launch.
+  saveRainbowOrbUsed(true);
+  rainbowRunActive = true;
+  rainbowOutcome = null;
+  // Pick asteroid orb so AEGIS + shield-tree node bonuses (Kinetic Ward,
+  // Bastion) feel natural; the other 3 capstones bypass activeOrb gates
+  // via the rainbow check. Previous orb is restored when goToMainMenu
+  // runs after the rainbow death.
+  _rainbowPrevOrb = activeOrb;
+  activeOrb = 'asteroid';
+  // refreshActiveTreeCache uses orbTrees[activeOrb] — but rankOf/hasCapstone
+  // short-circuit on rainbowRunActive, so the cache contents don't matter.
+  refreshActiveTreeCache();
+  // v1.8.0 A3: do NOT resetGame(). The rainbow run resumes from the death
+  // frame — player position, body positions, score, planetsPassed, frame
+  // counter all preserved. Per spec ("time reversed and resurrected"), the
+  // player picks up where they died. The 2× progression-time multiplier
+  // resumes from the death-time elapsed (cutscene wall-time doesn't count):
+  //   adjust runStartTime so elapsedRunSeconds() = _rainbowDeathElapsedMs/2,
+  //   so elapsedProgressionSeconds() (= elapsedRunSeconds * 2 during rainbow)
+  //   reads the original death-time elapsed, then advances at 2× from there.
+  const now = Date.now();
+  runStartTime = now - Math.max(0, Math.floor(_rainbowDeathElapsedMs / 2));
+  // Bring the player back to "alive" state: zero momentum, no leftover
+  // death-flash residue. Player position is left untouched (death position).
+  player.vx = 0; player.vy = 0;
+  // Clear apocalypse state so the rainbow run doesn't immediately re-trigger
+  // a sun-impact death (in case the original death was apocalypse-caused).
+  resetApocalypse();
+  deathFlashFrames = 0;
+  // Clear leftover death visuals from the cutscene's reverse-particle pass
+  // so the run-start canvas reads clean. Bodies + orb trail remain.
+  deathParticles = [];
+  deathShards = [];
+  rainbowReverseParticles = [];
+  rainbowReverseFlashUntil = 0;
+  if (pendingDeathBurstTimer) { clearTimeout(pendingDeathBurstTimer); pendingDeathBurstTimer = null; }
+  // Streak resets — death broke it. Combos cleared in triggerDeath already.
+  destroyStreak = 0;
+  lastDestroyTime = 0;
+  const sd = document.getElementById('streakDisplay'); if (sd) sd.classList.remove('visible');
+  // Pre-loaded run state: 7 shield stacks, full burst, AEGIS-tier fortress,
+  // all capstones armed to fire on first cadence.
+  shieldEndTime = now + FORTRESS_SHIELD_DURATION_MS;
+  activeEffects.shield = FORTRESS_SHIELD_DURATION_MS;
+  shieldHits = 7;
+  shieldBroken = false;
+  fortressShield = true;
+  bastion2BonusMs = 0;
+  bastion2NextProcTime = 0;
+  burstCooldownEnd = 0;
+  burstTriggered = false;
+  // Capstones armed to fire on their first cadence after the run begins.
+  // Shroud's flag pre-armed so the first single pickup fires as a ghost
+  // combo immediately.
+  shroudFlagSet = true;
+  shroudLastFireTime = now;
+  sunForgeNextFireTime = now + SUN_FORGE_CYCLE_MS;
+  aegisNextFireTime    = now + AEGIS_CYCLE_MS;
+  nightShadeNextFireTime = now + NIGHT_SHADE_CYCLE_MS;
+  lingeringHorizonNextFireTime = now + LINGERING_HORIZON_CYCLE_MS;
+  // Drop player back into the live state machine.
+  state = 'playing';
+  // Resume gameplay music (already fading in from the particle phase).
+  try { if (typeof SFX !== 'undefined' && SFX.playTrack) SFX.playTrack('gameplay', 0.6); } catch {}
+  if (typeof pauseBtn !== 'undefined' && pauseBtn) pauseBtn.classList.add('visible');
+}
+
+// Tap handler — wired once at module scope.
+(function wireRainbowCutsceneTap() {
+  const ov = document.getElementById('rainbowOverlay');
+  if (!ov) return;
+  const handler = (e) => {
+    if (!rainbowCutsceneActive) return;
+    e.preventDefault();
+    e.stopPropagation();
+    rainbowCutsceneTap();
+  };
+  ov.addEventListener('click', handler);
+  ov.addEventListener('touchstart', handler, { passive: false });
+})();
+
+// Predicate used by triggerDeath() to swap the normal death flow for the
+// cutscene. Skipped when we're already inside a rainbow run (only the
+// FIRST normal death qualifies).
+function rainbowCutsceneEligible() {
+  return tutorialCompleted && !rainbowOrbUsed && !rainbowRunActive && !rainbowCutsceneActive;
+}
+
+// v1.8.0 final: the standalone post-rainbow crystal-reward banner was
+// removed — the death screen's normal "+N crystals" line already shows
+// the payout, so the separate pop-up was redundant.
+
 function pauseGame() {
   if (state !== 'playing') return;
   state = 'paused';
@@ -20210,6 +21240,17 @@ function restartFromPause() {
 
 function goToMainMenu() {
   state = 'idle';
+  // v1.8.0: clear any in-flight rainbow run state when returning to main
+  // menu (pause→menu mid-rainbow-run, or post-rainbow death screen flow).
+  // Restore the player's pre-rainbow orb so the menu shows their actual
+  // selection, not the asteroid override.
+  rainbowRunActive = false;
+  if (_rainbowPrevOrb && ORB_DEFS[_rainbowPrevOrb]) {
+    activeOrb = _rainbowPrevOrb;
+    _rainbowPrevOrb = null;
+    refreshActiveTreeCache();
+  }
+  rainbowOutcome = null;
   if (typeof AdManager !== 'undefined') AdManager.hideBanner();
   leftDown = false; rightDown = false;
   lastSpawnZone = -1;
@@ -20253,6 +21294,8 @@ function goToMainMenu() {
   shieldBroken = false;
   shieldHits = 0;
   fortressShield = false;
+  bastion2BonusMs = 0;
+  bastion2NextProcTime = 0;
   activeCombos = {};
   lastComboLabel = null;
   recentNovaFrames = 0;
@@ -23271,6 +24314,8 @@ function exitDevMode() {
   hyperspeedCurrentMult = 1;
   hyperspeedPeakMult = 1;
   hyperSpeedStacks = 0;
+  bastion2BonusMs = 0;
+  bastion2NextProcTime = 0;
   burstCooldownEnd = 0;
   burstTriggered = false;
   state = 'idle';
