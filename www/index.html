@@ -5979,6 +5979,19 @@ function tickCapstoneTimers() {
 // PHALANX feedback-loop risk that motivated the original guard.
 function checkDestroyProc(body, source) {
   if (state !== 'playing' && state !== 'devmode') return;
+  // v1.8.0 Rainbow Orb baseline per-kill burst-CD shave. The named per-kill
+  // skills (Salvage / Momentum / Coronal Hold) are excluded during rainbow
+  // because they each gate on a different active effect AND stacked into
+  // infinite-burst territory. This single flat reduction replaces all three:
+  // -0.2% of BURST_COOLDOWN_MS (= -60 ms at the 30 s base) shaved off the
+  // live cooldown per body destroyed, source-agnostic (any kill type
+  // counts — nova, EMP, ghost, barrier, shield, manual contact).
+  if (rainbowRunActive && burstCooldownEnd > Date.now()) {
+    const _rbReduce = Math.floor(0.002 * BURST_COOLDOWN_MS);
+    if (_rbReduce > 0) {
+      burstCooldownEnd = Math.max(Date.now(), burstCooldownEnd - _rbReduce);
+    }
+  }
   // Salvage (Fortress Opportunism T1) v1.6.6 rework: while a shield is up,
   // every body destroyed shaves a % of the Warp burst base off the live
   // cooldown. Pattern matches Warp Momentum (smoothEntry); the shield-active
