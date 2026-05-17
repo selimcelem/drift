@@ -8973,6 +8973,11 @@ loadStats();
 // the run summary renders. Each entry: { kind, title, subtitle? }.
 let pendingMilestones = [];
 function statsOnKill() {
+  // Rainbow runs do not write to personal stats per spec. Gating here covers
+  // the per-orb kill counter (activeOrb is forced to 'asteroid' during the
+  // run, which would otherwise inflate Bulwark's tally), total kills, the
+  // per-1000 milestone banner, and the trail-unlock check.
+  if (rainbowRunActive) return;
   stats.totalKills++;
   const orb = activeOrb;
   if (!stats.perOrb[orb]) stats.perOrb[orb] = { kills: 0, runs: 0 };
@@ -8998,9 +9003,19 @@ function statsOnKill() {
     saveStats();
   }
 }
-function statsOnPassed() { stats.totalPassed++; }
-function statsOnComboActivated() { stats.totalCombosTriggered++; }
+function statsOnPassed() {
+  if (rainbowRunActive) return;
+  stats.totalPassed++;
+}
+function statsOnComboActivated() {
+  if (rainbowRunActive) return;
+  stats.totalCombosTriggered++;
+}
 function statsOnRunStart() {
+  // Rainbow runs are scripted resurrections, not real runs — they must not
+  // tick total-runs-played or the per-orb run counter. rainbowBeginRun()
+  // currently bypasses resetGame() so this gate is defense-in-depth.
+  if (rainbowRunActive) return;
   stats.totalRunsPlayed++;
   const orb = activeOrb;
   if (!stats.perOrb[orb]) stats.perOrb[orb] = { kills: 0, runs: 0 };
