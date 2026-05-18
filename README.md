@@ -46,7 +46,7 @@ Top 5 scores are kept locally in `localStorage` and shown on the death screen.
 - **Frame-rate setting (v1.6.4)** — selectable 60 / 120 / Adaptive in settings, defaulting to 60 fps for battery savings. Static menus drop to 30 fps automatically and the render loop pauses entirely when a fullscreen overlay covers the canvas, addressing a v1.6.3 battery-drain issue where the skill-tree menu was burning ~10 % battery in 10–15 minutes
 - **Resume after crash** — gameplay state is snapshotted to `localStorage` every 5 seconds. If Android kills the app mid-run (backgrounded, OOM, driver reset), the main menu shows a RESUME button with the saved difficulty / survival time / score. Clicking it plays a 3-2-1 countdown and restores the run exactly where it was
 - **Cloud save via Google Play Games** *(optional, Android)* — sign in once and your drift crystals, unlocked orbs, active orb, and per-difficulty top-5 scores sync to a single Play Games Saved Game (`drift_save_v1`) via the Snapshots API. Conflicts resolve with a max-per-field merge (higher crystal count wins, unlocked orbs union, top-5-per-difficulty scores). First-launch prompt lets you opt in; staying signed-out leaves the game 100 % local. Implemented as a custom Capacitor plugin (Kotlin) bridging `play-services-games-v2`
-- **Local + global leaderboards** — top 5 per difficulty stored locally; global top 10 served from a serverless AWS backend. Global top 10 entries are permanent (TTL attribute removed); positions 11+ expire after 7 days
+- **Local + global leaderboards** — top 5 per difficulty stored locally; global top 10 served from a serverless AWS backend. Top-10 entries are written with a 30-day TTL; positions 11+ get a 1-day TTL so non-leaderboard rows fall off quickly
 - **Loading screen + TAP TO START** — boot shows a drifting star field and a progress bar while music/SFX buffers, background imagery, planet sprites, and warm-up gradients load in parallel. The final TAP TO START button satisfies the browser's user-gesture requirement for audio playback, so the menu track begins cleanly instead of the first-tap-anywhere hack
 - **Analytics dashboard** — password-protected `/analytics` endpoint records per-run telemetry (death cause, phase reached, orb, powerups, burst count, streak, crystals earned) and serves a server-rendered HTML dashboard with overview stats, breakdowns, and per-pilot run history
 - **Play In-App Updates** — the Android build uses Google Play's flexible in-app update flow to keep testers current without forcing them out of a run
@@ -106,20 +106,20 @@ Want heavier gravity? Bump `FORCE`. Want a more forgiving ramp? Raise `SPEED_SCO
 ```
           API Gateway (HTTP API, CORS *)
           ├─ POST /score        ─▶ submit-score     ─▶ drift-leaderboard
-          ├─ GET  /leaderboard  ─▶ get-leaderboard  ─▶   (top 10: no TTL, 11+: 7-day TTL)
+          ├─ GET  /leaderboard  ─▶ get-leaderboard  ─▶   (top 10: 30-day TTL, 11+: 1-day TTL)
           ├─ POST /analytics    ─▶ drift-analytics  ─▶ drift-analytics
           └─ GET  /analytics    ─▶ drift-analytics      (90-day TTL, dashboard HTML)
 
           All Lambdas: Node.js 20. All tables: DynamoDB on-demand.
 ```
 
-The leaderboard is kept at the top 10 scores per difficulty via DynamoDB TTL tiering: every submission **removes** the TTL attribute from the current top 10 so they persist indefinitely, and sets a 7-day TTL on everything else. Scores dropping out of the top 10 pick up a fresh 7-day window on the next submission. No explicit deletes — the table self-prunes as 11+ entries age out.
+The leaderboard is kept at the top 10 scores per difficulty via DynamoDB TTL tiering. Each submission queries the current top 10 for the difficulty (one extra read per write, free-tier safe) and writes the new row with a 30-day TTL if it lands in the top 10, or a 1-day TTL otherwise. TTLs are decided at write time and never revisited: rows knocked out of the top 10 by later submissions keep their original (long) TTL but are filtered out by `get-leaderboard`'s `Limit:10`, so they're invisible to players. Trade-off: small residue in DynamoDB until the original TTLs expire — accepted to avoid running a cron Lambda.
 
 ## Online leaderboard
 
 The game has a serverless AWS backend for global leaderboards. Two endpoints:
 
-- **POST /score** — submit a score with `{username, score, difficulty}`. Validated server-side (alphanumeric username, score < 999999, difficulty must be NORMAL/HARD/EXTREME). On each submit the backend rebalances TTLs: the top 10 per difficulty have their TTL removed so they persist indefinitely, and positions 11+ are set to a 7-day TTL.
+- **POST /score** — submit a score with `{username, score, difficulty}`. Validated server-side (alphanumeric username, score < 999999, difficulty must be NORMAL/HARD/EXTREME). The Lambda queries the current top 10 once and writes the row with a 30-day TTL if it qualifies for the top 10, otherwise a 1-day TTL. TTL is decided at write time and never revisited (see Architecture above for the trade-off).
 - **GET /leaderboard?difficulty=NORMAL** — returns the top 10 scores for a difficulty tier, sorted descending.
 
 All infrastructure is defined as Terraform in `/infrastructure`. No hardcoded account IDs — everything is parameterized.

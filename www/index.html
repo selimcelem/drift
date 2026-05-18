@@ -3426,6 +3426,21 @@ function debugLog(msg) {
 }
 debugLog('BOOT');
 
+// Small HTML-escape helper for any user-supplied string that gets
+// interpolated into innerHTML — leaderboard usernames (local + global)
+// are the main consumers today. Defense-in-depth: the backend already
+// enforces alphanumeric usernames, but older localStorage entries pre-
+// validation may not be safe and the regex could loosen later. Mirrors
+// the implementation used by the analytics Lambda dashboard.
+function escapeHtml(s) {
+  return String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
 // W/H are the playfield pixels. On Android (Capacitor), the game fills the
@@ -3439,6 +3454,9 @@ const H = isCapacitor ? window.innerHeight : Math.min(window.innerHeight, 932);
 canvas.width = W;
 canvas.height = H;
 
+// =====================================================================
+// PIXI SETUP
+// =====================================================================
 // PixiJS background star-field layer (Phase 2 Step 1). A separate <canvas> sits
 // behind #c so the existing Canvas 2D render stack (nebula, bodies, player,
 // effects) stays unchanged — only the star field migrates here. Initialized
@@ -4861,6 +4879,12 @@ if (!isCapacitor) {
 // plugin was removed in favor of SystemBars per the official edge-to-edge
 // guidance.
 
+// =====================================================================
+// GAMEPLAY CONSTANTS
+// =====================================================================
+// Nebula update cadence, player size, body spacing, force coefficients —
+// the headline tunables. Difficulty knobs live in DIFFICULTIES below.
+
 // Offscreen nebula canvas — nebula is repainted every NEBULA_UPDATE_INTERVAL
 // frames instead of every frame, and drawn via drawImage in drawBg.
 const nebulaCanvas = document.createElement('canvas');
@@ -4903,6 +4927,15 @@ const DIFFICULTIES = {
 let difficulty = 'NORMAL';
 if (typeof Sentry !== 'undefined') Sentry.setTag('difficulty', difficulty);
 function diff() { return DIFFICULTIES[difficulty]; }
+
+// =====================================================================
+// ORB / TREE DEFINITIONS
+// =====================================================================
+// Single source of truth for orbs, per-orb skill trees, costs, and the
+// rainbow-run capstone set. All gameplay effect lookups for skills go
+// through rankOf() / hasCapstone() below — adding a node is generally a
+// 2-step change: edit TREE_DEFS + add a rankOf('newNode') check at the
+// gameplay hook.
 
 // --- Orbs & crystal currency ---
 const ORB_DEFS = {
@@ -6664,7 +6697,9 @@ function drawGhostlightBursts(tctx = ctx) {
   _ctx.globalAlpha = 1;
 }
 
-// --- Google Play Games Services cloud save (Android-only, opt-in) ---
+// =====================================================================
+// PGS MODULE (Google Play Games Services cloud save)
+// =====================================================================
 // Wraps the native PgsSavedGames plugin (see
 // android/app/src/main/java/com/selimcelem/drift/PgsSavedGamesPlugin.kt).
 // When the user is NOT signed in, this module is entirely inert — all save
@@ -7067,6 +7102,16 @@ const PGS = (() => {
   };
 })();
 
+// =====================================================================
+// GAME STATE
+// =====================================================================
+// Module-scope globals for the live run: state machine, score, frame
+// counter, the player, the bodies/trail/particles arrays, input flags,
+// active orb, devmode toggles, streak tracking, analytics run state.
+// The `state` string drives almost every gameplay branch:
+//   'idle' | 'playing' | 'paused' | 'dead' | 'apocalypse'
+//   | 'devmode' | 'tutorial' | 'rainbow_predeath' | 'rainbow_cutscene'
+//   | 'bodypreview'
 let state = 'idle', score = 0, frame = 0, planetsPassed = 0;
 let player = {}, bodies = [], trail = [], bgStars = [], deathParticles = [];
 let leftDown = false, rightDown = false;
@@ -7104,7 +7149,7 @@ let runStats = { totalPassed: 0, totalDestroyed: 0, pointsFromPassing: 0, points
 // Example: TIME_DILATION = 60 → 1 real second = 60 in-game seconds for
 // progression, apocalypse triggers in ~10 real seconds.
 const TIME_DILATION = 1;
-const GAME_VERSION = '1.8.0';
+const GAME_VERSION = '1.8.2';
 try {
   const vl = document.getElementById('versionLabel');
   if (vl) vl.textContent = 'v' + GAME_VERSION;
@@ -7511,10 +7556,14 @@ let shieldBroken = false;
 // doesn't shrink the window.
 let graceEndTime = 0;
 
-// --- Audio (procedural Web Audio synthesis) ---
-// Self-contained module. All sounds synthesized on demand. Errors are
-// swallowed so audio failures never crash gameplay. Init lazily on the
-// first user gesture so we don't trip the autoplay policy.
+// =====================================================================
+// SFX MODULE (audio — procedural Web Audio synthesis + sample playback)
+// =====================================================================
+// Self-contained IIFE. Signal graph documented inline below. Music tracks
+// are decoded AudioBuffers; UI/gameplay SFX are procedurally synthesized
+// at call time. Errors are swallowed so audio failures never crash
+// gameplay. Init lazily on the first user gesture so we don't trip the
+// autoplay policy.
 //
 // Signal graph:
 //   (per-sfx node chains) ──▶ sfxGain  ─┐
@@ -13886,6 +13935,14 @@ function deepCleanup() {
   try { SFX.releaseInactiveMusicBuffers(currentGameplayTrack); } catch {}
 }
 
+// =====================================================================
+// PHYSICS / UPDATE — per-frame simulation tick
+// =====================================================================
+// update() is the master per-frame tick during 'playing' / 'devmode'.
+// Other states (apocalypse, tutorial) delegate to their own sub-ticks.
+// All physics motion is multiplied by dtScale (clamped delta-time
+// relative to a 120 fps reference) so motion-per-second stays constant
+// regardless of refresh rate.
 // --- Update ---
 function update() {
   // v1.7.0 hitstop: brief physics pause for satisfying impacts. Render keeps
@@ -15410,7 +15467,7 @@ function triggerDeath() {
       } else {
         globalEl.innerHTML = entries.map((e, i) => {
           const isSelf = deathUsername && e.username.toLowerCase() === deathUsername.toLowerCase();
-          return `<div class="gs-row${isSelf ? ' self' : ''}"><span class="gs-rank">${e.rank || i+1}</span><span class="gs-name">${e.username}</span><span class="gs-val">${e.score}</span><span class="gs-diff ${e.difficulty || ''}">${e.difficulty || ''}</span></div>`;
+          return `<div class="gs-row${isSelf ? ' self' : ''}"><span class="gs-rank">${e.rank || i+1}</span><span class="gs-name">${escapeHtml(e.username)}</span><span class="gs-val">${e.score}</span><span class="gs-diff ${e.difficulty || ''}">${escapeHtml(e.difficulty || '')}</span></div>`;
         }).join('');
       }
     });
@@ -15426,7 +15483,7 @@ function triggerDeath() {
       hsel.innerHTML = '<div class="gs-status">no local scores</div>';
     } else {
       hsel.innerHTML = filtered.map((s,i) =>
-        `<div class="hs-row"><span class="hs-rank">${i+1}</span><span class="hs-val">${s.score}</span><span class="hs-diff ${s.difficulty}">${s.difficulty}</span></div>`
+        `<div class="hs-row"><span class="hs-rank">${i+1}</span><span class="hs-val">${s.score}</span><span class="hs-diff ${s.difficulty}">${escapeHtml(s.difficulty)}</span></div>`
       ).join('');
     }
   }
@@ -15855,6 +15912,14 @@ function safeDrawBody(b, drawer, tctx) {
   finally { t.restore(); }
 }
 
+// =====================================================================
+// BODY DRAW FUNCTIONS — one per body type
+// =====================================================================
+// drawBodies() dispatches to the per-type drawer (drawStar, drawPlanet,
+// drawBlackhole, drawToothed, drawEye, drawCracked, drawTentacle,
+// drawScreaming, drawVoid, drawHeart, drawMirror, drawSkull). Each
+// owns its own visual recipe. When pixiActive, sprites are drawn via
+// updatePixiBodySpriteLayer() and these Canvas 2D paths are skipped.
 function drawBodies() {
   // Step 3d: every body type now renders on the pixi stage (sprite + glow +
   // rings + target ring + dashed line + preview outlines). Nothing in this
@@ -19162,6 +19227,10 @@ const ptComboEl = document.getElementById('ptCombo');
 const burstIndicatorEl = document.getElementById('burstIndicator');
 const burstRingEl = burstIndicatorEl ? burstIndicatorEl.querySelector('.burst-ring') : null;
 let burstReadyPrev = false;
+// v1.8.2 perf: cache the top HUD stack element — updateTopStackVisibility
+// was doing a getElementById on every frame. Matches the powerupTimerEl /
+// burstIndicatorEl pattern above.
+const topStackEl = document.getElementById('topStack');
 
 // v1.6.3 visual pass: capstone countdown rings tick. Per-orb visibility
 // gates on hasCapstone(); only shows rings for the currently-equipped orb
@@ -19274,10 +19343,9 @@ function updateBurstBar() {
 // states only. Mirrors updateBurstBar / updateCapstoneCountdowns. Without this,
 // the stack's z-index: 4 lets it sit above the main-menu overlay (z-index: auto).
 function updateTopStackVisibility() {
-  const el = document.getElementById('topStack');
-  if (!el) return;
+  if (!topStackEl) return;
   const visible = (state === 'playing' || state === 'paused');
-  el.classList.toggle('visible', visible);
+  topStackEl.classList.toggle('visible', visible);
 }
 
 function updatePowerupTimer() {
@@ -19626,6 +19694,13 @@ function drawDeathShards() {
   ctx.globalAlpha = 1;
 }
 
+// =====================================================================
+// RENDER PIPELINE
+// =====================================================================
+// render() runs every frame after update(). Order matters: bg → bodies
+// → trail → player → particles → overlays → HUD. When pixiActive, most
+// of the world is drawn on the pixi stage; the Canvas 2D paths in here
+// are skipped via `if (!pixiActive)` guards.
 function render() {
   ctx.save();
   // Screen shake. Step 7: route shake to the pixi stage when active so the
@@ -19762,6 +19837,9 @@ function render() {
   ctx.restore();
 }
 
+// =====================================================================
+// GAME LOOP — rAF driver, FPS cap, dt scaling, visibility gating
+// =====================================================================
 // Crash-resilient game loop for Android WebView. update() and render() are
 // each guarded so a thrown error never tears down the rAF chain. update()
 // failures fall back to the main menu (the game state is suspect after
@@ -21613,6 +21691,14 @@ document.querySelectorAll('.diff-btn').forEach(btn => {
   });
 });
 
+// =====================================================================
+// UI OVERLAYS — orb browser, guide, leaderboard, settings, tree UI
+// =====================================================================
+// Static (non-canvas) DOM overlays for everything outside live gameplay.
+// Each section below is self-contained: an enter function shows the
+// overlay, an exit function hides it, and the in-between is driven by
+// click handlers wired at init.
+
 // --- Orb browser ---
 // The orb preview panel on the main menu. Each orb is previewed via a small
 // canvas that draws an animated orb (bobbing sin wave) with stylized trail
@@ -22343,7 +22429,7 @@ function openLeaderboardFromMenu() {
       hsel.innerHTML = '<div class="gs-status">no local scores</div>';
     } else {
       hsel.innerHTML = filtered.map((s, i) =>
-        `<div class="hs-row"><span class="hs-rank">${i+1}</span><span class="hs-val">${s.score}</span><span class="hs-diff ${s.difficulty}">${s.difficulty}</span></div>`
+        `<div class="hs-row"><span class="hs-rank">${i+1}</span><span class="hs-val">${s.score}</span><span class="hs-diff ${s.difficulty}">${escapeHtml(s.difficulty)}</span></div>`
       ).join('');
     }
   }
@@ -22359,7 +22445,7 @@ function openLeaderboardFromMenu() {
         return;
       }
       globalEl.innerHTML = entries.map((e, i) =>
-        `<div class="hs-row"><span class="hs-rank">${i+1}</span><span class="hs-name">${e.username || '???'}</span><span class="hs-val">${e.score}</span></div>`
+        `<div class="hs-row"><span class="hs-rank">${i+1}</span><span class="hs-name">${escapeHtml(e.username || '???')}</span><span class="hs-val">${e.score}</span></div>`
       ).join('');
     });
   }
@@ -23477,7 +23563,9 @@ async function checkPlayStoreUpdate() {
 }
 if (state === 'idle') checkPlayStoreUpdate();
 
-// --- AdMob banner manager (v1.7.0) ---
+// =====================================================================
+// ADMOB — native banner manager (Android-only)
+// =====================================================================
 // Native AdMob banner overlays at BOTTOM_CENTER while state==='dead', hidden
 // everywhere else. The death overlay reserves screen-bottom clearance via
 // .death-mode { padding-bottom } so DRIFT AGAIN / SHOP buttons sit above the
@@ -24690,6 +24778,9 @@ document.getElementById('bodyPreviewClose').addEventListener('click', () => {
 });
 setupDevModePanel();
 
+// =====================================================================
+// MAIN INIT — last thing on the page; kicks off the rAF loop
+// =====================================================================
 initBgStars(); initBodies();
 initPixiStars();
 preloadAll();

@@ -1,12 +1,13 @@
 # Drift — orb skill-tree spec
 
 **Status:** shipped in v1.6.3; balance pass + Momentum rework in v1.6.4.
-**Last updated:** 2026-04-27.
-**Source of truth:** `TREE_DEFS` in `www/index.html` (~line 4334). Tree
-unlock costs at `TREE_UNLOCK_COSTS` (~line 4542); cost scaling at
-`ORB_COST_SCALE` and `ORB_CAPSTONE_COST_SCALE` (~line 4685). Behaviour
-notes below summarise current implementation; consult the code for
-exact constants and proc gates.
+**Last updated:** 2026-05-18.
+**Source of truth:** `TREE_DEFS` in `www/index.html` — grep for the
+identifier rather than chasing line numbers (the file changes too fast
+for them to stay accurate). Tree unlock costs live at
+`TREE_UNLOCK_COSTS`; cost scaling at `ORB_COST_SCALE` and
+`ORB_CAPSTONE_COST_SCALE`. Behaviour notes below summarise current
+implementation; consult the code for exact constants and proc gates.
 
 ## Overview
 

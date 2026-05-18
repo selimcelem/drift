@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Each version header links to its GitHub release; see the release notes for full
 detail beyond the summaries here.
 
+## v1.8.2 — Polish
+
+### Improvements
+- Skill tree button positions now stable (grid layout, no more shuffle on rank changes)
+- Analytics dashboard persists login across page refreshes
+- Rainbow runs no longer leak kill stats to Bulwark counter
+- Code navigation improved (section banners added)
+- Cached frequently-accessed DOM elements
+- HTML escaping for leaderboard usernames (defensive)
+
+### Documentation
+- Reconciled leaderboard TTL claims in README with code
+
 ## v1.8.0 — Rainbow Awakening
 
 ### New
