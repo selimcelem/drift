@@ -218,13 +218,16 @@ function passwordFormHtml() {
   var pw  = document.getElementById('pw');
   var go  = document.getElementById('go');
   var err = document.getElementById('err');
-  function submit() {
-    var val = pw.value || '';
-    if (!val) { err.textContent = 'enter a password'; return; }
+  var PW_KEY = 'drift_analytics_pw';
+  function attempt(val, silent) {
+    if (!val) { if (!silent) err.textContent = 'enter a password'; return; }
     go.disabled = true; err.textContent = '';
     fetch('/analytics', { headers: { 'Authorization': 'Bearer ' + val } })
       .then(function (r) {
         if (r.status === 200) {
+          // Persist before the document is replaced — sessionStorage survives
+          // document.write so the dashboard's auto-refresh can read it back.
+          try { sessionStorage.setItem(PW_KEY, val); } catch (e) {}
           return r.text().then(function (html) {
             document.open();
             document.write(html);
@@ -232,18 +235,29 @@ function passwordFormHtml() {
           });
         }
         if (r.status === 401) {
-          err.textContent = 'wrong password';
-          pw.value = '';
-          pw.focus();
+          try { sessionStorage.removeItem(PW_KEY); } catch (e) {}
+          if (!silent) {
+            err.textContent = 'wrong password';
+            pw.value = '';
+            pw.focus();
+          }
           return;
         }
         err.textContent = 'error: ' + r.status;
       })
-      .catch(function () { err.textContent = 'network error'; })
+      .catch(function () { if (!silent) err.textContent = 'network error'; })
       .then(function () { go.disabled = false; });
   }
+  function submit() { attempt(pw.value || '', false); }
   go.addEventListener('click', submit);
   pw.addEventListener('keydown', function (e) { if (e.key === 'Enter') submit(); });
+  // Auto-login if we have a saved password from a prior tab session. Silent
+  // mode suppresses the "wrong password" toast if the stored value has been
+  // rotated — the form just stays visible and the user re-enters.
+  try {
+    var saved = sessionStorage.getItem(PW_KEY);
+    if (saved) { pw.value = saved; attempt(saved, true); }
+  } catch (e) {}
 })();
 </script>
 </body></html>`;
@@ -447,7 +461,6 @@ function dashboardHtml(items) {
 
   return `<!doctype html>
 <html><head><meta charset="utf-8"><title>Drift Analytics</title>
-<meta http-equiv="refresh" content="60">
 <style>
   body { background:#00000a; color:#cfefff; font-family:-apple-system,system-ui,sans-serif;
     margin:0; padding:24px; }
@@ -522,6 +535,32 @@ ${pilotDetails}
       if (el) { el.style.display = 'block'; el.scrollIntoView({ behavior: 'smooth' }); }
     });
   });
+  // Auth-aware auto-refresh: re-fetches /analytics with the stored Bearer
+  // token every 60s. Replaces the old <meta http-equiv="refresh"> which did a
+  // plain GET with no header and bounced the user back to the login form.
+  (function () {
+    var PW_KEY = 'drift_analytics_pw';
+    setTimeout(function tick() {
+      var pw = null;
+      try { pw = sessionStorage.getItem(PW_KEY); } catch (e) {}
+      if (!pw) { location.reload(); return; }
+      fetch('/analytics', { headers: { 'Authorization': 'Bearer ' + pw } })
+        .then(function (r) {
+          if (r.status === 401) {
+            try { sessionStorage.removeItem(PW_KEY); } catch (e) {}
+            location.reload();
+            return;
+          }
+          if (r.status !== 200) return;
+          return r.text().then(function (html) {
+            document.open();
+            document.write(html);
+            document.close();
+          });
+        })
+        .catch(function () { /* transient — next tick will retry */ });
+    }, 60000);
+  })();
 </script>
 </body></html>`;
 }
