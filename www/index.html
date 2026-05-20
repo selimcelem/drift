@@ -5038,6 +5038,82 @@ function _logOrbRegressionState(tag) {
   } catch {}
 }
 
+// =====================================================================
+// ORB_BEHAVIOR — per-orb behavior registry (integration Phase 2)
+// =====================================================================
+// Replaces the MODIFYING/HARD monkey-patch wraps (rankOf, pathPrereqMet,
+// BURST_COOLDOWN, executeBurst, HYPERSPEED_MAX_STACKS, scrollSpeed,
+// activateCombo) with a dispatch table. Each base function below routes through
+// ORB_BEHAVIOR; the original implementations are kept verbatim as _X_default
+// (the function declarations further down, just renamed) and registered as
+// ORB_BEHAVIOR.default. Orb blocks register their overrides into
+// ORB_BEHAVIOR.drifterV2 / .phantomV2 — deleting an orb block leaves an empty
+// {} entry, so dispatch silently falls back to default (block stays deletable).
+//
+// Dispatch keying differs per function (preserving the old wrap-chain exactly):
+//   - rankOf / BURST_COOLDOWN / HYPERSPEED_MAX_STACKS / executeBurst /
+//     activateCombo → by activeOrb.
+//   - pathPrereqMet → by which orb owns the queried tree-state (the skill-tree
+//     menu inspects any orb's tree regardless of the equipped orb).
+//   - scrollSpeed → COMPOSES every orb's multiplier in registration order
+//     (drifterV2 then phantomV2), matching the old inner→outer wrap math.
+const ORB_BEHAVIOR = { default: {}, drifterV2: {}, phantomV2: {} };
+
+function rankOf(nodeKey) {
+  const b = ORB_BEHAVIOR[activeOrb];
+  return (b && b.rankOf) ? b.rankOf(nodeKey) : ORB_BEHAVIOR.default.rankOf(nodeKey);
+}
+function pathPrereqMet(state, pathKey, nodeIdx) {
+  for (const k in ORB_BEHAVIOR) {
+    if (k === 'default') continue;
+    const b = ORB_BEHAVIOR[k];
+    if (b && b.pathPrereqMet && typeof orbTrees !== 'undefined' && orbTrees[k] === state) {
+      return b.pathPrereqMet(state, pathKey, nodeIdx);
+    }
+  }
+  return ORB_BEHAVIOR.default.pathPrereqMet(state, pathKey, nodeIdx);
+}
+function BURST_COOLDOWN() {
+  const b = ORB_BEHAVIOR[activeOrb];
+  return (b && b.burstCooldown) ? b.burstCooldown() : ORB_BEHAVIOR.default.burstCooldown();
+}
+function HYPERSPEED_MAX_STACKS() {
+  const b = ORB_BEHAVIOR[activeOrb];
+  return (b && b.hyperspeedMaxStacks) ? b.hyperspeedMaxStacks() : ORB_BEHAVIOR.default.hyperspeedMaxStacks();
+}
+function executeBurst() {
+  const b = ORB_BEHAVIOR[activeOrb];
+  const impl = (b && b.executeBurst) ? b.executeBurst : ORB_BEHAVIOR.default.executeBurst;
+  const r = impl();
+  // afterBurstFired: reserved in Phase 1, wired here. No subscribers yet, so
+  // this is a no-op; emit unconditionally so any orb can hook burst-fired.
+  try { OrbHooks.emit('afterBurstFired'); } catch {}
+  return r;
+}
+function scrollSpeed() {
+  let s = ORB_BEHAVIOR.default.scrollSpeed();
+  for (const k in ORB_BEHAVIOR) {
+    if (k === 'default') continue;
+    const b = ORB_BEHAVIOR[k];
+    if (b && b.scrollSpeedMultiplier) s *= b.scrollSpeedMultiplier();
+  }
+  return s;
+}
+function activateCombo(key, x, y) {
+  const b = ORB_BEHAVIOR[activeOrb];
+  return (b && b.onActivateCombo) ? b.onActivateCombo(key, x, y) : ORB_BEHAVIOR.default.onActivateCombo(key, x, y);
+}
+
+// Default behaviors = the original base implementations (renamed _X_default
+// below; all function declarations, so hoisted and safe to reference here).
+ORB_BEHAVIOR.default.rankOf = _rankOf_default;
+ORB_BEHAVIOR.default.pathPrereqMet = _pathPrereqMet_default;
+ORB_BEHAVIOR.default.burstCooldown = _BURST_COOLDOWN_default;
+ORB_BEHAVIOR.default.hyperspeedMaxStacks = _HYPERSPEED_MAX_STACKS_default;
+ORB_BEHAVIOR.default.executeBurst = _executeBurst_default;
+ORB_BEHAVIOR.default.scrollSpeed = _scrollSpeed_default;
+ORB_BEHAVIOR.default.onActivateCombo = _activateCombo_default;
+
 try {
   const c = parseInt(localStorage.getItem('drift_crystals') || '0', 10);
   if (!isNaN(c) && c >= 0) totalCrystals = c;
@@ -5392,7 +5468,7 @@ function refreshActiveTreeCache() {
     activeTreeRanks[cap.key] = state.capstones && state.capstones[cap.key] ? 1 : 0;
   }
 }
-function rankOf(nodeKey) {
+function _rankOf_default(nodeKey) {
   if (rainbowRunActive) return rainbowMaxRankFor(nodeKey);
   return activeTreeRanks[nodeKey] | 0;
 }
@@ -5591,7 +5667,7 @@ function capstoneCost(orbKey) {
   const scale = ORB_CAPSTONE_COST_SCALE[orbKey] || 1;
   return roundCrystals500(TREE_CAPSTONE_COST * scale);
 }
-function pathPrereqMet(state, pathKey, nodeIdx) {
+function _pathPrereqMet_default(state, pathKey, nodeIdx) {
   // Same-path prereq: T2 requires T1 rank ≥ 1; T3 requires T2 rank ≥ 1.
   // Node index maps 1:1 to tier in our schema (T1=idx 0, T2=idx 1, T3=idx 2).
   if (nodeIdx === 0) return true;
@@ -6053,12 +6129,12 @@ function _drifterV2_resolveNodeByKey(nodeKey) {
   }
   return null;
 }
-// Wrap pathPrereqMet — drifterV2 uses explicit AND-prereqs (no path lock,
-// no mutex pairs). Other orbs unchanged.
-const _drifterV2_origPathPrereqMet = pathPrereqMet;
-pathPrereqMet = function(state, pathKey, nodeIdx) {
+// pathPrereqMet — drifterV2 uses explicit AND-prereqs (no path lock, no mutex
+// pairs). Registered into ORB_BEHAVIOR; the dispatcher only routes here when
+// state === orbTrees.drifterV2 (the guard below is belt-and-braces).
+ORB_BEHAVIOR.drifterV2.pathPrereqMet = function(state, pathKey, nodeIdx) {
   if (state !== orbTrees.drifterV2) {
-    return _drifterV2_origPathPrereqMet(state, pathKey, nodeIdx);
+    return _pathPrereqMet_default(state, pathKey, nodeIdx);
   }
   const def = TREE_DEFS.drifterV2;
   if (!def || !def.paths[pathKey]) return false;
@@ -6216,18 +6292,14 @@ function _drifterV2_clearActiveMap() {
   if (activeOrb === 'drifterV2') refreshActiveTreeCache();
 }
 
-// Wrap rankOf — drifterV2 nodes return rank only when ACTIVE in the budget.
-// This is the single chokepoint that makes the budget gameplay-meaningful:
-// every keystone-system check goes through rankOf(...). Other orbs unchanged.
-const _drifterV2_origRankOf = rankOf;
-rankOf = function(nodeKey) {
-  // Outside drifterV2, behave normally.
-  if (activeOrb !== 'drifterV2') return _drifterV2_origRankOf(nodeKey);
-  // For drifterV2 nodes, gate on active-budget membership.
+// rankOf — drifterV2 nodes return rank only when ACTIVE in the budget. This is
+// the single chokepoint that makes the budget gameplay-meaningful. Dispatched
+// only when activeOrb === 'drifterV2', so no activeOrb guard needed here.
+ORB_BEHAVIOR.drifterV2.rankOf = function(nodeKey) {
   if (typeof nodeKey === 'string' && nodeKey.indexOf('drifterV2_') === 0) {
     if (!_drifterV2_isActive(nodeKey)) return 0;
   }
-  return _drifterV2_origRankOf(nodeKey);
+  return _rankOf_default(nodeKey);
 };
 
 // Wrap loadTreeState — restore activePoints map after the original load
@@ -7048,9 +7120,8 @@ function _drifterV2_drawFlashes() {
   ctx.restore();
 }
 
-const _drifterV2_origBURST_COOLDOWN = BURST_COOLDOWN;
-BURST_COOLDOWN = function() {
-  if (!_drifterV2_hasPulse()) return _drifterV2_origBURST_COOLDOWN();
+ORB_BEHAVIOR.drifterV2.burstCooldown = function() {
+  if (!_drifterV2_hasPulse()) return _BURST_COOLDOWN_default();
   // v4: Echo's 30% proc now FULLY resets the cooldown (return 0). Player can
   // chain bursts back-to-back when it triggers. Single chokepoint — runs
   // immediately after executeBurst returns.
@@ -7065,9 +7136,9 @@ BURST_COOLDOWN = function() {
   return Math.max(5000, cd);
 };
 
-const _drifterV2_origExecuteBurst = executeBurst;
-executeBurst = function() {
-  if (!isDrifterV2Active()) return _drifterV2_origExecuteBurst.apply(this, arguments);
+// Dispatched only when activeOrb === 'drifterV2' (the afterBurstFired emit and
+// non-drifter fallback live in the executeBurst dispatcher).
+ORB_BEHAVIOR.drifterV2.executeBurst = function() {
   // drifterV2 without PULSE — fire a random single (base Drifter feel).
   if (!_drifterV2_hasPulse()) {
     const types = ['shield', 'nova', 'hyperspeed', 'ghost'];
@@ -7629,7 +7700,7 @@ function _drifterV2_fireBreakingPoint() {
   // effective cap never exceeds DRIFTERV2_BREAKING_POINT_MAX_TOTAL_STACKS.
   // Default base on drifterV2 is 2 stacks, so the bonus tops out at
   // (CAP − base) once enough fires have occurred.
-  const _bpBase = _drifterV2_origHYPERSPEED_MAX_STACKS();
+  const _bpBase = _HYPERSPEED_MAX_STACKS_default();
   const _bpMaxBonus = Math.max(0, DRIFTERV2_BREAKING_POINT_MAX_TOTAL_STACKS - _bpBase);
   _drifterV2_breakingPointCapBonus = Math.min(_bpMaxBonus, _drifterV2_breakingPointCapBonus + 1);
   const maxStacks = HYPERSPEED_MAX_STACKS();
@@ -7659,22 +7730,20 @@ function _drifterV2_fireBreakingPoint() {
 // wrapper (defense-in-depth — covers any future call site that might
 // increment the bonus directly).
 const DRIFTERV2_BREAKING_POINT_MAX_TOTAL_STACKS = 10;
-const _drifterV2_origHYPERSPEED_MAX_STACKS = HYPERSPEED_MAX_STACKS;
-HYPERSPEED_MAX_STACKS = function() {
-  const base = _drifterV2_origHYPERSPEED_MAX_STACKS.apply(this, arguments);
-  if (!isDrifterV2Active()) return base;
+// Dispatched only when activeOrb === 'drifterV2'.
+ORB_BEHAVIOR.drifterV2.hyperspeedMaxStacks = function() {
+  const base = _HYPERSPEED_MAX_STACKS_default();
   return Math.min(
     DRIFTERV2_BREAKING_POINT_MAX_TOTAL_STACKS,
     base + (_drifterV2_breakingPointCapBonus | 0)
   );
 };
 
-// Scroll-speed multiplier — PRESSURE only.
-const _drifterV2_origScrollSpeed = scrollSpeed;
-scrollSpeed = function() {
-  const base = _drifterV2_origScrollSpeed.apply(this, arguments);
-  if (!_drifterV2_hasPressure()) return base;
-  return base * _drifterV2_pressureScrollMult();
+// Scroll-speed multiplier — PRESSURE only. The scrollSpeed dispatcher composes
+// this (×) onto the base, so we return the factor (1 when not applicable). The
+// _drifterV2_hasPressure() gate already requires activeOrb === 'drifterV2'.
+ORB_BEHAVIOR.drifterV2.scrollSpeedMultiplier = function() {
+  return _drifterV2_hasPressure() ? _drifterV2_pressureScrollMult() : 1;
 };
 
 // addDestroyPoints — PRESSURE adds +1%/pt no-cap score bonus. (v3 dropped
@@ -7787,14 +7856,14 @@ function _drifterV2_updateHud() {
   }
 }
 
-// === v5 combo-banner suppression wraps ===
-// activateCombo: when fired through _drifterV2_silentCombo (DrifterV2 trigger),
-// neuter the per-combo shake / hitstop / SFX / lastComboLabel update so the
+// === v5 combo-banner suppression ===
+// onActivateCombo: when fired through _drifterV2_silentCombo (DrifterV2
+// trigger), neuter the per-combo shake / hitstop / lastComboLabel update so the
 // player gets ONLY the small DrifterV2 flash. The combo's underlying effect
-// (shield, ghost, hyperspeed stacks, etc.) still applies unchanged.
-const _drifterV2_origActivateCombo = activateCombo;
-activateCombo = function(key, x, y) {
-  if (!_drifterV2_inSilentCombo) return _drifterV2_origActivateCombo(key, x, y);
+// (shield, ghost, hyperspeed stacks, etc.) and its SFX still apply. Dispatched
+// when activeOrb === 'drifterV2'; the silent-combo flag selects the behavior.
+ORB_BEHAVIOR.drifterV2.onActivateCombo = function(key, x, y) {
+  if (!_drifterV2_inSilentCombo) return _activateCombo_default(key, x, y);
   const prevLabel = (typeof lastComboLabel !== 'undefined') ? lastComboLabel : null;
   const _shakeCombo = shakeCombo;
   const _trigHitstop = triggerHitstop;
@@ -7807,7 +7876,7 @@ activateCombo = function(key, x, y) {
   shakeCombo = function() {};
   triggerHitstop = function() {};
   try {
-    _drifterV2_origActivateCombo(key, x, y);
+    _activateCombo_default(key, x, y);
   } finally {
     shakeCombo = _shakeCombo;
     triggerHitstop = _trigHitstop;
@@ -8149,10 +8218,10 @@ function _phantomV2_resolveNodeByKey(nodeKey) {
   }
   return null;
 }
-const _phantomV2_origPathPrereqMet = pathPrereqMet;
-pathPrereqMet = function(state, pathKey, nodeIdx) {
+// Dispatched by the pathPrereqMet dispatcher only when state===orbTrees.phantomV2.
+ORB_BEHAVIOR.phantomV2.pathPrereqMet = function(state, pathKey, nodeIdx) {
   if (state !== orbTrees.phantomV2) {
-    return _phantomV2_origPathPrereqMet(state, pathKey, nodeIdx);
+    return _pathPrereqMet_default(state, pathKey, nodeIdx);
   }
   const def = TREE_DEFS.phantomV2;
   if (!def || !def.paths[pathKey]) return false;
@@ -8283,14 +8352,13 @@ function _phantomV2_deactivate(nodeKey) {
   return true;
 }
 
-// rankOf wrap: gate phantomV2 nodes on active-budget membership.
-const _phantomV2_origRankOf = rankOf;
-rankOf = function(nodeKey) {
-  if (activeOrb !== 'phantomV2') return _phantomV2_origRankOf(nodeKey);
+// rankOf: gate phantomV2 nodes on active-budget membership. Dispatched only
+// when activeOrb === 'phantomV2'.
+ORB_BEHAVIOR.phantomV2.rankOf = function(nodeKey) {
   if (typeof nodeKey === 'string' && nodeKey.indexOf('phantomV2_') === 0) {
     if (!_phantomV2_isActive(nodeKey)) return 0;
   }
-  return _phantomV2_origRankOf(nodeKey);
+  return _rankOf_default(nodeKey);
 };
 
 // loadTreeState wrap: restore activePoints map.
@@ -8775,9 +8843,9 @@ function _phantomV2_silentCombo(key, x, y) {
   finally { _phantomV2_inSilentCombo = false; }
   _phantomV2_suppressBannerBriefly(900);
 }
-const _phantomV2_origActivateCombo = activateCombo;
-activateCombo = function(key, x, y) {
-  if (!_phantomV2_inSilentCombo) return _phantomV2_origActivateCombo(key, x, y);
+// Dispatched when activeOrb === 'phantomV2'; the silent-combo flag selects it.
+ORB_BEHAVIOR.phantomV2.onActivateCombo = function(key, x, y) {
+  if (!_phantomV2_inSilentCombo) return _activateCombo_default(key, x, y);
   const prevLabel = (typeof lastComboLabel !== 'undefined') ? lastComboLabel : null;
   const _shakeCombo = shakeCombo;
   const _trigHitstop = triggerHitstop;
@@ -8786,7 +8854,7 @@ activateCombo = function(key, x, y) {
   // suppressed so Phantasm's orb-triggered combos sound like combos.
   shakeCombo = function() {};
   triggerHitstop = function() {};
-  try { _phantomV2_origActivateCombo(key, x, y); }
+  try { _activateCombo_default(key, x, y); }
   finally {
     shakeCombo = _shakeCombo;
     triggerHitstop = _trigHitstop;
@@ -10643,23 +10711,19 @@ OrbHooks.on('onDestroy', (body, source) => {
   _phantomV2_onAnyDestroyForHaunt(body, source);
 });
 
-// scrollSpeed wrap — double during the Coven 3s pulse. Returns to baseline
-// the moment _phantomV2_covenActiveUntil elapses. Wrapped after every other
-// scrollSpeed modifier so the 2× multiplies on top of whatever scroll is
-// already in play.
-const _phantomV2_origScrollSpeed = scrollSpeed;
-scrollSpeed = function() {
-  const base = _phantomV2_origScrollSpeed.apply(this, arguments);
-  if (Date.now() < _phantomV2_covenActiveUntil) return base * 2;
-  return base;
+// scrollSpeed multiplier — 2× during the Coven pulse. Composed (×) onto the
+// base by the scrollSpeed dispatcher, AFTER drifterV2's multiplier (registered
+// first), preserving the old inner→outer wrap order. Returns 1 when no pulse.
+// Note: gated on covenActiveUntil only (not activeOrb) — identical to the old
+// wrap, which also applied whenever the timestamp was live.
+ORB_BEHAVIOR.phantomV2.scrollSpeedMultiplier = function() {
+  return (Date.now() < _phantomV2_covenActiveUntil) ? 2 : 1;
 };
 
-// Burst wrap — Phantasm fires Eternal Phantom (ghost_ghost combo) by default,
+// Burst — Phantasm fires Eternal Phantom (ghost_ghost combo) by default,
 // matching base Phantom's burst feel. Lord of the Dead + Hall of Mirrors
-// trigger their capstone effects ON TOP of the standard burst.
-const _phantomV2_origExecuteBurst = executeBurst;
-executeBurst = function() {
-  if (!isPhantomV2Active()) return _phantomV2_origExecuteBurst.apply(this, arguments);
+// trigger their capstone effects ON TOP. Dispatched when activeOrb==='phantomV2'.
+ORB_BEHAVIOR.phantomV2.executeBurst = function() {
   // Eternal Phantom is the un-upgraded Phantasm burst.
   activateCombo('ghost_ghost', player.x, player.y);
   shakeBurst('cosmic');
@@ -12401,7 +12465,7 @@ let burstCooldownEnd = 0;
 // Duration captured at cooldown-start so the HUD bar can compute % even if the
 // player equips a different orb mid-cooldown (which could change BURST_COOLDOWN()).
 let burstCooldownDuration = BURST_COOLDOWN_MS;
-function BURST_COOLDOWN() {
+function _BURST_COOLDOWN_default() {
   let cd = BURST_COOLDOWN_MS;
   // Skill tree: Restless Orb -10%/rank (Drifter-only).
   if (activeOrb === 'cyan' || rainbowRunActive) cd *= (1 - 0.10 * rankOf('restlessOrb'));
@@ -12538,7 +12602,7 @@ let hyperspeedWhooshNodes = null; // audio nodes for sustained whoosh
 //   SUPERLUMINAL + OD 1/2  = 7/8 (max possible)
 const HYPERSPEED_MAX_STACKS_DEFAULT = 2;
 const HYPERSPEED_MAX_STACKS_NEBULA = 4;
-function HYPERSPEED_MAX_STACKS() {
+function _HYPERSPEED_MAX_STACKS_default() {
   let base = (activeOrb === 'nebula' || rainbowRunActive) ? HYPERSPEED_MAX_STACKS_NEBULA : HYPERSPEED_MAX_STACKS_DEFAULT;
   if (activeOrb === 'nebula' || rainbowRunActive) {
     base += rankOf('overdrive');
@@ -14499,7 +14563,7 @@ function normalScrollSpeed() {
   return speed;
 }
 
-function scrollSpeed() {
+function _scrollSpeed_default() {
   let s = normalScrollSpeed();
   if (activeEffects.hyperspeed > 0) s *= hyperspeedCurrentMult;
   return s;
@@ -17384,7 +17448,7 @@ function syncComboDurations(...effectKeys) {
   }
 }
 
-function activateCombo(key, x, y) {
+function _activateCombo_default(key, x, y) {
   const def = COMBO_DEFS[key];
   if (!def) return;
   if (typeof Sentry !== 'undefined') Sentry.addBreadcrumb({ category: 'combo', message: 'combo activated: ' + key, level: 'info' });
@@ -18721,7 +18785,7 @@ function checkCollisions() {
 
 // Burst ability — per-orb effect. Called once when cooldown hits 0 and the
 // player is holding both sides simultaneously.
-function executeBurst() {
+function _executeBurst_default() {
   if (typeof Sentry !== 'undefined') Sentry.addBreadcrumb({ category: 'burst', message: 'burst: ' + activeOrb, level: 'info' });
   // v1.8.0 D1: Rainbow Orb burst fires ALL FOUR orb bursts simultaneously
   // for the power-fantasy peak moment. Order: Bulwark fortress (gives the
