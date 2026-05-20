@@ -6698,7 +6698,12 @@ renderTreeDetail = function() {
 // pressing PREV while next to drifterV2 keeps cycling backward, not
 // snapping forward.
 // ---------------------------------------------------------------------
-function _drifterV2_visibleInBrowser() { return unlockedOrbs.includes('asteroid'); }
+// v1.9.0: Roamer is a first-class orb in the browser — always present and
+// reachable like every other orb (you browse to it, then UNLOCK it). The
+// old gate hid it until Bulwark (asteroid) was unlocked, which made it
+// unreachable in the cycle and skewed LEFT/RIGHT wrap-around. Always-true
+// turns the skip block below into a no-op so navigation is a clean modulo.
+function _drifterV2_visibleInBrowser() { return true; }
 // Initialized to 0; the wrapper updates it after every refresh. orbBrowserIndex
 // is declared with `let` further down the file (~21900), so reading it at
 // script-load here would hit a temporal-dead-zone ReferenceError — and `typeof`
@@ -6740,6 +6745,7 @@ function _drifterV2_hasPressure() { return isDrifterV2Active() && rankOf('drifte
 // === Run state — zeroed by resetGame wrap below ===
 let _drifterV2_lastPickupType = null;
 let _drifterV2_heartbeatStacks = 0;
+let _drifterV2_heartbeatPrevStacks = 0; // v1.9.0 SFX: detect stack increments for the pulse tick
 let _drifterV2_lastHeartbeatTick = 0;
 let _drifterV2_lastBurstFireTime = 0;
 let _drifterV2_postBurstHoldStart = 0;
@@ -6775,6 +6781,7 @@ function _drifterV2_resetRunState() {
   _drifterV2_lastPickupType = null;
   _drifterV2_lastPickupTime = Date.now();
   _drifterV2_heartbeatStacks = 0;
+  _drifterV2_heartbeatPrevStacks = 0;
   _drifterV2_lastHeartbeatTick = Date.now();
   _drifterV2_lastBurstFireTime = 0;
   _drifterV2_postBurstHoldStart = 0;
@@ -6825,6 +6832,9 @@ function _drifterV2_fireHeartbeatFortress() {
   shieldHits = shieldHitsCap();
   fortressShield = true;
   activeCombos.shield_shield = { def: COMBO_DEFS.shield_shield, deps: ['shield'] };
+  // v1.9.0 SFX: the auto-fire at max stacks gets the full heartbeat thump
+  // (the per-stack ticks play it quietly) layered with the shield jingle.
+  try { SFX.playSfxBuffer('heartbeat', 0.6); } catch {}
   try { SFX.pickup('shield'); } catch {}
   // v5: suppress the standard ptCombo banner — Heartbeat doesn't go through
   // activateCombo (it sets activeCombos directly), but the fallback path in
@@ -6965,6 +6975,7 @@ BURST_COOLDOWN = function() {
   // immediately after executeBurst returns.
   if (rankOf('drifterV2_echo') >= 1 && Math.random() < 0.30) {
     _drifterV2_addFlash('ECHO', '125,232,255');
+    try { SFX.echoReset(); } catch {} // v1.9.0 SFX: chime under the ECHO flash
     return 0;
   }
   let cd = 20000; // 20s base (v3)
@@ -7016,9 +7027,13 @@ executeBurst = function() {
   if (rankOf('drifterV2_drumroll') >= 1 && (_drifterV2_burstCounter % 4) === 0) {
     // v5: silent combos so the player sees only the DRUMROLL flash, not four
     // separate pair-combo banners + four hitstops within one second.
+    // v1.9.0 SFX: an ascending 4-note drum-roll rhythm under the combos +
+    // a -10% pitched hyperspeed step on beat 3 so it's distinct from the
+    // laser/tapestry hyperspeed cues.
+    try { SFX.drumrollCascade(); } catch {}
     setTimeout(() => _drifterV2_silentCombo('shield_shield', player.x, player.y), 100);
     setTimeout(() => _drifterV2_silentCombo('nova_nova',     player.x, player.y), 400);
-    setTimeout(() => { activateHyperspeed(); activateHyperspeed(); SFX.pickup('hyperspeed', { stacks: hyperSpeedStacks }); }, 700);
+    setTimeout(() => { activateHyperspeed(); activateHyperspeed(); SFX.pickup('hyperspeed', { stacks: hyperSpeedStacks, pitch: 0.9 }); }, 700);
     setTimeout(() => _drifterV2_silentCombo('ghost_ghost',   player.x, player.y), 1000);
     triggerHitstop(60);
     addShake(12);
@@ -7220,7 +7235,11 @@ function _drifterV2_activateLasers() {
     triggerHitstop(30);
     addShake(6);
   }
-  try { SFX.pickup('hyperspeed', { stacks: hyperSpeedStacks }); } catch {}
+  // v1.9.0 SFX: laser activation = pitched-up hyperspeed (+10%) layered with
+  // an ascending square sweep so it reads as "charging up" — distinct from
+  // the Tapestry launch and Breaking Point's plain hyperspeed pickup.
+  try { SFX.pickup('hyperspeed', { stacks: hyperSpeedStacks, pitch: 1.1 }); } catch {}
+  try { SFX.laserCharge(); } catch {}
   _drifterV2_addFlash('THREAD AMPLIFIED', '255,180,60');
   treeLog('thread lasers activated (' + activated + ' threads · tapestry=' + tapestryOwned + ')');
 }
@@ -7296,6 +7315,10 @@ function _drifterV2_tickThreadSystems() {
       if (_drifterV2_threadProjectiles.length > 0) {
         triggerHitstop(70);
         addShake(16);
+        // v1.9.0 SFX: Tapestry launch = hyperspeed-barrier MP3 + standard-pitch
+        // hyperspeed pickup, so the projectile fire is distinct from the laser
+        // "charge" cue above.
+        try { SFX.playSfxBuffer('hyperspeedBarrier', 0.55); } catch {}
         try { SFX.pickup('hyperspeed', { stacks: hyperSpeedStacks }); } catch {}
         _drifterV2_addFlash('TAPESTRY', '255,180,60');
       }
@@ -7483,7 +7506,14 @@ function _drifterV2_pressureOnDestroy(body) {
   let add = 1;
   const wasAtFifty = _drifterV2_pressureCount >= 50;
   if (rankOf('drifterV2_threshold50') >= 1 && wasAtFifty) add += 1;
+  const _pressurePrev = _drifterV2_pressureCount;
   _drifterV2_pressureCount = Math.min(100, _drifterV2_pressureCount + add);
+  // v1.9.0 SFX: ascending triangle tones on each upward threshold crossing
+  // (50/75/80) give audible build-progression feedback. Pressure only climbs
+  // here, so a crossing fires once until decay drops it back below the line.
+  if (_pressurePrev < 50 && _drifterV2_pressureCount >= 50) { try { SFX.pressureTone(440); } catch {} }
+  if (_pressurePrev < 75 && _drifterV2_pressureCount >= 75) { try { SFX.pressureTone(660); } catch {} }
+  if (_pressurePrev < 80 && _drifterV2_pressureCount >= 80 && rankOf('drifterV2_crescendo') >= 1) { try { SFX.pressureTone(880); } catch {} }
   if (_drifterV2_pressureCount > _drifterV2_pressurePeak) _drifterV2_pressurePeak = _drifterV2_pressureCount;
   _drifterV2_pressureLastDestroy = Date.now();
   // Threshold 75: Firebrand-style half-size nova at the kill site (3s CD).
@@ -7686,16 +7716,19 @@ activateCombo = function(key, x, y) {
   const prevLabel = (typeof lastComboLabel !== 'undefined') ? lastComboLabel : null;
   const _shakeCombo = shakeCombo;
   const _trigHitstop = triggerHitstop;
-  const _sfxCombo = (typeof SFX !== 'undefined' && SFX && SFX.comboActivate) ? SFX.comboActivate : null;
+  // v1.9.0 SFX pass: combo AUDIO is no longer suppressed here — Surge,
+  // Drumroll, Crescendo, and Breaking Point's orb-triggered combos now play
+  // their full comboActivate fanfare. Only the VISUAL banner + per-combo
+  // shake/hitstop are still neutered so the player sees one DrifterV2 flash
+  // instead of stacked banners and a stutter of freezes. (The 600ms dedupe
+  // gate below keeps rapid silent combos from layering overlapping fanfares.)
   shakeCombo = function() {};
   triggerHitstop = function() {};
-  if (_sfxCombo) SFX.comboActivate = function() {};
   try {
     _drifterV2_origActivateCombo(key, x, y);
   } finally {
     shakeCombo = _shakeCombo;
     triggerHitstop = _trigHitstop;
-    if (_sfxCombo) SFX.comboActivate = _sfxCombo;
     // Restore lastComboLabel so the bottom-center ptCombo label doesn't pick
     // up this DrifterV2-triggered combo's name. (The fallback path in
     // updatePowerupTimer reads Object.keys(activeCombos); the wrap below
@@ -7775,14 +7808,23 @@ update = function() {
   // and flash "HEARTBEAT" mid-screen.
   if (_drifterV2_hasPulse() && rankOf('drifterV2_heartbeat') >= 1) {
     _drifterV2_heartbeatStacks = _drifterV2_computeHeartbeatStacks();
+    // v1.9.0 SFX: each new stack (1, 2) ticks the heartbeat MP3 quietly like a
+    // pulse. The 3rd stack is the auto-Fortress fire, which plays the full
+    // heartbeat thump in _drifterV2_fireHeartbeatFortress instead.
+    if (_drifterV2_heartbeatStacks > _drifterV2_heartbeatPrevStacks && _drifterV2_heartbeatStacks < 3) {
+      try { SFX.playSfxBuffer('heartbeat', 0.15); } catch {}
+    }
+    _drifterV2_heartbeatPrevStacks = _drifterV2_heartbeatStacks;
     if (_drifterV2_heartbeatStacks >= 3) {
       _drifterV2_fireHeartbeatFortress();
       _drifterV2_addFlash('HEARTBEAT', '125,232,255');
       _drifterV2_lastPickupTime = Date.now(); // reset stack accumulator
       _drifterV2_heartbeatStacks = 0;
+      _drifterV2_heartbeatPrevStacks = 0;
     }
   } else {
     _drifterV2_heartbeatStacks = 0;
+    _drifterV2_heartbeatPrevStacks = 0;
   }
   // Pressure decay (after grace).
   _drifterV2_tickPressureDecay();
@@ -8574,8 +8616,11 @@ renderTreeDetail = function() {
   }
 };
 
-// --- Visibility gate: hide until Phantom (cosmic) is unlocked ------------
-function _phantomV2_visibleInBrowser() { return unlockedOrbs.includes('cosmic'); }
+// v1.9.0: Phantasm is a first-class orb in the browser — always present and
+// reachable like every other orb (browse to it, then UNLOCK it). The old gate
+// hid it until Phantom (cosmic) was unlocked, making it unreachable in the
+// cycle. Always-true turns the skip block below into a no-op.
+function _phantomV2_visibleInBrowser() { return true; }
 let _phantomV2_lastBrowserIdx = 0;
 const _phantomV2_origRefreshOrbBrowser = refreshOrbBrowser;
 refreshOrbBrowser = function() {
@@ -8652,15 +8697,15 @@ activateCombo = function(key, x, y) {
   const prevLabel = (typeof lastComboLabel !== 'undefined') ? lastComboLabel : null;
   const _shakeCombo = shakeCombo;
   const _trigHitstop = triggerHitstop;
-  const _sfxCombo = (typeof SFX !== 'undefined' && SFX && SFX.comboActivate) ? SFX.comboActivate : null;
+  // v1.9.0 SFX pass: combo AUDIO plays normally now (see DrifterV2 wrap above
+  // for rationale). Only the visual banner + per-combo shake/hitstop stay
+  // suppressed so Phantasm's orb-triggered combos sound like combos.
   shakeCombo = function() {};
   triggerHitstop = function() {};
-  if (_sfxCombo) SFX.comboActivate = function() {};
   try { _phantomV2_origActivateCombo(key, x, y); }
   finally {
     shakeCombo = _shakeCombo;
     triggerHitstop = _trigHitstop;
-    if (_sfxCombo) SFX.comboActivate = _sfxCombo;
     lastComboLabel = prevLabel;
   }
 };
@@ -8681,6 +8726,23 @@ activateCombo = function(key, x, y) {
 // duplicate the resolver, but renders entirely differently.
 let _phantomV2_deathBursts = [];
 const PHANTOMV2_DEATH_BURST_LIFE_MS = 700;
+// v1.9.0 SFX: per-detonation cue. Lord-of-the-Dead cascade impacts cycle
+// through pitch-staggered ghost stings (+0/+5/+10/+15/+20%) so the sequential
+// cascade reads as a cinematic stinger train; Vengeance suicides instead get a
+// low spectral scream wail layered over the ghost-dust pickup.
+let _phantomV2_lordImpactPitchIdx = 0;
+let _phantomV2_wraithSpawnSfxGate = 0; // throttle the spawn sting so rapid spawns don't stack
+function _phantomV2_wraithDetonationSfx(fromLord) {
+  if (fromLord) {
+    const pitches = [1.0, 1.05, 1.10, 1.15, 1.20];
+    const p = pitches[_phantomV2_lordImpactPitchIdx % pitches.length];
+    _phantomV2_lordImpactPitchIdx++;
+    try { SFX.pickup('ghost', { pitch: p, gain: 0.9 }); } catch {}
+  } else {
+    try { SFX.playSfxBuffer('scream', 0.13, 0.72); } catch {} // v1.9.0: deeper + quieter
+    try { SFX.pickup('ghost'); } catch {}
+  }
+}
 // Immediate body sweep + visual setup. sourceTag drives the destroy-proc
 // chain: 'phantomV2_wraith' covers orbit contact + Vengeance expire (Soul
 // Tether ghost-extend eligible); 'phantomV2_wraithLord' covers Lord of the
@@ -8901,6 +8963,14 @@ function _phantomV2_spawnWraith(killedBody, ignoreLockout) {
     _phantomV2_summoningFlashGate = Date.now();
     _phantomV2_addFlash('SUMMONING', '210,150,255');
   }
+  // v1.9.0 SFX: a quiet, pitched-up (+20%) ghost sting marks a wraith spawning
+  // (Summoning + Conscript). Skipped for the Lord cascade's mass respawn
+  // (ignoreLockout) — that moment owns the scream + cascade stingers instead.
+  // Throttled so a same-frame multi-spawn doesn't stack into a wall.
+  if (!ignoreLockout && Date.now() - _phantomV2_wraithSpawnSfxGate > 120) {
+    _phantomV2_wraithSpawnSfxGate = Date.now();
+    try { SFX.pickup('ghost', { pitch: 1.2, gain: 0.3 }); } catch {}
+  }
 }
 // "Any form of ghost is active" — covers raw ghost timer + every ghost-bearing
 // pair combo. Used everywhere we mean "during ghost" so that Eternal Phantom
@@ -9018,7 +9088,7 @@ function _phantomV2_tickWraiths() {
         } else {
           // No bodies on screen — detonate in place; capstone still pops.
           _phantomV2_spawnDeathBurst(w.x, w.y, 150, 'phantomV2_wraithLord', w);
-          try { SFX.pickup('ghost'); } catch {}
+          _phantomV2_wraithDetonationSfx(true);
           continue;
         }
       } else {
@@ -9081,7 +9151,7 @@ function _phantomV2_tickWraiths() {
             if (killedIdx >= 0) _phantomV2_killBodyByExplosion(killedIdx, srcTag);
           } finally { _phantomV2_currentKillerWraith = prevKiller; }
           _phantomV2_spawnDeathBurst(w.x, w.y, 150, srcTag, w);
-          try { SFX.pickup('ghost'); } catch {}
+          _phantomV2_wraithDetonationSfx(w.fromLord);
           continue;
         }
         // Update velocity toward target each frame — keeps the homing tight
@@ -9136,7 +9206,7 @@ function _phantomV2_tickWraiths() {
         }
         // No on-screen target — keep the old in-place detonation.
         _phantomV2_spawnDeathBurst(w.x, w.y, 150, 'phantomV2_wraith', w);
-        try { SFX.pickup('ghost'); } catch {}
+        _phantomV2_wraithDetonationSfx(false);
         _phantomV2_addFlash('VENGEANCE', '210,150,255');
       }
       continue;
@@ -9248,6 +9318,11 @@ function _phantomV2_capstoneLordOfTheDeadOnBurst() {
   _phantomV2_capstoneLockoutUntil = now + Math.max(4000, cascadeMs);
   triggerHitstop(80);
   addShake(18);
+  // v1.9.0 SFX: the capstone arming gets a spectral scream wail over the
+  // existing hyperspeed + ghost layers; the per-wraith impacts that follow add
+  // the pitch-staggered cascade via _phantomV2_wraithDetonationSfx.
+  _phantomV2_lordImpactPitchIdx = 0; // restart the cascade pitch sweep
+  try { SFX.playSfxBuffer('scream', 0.22, 0.72); } catch {} // v1.9.0: deeper + quieter
   try { SFX.pickup('hyperspeed', { stacks: hyperSpeedStacks }); } catch {}
   try { SFX.pickup('ghost'); } catch {}
   _phantomV2_addFlash('LORD OF THE DEAD', '210,150,255', 1200);
@@ -9265,6 +9340,8 @@ const PHANTOMV2_ECHO_HP_MAX = 2;
 // Echo entity list. Each: { delayMs, hp, alive, prevPos, refrainCDs,
 //                           reverbLastFire }
 let _phantomV2_echoes = [];
+let _phantomV2_echoActivatedThisRun = false; // v1.9.0 SFX: gate the one-shot echo-activation cue
+let _phantomV2_wakeHissVoice = null;         // v1.9.0 SFX: sustained wake-trail hiss handle
 let _phantomV2_lastGhostEndTime = 0;   // for ghost-grant edge detection
 let _phantomV2_pausedSinceMs = 0;
 let _phantomV2_lastPlayerPos = { x: 0, y: 0 };
@@ -9319,6 +9396,14 @@ function _phantomV2_reviveAllEchoes() {
   }
   if (revivedAny && isPhantomV2Active()) {
     _phantomV2_addFlash('TEMPORAL ECHO', '210,150,255', 900);
+    // v1.9.0 SFX: the first echo activation of the run announces itself with
+    // the ghostly Beyond afterimage tone (name-adjacent reuse) layered with a
+    // ghost pickup. Once per run so it doesn't fire on every ghost refresh.
+    if (!_phantomV2_echoActivatedThisRun) {
+      _phantomV2_echoActivatedThisRun = true;
+      try { SFX.beyondEcho(); } catch {}
+      try { SFX.pickup('ghost'); } catch {}
+    }
   }
 }
 function _phantomV2_recordMovement() {
@@ -9466,6 +9551,9 @@ function _phantomV2_tickAfterimage() {
             _phantomV2_spawnDeathBurst(d.x, d.y, 120, 'phantomV2_echo');
             e.reverbLastFire = now;
             _phantomV2_addFlash('REVERBERATION', '210,150,255');
+            // v1.9.0 SFX: distinct sine ping + reverb tail so the pause-spot
+            // burst stands apart from the per-kill ghost destroys inside it.
+            try { SFX.reverbBurst(); } catch {}
             break;
           }
         }
@@ -9555,19 +9643,29 @@ function _phantomV2_capstoneHallOfMirrorsOnBurst() {
   // stagger (~80ms) so the pops cascade across the screen.
   const now = Date.now();
   let stagger = 0;
+  let burstIdx = 0;
   for (const e of _phantomV2_echoes) {
     if (!e.alive) continue;
     const pos = _phantomV2_sampleMovementAt(now - e.delayMs);
     if (!pos) continue;
     const px = pos.x, py = pos.y;
+    // v1.9.0 SFX: each staggered burst is a pitch-stepped ghost sting
+    // (+0/+15/+30%) so the cascade rings out like shattering mirrors rather
+    // than three identical ghost pickups.
+    const burstPitch = 1 + 0.15 * Math.min(burstIdx, 2);
     setTimeout(() => {
       if (state !== 'playing' && state !== 'devmode') return;
       _phantomV2_spawnDeathBurst(px, py, 150, 'phantomV2_echo');
+      try { SFX.pickup('ghost', { pitch: burstPitch, gain: 0.85 }); } catch {}
     }, stagger);
     stagger += 80;
+    burstIdx++;
   }
   triggerHitstop(60);
   addShake(12);
+  // v1.9.0 SFX: layer the MIRROR clip under the existing ghost pickup to give
+  // the capstone trigger a glassy "shatter" body.
+  try { SFX.playSfxBuffer('mirror', 0.6); } catch {}
   try { SFX.pickup('ghost'); } catch {}
   _phantomV2_addFlash('HALL OF MIRRORS', '210,150,255', 1200);
 }
@@ -9589,6 +9687,7 @@ let _phantomV2_markCountForCoven = 0;
 let _phantomV2_covenActiveUntil = 0;
 let _phantomV2_ghostWasOn = false;
 let _phantomV2_brandFlashGate = 0;
+let _phantomV2_brandSfxGate = 0;  // v1.9.0 SFX: throttle the brand chime
 let _phantomV2_plagueFlashGate = 0;
 let _phantomV2_lethalTouchMarkCount = 0;  // continuous; wraps to 0 every 20 marks
 const PHANTOMV2_MARK_DURATION_MS = 1500;     // 1.5× faster flight than the old 2200ms
@@ -9730,6 +9829,14 @@ function _phantomV2_registerMark(markEntity) {
     _phantomV2_brandFlashGate = Date.now();
     _phantomV2_addFlash('BRAND', '255,90,150');
   }
+  // v1.9.0 SFX: soft chime for the core "mark applied" verb (pass-through,
+  // clone-on-destroy, and Coven sweep all funnel through here). Plague-source
+  // marks are skipped — they get their own descending sweep at conversion.
+  // Lightly throttled so a same-frame mark-storm stays musical, not a wall.
+  if (!(markEntity && markEntity._phantomFromPlague) && Date.now() - _phantomV2_brandSfxGate > 45) {
+    _phantomV2_brandSfxGate = Date.now();
+    try { SFX.brandMark(); } catch {}
+  }
 }
 
 function _phantomV2_triggerCoven() {
@@ -9739,6 +9846,15 @@ function _phantomV2_triggerCoven() {
   // Coven is Phantasm's biggest single event — give it weight.
   triggerHitstop(120);
   addShake(28);
+  // v1.9.0 SFX: cinematic apocalypse impact + a 6s void-hum drone matching the
+  // Coven pulse duration, layered over the existing ghost/nova/combo stack.
+  try { SFX.playApocalypseImpact(); } catch {}
+  try {
+    const _covenHum = SFX.startVoidHum && SFX.startVoidHum();
+    if (_covenHum && _covenHum.stop) {
+      setTimeout(() => { try { _covenHum.stop(); } catch {} }, PHANTOMV2_COVEN_LIFE_MS);
+    }
+  } catch {}
   try { SFX.pickup('ghost'); } catch {}
   try { SFX.pickup('nova'); } catch {}
   try { if (SFX.comboActivate) SFX.comboActivate('ghost_ghost'); } catch {}
@@ -9768,14 +9884,41 @@ function _phantomV2_killBodyByCurse(idx, sourceTag) {
     triggerHitstop(45);
     addShake(5);
   }
+  // v1.9.0 SFX: Sever is conceptually a "blade snap" — layer the phantom-blade
+  // slash over the ghost destroy so tether kills sound like a severed line.
+  if (sourceTag === 'phantomV2_sever') { try { SFX.phantomBladeSlash(); } catch {} }
   releaseBodyCanvases(b);
   bodies.splice(idx, 1);
   checkDestroyProc(b, sourceTag || 'phantomV2_curse');
 }
 
+// v1.9.0 SFX (P6): faint spectral hiss whose level tracks the number of live
+// marks (gain hard-capped in the SFX layer). Only runs with the Wake node and
+// during active play; stopped on every early-out and on run reset.
+function _phantomV2_stopWakeHiss() {
+  if (_phantomV2_wakeHissVoice) {
+    try { _phantomV2_wakeHissVoice.stop(); } catch {}
+    _phantomV2_wakeHissVoice = null;
+  }
+}
+function _phantomV2_updateWakeHiss(markCount) {
+  const want = rankOf('phantomV2_wake') >= 1 && markCount > 0
+    && (state === 'playing' || state === 'devmode')
+    && (!SFX.isSfxEnabled || SFX.isSfxEnabled());
+  if (!want) { _phantomV2_stopWakeHiss(); return; }
+  if (!_phantomV2_wakeHissVoice) {
+    try { _phantomV2_wakeHissVoice = SFX.startWakeHiss ? SFX.startWakeHiss() : null; } catch {}
+  }
+  if (_phantomV2_wakeHissVoice && _phantomV2_wakeHissVoice.setIntensity) {
+    _phantomV2_wakeHissVoice.setIntensity(markCount);
+  }
+}
+
 function _phantomV2_tickHaunt() {
-  if (!_phantomV2_hasHaunt()) return;
-  if (state !== 'playing' && state !== 'devmode') return;
+  if (!_phantomV2_hasHaunt() || (state !== 'playing' && state !== 'devmode')) {
+    _phantomV2_stopWakeHiss();
+    return;
+  }
   const now = Date.now();
   const ghostOn = _phantomV2_isAnyGhostActive();
   // (Lethal Touch counts continuously now — no ghost-edge reset. Counter
@@ -9882,6 +10025,8 @@ function _phantomV2_tickHaunt() {
   const marks = [];
   for (const b of bodies) if (b._phantomMarked) marks.push({ x: b.x, y: b.y, radius: b.radius, body: b });
   for (const p of _phantomV2_phantomMarks) marks.push({ x: p.x, y: p.y, radius: p.radius, phantom: p });
+  // v1.9.0 SFX (P6): drive the ambient wake hiss off the live mark count.
+  _phantomV2_updateWakeHiss(marks.length);
 
   // 5) Curse field collision: body.radius + 70px (+30 with Spread).
   const spreadBonus = rankOf('phantomV2_spread') >= 1 ? PHANTOMV2_CURSE_FIELD_SPREAD_PX : 0;
@@ -9961,9 +10106,12 @@ function _phantomV2_tickHaunt() {
         if (dx * dx + dy * dy < tot * tot) {
           if (plagueActive && !z.fromPlague) {
             _phantomV2_markBody(b, { fromPlague: true });
+            // v1.9.0 SFX: descending sweep for the viral-spread conversion.
+            // Throttled via the flash gate so a chain doesn't machine-gun.
             if (now - _phantomV2_plagueFlashGate > 2500) {
               _phantomV2_plagueFlashGate = now;
               _phantomV2_addFlash('PLAGUE', '255,90,150');
+              try { SFX.plagueProc(); } catch {}
             }
           } else {
             _phantomV2_killBodyByCurse(i, 'phantomV2_linger');
@@ -10242,6 +10390,12 @@ function _phantomV2_resetRunState() {
   _phantomV2_plagueFlashGate = 0;
   _phantomV2_lethalTouchMarkCount = 0;
   _phantomV2_flashes = [];
+  // v1.9.0 SFX run-state.
+  _phantomV2_echoActivatedThisRun = false;
+  _phantomV2_lordImpactPitchIdx = 0;
+  _phantomV2_wraithSpawnSfxGate = 0;
+  _phantomV2_brandSfxGate = 0;
+  _phantomV2_stopWakeHiss();
 }
 
 // --- Engine lifecycle wraps -------------------------------------------
@@ -10682,8 +10836,12 @@ function checkDestroyProc(body, source) {
   // -0.2% of BURST_COOLDOWN_MS (= -60 ms at the 30 s base) shaved off the
   // live cooldown per body destroyed, source-agnostic (any kill type
   // counts — nova, EMP, ghost, barrier, shield, manual contact).
+  // v1.9.0: cut 4× (0.2% → 0.05% per kill). At 0.2% a single dense wave of
+  // 40+ kills shaved ~2.4 s, which combined with rainbow's kill volume kept
+  // burst permanently off cooldown. 0.05% (~15 ms/kill at the 30 s base) keeps
+  // mass destruction rewarding without refreshing burst after every wave.
   if (rainbowRunActive && burstCooldownEnd > Date.now()) {
-    const _rbReduce = Math.floor(0.002 * BURST_COOLDOWN_MS);
+    const _rbReduce = Math.floor(0.0005 * BURST_COOLDOWN_MS);
     if (_rbReduce > 0) {
       burstCooldownEnd = Math.max(Date.now(), burstCooldownEnd - _rbReduce);
     }
@@ -12595,10 +12753,33 @@ const SFX = (function() {
     killOnEnd(o, g);
   }
 
+  // ---- Destroy-SFX accumulated-gain ceiling (v1.9.0) ----
+  // Rapid mass destruction (nova/supernova chains, hyperspeed sprees, rainbow
+  // mass kills) used to fire one full-volume planetDestroyed per kill — 40+
+  // overlapping voices summed into a speaker-threatening wall. We keep a rolling
+  // window of recent destroy cues and roll each new one's gain off ~1/n so the
+  // SUMMED loudness is bounded (~3× a single kill) no matter how many land at
+  // once. A single kill is unaffected (scale = 1). Cleanup is unchanged
+  // (killOnEnd), so this is purely a per-window gain ceiling, not a hard cap on
+  // how many cues play (every kill still makes a sound, just quieter in a swarm).
+  const DESTROY_SFX_WINDOW_MS = 160;
+  let _destroySfxTimes = [];
+  function destroySfxGainScale() {
+    const now = Date.now();
+    if (_destroySfxTimes.length > 80) _destroySfxTimes = _destroySfxTimes.slice(-80);
+    _destroySfxTimes = _destroySfxTimes.filter(t => now - t < DESTROY_SFX_WINDOW_MS);
+    _destroySfxTimes.push(now);
+    const n = _destroySfxTimes.length;
+    if (n <= 3) return 1;
+    // Target total ≈ 3× a single cue: each of n cues plays at 3/n, floored so
+    // individual kills stay audible in extreme swarms.
+    return Math.max(0.12, 3 / n);
+  }
+
   // Supernova/combo kill — plays the shared NOVA DESTROY clip at 0.85,
   // scaled by vScale so combos can punch harder (e.g. nova_nova at 1.3).
   function novaBoom(_t, vScale) {
-    playSfxBuffer('novaDestroy', Math.min(1, 0.65 * (vScale || 1)));
+    playSfxBuffer('novaDestroy', Math.min(1, 0.65 * (vScale || 1)) * destroySfxGainScale());
   }
 
   function attract(_frame) {
@@ -12666,16 +12847,25 @@ const SFX = (function() {
         // opts.stacks pitch-shifts the arpeggio so each additional stack
         // sounds slightly higher (1.0/1.2/1.4/1.6 for stacks 1/2/3/4).
         const stacks = (opts && opts.stacks) || 1;
-        const pitchMult = 1 + 0.2 * (Math.max(1, stacks) - 1);
+        // opts.pitch / opts.gain (default 1) let callers re-voice the cue
+        // without touching base-orb behavior — used by Roamer's laser/drumroll
+        // hyperspeed events to keep them distinguishable from each other.
+        const pitchMult = (1 + 0.2 * (Math.max(1, stacks) - 1)) * ((opts && opts.pitch) || 1);
+        const hsGain = (opts && opts.gain) || 1;
         const arp = [220.00, 261.63, 329.63, 440.00, 523.25, 659.25, 880.00];
-        arp.forEach((freq, i) => chipNote(freq * pitchMult, t + i * 0.04, 0.05, 0.3, 'square'));
+        arp.forEach((freq, i) => chipNote(freq * pitchMult, t + i * 0.04, 0.05, 0.3 * hsGain, 'square'));
 
       } else if (type === 'ghost') {
         // Eerie descending tritone C5→F#4 on sines with slow attack and a
         // long dreamy decay, plus three echoes 80ms apart, each 40% of the
         // previous voice's volume. Phasing into another dimension.
-        const notes = [523.25, 369.99]; // C5, F#4
-        let vol = 0.25;
+        // opts.pitch / opts.gain (default 1) re-voice the cue so Phantasm's
+        // eight ghost-pickup events (wraith spawn, hall-of-mirrors bursts,
+        // lord impacts, etc.) become distinguishable. Base orbs pass no opts.
+        const gPitch = (opts && opts.pitch) || 1;
+        const gGain  = (opts && opts.gain)  || 1;
+        const notes = [523.25 * gPitch, 369.99 * gPitch]; // C5, F#4
+        let vol = 0.25 * gGain;
         for (let i = 0; i < 4; i++) {
           const start = t + i * 0.08;
           notes.forEach(freq => ghostVoice(freq, start, 0.15, 1.0, vol));
@@ -12686,19 +12876,23 @@ const SFX = (function() {
   }
 
   function planetDestroyed(kind) {
+    // v1.9.0: roll gain off in proportion to recent destroy density so rapid
+    // mass kills don't pile into a speaker-threatening wall (see
+    // destroySfxGainScale). A single kill keeps full volume.
+    const ds = destroySfxGainScale();
     if (kind === 'shield') {
-      playSfxBuffer('shieldDestroy', 0.7);
+      playSfxBuffer('shieldDestroy', 0.7 * ds);
     } else if (kind === 'nova') {
-      playSfxBuffer('novaDestroy', 0.45);
+      playSfxBuffer('novaDestroy', 0.45 * ds);
     } else if (kind === 'barrier') {
-      playSfxBuffer('hyperspeedBarrier', 0.65);
+      playSfxBuffer('hyperspeedBarrier', 0.65 * ds);
     } else if (kind === 'ghost') {
       // Soft ethereal passthrough — not a destroy. Sine whomp 180→60hz 0.2s
       // plus a brief sine shimmer 2000→800hz 0.08s. Volume 0.15 so it sits
       // well below the crunchy destroy SFX.
       safeSfx(t => {
-        chipSweep('sine', 180, 60, t, 0.2, 0.15);
-        chipSweep('sine', 2000, 800, t, 0.08, 0.15);
+        chipSweep('sine', 180, 60, t, 0.2, 0.15 * ds);
+        chipSweep('sine', 2000, 800, t, 0.08, 0.15 * ds);
       });
     }
   }
@@ -12940,6 +13134,112 @@ const SFX = (function() {
       n.start(t); n.stop(t + 0.42);
       killOnEnd(n, f, g);
     });
+  }
+
+  // ---- v1.9.0 Roamer + Phantasm SFX pass: new procedural cues ----
+  // These follow the v1.6.3 pattern (phantomBladeSlash / beyondEcho) — small
+  // named one-shots built from the existing chipNote / chipSweep / noiseBuffer
+  // primitives, gated on safeSfx. No new MP3 assets; no existing cue retuned.
+
+  // Short decaying echo tail used to fake a tiny reverb on top of a chip note —
+  // three retriggers ~50ms apart at falling volume. Procedural (no convolver).
+  function chipReverbTail(freq, start, vol, type) {
+    chipNote(freq, start + 0.05, 0.04, vol * 0.55, type);
+    chipNote(freq, start + 0.10, 0.04, vol * 0.28, type);
+  }
+
+  // Roamer THREAD laser meter-fill — ascending "charging up" square sweep.
+  function laserCharge() {
+    safeSfx(t => { chipSweep('square', 100, 1200, t, 0.35, 0.25); });
+  }
+
+  // Roamer PRESSURE threshold crossings (50/75/80) — single triangle tone at
+  // the caller-supplied pitch so each threshold reads as a distinct step.
+  function pressureTone(hz) {
+    safeSfx(t => { chipNote(hz, t, 0.08, 0.25, 'triangle'); });
+  }
+
+  // Roamer PULSE Echo 30% burst-CD reset — quick triangle chime under the
+  // existing "ECHO" flash.
+  function echoReset() {
+    safeSfx(t => { chipNote(880, t, 0.05, 0.3, 'triangle'); });
+  }
+
+  // Roamer DRUMROLL cascade — four ascending notes aligned to the four combos
+  // fired at 100/400/700/1000ms, so the auto-combo burst reads as a drum roll.
+  function drumrollCascade() {
+    safeSfx(t => {
+      const beats = [[0.10, 220], [0.40, 330], [0.70, 440], [1.00, 550]];
+      for (const [off, hz] of beats) chipNote(hz, t + off, 0.08, 0.28, 'triangle');
+    });
+  }
+
+  // Phantasm HAUNT brand-mark applied — soft high sine chime + tiny reverb
+  // tail. Fires often (per mark), so kept quiet. v1.9.0: base gain cut from
+  // 0.18 → 0.08 (was too prominent in normal play) plus a quieter tail.
+  function brandMark() {
+    safeSfx(t => {
+      chipNote(1100, t, 0.04, 0.08, 'sine');
+      chipReverbTail(1100, t, 0.08, 'sine');
+    });
+  }
+
+  // Phantasm PLAGUE conversion — descending triangle sweep to read as a
+  // "viral spread" cue, distinct from the brand chime.
+  function plagueProc() {
+    safeSfx(t => { chipSweep('triangle', 900, 300, t, 0.18, 0.25); });
+  }
+
+  // Phantasm REVERBERATION burst — mid sine ping + reverb tail so the
+  // pause-spot burst is distinct from the per-kill ghost destroys inside it.
+  function reverbBurst() {
+    safeSfx(t => {
+      chipNote(660, t, 0.15, 0.3, 'sine');
+      chipReverbTail(660, t, 0.22, 'sine');
+    });
+  }
+
+  // Phantasm WAKE ambient hiss — a single sustained band-passed noise voice
+  // whose level tracks the number of live marked bodies (gain hard-capped so
+  // it stays atmospheric regardless of mark count). Caller drives setIntensity
+  // each frame and stop()s when no marks remain. Returns null if audio is off.
+  function startWakeHiss() {
+    if (!ensureRunning()) return null;
+    if (!sfxEnabled) return null;
+    try {
+      const t = ctx.currentTime;
+      const src = ctx.createBufferSource();
+      src.buffer = noiseBuffer(1.5, () => 1); // flat noise, looped
+      src.loop = true;
+      const f = ctx.createBiquadFilter();
+      f.type = 'bandpass'; f.frequency.value = 3200; f.Q.value = 0.7;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      src.connect(f); f.connect(g); g.connect(sfxGain);
+      src.start(t);
+      return {
+        setIntensity(n) {
+          try {
+            const now = ctx.currentTime;
+            const target = Math.min(0.06, Math.max(0, n) * 0.012);
+            g.gain.cancelScheduledValues(now);
+            g.gain.setValueAtTime(Math.max(0.0001, g.gain.value), now);
+            g.gain.linearRampToValueAtTime(Math.max(0.0001, target), now + 0.2);
+          } catch {}
+        },
+        stop() {
+          try {
+            const now = ctx.currentTime;
+            g.gain.cancelScheduledValues(now);
+            g.gain.setValueAtTime(Math.max(0.0001, g.gain.value), now);
+            g.gain.linearRampToValueAtTime(0.0001, now + 0.25);
+            src.stop(now + 0.3);
+            killOnEnd(src, f, g);
+          } catch {}
+        },
+      };
+    } catch {}
+    return null;
   }
 
   // Deep sustained rumble for the 10-minute apocalypse sequence. Two sine
@@ -13195,7 +13495,9 @@ const SFX = (function() {
   // buffer isn't ready yet, kick off the load so the next hit is instant and
   // silently skip this one — destroys are frequent enough that dropping one
   // is better than introducing decode-jitter latency.
-  function playSfxBuffer(key, volume) {
+  // `playbackRate` (default 1) lets callers re-pitch a decoded clip — e.g.
+  // dropping the SCREAM clip to ~0.72 makes the Lord-of-the-Dead wail deeper.
+  function playSfxBuffer(key, volume, playbackRate) {
     if (!sfxEnabled) return;
     if (!ensureRunning()) return;
     const buf = sfxBuffers[key];
@@ -13207,6 +13509,7 @@ const SFX = (function() {
       const src = ctx.createBufferSource();
       const g = ctx.createGain();
       src.buffer = buf;
+      if (playbackRate && playbackRate > 0) src.playbackRate.value = playbackRate;
       g.gain.value = volume;
       src.connect(g); g.connect(sfxGain);
       src.start(0);
@@ -13588,6 +13891,9 @@ const SFX = (function() {
     startApocalypseRumble, playApocalypseImpact, screamShriek, startVoidHum,
     playSfxBuffer,
     phantomBladeSlash, beyondEcho, afterburnWhoosh,
+    // v1.9.0 Roamer + Phantasm SFX pass
+    laserCharge, pressureTone, echoReset, drumrollCascade,
+    brandMark, plagueProc, reverbBurst, startWakeHiss,
     playTrack, pauseMusic, resumeMusic,
     crossfadeGameplayPhase, stopAllGameplayTracks,
     clickPrimary, clickSecondary,
@@ -13974,10 +14280,9 @@ function fetchLeaderboard(d, callback) {
 }
 
 function normalScrollSpeed() {
-  // v1.8.0: rainbow run forces visual speed to a chaos-tier flat value
-  // (EXTREME's max × 1.5 = 6.0) from frame 1. Decoupled from the inflated
-  // 2× internal timer. Difficulty-agnostic per spec.
-  if (rainbowRunActive) return DIFFICULTIES.EXTREME.maxSpeed * 1.5;
+  // v1.9.0: rainbow scroll speed = EXTREME max + 20% (4.0 × 1.2 = 4.8) from
+  // frame 1. Was ×1.5 (6.0), which felt overloaded/chaotic. Difficulty-agnostic.
+  if (rainbowRunActive) return DIFFICULTIES.EXTREME.maxSpeed * 1.2;
   const d = diff();
   // Ramp is wall-clock based — frame count drifts under hitches, but players
   // should feel a consistent "it's been 5 minutes, top speed" regardless of
@@ -15960,23 +16265,15 @@ function spawnBody(yBase, opts) {
 // the late-game density bump comes from more bodies filling the H/4 grid
 // rather than runaway counts.
 function effectiveMaxBodies() {
-  // v1.8.0 F1: rainbow run uses a fixed chaos-tier body density independent
-  // of the player's selected difficulty. Same experience whether the player
-  // came in from NORMAL or IMPOSSIBLE.
-  //   Start: 6 (EXTREME 4 + 50 % chaos)
-  //   Cap:   10 (EXTREME 7 + 50 % chaos)
-  //   Post-cap: +1 every 120 s (IMPOSSIBLE-style growth), bypasses cap.
+  // v1.9.0: rainbow body count is HARD-capped at EXTREME maxBodiesCap + 3 (= 10)
+  // with no runaway post-cap growth — the old +1/120s ramp climbed to 16 and
+  // felt overloaded. Gentle ramp from a 6-body start up to the hard cap.
   if (rainbowRunActive) {
     const _baseStart = 6;
-    const _baseCap = 10;
+    const _hardCap = DIFFICULTIES.EXTREME.maxBodiesCap + 3; // 7 + 3 = 10
     const elapsed = elapsedProgressionSeconds();
     const ramped = _baseStart + Math.max(0, Math.floor((elapsed - 180) / 90));
-    let capped = Math.min(ramped, _baseCap);
-    if (elapsed > 60) {
-      const extra = Math.floor((elapsed - 60) / 120);
-      capped = Math.max(capped, Math.min(_baseCap + extra, _baseStart + 10));
-    }
-    return capped;
+    return Math.min(ramped, _hardCap);
   }
   const d = diff();
   // v1.7.4 tuning: ramp starts at 3:00 (was 2:00) and steps every 90s (was
@@ -16294,7 +16591,9 @@ function drawGravityWellLines() {
   // BLACK HOLE (Bulwark capstone) v1.6.6: doubles the visual pull radius
   // alongside the gameplay force buff, so the "felt" reach matches the
   // stronger pull. Suspended if Gravity Well is respec'd below rank 3.
-  const blackHoleActive = hasCapstone('blackHole') && gwRank >= 3;
+  // v1.9.0: rainbow runs use black-hole-tier pull (see physics in updateBodies),
+  // so widen the visual reach to match the felt force.
+  const blackHoleActive = (hasCapstone('blackHole') && gwRank >= 3) || rainbowRunActive;
   const MAX_LINES = 8;
   const MAX_DIST = 260 * (blackHoleActive ? 2 : 1); // don't draw lines for distant bodies
   const nearest = [];
@@ -16920,10 +17219,17 @@ function activateCombo(key, x, y) {
       if (activeEffects.hyperspeed <= 0) activateHyperspeed(HYPERSPEED_COMBO_DURATION);
       if (activeEffects.shield <= 0) { shieldEndTime = Date.now() + SHIELD_DURATION(); activeEffects.shield = SHIELD_DURATION(); shieldBroken = false; bastion2BonusMs = 0; }
     } else if (key === 'ghost_shield') {
-      // Wraith refresh wasn't previously handled — make sure both halves
-      // come up to whichever timer is longest so the combo doesn't die mid-effect.
-      if (activeEffects.ghost <= 0) { ghostEndTime = Date.now() + GHOST_DURATION(); activeEffects.ghost = GHOST_DURATION(); }
-      if (activeEffects.shield <= 0) { shieldEndTime = Date.now() + SHIELD_DURATION(); activeEffects.shield = SHIELD_DURATION(); shieldBroken = false; bastion2BonusMs = 0; }
+      // v1.9.0 (Bug B): unconditionally refresh BOTH halves so re-grabbing the
+      // WRAITH pair (or a single shield/ghost that routes here) EXTENDS a live
+      // combo instead of no-op'ing while both halves still have time. The old
+      // `<= 0` guards meant a fresh pickup did nothing unless a half had already
+      // expired. Mirror ghost_ghost's "never downgrade a longer timer" rule by
+      // only moving each end-time forward, then sync the halves together.
+      const _now = Date.now();
+      const _gd = GHOST_DURATION();
+      if (_now + _gd > ghostEndTime) { ghostEndTime = _now + _gd; activeEffects.ghost = _gd; }
+      const _sd = SHIELD_DURATION();
+      if (_now + _sd > shieldEndTime) { shieldEndTime = _now + _sd; activeEffects.shield = _sd; shieldBroken = false; bastion2BonusMs = 0; }
       syncComboDurations('ghost', 'shield');
     } else if (key === 'ghost_ghost') {
       // Eternal Phantom refresh: reset to GHOST_ETERNAL_DURATION when a
@@ -18974,9 +19280,15 @@ function update() {
   // Well is at max rank. The rank guard mirrors capstonePrereqMet so a
   // respec below rank 3 immediately suspends the bonus.
   const gwRankApplied = rankOf('gravityWell');
-  const blackHoleActive = activeOrb === 'asteroid' && hasCapstone('blackHole') && gwRankApplied >= 3;
-  const gravityWellForce = (activeOrb === 'asteroid' && activeEffects.shield > 0)
-    ? (([0.1, 0.2, 0.5][gwRankApplied - 1] || 0) * (blackHoleActive ? 2 : 1))
+  // v1.9.0 (rainbow gravity-pull fix): during a rainbow run every tree node is
+  // rank-capped at 1, so Gravity Well was stuck at 0.1 force — imperceptible
+  // against the fast rainbow scroll even though the well's visual lines drew at
+  // full strength. Promote it to black-hole tier during rainbow so the shield
+  // actually drags bodies in like the visual implies.
+  const blackHoleActive = (activeOrb === 'asteroid' && hasCapstone('blackHole') && gwRankApplied >= 3) || rainbowRunActive;
+  const _gwBaseForce = rainbowRunActive ? 0.5 : ([0.1, 0.2, 0.5][gwRankApplied - 1] || 0);
+  const gravityWellForce = ((activeOrb === 'asteroid' || rainbowRunActive) && activeEffects.shield > 0)
+    ? (_gwBaseForce * (blackHoleActive ? 2 : 1))
     : 0;
   for (const b of bodies) {
     // v1.9.0 perf: snapshot prev-frame position BEFORE movement so nova-ring
