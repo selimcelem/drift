@@ -7889,29 +7889,10 @@ ORB_BEHAVIOR.drifterV2.onActivateCombo = function(key, x, y) {
   }
 };
 
-// v1.9.0 perf: 600ms dedupe gate on SFX.comboActivate. Drumroll fires four
-// silent combos in quick succession with the inner SFX stubbed, but ANY
-// non-silent combo (player pair pickup arriving inside the same window,
-// Crescendo's setTimeout misfire, etc.) would otherwise stack overlapping
-// fanfares on top of the DrifterV2 flash audio. The dedupe holds the SFX
-// to the first combo audio per 600ms window — late-arriving combos still
-// apply their gameplay effects, they just don't double-stack the SFX.
-//
-// IMPORTANT: SFX is declared with `const` later in this script, so any
-// reference to it here (including `typeof SFX`) hits the temporal dead zone
-// and throws ReferenceError. Defer wrap install via setTimeout(0) so it
-// runs after script-load completes and the SFX binding is initialized.
-setTimeout(() => {
-  if (typeof SFX === 'undefined' || !SFX || typeof SFX.comboActivate !== 'function') return;
-  const _drifterV2_origSfxComboActivate = SFX.comboActivate;
-  let _drifterV2_lastComboSfxTime = 0;
-  SFX.comboActivate = function(key) {
-    const now = Date.now();
-    if (now - _drifterV2_lastComboSfxTime < 600) return;
-    _drifterV2_lastComboSfxTime = now;
-    return _drifterV2_origSfxComboActivate.call(this, key);
-  };
-}, 0);
+// (The 600ms SFX.comboActivate dedupe gate was moved out of this block to
+// just after the SFX module is defined — see comboSfxDedupe install below the
+// SFX IIFE. It's a global throttle, not orb-specific, so it lives there now
+// and no longer needs the script-load TDZ setTimeout defer.)
 
 // updatePowerupTimer: hide the ptCombo label while the suppress window is
 // active. Without this, the fallback `Object.keys(activeCombos)` would
@@ -14216,6 +14197,24 @@ const SFX = (function() {
   };
 })();
 
+// 600ms dedupe gate on SFX.comboActivate (global throttle — not orb-specific).
+// Roamer's Drumroll fires four silent combos in quick succession; any other
+// combo arriving in the same window (a player pair pickup, a Crescendo misfire)
+// would otherwise stack overlapping fanfares. This holds the combo SFX to the
+// first per 600ms window — late combos still apply their gameplay effects, they
+// just don't double-stack the audio. Installed here (right after the SFX module
+// is defined) so it runs inline — no script-load TDZ setTimeout defer needed.
+if (SFX && typeof SFX.comboActivate === 'function') {
+  const _origSfxComboActivate = SFX.comboActivate;
+  let _lastComboSfxTime = 0;
+  SFX.comboActivate = function(key) {
+    const now = Date.now();
+    if (now - _lastComboSfxTime < 600) return;
+    _lastComboSfxTime = now;
+    return _origSfxComboActivate.call(this, key);
+  };
+}
+
 // --- Highscores (localStorage, top 5) ---
 // Schema: [{ score: number, difficulty: 'NORMAL'|'HARD'|'EXTREME' }, ...]
 // Old schema (numbers) is migrated transparently.
@@ -18302,7 +18301,11 @@ function updateRunTimerDisplay() {
 }
 
 // --- Game state ---
-function resetGame() {
+function resetGame(isResume) {
+  // isResume: true only when continuing a run after a close+resume
+  // (beginResumedRun). The run was already counted by statsOnRunStart() when it
+  // FIRST started, so we must NOT count it again here — otherwise a paused-and-
+  // resumed run inflates total/per-orb run counts by one each resume.
   // Phase 0: validate the active orb + snapshot the just-ended run's per-orb
   // state (gated behind the orbDebug flag) before anything is zeroed.
   _assertActiveOrbValid();
@@ -18330,7 +18333,7 @@ function resetGame() {
   // pendingMilestones cleared so banners surfaced on the prior death don't
   // re-fire if this run is also a milestone-trigger.
   pendingMilestones = [];
-  statsOnRunStart();
+  if (!isResume) statsOnRunStart();
   lastDeathCause = 'unknown';
   runPowerupsUsed = 0;
   runBurstCount = 0;
@@ -19208,6 +19211,11 @@ function maybeSaveResumeState() {
     };
     localStorage.setItem(RESUME_STATE_KEY, JSON.stringify(snap));
     debugLog('[resume] save bucket=' + bucket + ' survived=' + snap.timesurvived + 's score=' + snap.score + ' diff=' + snap.difficulty);
+    // Backstop for the kills-lost-on-close bug: persist accumulated career
+    // stats on the same 5s cadence (kills/passes/combos increment in memory
+    // and otherwise only flush on death). A hard crash now loses at most ~5s
+    // of stats; a clean close is fully covered by the pauseGame save.
+    try { saveStats(); } catch {}
   } catch (e) { debugLog('[resume] save threw ' + (e && e.message || e)); }
 }
 function clearResumeState() {
@@ -25756,7 +25764,9 @@ function beginResumedRun(snap) {
   // Clear immediately so a mid-resume crash can't replay the same snapshot.
   clearResumeState();
   // Fresh gameplay state, then overwrite the fields the snapshot restores.
-  resetGame();
+  // isResume=true: don't re-count this as a new run (already counted at the
+  // original run start) — see resetGame.
+  resetGame(true);
   if (snap.difficulty && DIFFICULTIES[snap.difficulty]) difficulty = snap.difficulty;
   if (snap.orb && ORB_DEFS && ORB_DEFS[snap.orb]) activeOrb = snap.orb;
   // v1.6.3 skill-tree cache MUST follow any activeOrb mutation — the
@@ -26900,6 +26910,12 @@ function pauseGame() {
   runPauseStart = Date.now();
   pauseBtn.classList.remove('visible');
   pauseOverlay.classList.add('visible');
+  // Persist career stats on pause. Manual pause AND the background/app-pause
+  // handlers (visibilitychange, Capacitor App 'pause') all route through here
+  // while playing, so this is the "about to be backgrounded/closed" save point.
+  // Mid-run kills previously lived only in memory and were lost if the player
+  // closed the app without dying (stats only saved on death/run-start).
+  try { saveStats(); } catch {}
 }
 
 function resumeGame() {
