@@ -3384,7 +3384,7 @@
         <div class="tree-detail-ranks" id="treeDetailRanks"></div>
         <div class="tree-detail-actions">
           <button class="tree-btn" id="treeDetailUpgradeBtn">UPGRADE</button>
-          <button class="tree-btn respec-full" id="treeDetailRespecBtn">RESPEC NODE (4K)</button>
+          <button class="tree-btn respec-full" id="treeDetailRespecBtn">RESPEC NODE</button>
           <button class="tree-btn close" id="treeDetailCloseBtn">CLOSE</button>
         </div>
       </div>
@@ -4980,22 +4980,39 @@ const ORB_DEFS = {
   },
   cosmic: {
     name: 'Phantom', desc: 'Longer ghost. Ghosts spawn more often.',
-    color: '192,132,252', cost: 10000, streakCap: 8, trail: 'cosmic', bias: 'ghost',
+    color: '192,132,252', cost: 2000, streakCap: 8, trail: 'cosmic', bias: 'ghost',
   },
   solar: {
     name: 'Inferno', desc: 'Bigger novas. Novas spawn more often.',
-    color: '251,146,60', cost: 20000, streakCap: 8, trail: 'solar', bias: 'nova',
+    color: '251,146,60', cost: 3000, streakCap: 8, trail: 'solar', bias: 'nova',
   },
   nebula: {
     name: 'Warp', desc: 'Hyperspeed stacks faster. Higher cap.',
-    color: '96,165,250', cost: 40000, streakCap: 8, trail: 'nebula', bias: 'hyperspeed',
+    color: '96,165,250', cost: 4000, streakCap: 8, trail: 'nebula', bias: 'hyperspeed',
   },
   asteroid: {
     name: 'Bulwark', desc: 'Durable shields. Shields spawn more often.',
-    color: '168,162,158', cost: 80000, streakCap: 8, trail: 'asteroid', bias: 'shield',
+    color: '168,162,158', cost: 5000, streakCap: 8, trail: 'asteroid', bias: 'shield',
   },
 };
 const ORB_ORDER = ['cyan', 'cosmic', 'solar', 'nebula', 'asteroid'];
+
+// v1.9.0 "coming soon" tease orbs. Pure main-menu placeholders — deliberately
+// NOT in ORB_ORDER and NOT in ORB_DEFS, so every system that iterates real orbs
+// (stats, persistence, PGS sync, ORB_BEHAVIOR dispatch, validation, etc.) never
+// sees them. They appear ONLY in the orb-browser cycle via menuOrbCycle(), show
+// a name + tease + "COMING SOON", and are not purchasable.
+const TEASE_ORBS = {
+  helios:    { name: 'Helios',    color: '255,170,40',  desc: 'Where Inferno was a spark, Helios is the sun itself.' },
+  tachyon:   { name: 'Tachyon',   color: '120,220,255', desc: "Beyond Warp's hyperspeed lies a paradox. Tachyon bends time itself." },
+  leviathan: { name: 'Leviathan', color: '120,200,180', desc: 'Bulwark was the wall. Leviathan is the storm.' },
+};
+const TEASE_ORB_ORDER = ['helios', 'tachyon', 'leviathan'];
+function isTeaseOrb(key) { return Object.prototype.hasOwnProperty.call(TEASE_ORBS, key); }
+// Main-menu-only orb cycle: every real orb (ORB_ORDER, already incl. Roamer +
+// Phantasm by load time) followed by the locked teases. Computed fresh so it
+// reflects ORB_ORDER's final contents. Used ONLY by the orb-browser UI.
+function menuOrbCycle() { return ORB_ORDER.concat(TEASE_ORB_ORDER); }
 
 let totalCrystals = 0;
 let activeOrb = 'cyan';
@@ -5647,7 +5664,11 @@ function saveBeatFlags() {
 // per-orb crystal purchase (see FIX C3 UI flow). The old difficulty-beat
 // gate is replaced by a direct paywall.
 function treeUnlocked(orbKey) {
-  return !!(treesUnlocked && treesUnlocked[orbKey]);
+  // v1.9.0 economy: the separate two-step "buy orb, then pay to unlock the tree"
+  // gate is removed. Owning the orb (it's in unlockedOrbs) opens its skill tree
+  // immediately. The legacy treesUnlocked map is still persisted/PGS-synced for
+  // back-compat but no longer gates access. Drifter (cyan) is always owned.
+  return Array.isArray(unlockedOrbs) && unlockedOrbs.includes(orbKey);
 }
 function anyTreeUnlocked() {
   for (const k of Object.keys(treesUnlocked)) {
@@ -5727,10 +5748,22 @@ const ORB_CAPSTONE_COST_SCALE = {
 function orbCostScale(orbKey) {
   return ORB_COST_SCALE[orbKey] || 1;
 }
+// v1.9.0 economy: the original 5 orbs use a flat, non-escalating tier price —
+// T1=1000, T2=2000, T3=3000 per rank, capstone=5000 — independent of the shared
+// TREE_NODE_COSTS table, ORB_COST_SCALE, and any per-node costOverride. The v2
+// orbs (Roamer/Phantasm) keep their existing costOverride-driven prices, so the
+// table/scales below are intentionally left unchanged.
+const ORIGINAL_5_ORBS = new Set(['cyan', 'cosmic', 'solar', 'nebula', 'asteroid']);
+const ORIGINAL_5_FLAT_CAPSTONE = 5000;
 function roundCrystals500(n) {
   return Math.round(n / 500) * 500;
 }
 function nodeCost(tier, nextRank, orbKey, node) {
+  // v1.9.0 economy: original 5 orbs price flat by tier (1k/2k/3k), every rank
+  // the same, ignoring costOverride and scale. Returns per-rank cost.
+  if (ORIGINAL_5_ORBS.has(orbKey)) {
+    return (tier | 0) * 1000;
+  }
   // v1.7.0: per-node costOverride lets specific nodes price independently of
   // the tier table — needed when a node's max-ranks differs from its peers
   // (e.g. Overdrive at 2 ranks needs to price the path closer to the
@@ -5752,6 +5785,8 @@ function nodeTotalCost(tier, maxRank, orbKey) {
   return sum;
 }
 function capstoneCost(orbKey) {
+  // v1.9.0 economy: original 5 orbs flat 5000 per capstone.
+  if (ORIGINAL_5_ORBS.has(orbKey)) return ORIGINAL_5_FLAT_CAPSTONE;
   const scale = ORB_CAPSTONE_COST_SCALE[orbKey] || 1;
   return roundCrystals500(TREE_CAPSTONE_COST * scale);
 }
@@ -5776,8 +5811,46 @@ function totalRanksInvested(orbKey) {
   }
   return sum;
 }
+// v1.9.0 economy: universal refund pricing. Crystals invested in a single node
+// (sum of every owned rank's cost) and in a whole tree (all node ranks +
+// capstones). The refund FEE is 20% of crystals invested, charged on top; the
+// player gets 100% of the invested crystals back. Applies to ALL orbs.
+const REFUND_FEE_RATE = 0.20;
+function refundFee(invested) { return Math.round(invested * REFUND_FEE_RATE); }
+function nodeCrystalsInvested(orbKey, node, currentRank) {
+  let sum = 0;
+  for (let r = 1; r <= currentRank; r++) sum += nodeCost(node.tier, r, orbKey, node);
+  return sum;
+}
+function treeCrystalsInvested(orbKey) {
+  const def = TREE_DEFS[orbKey];
+  const state = orbTrees[orbKey];
+  if (!def || !state) return 0;
+  let sum = 0;
+  for (const pKey of Object.keys(def.paths)) {
+    const nodes = def.paths[pKey].nodes;
+    const arr = state[pKey] || [];
+    for (let i = 0; i < nodes.length; i++) sum += nodeCrystalsInvested(orbKey, nodes[i], arr[i] | 0);
+  }
+  if (def.capstones && state.capstones) {
+    const capCost = capstoneCost(orbKey);
+    for (const cap of def.capstones) if (state.capstones[cap.key]) sum += capCost;
+  }
+  return sum;
+}
+// Refund fee for a single node at its current rank (0 if nothing invested).
+function respecNodeCost(orbKey, pathKey, nodeIdx) {
+  const def = TREE_DEFS[orbKey];
+  const state = orbTrees[orbKey];
+  if (!def || !state) return 0;
+  const node = def.paths[pathKey] && def.paths[pathKey].nodes[nodeIdx];
+  if (!node) return 0;
+  const current = state[pathKey][nodeIdx] | 0;
+  if (current <= 0) return 0;
+  return refundFee(nodeCrystalsInvested(orbKey, node, current));
+}
 function _fullTreeRespecCost_default(orbKey) {
-  return TREE_RESPEC_PER_RANK * totalRanksInvested(orbKey);
+  return refundFee(treeCrystalsInvested(orbKey));
 }
 
 // Purchase a single rank increment on (orb, path, nodeIdx). Returns true on
@@ -5886,7 +5959,10 @@ function capstonePrereqMet(orbKey, capKey) {
   return false;
 }
 
-// Single-node respec: refund all ranks of that node, spend a flat fee.
+// Single-node respec (universal, v1.9.0 economy): fee = 20% of crystals invested
+// in this node; player gets 100% of the investment back. Works for every orb,
+// including Roamer/Phantasm — for those it also frees the node's active-point
+// allocation (a no-op for the original 5, which have no activePoints map).
 function _respecNode_default(orbKey, pathKey, nodeIdx) {
   const def = TREE_DEFS[orbKey];
   const state = orbTrees[orbKey];
@@ -5895,22 +5971,28 @@ function _respecNode_default(orbKey, pathKey, nodeIdx) {
   if (!node) return false;
   const current = state[pathKey][nodeIdx] | 0;
   if (current <= 0) return false;
-  if (totalCrystals < TREE_RESPEC_SINGLE) return false;
-  totalCrystals = Math.max(0, totalCrystals - TREE_RESPEC_SINGLE);
-  // Refund all rank costs spent on this node.
-  for (let r = 1; r <= current; r++) totalCrystals += nodeCost(node.tier, r, orbKey, node);
+  const invested = nodeCrystalsInvested(orbKey, node, current);
+  const fee = refundFee(invested);
+  if (totalCrystals < fee) return false;
+  totalCrystals = Math.max(0, totalCrystals - fee);
+  totalCrystals += invested; // 100% refund
   state[pathKey][nodeIdx] = 0;
+  // v2 orbs: free the active points this node was holding.
+  if (state.activePoints && node.key) delete state.activePoints[node.key];
   // Cascading capstone invalidation: if refunding this node violates any
-  // purchased capstone's prereq, refund the capstone too.
+  // purchased capstone's prereq, refund the capstone too (forced — full crystals
+  // back, no extra fee). v2 trees have no capstones, so this loop is a no-op.
   const _capRefund = capstoneCost(orbKey);
-  for (const cap of def.capstones) {
-    if (state.capstones[cap.key] && !capstonePrereqMet(orbKey, cap.key)) {
-      state.capstones[cap.key] = false;
-      totalCrystals += _capRefund;
-      // DEAD CENTER refund implies CALCULATED DRIFT also refunds (gated by it).
-      if (cap.key === 'deadCenter' && state.capstones.calculatedDrift) {
-        state.capstones.calculatedDrift = false;
+  if (def.capstones && state.capstones) {
+    for (const cap of def.capstones) {
+      if (state.capstones[cap.key] && !capstonePrereqMet(orbKey, cap.key)) {
+        state.capstones[cap.key] = false;
         totalCrystals += _capRefund;
+        // DEAD CENTER refund implies CALCULATED DRIFT also refunds (gated by it).
+        if (cap.key === 'deadCenter' && state.capstones.calculatedDrift) {
+          state.capstones.calculatedDrift = false;
+          totalCrystals += _capRefund;
+        }
       }
     }
   }
@@ -5920,32 +6002,37 @@ function _respecNode_default(orbKey, pathKey, nodeIdx) {
   return true;
 }
 
-// Full-tree respec: refund everything spent in the tree, spend 1.4k × ranks fee.
+// Full-tree respec (universal, v1.9.0 economy): fee = 20% of total crystals
+// invested in the tree; player gets 100% back. Wipes v2 active-points too.
 function _respecTree_default(orbKey) {
   const def = TREE_DEFS[orbKey];
   const state = orbTrees[orbKey];
   if (!def || !state) return false;
-  const ranks = totalRanksInvested(orbKey);
-  if (ranks <= 0) return false;
-  const fee = TREE_RESPEC_PER_RANK * ranks;
+  if (totalRanksInvested(orbKey) <= 0) return false;
+  const invested = treeCrystalsInvested(orbKey);
+  const fee = refundFee(invested);
   if (totalCrystals < fee) return false;
   totalCrystals = Math.max(0, totalCrystals - fee);
-  // Refund all node rank costs + capstone costs.
+  // Refund 100% of all node rank costs + capstone costs.
   for (const pKey of Object.keys(def.paths)) {
     const nodes = def.paths[pKey].nodes;
     const arr = state[pKey];
     for (let i = 0; i < nodes.length; i++) {
-      for (let r = 1; r <= (arr[i] | 0); r++) totalCrystals += nodeCost(nodes[i].tier, r, orbKey, nodes[i]);
+      totalCrystals += nodeCrystalsInvested(orbKey, nodes[i], arr[i] | 0);
       arr[i] = 0;
     }
   }
-  const _capRefundT = capstoneCost(orbKey);
-  for (const cap of def.capstones) {
-    if (state.capstones[cap.key]) {
-      totalCrystals += _capRefundT;
-      state.capstones[cap.key] = false;
+  if (def.capstones && state.capstones) {
+    const _capRefundT = capstoneCost(orbKey);
+    for (const cap of def.capstones) {
+      if (state.capstones[cap.key]) {
+        totalCrystals += _capRefundT;
+        state.capstones[cap.key] = false;
+      }
     }
   }
+  // v2 orbs: refunding crystals refunds the build choice too.
+  if (state.activePoints) state.activePoints = {};
   saveCrystals();
   saveTreeState();
   if (orbKey === activeOrb) refreshActiveTreeCache();
@@ -5986,7 +6073,7 @@ ORB_DEFS.drifterV2 = {
   // deeper saturation + violet edge so the two reads as different identities
   // at a glance. Tree paths keep their own cyan/amber/red tint.
   color: '80,130,255',
-  cost: 20000,
+  cost: 6000,
   streakCap: 10,
   trail: 'drifterV2',
   // no `bias` field — equal pickup chances, mirrors original Drifter's DNA
@@ -6254,7 +6341,7 @@ ORB_BEHAVIOR.drifterV2.pathPrereqMet = function(state, pathKey, nodeIdx) {
 // survive resets / PGS sync (treated as a one-way upgrade).
 const DRIFTERV2_BUDGET_BASE = 25;
 const DRIFTERV2_BUDGET_EXPAND_MAX = 5;
-const DRIFTERV2_BUDGET_EXPAND_COST = 10000;
+const DRIFTERV2_BUDGET_EXPAND_COST = 2000; // v1.9.0 economy: was 10000
 const DRIFTERV2_BUDGET_BONUS_KEY = 'drift_dv2_budget_bonus';
 let _drifterV2_budgetBonus = (() => {
   try {
@@ -6423,13 +6510,10 @@ OrbHooks.on('afterLoadTreeState', () => {
   }
 });
 
-// ---------------------------------------------------------------------
-// Milestone 2: free + full refund for drifterV2 (no tax, no per-rank fee).
-// ---------------------------------------------------------------------
-// Single-node respec: skip the 4k crystal deduction, refund all spent.
-// Full-tree respec: skip the 1.4k×ranks deduction, refund all spent.
-// All other orbs keep the existing economy.
-// Dispatched (by orbKey) only for 'drifterV2'. Free single-node refund.
+// v1.9.0 economy: Roamer now pays the universal 20% refund fee (was free + full
+// refund). Dedicated overrides are retained ONLY so the orb-specific active-point
+// deactivate cascade (keystone + requiresActive chains) still fires on refund —
+// the generic default can't replicate that. Fee/refund math matches every orb.
 ORB_BEHAVIOR.drifterV2.respecNode = function(orbKey, pathKey, nodeIdx) {
   const def = TREE_DEFS.drifterV2;
   const state = orbTrees.drifterV2;
@@ -6438,32 +6522,39 @@ ORB_BEHAVIOR.drifterV2.respecNode = function(orbKey, pathKey, nodeIdx) {
   if (!node) return false;
   const current = state[pathKey][nodeIdx] | 0;
   if (current <= 0) return false;
-  for (let r = 1; r <= current; r++) totalCrystals += nodeCost(node.tier, r, orbKey, node);
+  const invested = nodeCrystalsInvested(orbKey, node, current);
+  const fee = refundFee(invested);
+  if (totalCrystals < fee) return false;
+  totalCrystals = Math.max(0, totalCrystals - fee);
+  totalCrystals += invested; // 100% refund
   state[pathKey][nodeIdx] = 0;
+  _drifterV2_deactivate(node.key); // free active points + cascade dependents
   saveCrystals();
   saveTreeState();
   if (orbKey === activeOrb) refreshActiveTreeCache();
   return true;
 };
 ORB_BEHAVIOR.drifterV2.fullTreeRespecCost = function(orbKey) {
-  return 0;
+  return refundFee(treeCrystalsInvested(orbKey));
 };
 ORB_BEHAVIOR.drifterV2.respecTree = function(orbKey) {
   const def = TREE_DEFS.drifterV2;
   const state = orbTrees.drifterV2;
   if (!def || !state) return false;
-  const ranks = totalRanksInvested(orbKey);
-  if (ranks <= 0) return false;
+  if (totalRanksInvested(orbKey) <= 0) return false;
+  const invested = treeCrystalsInvested(orbKey);
+  const fee = refundFee(invested);
+  if (totalCrystals < fee) return false;
+  totalCrystals = Math.max(0, totalCrystals - fee);
   for (const pKey of Object.keys(def.paths)) {
     const nodes = def.paths[pKey].nodes;
     const arr = state[pKey];
     for (let i = 0; i < nodes.length; i++) {
-      for (let r = 1; r <= (arr[i] | 0); r++) totalCrystals += nodeCost(nodes[i].tier, r, orbKey, nodes[i]);
+      totalCrystals += nodeCrystalsInvested(orbKey, nodes[i], arr[i] | 0);
       arr[i] = 0;
     }
   }
-  // v2: also wipe the active-points map — refunding crystals refunds the
-  // build choice too.
+  // v2: refunding crystals refunds the build choice too.
   state.activePoints = {};
   saveCrystals();
   saveTreeState();
@@ -6747,11 +6838,12 @@ function _drifterV2_renderCustomTreeOverlay() {
   budget.appendChild(expandBtn);
   capsEl.appendChild(budget);
 
-  // Footer respec button: free, full-tree refund (also clears active map).
+  // Footer respec button: full-tree refund (20% fee, 100% back; clears active map).
   const ranks = totalRanksInvested('drifterV2');
   const full = document.getElementById('treeRespecFullBtn');
-  full.textContent = ranks > 0 ? 'REFUND ALL (FREE)' : 'REFUND ALL';
-  full.disabled = ranks === 0;
+  const _fullFee = fullTreeRespecCost('drifterV2');
+  full.textContent = ranks > 0 ? `REFUND ALL (${formatCrystals(_fullFee)} 💎)` : 'REFUND ALL';
+  full.disabled = ranks === 0 || totalCrystals < _fullFee;
 }
 
 // Wrap renderTreeOverlay — drifterV2 takes the custom path; everything else
@@ -6860,19 +6952,22 @@ ORB_BEHAVIOR.drifterV2.renderTreeDetail = function() {
       }
     };
     respecBtn.style.visibility = '';
-    respecBtn.disabled = false;
-    respecBtn.textContent = 'REFUND (FREE)';
-    respecBtn.onclick = () => {
-      confirmTreeAction(`Refund ${node.name}? Free, returns all spent crystals.`, () => {
-        if (respecNode(t.orbKey, t.pathKey, t.nodeIdx)) {
-          // Also clear active state for this node if it was somehow set.
-          _drifterV2_deactivate(node.key);
-          SFX.clickSecondary();
-          renderTreeOverlay();
-          closeTreeDetail();
-        }
-      });
-    };
+    {
+      const _fee = respecNodeCost(t.orbKey, t.pathKey, t.nodeIdx);
+      respecBtn.disabled = totalCrystals < _fee;
+      respecBtn.textContent = `REFUND (${formatCrystals(_fee)} 💎)`;
+      respecBtn.onclick = () => {
+        confirmTreeAction(`Refund ${node.name}? Costs ${formatCrystals(_fee)} 💎 and returns all spent crystals.`, () => {
+          if (respecNode(t.orbKey, t.pathKey, t.nodeIdx)) {
+            // Also clear active state for this node if it was somehow set.
+            _drifterV2_deactivate(node.key);
+            SFX.clickSecondary();
+            renderTreeOverlay();
+            closeTreeDetail();
+          }
+        });
+      };
+    }
   } else {
     // Active — show DEACTIVATE.
     upBtn.style.visibility = '';
@@ -6885,18 +6980,21 @@ ORB_BEHAVIOR.drifterV2.renderTreeDetail = function() {
       renderTreeDetail();
     };
     respecBtn.style.visibility = '';
-    respecBtn.disabled = false;
-    respecBtn.textContent = 'REFUND (FREE)';
-    respecBtn.onclick = () => {
-      confirmTreeAction(`Refund ${node.name}? Frees ${pointCost} budget point${pointCost > 1 ? 's' : ''} and returns all spent crystals.`, () => {
-        if (respecNode(t.orbKey, t.pathKey, t.nodeIdx)) {
-          _drifterV2_deactivate(node.key);
-          SFX.clickSecondary();
-          renderTreeOverlay();
-          closeTreeDetail();
-        }
-      });
-    };
+    {
+      const _fee = respecNodeCost(t.orbKey, t.pathKey, t.nodeIdx);
+      respecBtn.disabled = totalCrystals < _fee;
+      respecBtn.textContent = `REFUND (${formatCrystals(_fee)} 💎)`;
+      respecBtn.onclick = () => {
+        confirmTreeAction(`Refund ${node.name}? Costs ${formatCrystals(_fee)} 💎, frees ${pointCost} budget point${pointCost > 1 ? 's' : ''} and returns all spent crystals.`, () => {
+          if (respecNode(t.orbKey, t.pathKey, t.nodeIdx)) {
+            _drifterV2_deactivate(node.key);
+            SFX.clickSecondary();
+            renderTreeOverlay();
+            closeTreeDetail();
+          }
+        });
+      };
+    }
   }
 };
 
@@ -8037,7 +8135,7 @@ ORB_DEFS.phantomV2 = {
   desc: 'Phantom\'s shadow — wraiths, echoes of the past, and curses that linger. Three roads through the veil.',
   // Bright violet — visibly distinct from base Phantom's '192,132,252'.
   color: '210,150,255',
-  cost: 25000,
+  cost: 7000,
   streakCap: 8,
   trail: 'cosmic',
   bias: 'ghost',
@@ -8273,7 +8371,7 @@ ORB_BEHAVIOR.phantomV2.pathPrereqMet = function(state, pathKey, nodeIdx) {
 // --- 25-point active budget (expandable to 30) ----------------------------
 const PHANTOMV2_BUDGET_BASE = 25;
 const PHANTOMV2_BUDGET_EXPAND_MAX = 5;
-const PHANTOMV2_BUDGET_EXPAND_COST = 10000;
+const PHANTOMV2_BUDGET_EXPAND_COST = 2000; // v1.9.0 economy: was 10000
 const PHANTOMV2_BUDGET_BONUS_KEY = 'drift_pv2_budget_bonus';
 let _phantomV2_budgetBonus = (() => {
   try {
@@ -8414,7 +8512,9 @@ OrbHooks.on('afterLoadTreeState', () => {
   }
 });
 
-// Free + full refund respec for phantomV2. Dispatched (by orbKey) only for it.
+// v1.9.0 economy: Phantasm now pays the universal 20% refund fee (was free + full
+// refund). Override retained so its active-point deactivate cascade (keystone +
+// requiresActive chains) still fires on refund. Fee/refund math matches every orb.
 ORB_BEHAVIOR.phantomV2.respecNode = function(orbKey, pathKey, nodeIdx) {
   const def = TREE_DEFS.phantomV2;
   const state = orbTrees.phantomV2;
@@ -8423,7 +8523,11 @@ ORB_BEHAVIOR.phantomV2.respecNode = function(orbKey, pathKey, nodeIdx) {
   if (!node) return false;
   const current = state[pathKey][nodeIdx] | 0;
   if (current <= 0) return false;
-  for (let r = 1; r <= current; r++) totalCrystals += nodeCost(node.tier, r, orbKey, node);
+  const invested = nodeCrystalsInvested(orbKey, node, current);
+  const fee = refundFee(invested);
+  if (totalCrystals < fee) return false;
+  totalCrystals = Math.max(0, totalCrystals - fee);
+  totalCrystals += invested; // 100% refund
   state[pathKey][nodeIdx] = 0;
   // Also clear active state for this node (it may have been activated).
   _phantomV2_deactivate(node.key);
@@ -8433,19 +8537,22 @@ ORB_BEHAVIOR.phantomV2.respecNode = function(orbKey, pathKey, nodeIdx) {
   return true;
 };
 ORB_BEHAVIOR.phantomV2.fullTreeRespecCost = function(orbKey) {
-  return 0;
+  return refundFee(treeCrystalsInvested(orbKey));
 };
 ORB_BEHAVIOR.phantomV2.respecTree = function(orbKey) {
   const def = TREE_DEFS.phantomV2;
   const state = orbTrees.phantomV2;
   if (!def || !state) return false;
-  const ranks = totalRanksInvested(orbKey);
-  if (ranks <= 0) return false;
+  if (totalRanksInvested(orbKey) <= 0) return false;
+  const invested = treeCrystalsInvested(orbKey);
+  const fee = refundFee(invested);
+  if (totalCrystals < fee) return false;
+  totalCrystals = Math.max(0, totalCrystals - fee);
   for (const pKey of Object.keys(def.paths)) {
     const nodes = def.paths[pKey].nodes;
     const arr = state[pKey];
     for (let i = 0; i < nodes.length; i++) {
-      for (let r = 1; r <= (arr[i] | 0); r++) totalCrystals += nodeCost(nodes[i].tier, r, orbKey, nodes[i]);
+      totalCrystals += nodeCrystalsInvested(orbKey, nodes[i], arr[i] | 0);
       arr[i] = 0;
     }
   }
@@ -8640,8 +8747,9 @@ function _phantomV2_renderCustomTreeOverlay() {
   capsEl.appendChild(budget);
   const ranks = totalRanksInvested('phantomV2');
   const full = document.getElementById('treeRespecFullBtn');
-  full.textContent = ranks > 0 ? 'REFUND ALL (FREE)' : 'REFUND ALL';
-  full.disabled = ranks === 0;
+  const _fullFee = fullTreeRespecCost('phantomV2');
+  full.textContent = ranks > 0 ? `REFUND ALL (${formatCrystals(_fullFee)} 💎)` : 'REFUND ALL';
+  full.disabled = ranks === 0 || totalCrystals < _fullFee;
 }
 
 // Dispatched only when treeUiCurrentOrb === 'phantomV2'. Style reset lives in
@@ -8733,18 +8841,21 @@ ORB_BEHAVIOR.phantomV2.renderTreeDetail = function() {
       }
     };
     respecBtn.style.visibility = '';
-    respecBtn.disabled = false;
-    respecBtn.textContent = 'REFUND (FREE)';
-    respecBtn.onclick = () => {
-      confirmTreeAction(`Refund ${node.name}? Free, returns all spent crystals.`, () => {
-        if (respecNode(t.orbKey, t.pathKey, t.nodeIdx)) {
-          _phantomV2_deactivate(node.key);
-          SFX.clickSecondary();
-          renderTreeOverlay();
-          closeTreeDetail();
-        }
-      });
-    };
+    {
+      const _fee = respecNodeCost(t.orbKey, t.pathKey, t.nodeIdx);
+      respecBtn.disabled = totalCrystals < _fee;
+      respecBtn.textContent = `REFUND (${formatCrystals(_fee)} 💎)`;
+      respecBtn.onclick = () => {
+        confirmTreeAction(`Refund ${node.name}? Costs ${formatCrystals(_fee)} 💎 and returns all spent crystals.`, () => {
+          if (respecNode(t.orbKey, t.pathKey, t.nodeIdx)) {
+            _phantomV2_deactivate(node.key);
+            SFX.clickSecondary();
+            renderTreeOverlay();
+            closeTreeDetail();
+          }
+        });
+      };
+    }
   } else {
     upBtn.style.visibility = '';
     upBtn.textContent = `DEACTIVATE (FREES ${pointCost} PT${pointCost > 1 ? 'S' : ''})`;
@@ -8756,18 +8867,21 @@ ORB_BEHAVIOR.phantomV2.renderTreeDetail = function() {
       renderTreeDetail();
     };
     respecBtn.style.visibility = '';
-    respecBtn.disabled = false;
-    respecBtn.textContent = 'REFUND (FREE)';
-    respecBtn.onclick = () => {
-      confirmTreeAction(`Refund ${node.name}? Frees ${pointCost} budget point${pointCost > 1 ? 's' : ''} and returns all spent crystals.`, () => {
-        if (respecNode(t.orbKey, t.pathKey, t.nodeIdx)) {
-          _phantomV2_deactivate(node.key);
-          SFX.clickSecondary();
-          renderTreeOverlay();
-          closeTreeDetail();
-        }
-      });
-    };
+    {
+      const _fee = respecNodeCost(t.orbKey, t.pathKey, t.nodeIdx);
+      respecBtn.disabled = totalCrystals < _fee;
+      respecBtn.textContent = `REFUND (${formatCrystals(_fee)} 💎)`;
+      respecBtn.onclick = () => {
+        confirmTreeAction(`Refund ${node.name}? Costs ${formatCrystals(_fee)} 💎, frees ${pointCost} budget point${pointCost > 1 ? 's' : ''} and returns all spent crystals.`, () => {
+          if (respecNode(t.orbKey, t.pathKey, t.nodeIdx)) {
+            _phantomV2_deactivate(node.key);
+            SFX.clickSecondary();
+            renderTreeOverlay();
+            closeTreeDetail();
+          }
+        });
+      };
+    }
   }
 };
 
@@ -14390,6 +14504,10 @@ const TRAIL_UNLOCK_THRESHOLDS = {
   cyan: 1000, cosmic: 1000, solar: 3000, nebula: 3000, asteroid: 2000,
   // v1.9.0 polish: DrifterV2 trail matches Drifter's 1,000-kill threshold.
   drifterV2: 1000,
+  // v1.9.0 economy: Phantasm was missing a threshold entry, so its main-menu
+  // unlock-progress counter never rendered (need=0 hid it). Mirrors Phantom's
+  // 1,000-kill threshold (Phantasm shares the cosmic trail render).
+  phantomV2: 1000,
 };
 // Display names for the unlocked alternative trail per orb (shown in the
 // orb-preview dropdown and the unlock banner).
@@ -14400,6 +14518,7 @@ const TRAIL_UNLOCKED_NAMES = {
   nebula:   'Lightspeed',
   asteroid: 'Tectonic',
   drifterV2: 'Prismatic Pulse',
+  phantomV2: 'Spectral Wisps',
 };
 // v1.9.0 polish: enumerate ALL ORB_ORDER entries instead of hard-coding the
 // original five. Previously DrifterV2 stats were silently dropped on every
@@ -27476,7 +27595,31 @@ function ensureOrbParticles(key) {
 }
 
 function refreshOrbBrowser() {
-  const key = ORB_ORDER[orbBrowserIndex];
+  const cycle = menuOrbCycle();
+  if (orbBrowserIndex < 0 || orbBrowserIndex >= cycle.length) orbBrowserIndex = 0;
+  const key = cycle[orbBrowserIndex];
+
+  // Dots (shared — span the whole menu cycle incl. teases).
+  const dotsEl = document.getElementById('orbDots');
+  dotsEl.innerHTML = cycle.map((_, i) =>
+    `<div class="orb-dot${i === orbBrowserIndex ? ' active' : ''}"></div>`
+  ).join('');
+
+  // v1.9.0 tease orbs: locked, non-purchasable placeholders. Show name + tease +
+  // a disabled COMING SOON button where the unlock/equip controls would be, and
+  // no trail row (there's no trail to pick on an unreleased orb).
+  if (isTeaseOrb(key)) {
+    const t = TEASE_ORBS[key];
+    document.getElementById('orbName').textContent = t.name.toUpperCase();
+    document.getElementById('orbDesc').textContent = t.desc;
+    document.getElementById('orbPreview').classList.add('locked');
+    document.getElementById('orbAction').innerHTML =
+      `<button class="orb-btn unlock" id="orbComingSoonBtn" disabled>COMING SOON</button>`;
+    document.getElementById('orbCrystalBalance').textContent = '💎 ' + formatCrystals(totalCrystals);
+    refreshOrbTrailRow(key, true); // treated as locked → row cleared
+    return;
+  }
+
   const def = ORB_DEFS[key];
   const locked = !unlockedOrbs.includes(key);
   const equipped = activeOrb === key;
@@ -27484,12 +27627,6 @@ function refreshOrbBrowser() {
   document.getElementById('orbDesc').textContent = def.desc;
   const preview = document.getElementById('orbPreview');
   preview.classList.toggle('locked', locked);
-
-  // Dots
-  const dotsEl = document.getElementById('orbDots');
-  dotsEl.innerHTML = ORB_ORDER.map((_, i) =>
-    `<div class="orb-dot${i === orbBrowserIndex ? ' active' : ''}"></div>`
-  ).join('');
 
   // Action area — v1.6.3: per-orb button pair.
   //   Locked orb:                    [UNLOCK — N 💎]
@@ -27652,10 +27789,47 @@ function closeTrailPicker() {
   document.getElementById('trailPickerOverlay').classList.remove('visible');
 }
 
+// v1.9.0 tease orbs: a dim, locked placeholder orb — soft pulsing halo, a muted
+// core, and a "?" glyph. No particle system (those key off ORB_DEFS).
+function drawTeaseOrbPreview(cw, ch, color) {
+  const g = orbPreviewCtx;
+  const t = performance.now() / 1000;
+  const bob = Math.sin(t * Math.PI) * 12;
+  const cx = cw / 2, cy = ch / 2 + bob;
+  const r = 34;
+  const pulse = 0.5 + 0.5 * Math.sin(t * 1.6);
+  g.save();
+  // Soft halo.
+  const halo = g.createRadialGradient(cx, cy, 0, cx, cy, r * 2.6);
+  halo.addColorStop(0, `rgba(${color},${0.18 + 0.12 * pulse})`);
+  halo.addColorStop(1, `rgba(${color},0)`);
+  g.fillStyle = halo;
+  g.beginPath(); g.arc(cx, cy, r * 2.6, 0, 6.28); g.fill();
+  // Muted core.
+  g.globalAlpha = 0.5;
+  const core = g.createRadialGradient(cx - r * 0.3, cy - r * 0.3, 0, cx, cy, r);
+  core.addColorStop(0, `rgba(${color},0.6)`);
+  core.addColorStop(1, 'rgba(40,44,55,0.85)');
+  g.fillStyle = core;
+  g.beginPath(); g.arc(cx, cy, r, 0, 6.28); g.fill();
+  g.globalAlpha = 1;
+  g.strokeStyle = `rgba(${color},0.55)`;
+  g.lineWidth = 2;
+  g.beginPath(); g.arc(cx, cy, r, 0, 6.28); g.stroke();
+  // "?" glyph.
+  g.fillStyle = `rgba(${color},0.9)`;
+  g.font = '700 34px "Orbitron", monospace';
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillText('?', cx, cy + 2);
+  g.restore();
+}
 function drawOrbPreview() {
   const cw = orbPreviewCanvas.width, ch = orbPreviewCanvas.height;
   orbPreviewCtx.clearRect(0, 0, cw, ch);
-  const key = ORB_ORDER[orbBrowserIndex];
+  const key = menuOrbCycle()[orbBrowserIndex];
+  // Tease orbs have no ORB_DEFS entry — render a dim, locked placeholder orb.
+  if (isTeaseOrb(key)) { drawTeaseOrbPreview(cw, ch, TEASE_ORBS[key].color); return; }
   const def = ORB_DEFS[key];
   const color = def.color;
   const t = performance.now() / 1000;
@@ -28002,12 +28176,14 @@ orbPreviewLoop();
 
 document.getElementById('orbPrev').addEventListener('click', () => {
   SFX.clickSecondary();
-  orbBrowserIndex = (orbBrowserIndex - 1 + ORB_ORDER.length) % ORB_ORDER.length;
+  const n = menuOrbCycle().length;
+  orbBrowserIndex = (orbBrowserIndex - 1 + n) % n;
   refreshOrbBrowser();
 });
 document.getElementById('orbNext').addEventListener('click', () => {
   SFX.clickSecondary();
-  orbBrowserIndex = (orbBrowserIndex + 1) % ORB_ORDER.length;
+  const n = menuOrbCycle().length;
+  orbBrowserIndex = (orbBrowserIndex + 1) % n;
   refreshOrbBrowser();
 });
 refreshOrbBrowser();
@@ -29205,8 +29381,12 @@ function _renderTreeDetail_default() {
       upBtn.textContent = `UPGRADE (${formatCrystals(nextCost)} 💎)`;
     }
     upBtn.disabled = maxed || frozen || totalCrystals < nextCost;
+    // v1.9.0 economy: single-node refund fee = 20% of crystals invested in this
+    // node; player gets 100% back.
+    const _respecFee = respecNodeCost(t.orbKey, t.pathKey, t.nodeIdx);
     respecBtn.style.visibility = current > 0 ? '' : 'hidden';
-    respecBtn.disabled = current === 0 || totalCrystals < TREE_RESPEC_SINGLE;
+    respecBtn.disabled = current === 0 || totalCrystals < _respecFee;
+    respecBtn.textContent = `RESPEC NODE (${formatCrystals(_respecFee)} 💎)`;
     upBtn.onclick = () => {
       if (purchaseNodeRank(t.orbKey, t.pathKey, t.nodeIdx)) {
         treeLog(`purchased ${def.name}.${t.pathKey}[${t.nodeIdx}] → rank ${state[t.pathKey][t.nodeIdx]}`);
@@ -29216,7 +29396,7 @@ function _renderTreeDetail_default() {
       }
     };
     respecBtn.onclick = () => {
-      confirmTreeAction(`Refund all ranks of ${node.name}? Costs ${formatCrystals(TREE_RESPEC_SINGLE)} 💎.`, () => {
+      confirmTreeAction(`Refund all ranks of ${node.name}? Costs ${formatCrystals(_respecFee)} 💎 and refunds all invested crystals.`, () => {
         if (respecNode(t.orbKey, t.pathKey, t.nodeIdx)) {
           treeLog(`respec node ${def.name}.${t.pathKey}[${t.nodeIdx}]`);
           SFX.clickSecondary();
