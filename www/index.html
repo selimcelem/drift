@@ -4973,6 +4973,71 @@ const ORB_ORDER = ['cyan', 'cosmic', 'solar', 'nebula', 'asteroid'];
 let totalCrystals = 0;
 let activeOrb = 'cyan';
 let unlockedOrbs = ['cyan'];
+
+// =====================================================================
+// OrbHooks — shared event bus for orb-specific behavior (integration Phase 1)
+// =====================================================================
+// Replaces the per-orb monkey-patch wrap chains for ADDITIVE behavior. Base
+// engine functions (render/update/resetGame/checkDestroyProc/addDestroyPoints/
+// updatePowerupTimer + the checkCollisions pickup site) fire named events;
+// orb blocks subscribe via OrbHooks.on(...). Handlers run in subscription
+// order — Roamer's block loads before Phantasm's, so Roamer handlers run
+// first, exactly preserving the old wrap-chain order (base → drifter → phantom).
+// emit() isolates handler errors so one bad handler can't break the others or
+// the base engine. Deleting an orb block removes its subscriptions with it; the
+// base emit then runs against no handlers (harmless no-op).
+const OrbHooks = {
+  handlers: {
+    onUpdate: [], onRender: [], onResetGame: [], onDestroy: [],
+    onPickup: [], afterBurstFired: [], onAddDestroyPoints: [], onUpdatePowerupTimer: [],
+  },
+  on(event, handler) {
+    if (!this.handlers[event]) this.handlers[event] = [];
+    this.handlers[event].push(handler);
+  },
+  emit(event, ...args) {
+    const list = this.handlers[event];
+    if (!list) return;
+    for (let i = 0; i < list.length; i++) {
+      try { list[i](...args); } catch (e) {
+        console.error('[OrbHooks] handler error for "' + event + '":', e);
+      }
+    }
+  },
+};
+
+// Phase 0 safety net. _assertActiveOrbValid() warns (dev) if activeOrb drifts
+// out of ORB_ORDER (catches name typos). _logOrbRegressionState() dumps key
+// per-orb state for before/after regression diffing — gated behind the
+// `orbDebug` localStorage flag so production stays quiet. Both are called from
+// resetGame; the `typeof` guards keep them safe even if an orb block is deleted.
+let _ORB_INSTRUMENTATION = false;
+try { _ORB_INSTRUMENTATION = localStorage.getItem('orbDebug') === '1'; } catch {}
+function _assertActiveOrbValid() {
+  if (typeof ORB_ORDER !== 'undefined' && !ORB_ORDER.includes(activeOrb)) {
+    console.warn('[orb] activeOrb "' + activeOrb + '" is not in ORB_ORDER', ORB_ORDER.slice());
+  }
+}
+function _logOrbRegressionState(tag) {
+  if (!_ORB_INSTRUMENTATION) return;
+  try {
+    console.log('[orbState ' + tag + ']', {
+      activeOrb,
+      runBurstCount: (typeof runBurstCount === 'number') ? runBurstCount : null,
+      shield: activeEffects && activeEffects.shield,
+      ghost: activeEffects && activeEffects.ghost,
+      hyperspeed: activeEffects && activeEffects.hyperspeed,
+      drifterPressure: (typeof _drifterV2_pressureCount !== 'undefined') ? _drifterV2_pressureCount : null,
+      drifterPressurePeak: (typeof _drifterV2_pressurePeak !== 'undefined') ? _drifterV2_pressurePeak : null,
+      drifterHeartbeatStacks: (typeof _drifterV2_heartbeatStacks !== 'undefined') ? _drifterV2_heartbeatStacks : null,
+      drifterThreads: (typeof _drifterV2_threads !== 'undefined' && _drifterV2_threads) ? _drifterV2_threads.length : null,
+      phantomWraiths: (typeof _phantomV2_wraiths !== 'undefined' && _phantomV2_wraiths) ? _phantomV2_wraiths.length : null,
+      phantomEchoes: (typeof _phantomV2_echoes !== 'undefined' && _phantomV2_echoes) ? _phantomV2_echoes.length : null,
+      phantomMarksForCoven: (typeof _phantomV2_markCountForCoven !== 'undefined') ? _phantomV2_markCountForCoven : null,
+    });
+  } catch {}
+}
+
 try {
   const c = parseInt(localStorage.getItem('drift_crystals') || '0', 10);
   if (!isNaN(c) && c >= 0) totalCrystals = c;
@@ -7599,13 +7664,10 @@ scrollSpeed = function() {
 // addDestroyPoints — PRESSURE adds +1%/pt no-cap score bonus. (v3 dropped
 // the old Threshold 50 streak-bump; that node now adds counter + shaves CD,
 // handled inline in _drifterV2_pressureOnDestroy.)
-const _drifterV2_origAddDestroyPoints = addDestroyPoints;
-addDestroyPoints = function() {
-  _drifterV2_origAddDestroyPoints.apply(this, arguments);
+OrbHooks.on('onAddDestroyPoints', (basePts) => {
   if (!_drifterV2_hasPressure() || _drifterV2_pressureCount <= 0) return;
-  const cap = getStreakCap();
-  const streakForScore = Math.min(destroyStreak, cap);
-  const basePts = streakForScore * 4;
+  // basePts === Math.min(destroyStreak, getStreakCap()) * 4 (computed in the
+  // base addDestroyPoints), so this is identical to the old wrap's recompute.
   const bonus = Math.floor(basePts * _drifterV2_pressureCount * 0.01);
   if (bonus > 0) {
     score += bonus;
@@ -7613,16 +7675,14 @@ addDestroyPoints = function() {
     const scoreEl = document.getElementById('score');
     if (scoreEl) scoreEl.textContent = score;
   }
-};
+});
 
 // v3 removed the old Crescendo activateHyperspeed wrap — Crescendo's new
 // behavior (extra pair combo on any pickup at >80 pressure) is handled
 // directly in _drifterV2_onSinglePickup and _drifterV2_onPairPickup.
 
 // checkDestroyProc — feeds Thread + Pressure + Breaking-Point auto-fire.
-const _drifterV2_origCheckDestroyProc = checkDestroyProc;
-checkDestroyProc = function(body, source) {
-  _drifterV2_origCheckDestroyProc.apply(this, arguments);
+OrbHooks.on('onDestroy', (body, source) => {
   if (state !== 'playing' && state !== 'devmode') return;
   if (!isDrifterV2Active() || !body) return;
   if (_drifterV2_hasThread())   _drifterV2_threadOnDestroy(body);
@@ -7638,7 +7698,7 @@ checkDestroyProc = function(body, source) {
       && Date.now() >= _drifterV2_breakingPointCooldownUntil) {
     _drifterV2_fireBreakingPoint();
   }
-};
+});
 
 // v3 removed the hold-both-inputs-2s ultimate gesture. Drumroll is now
 // automatic on every 4th burst (inside executeBurst). Breaking Point
@@ -7766,28 +7826,32 @@ setTimeout(() => {
 // surface the just-activated combo's name even after lastComboLabel was
 // restored above. Normal pair-pickups don't set the suppress flag, so their
 // banner displays unchanged.
-const _drifterV2_origUpdatePowerupTimer = updatePowerupTimer;
-updatePowerupTimer = function() {
-  _drifterV2_origUpdatePowerupTimer.apply(this, arguments);
+// updatePowerupTimer: hide the ptCombo label while the suppress window is
+// active (was a monkey-patch wrap; now an onUpdatePowerupTimer subscription).
+OrbHooks.on('onUpdatePowerupTimer', () => {
   if (Date.now() >= _drifterV2_bannerSuppressUntil) return;
   if (!isDrifterV2Active()) return;
   if (typeof ptComboEl !== 'undefined' && ptComboEl) {
     ptComboEl.classList.remove('visible');
   }
-};
+});
 
-// === Engine lifecycle wraps ===
-const _drifterV2_origResetGame = resetGame;
-resetGame = function() {
-  _drifterV2_origResetGame.apply(this, arguments);
+// === Engine lifecycle (was: resetGame / render / update wraps) ===
+OrbHooks.on('onResetGame', () => {
   _drifterV2_resetRunState();
   _drifterV2_updateHud();
-};
+});
 
-const _drifterV2_origRender = render;
+// Pickup grab (was: _drifterV2_onPairPickup / _drifterV2_onSinglePickup called
+// inline in checkCollisions). Single-pickup tracking runs for ALL orbs (the
+// function self-handles the non-active case to keep lastPickupType current).
+OrbHooks.on('onPickup', (type, isPair) => {
+  if (isPair) _drifterV2_onPairPickup();
+  else _drifterV2_onSinglePickup(type);
+});
+
 let _drifterV2_renderHudThrottle = 0;
-render = function() {
-  _drifterV2_origRender.apply(this, arguments);
+OrbHooks.on('onRender', () => {
   _drifterV2_drawThread();
   // Active-skill flashes — independent of any single tree.
   _drifterV2_drawFlashes();
@@ -7797,11 +7861,9 @@ render = function() {
   // gameplay to menu, the HUD's `display:flex` stays applied.
   _drifterV2_renderHudThrottle = (_drifterV2_renderHudThrottle + 1) % 6;
   if (_drifterV2_renderHudThrottle === 0) _drifterV2_updateHud();
-};
+});
 
-const _drifterV2_origUpdate = update;
-update = function() {
-  _drifterV2_origUpdate.apply(this, arguments);
+OrbHooks.on('onUpdate', () => {
   if (state !== 'playing' && state !== 'devmode') return;
   // v4 Heartbeat: stacks computed from no-pickup time. At 3 stacks, auto-fire
   // Fortress Shield, reset the pickup-time timer so stacks recompute to 0,
@@ -7832,7 +7894,7 @@ update = function() {
   _drifterV2_tickThreadSystems();
   // HUD throttled refresh.
   if ((typeof frame === 'number') && (frame & 7) === 0) _drifterV2_updateHud();
-};
+});
 // =====================================================================
 // DRIFTERV2 EXPERIMENTAL ORB END
 // =====================================================================
@@ -10399,12 +10461,12 @@ function _phantomV2_resetRunState() {
 }
 
 // --- Engine lifecycle wraps -------------------------------------------
-const _phantomV2_origResetGame = resetGame;
-resetGame = function() {
-  _phantomV2_origResetGame.apply(this, arguments);
+// (was: resetGame wrap) Roamer's onResetGame handler is registered first, so
+// it runs before this one — preserving the old base→drifter→phantom order.
+OrbHooks.on('onResetGame', () => {
   _phantomV2_resetRunState();
   _phantomV2_updateHud();
-};
+});
 
 // Two-Beat: 10% chance per kill (player or echo) to extend OR GRANT ghost
 // by +1s while ANY alive echo is within 80px of the player. Soulbound-style
@@ -10439,16 +10501,14 @@ function _phantomV2_onDestroyForAfterimage(body, source) {
   }
 }
 
-// checkDestroyProc wrap — routes destroys to Revenant + Afterimage + Haunt.
-const _phantomV2_origCheckDestroyProc2 = checkDestroyProc;
-checkDestroyProc = function(body, source) {
-  _phantomV2_origCheckDestroyProc2.apply(this, arguments);
+// (was: checkDestroyProc wrap) routes destroys to Revenant + Afterimage + Haunt.
+OrbHooks.on('onDestroy', (body, source) => {
   if (state !== 'playing' && state !== 'devmode') return;
   if (!isPhantomV2Active() || !body) return;
   _phantomV2_onDestroyForRevenant(body, source);
   _phantomV2_onDestroyForAfterimage(body, source);
   _phantomV2_onAnyDestroyForHaunt(body, source);
-};
+});
 
 // scrollSpeed wrap — double during the Coven 3s pulse. Returns to baseline
 // the moment _phantomV2_covenActiveUntil elapses. Wrapped after every other
@@ -10477,11 +10537,10 @@ executeBurst = function() {
   return true;
 };
 
-// Render wrap — overlay phantomV2 entities + flashes.
-const _phantomV2_origRender = render;
+// (was: render wrap) overlay phantomV2 entities + flashes. Registered after
+// Roamer's onRender handler, so phantom draws on top — same as the old chain.
 let _phantomV2_renderHudThrottle = 0;
-render = function() {
-  _phantomV2_origRender.apply(this, arguments);
+OrbHooks.on('onRender', () => {
   _phantomV2_drawHaunt();
   _phantomV2_drawDeathBursts(ctx);
   _phantomV2_drawWraiths();
@@ -10489,12 +10548,10 @@ render = function() {
   _phantomV2_drawFlashes();
   _phantomV2_renderHudThrottle = (_phantomV2_renderHudThrottle + 1) % 6;
   if (_phantomV2_renderHudThrottle === 0) _phantomV2_updateHud();
-};
+});
 
-// Update wrap — tick wraith / echo / haunt systems per frame.
-const _phantomV2_origUpdate = update;
-update = function() {
-  _phantomV2_origUpdate.apply(this, arguments);
+// (was: update wrap) tick wraith / echo / haunt systems per frame.
+OrbHooks.on('onUpdate', () => {
   if (state !== 'playing' && state !== 'devmode') return;
   if (!isPhantomV2Active()) return;
   _phantomV2_recordMovement();
@@ -10502,7 +10559,7 @@ update = function() {
   _phantomV2_tickAfterimage();
   _phantomV2_tickHaunt();
   if ((typeof frame === 'number') && (frame & 7) === 0) _phantomV2_updateHud();
-};
+});
 
 // =====================================================================
 // PHANTOMV2 (PHANTASM) EXPERIMENTAL ORB END
@@ -10915,6 +10972,10 @@ function checkDestroyProc(body, source) {
     const b2Chances = [0.02, 0.04, 0.06, 0.08, 0.10];
     if (r > 0 && Math.random() < b2Chances[r - 1]) bastion2Proc();
   }
+  // Orb destroy hooks (was: Roamer thread/pressure/Breaking-Point + Phantasm
+  // revenant/afterimage/haunt wraps). Only reached when playing/devmode (the
+  // early return above), matching the old wraps' own state gate.
+  OrbHooks.emit('onDestroy', body, source);
 }
 
 // --- Tree-node mechanics state (non-capstone, non-destroy-proc) ---
@@ -17093,6 +17154,9 @@ function addDestroyPoints() {
     sd.textContent = '\uD83D\uDD25 x' + destroyStreak;
     sd.classList.add('visible');
   }
+  // Pressure score bonus etc. (was: Roamer addDestroyPoints wrap). `pts` is the
+  // base streak points just added; handlers add their own bonus via globals.
+  OrbHooks.emit('onAddDestroyPoints', pts);
 }
 
 // --- Combo helpers ---
@@ -17991,6 +18055,16 @@ function updateRunTimerDisplay() {
 
 // --- Game state ---
 function resetGame() {
+  // Phase 0: validate the active orb + snapshot the just-ended run's per-orb
+  // state (gated behind the orbDebug flag) before anything is zeroed.
+  _assertActiveOrbValid();
+  _logOrbRegressionState('resetGame:enter');
+  // Defensive: a NORMAL run must never inherit a stuck rainbow flag. Rainbow
+  // runs deliberately skip resetGame() (see rainbowBeginRun), so clearing it
+  // here only ever affects normal runs. Without this, a leaked rainbowRunActive
+  // would make statsOnKill() early-return for the whole run — freezing the
+  // per-orb kill counter on the stats screen while the run still played out.
+  rainbowRunActive = false;
   player = { x: W/2, y: H*0.72, vx: 0, vy: 0, angle: 0 };
   trail = []; deathParticles = [];
   lastSpawnZone = -1;
@@ -18078,6 +18152,8 @@ function resetGame() {
   document.getElementById('score').textContent = '0';
   updateRunTimerDisplay();
   console.log('[reset] elapsedRunSeconds after reset:', elapsedRunSeconds());
+  // Orb run-state reset (was: Roamer then Phantasm resetGame wraps).
+  OrbHooks.emit('onResetGame');
 }
 
 // --- Physics: only closest body matters ---
@@ -18972,6 +19048,16 @@ function deepCleanup() {
 // regardless of refresh rate.
 // --- Update ---
 function update() {
+  // Thin wrapper: run the engine tick, then fire onUpdate. This MUST emit on
+  // every call — including the early-return paths below (e.g. hitstop, where
+  // state is still 'playing') — because the old Roamer/Phantasm update wraps
+  // ran their per-frame logic after the orig regardless of how it returned.
+  // Handlers self-gate on state/active-orb, so firing on menu/apocalypse/etc.
+  // frames is a harmless no-op.
+  _updateCore();
+  OrbHooks.emit('onUpdate');
+}
+function _updateCore() {
   // v1.7.0 hitstop: brief physics pause for satisfying impacts. Render keeps
   // drawing so the visuals don't black out. Skipped during apocalypse +
   // tutorial since those run their own tick paths and aren't impact-gated.
@@ -19440,20 +19526,20 @@ function update() {
       if (p.pairSibling && !p.pairSibling.collected) {
         p.collected = true;
         p.pairSibling.collected = true;
-        // DRIFTERV2 pair-pickup hook (v3 — Crescendo's extra pair combo).
-        // No override: pair always activates normally; the hook just fires
-        // additional bonus combos when Pressure > 80.
-        if (typeof _drifterV2_onPairPickup === 'function') _drifterV2_onPairPickup();
+        // Pickup event (was: _drifterV2_onPairPickup). Roamer subscribes to fire
+        // Crescendo's bonus pair combo at >80 pressure. Pair always activates
+        // normally; no subscriber → harmless no-op (block deletable).
+        OrbHooks.emit('onPickup', p.type, true, p.x, p.y);
         activatePair(p, p.pairSibling);
       } else {
         p.collected = true;
-        // DRIFTERV2 single-pickup hook (v3). Returns true when Heartbeat at
-        // 3 stacks consumed the pickup as a Fortress Shield; in that case we
-        // skip the normal activatePowerup call. Otherwise pickup activates
-        // as usual. typeof guard makes the line a no-op if the block is removed.
-        let _dv2HandledPickup = false;
-        if (typeof _drifterV2_onSinglePickup === 'function') _dv2HandledPickup = !!_drifterV2_onSinglePickup(p.type);
-        if (!_dv2HandledPickup) activatePowerup(p.type, p.x, p.y);
+        // Pickup event (was: _drifterV2_onSinglePickup). Roamer subscribes to
+        // track lastPickupType / reset Heartbeat / fire Crescendo. The old hook
+        // had a "skip activation" return value, but it always returned false
+        // (Heartbeat no longer consumes pickups), so the powerup always
+        // activates — dropping the dead gating is zero behavioral change.
+        OrbHooks.emit('onPickup', p.type, false, p.x, p.y);
+        activatePowerup(p.type, p.x, p.y);
       }
     }
   }
@@ -20435,6 +20521,15 @@ function triggerDeath() {
   const _rainbowReachedEnd = _wasRainbow && !!apocalypseDeathFlag;
   if (_wasRainbow) {
     rainbowOutcome = _rainbowReachedEnd ? 'reachedEnd' : 'died';
+    // Clear the run flag SYNCHRONOUSLY here (the rest of this function uses the
+    // local _wasRainbow copy). Previously the only reset lived in the deferred
+    // death-screen setTimeout below; if the player restarted before it fired —
+    // or the run ended via a path that skipped it — rainbowRunActive leaked
+    // true into the next run, making statsOnKill()/statsOnRunStart() early-
+    // return for the whole run and FREEZING the per-orb kill/run counters on
+    // the stats screen. (resetGame() now also clears it as a belt-and-braces
+    // guard.) The setTimeout's reset is kept as a harmless redundancy.
+    rainbowRunActive = false;
   }
 
   const scores = _wasRainbow ? [] : saveScore(score, difficulty);
@@ -24550,6 +24645,15 @@ function updateTopStackVisibility() {
 }
 
 function updatePowerupTimer() {
+  // Thin wrapper: run the core, then fire onUpdatePowerupTimer. Like update(),
+  // this emits on every call so the old Roamer ptCombo-suppression wrap (which
+  // ran after the orig regardless of its early returns) is exactly preserved.
+  // The handler is idempotent (it only ever removes a CSS class), so emitting
+  // on the early-return paths matches the old behavior.
+  _updatePowerupTimerCore();
+  OrbHooks.emit('onUpdatePowerupTimer');
+}
+function _updatePowerupTimerCore() {
   // Gameplay-only: hide outside playing/paused so the banner never bleeds
   // onto the death screen (where it would overlap the SHOP button) or any
   // other overlay state. Mirrors updateBurstBar / updateCapstoneCountdowns /
@@ -25036,6 +25140,9 @@ function render() {
   updateTopStackVisibility();
   updateFps();
   ctx.restore();
+  // Orb overlays draw on top of the base scene (was: Roamer then Phantasm
+  // render wraps). Handlers self-gate on their active orb / state.
+  OrbHooks.emit('onRender', frame);
 }
 
 // =====================================================================
