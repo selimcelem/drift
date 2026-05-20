@@ -7733,7 +7733,13 @@ function _drifterV2_ensureHud() {
   heartbeat.style.cssText = 'color:rgba(125,232,255,0.95); text-shadow:0 0 6px rgba(125,232,255,0.6);';
   heartbeat.textContent = '0/3';
   el.appendChild(heartbeat);
-  document.body.appendChild(el);
+  // Append inside #gameWrapper, not document.body. On browser the wrapper is a
+  // centered, phone-sized box (≤430×932) while body spans the full viewport —
+  // appending to body put this absolutely-positioned HUD in the letterbox
+  // margin beside the game, so it appeared "missing". The wrapper is
+  // position:fixed (a positioning context), and on Capacitor it fills the
+  // screen, so anchoring to it is correct on both platforms.
+  (document.getElementById('gameWrapper') || document.body).appendChild(el);
   _drifterV2_hudEl = el;
   _drifterV2_hudThreadEl = thread;
   _drifterV2_hudPressureEl = pressure;
@@ -8009,7 +8015,7 @@ TREE_DEFS.phantomV2 = {
           desc: 'Marked planets leak a glowing 1s curse trail behind their arc. The trail damages anything crossing it and fades as it dissipates.',
           effect: r => r ? '1s curse trail' : 'Locked' },
         { key: 'phantomV2_coven', name: 'Coven', tier: 3, max: 1, costOverride: [10000], pointCost: 5,
-          desc: 'CAPSTONE (5 pts). Every 20 marks summon a screen-wide pentagram for 6s — every planet that touches it gets MARKED and flung off. Scroll speed doubles during the pulse. Marks made during the 6s don\'t count toward the next.',
+          desc: 'CAPSTONE (5 pts). Every 20 marks summon a screen-wide septagram for 6s — every planet that touches it gets MARKED and flung off. Scroll speed doubles during the pulse. Marks made during the 6s don\'t count toward the next.',
           effect: r => r ? '20 marks · 6s mark-storm · 2× scroll' : 'Locked' },
       ],
     },
@@ -9404,6 +9410,7 @@ const PHANTOMV2_ECHO_HP_MAX = 2;
 let _phantomV2_echoes = [];
 let _phantomV2_echoActivatedThisRun = false; // v1.9.0 SFX: gate the one-shot echo-activation cue
 let _phantomV2_wakeHissVoice = null;         // v1.9.0 SFX: sustained wake-trail hiss handle
+let _phantomV2_covenHumVoice = null;         // v1.9.0 SFX: Coven 6s void-hum drone handle
 let _phantomV2_lastGhostEndTime = 0;   // for ghost-grant edge detection
 let _phantomV2_pausedSinceMs = 0;
 let _phantomV2_lastPlayerPos = { x: 0, y: 0 };
@@ -9740,7 +9747,7 @@ function _phantomV2_capstoneHallOfMirrorsOnBurst() {
 // side wall. Linger drops a 100px curse zone at the exit point. Plague
 // (requires Linger) converts bodies entering a Linger zone into new marks.
 // Lethal Touch spawns a mirrored phantom mark on the 5th mark in a ghost
-// window. Coven (capstone) fires a screen-wide pentagram every 10 marks.
+// window. Coven (capstone) fires a screen-wide septagram every 10 marks.
 
 let _phantomV2_lingerZones = [];   // { x, y, radius, startTime, lifeMs, fromPlague }
 let _phantomV2_phantomMarks = [];  // Lethal-Touch mirrored duplicates
@@ -9763,21 +9770,27 @@ const PHANTOMV2_LETHAL_TOUCH_THRESHOLD = 10; // marks needed for a mirror
 const PHANTOMV2_LINGER_BASE_MS = 2000;       // Linger base 2s (Plague: 4s total)
 const PHANTOMV2_LINGER_PLAGUE_BONUS_MS = 2000;
 
-// Pentagram path drawer — used for body marks AND the Coven screen-wide
-// visual. Star is point-up at angle 0; outer-vertex order skips by 2 so the
-// connecting strokes form the pentagram lines.
-function _phantomV2_drawPentagram(tctx, cx, cy, r, angleOffset, lineWidth) {
+// Septagram ({7/3} heptagram) path drawer — used for body marks AND the Coven
+// screen-wide visual. v1.9.0: replaced the former {5/2} pentagram (which risks
+// "occult imagery" complaints on a PEGI 3 title) with a 7-pointed star — no
+// satanic association while preserving the arcane Haunt aesthetic. Point-up at
+// angle 0; connecting each vertex to the one 3 positions away (skip 2) traces a
+// single continuous unicursal star touching all 7 points (gcd(7,3)=1).
+function _phantomV2_drawSeptagram(tctx, cx, cy, r, angleOffset, lineWidth) {
   tctx.save();
   tctx.translate(cx, cy);
   tctx.rotate(angleOffset || 0);
   tctx.lineWidth = lineWidth || 1;
   tctx.beginPath();
+  const N = 7, STEP = 3;
   const pts = [];
-  for (let i = 0; i < 5; i++) {
-    const a = -Math.PI / 2 + (i * 2 * Math.PI / 5);
+  for (let i = 0; i < N; i++) {
+    const a = -Math.PI / 2 + (i * 2 * Math.PI / N);
     pts.push({ x: Math.cos(a) * r, y: Math.sin(a) * r });
   }
-  const order = [0, 2, 4, 1, 3];
+  // {7/3} traversal: 0 → 3 → 6 → 2 → 5 → 1 → 4 → back to 0.
+  const order = [];
+  for (let i = 0, idx = 0; i < N; i++, idx = (idx + STEP) % N) order.push(idx);
   tctx.moveTo(pts[order[0]].x, pts[order[0]].y);
   for (let i = 1; i < order.length; i++) tctx.lineTo(pts[order[i]].x, pts[order[i]].y);
   tctx.closePath();
@@ -9911,10 +9924,21 @@ function _phantomV2_triggerCoven() {
   // v1.9.0 SFX: cinematic apocalypse impact + a 6s void-hum drone matching the
   // Coven pulse duration, layered over the existing ghost/nova/combo stack.
   try { SFX.playApocalypseImpact(); } catch {}
+  // 6s void-hum drone matching the Coven pulse. Tracked in a module var so
+  // death / reset / quit-to-menu can stop it early (the old fire-and-forget
+  // local only stopped via the setTimeout below — so dying mid-Coven left it
+  // droning into the menu). A re-triggered Coven stops the prior voice first.
+  _phantomV2_stopCovenHum();
   try {
-    const _covenHum = SFX.startVoidHum && SFX.startVoidHum();
-    if (_covenHum && _covenHum.stop) {
-      setTimeout(() => { try { _covenHum.stop(); } catch {} }, PHANTOMV2_COVEN_LIFE_MS);
+    const hum = (SFX.startVoidHum && SFX.startVoidHum()) || null;
+    _phantomV2_covenHumVoice = hum;
+    if (hum && hum.stop) {
+      // Natural expiry. Only clear the shared handle if this exact voice is
+      // still the active one (a newer Coven may have replaced it).
+      setTimeout(() => {
+        if (_phantomV2_covenHumVoice === hum) _phantomV2_stopCovenHum();
+        else { try { hum.stop(); } catch {} }
+      }, PHANTOMV2_COVEN_LIFE_MS);
     }
   } catch {}
   try { SFX.pickup('ghost'); } catch {}
@@ -9962,6 +9986,18 @@ function _phantomV2_stopWakeHiss() {
     try { _phantomV2_wakeHissVoice.stop(); } catch {}
     _phantomV2_wakeHissVoice = null;
   }
+}
+function _phantomV2_stopCovenHum() {
+  if (_phantomV2_covenHumVoice) {
+    try { _phantomV2_covenHumVoice.stop(); } catch {}
+    _phantomV2_covenHumVoice = null;
+  }
+}
+// Stop EVERY sustained/looping Phantasm voice. Called on death, reset, and
+// quit-to-menu so nothing drones on past the run that spawned it.
+function _phantomV2_stopSustainedAudio() {
+  _phantomV2_stopCovenHum();
+  _phantomV2_stopWakeHiss();
 }
 function _phantomV2_updateWakeHiss(markCount) {
   const want = rankOf('phantomV2_wake') >= 1 && markCount > 0
@@ -10280,7 +10316,7 @@ function _phantomV2_drawHaunt() {
     ctx.beginPath(); ctx.arc(z.x, z.y, z.radius * 0.55, 0, 6.28); ctx.fill();
   }
 
-  // Mark visuals — transparent purple body tint + spinning pentagram +
+  // Mark visuals — transparent purple body tint + spinning septagram +
   // curse field outline. Shared between real marked bodies and phantom
   // marks via a small inline drawer.
   const pulsePhase = now * 0.005;
@@ -10296,12 +10332,12 @@ function _phantomV2_drawHaunt() {
     ctx.globalAlpha = isPhantom ? 0.45 : 0.32;
     ctx.fillStyle = 'rgba(190,90,210,1)';
     ctx.beginPath(); ctx.arc(mx, my, mr + 1, 0, 6.28); ctx.fill();
-    // Pentagram inside the body — slowly rotating + pulsing.
-    const penR = mr * 0.7;
-    const penAngle = (now - (mt || 0)) * 0.0006;
+    // Septagram inside the body — slowly rotating + pulsing.
+    const starR = mr * 0.7;
+    const starAngle = (now - (mt || 0)) * 0.0006;
     ctx.globalAlpha = 0.75;
     ctx.strokeStyle = 'rgba(255,210,230,0.95)';
-    _phantomV2_drawPentagram(ctx, mx, my, penR, penAngle, 1.2);
+    _phantomV2_drawSeptagram(ctx, mx, my, starR, starAngle, 1.2);
   }
   for (const b of bodies) if (b._phantomMarked) {
     drawMarkVisual(b.x, b.y, b.radius, b._phantomMarkTime, false);
@@ -10336,7 +10372,7 @@ function _phantomV2_drawHaunt() {
     }
   }
 
-  // Coven screen-wide pentagram.
+  // Coven screen-wide septagram.
   if (rankOf('phantomV2_coven') >= 1 && now < _phantomV2_covenActiveUntil) {
     const remain = _phantomV2_covenActiveUntil - now;
     const elapsed = PHANTOMV2_COVEN_LIFE_MS - remain;
@@ -10345,15 +10381,15 @@ function _phantomV2_drawHaunt() {
     ctx.globalAlpha = (0.18 + 0.10 * pulse);
     ctx.fillStyle = 'rgba(255,90,150,1)';
     ctx.fillRect(0, 0, W, H);
-    // Large rotating pentagram.
+    // Large rotating septagram.
     const cx = W / 2, cy = H / 2;
     const R = Math.min(W, H) * 0.42;
     ctx.globalAlpha = 0.9 * pulse;
     ctx.strokeStyle = 'rgba(255,200,230,1)';
-    _phantomV2_drawPentagram(ctx, cx, cy, R, elapsed * 0.0005, 3);
+    _phantomV2_drawSeptagram(ctx, cx, cy, R, elapsed * 0.0005, 3);
     ctx.globalAlpha = 0.45;
     ctx.strokeStyle = 'rgba(255,255,255,0.9)';
-    _phantomV2_drawPentagram(ctx, cx, cy, R, elapsed * 0.0005, 1);
+    _phantomV2_drawSeptagram(ctx, cx, cy, R, elapsed * 0.0005, 1);
   }
 
   ctx.restore();
@@ -10381,7 +10417,10 @@ function _phantomV2_ensureHud() {
   mark.style.cssText = 'color:rgba(255,90,150,0.95); text-shadow:0 0 6px rgba(255,90,150,0.6);';
   mark.textContent = 'MARKS 0';
   el.appendChild(mark);
-  document.body.appendChild(el);
+  // Anchor to #gameWrapper, not document.body — see _drifterV2_ensureHud for
+  // the rationale (browser centers the wrapper as a phone-box, so a body-level
+  // absolute HUD lands off the playfield in the letterbox margin).
+  (document.getElementById('gameWrapper') || document.body).appendChild(el);
   _phantomV2_hudEl = el;
   _phantomV2_hudWraithEl = wraith;
   _phantomV2_hudEchoEl = echo;
@@ -10457,7 +10496,7 @@ function _phantomV2_resetRunState() {
   _phantomV2_lordImpactPitchIdx = 0;
   _phantomV2_wraithSpawnSfxGate = 0;
   _phantomV2_brandSfxGate = 0;
-  _phantomV2_stopWakeHiss();
+  _phantomV2_stopSustainedAudio();
 }
 
 // --- Engine lifecycle wraps -------------------------------------------
@@ -20386,6 +20425,12 @@ function resetApocalypse() {
 
 function triggerDeath() {
   if (typeof Sentry !== 'undefined') Sentry.addBreadcrumb({ category: 'death', message: 'died at score ' + score, level: 'info' });
+  // Kill any sustained Phantasm voices (Coven void-hum drone, wake-trail hiss)
+  // immediately on death. On death state flips to 'dead', so the Phantasm
+  // onUpdate handler early-returns before tickHaunt's own stop runs — without
+  // this they'd drone on into the menu. typeof-guarded so the orb block stays
+  // cleanly deletable.
+  if (typeof _phantomV2_stopSustainedAudio === 'function') _phantomV2_stopSustainedAudio();
   // v1.8.0: Rainbow Orb intro cutscene — fires on the player's VERY FIRST
   // death after the tutorial. Replaces the normal death flow on that one
   // run. The cutscene then begins a special maxed-out rainbow run, which
@@ -26675,6 +26720,10 @@ function goToMainMenu() {
   // Restore the player's pre-rainbow orb so the menu shows their actual
   // selection, not the asteroid override.
   rainbowRunActive = false;
+  // Stop sustained Phantasm voices (Coven void-hum drone / wake-trail hiss)
+  // when leaving a run for the menu — covers pause→menu mid-run and the
+  // post-death menu transition. typeof-guarded so the orb block stays deletable.
+  if (typeof _phantomV2_stopSustainedAudio === 'function') _phantomV2_stopSustainedAudio();
   if (_rainbowPrevOrb && ORB_DEFS[_rainbowPrevOrb]) {
     activeOrb = _rainbowPrevOrb;
     _rainbowPrevOrb = null;
