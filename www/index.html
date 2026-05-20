@@ -9,7 +9,20 @@
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Space+Mono&display=swap');
 
-  * { margin: 0; padding: 0; box-sizing: border-box; }
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    /* This is a game — long-pressing any button/HUD must never trigger the
+       browser/WebView text-selection magnifier, highlight, or copy/paste
+       context menu. Disable selection + the iOS/Android touch callout globally. */
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+    -webkit-tap-highlight-color: transparent;
+  }
 
   html, body {
     margin: 0;
@@ -82,6 +95,20 @@
     position: fixed;
     top: 0;
     left: 0;
+    /* Belt-and-suspenders over the global rule: the playfield + every button
+       must never select text or pop the touch callout on long-press. touch-action
+       is left untouched here so drag/swipe/tap gameplay gestures still work. */
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+
+  /* All interactive UI controls: no long-press selection / callout. */
+  button, .orb-btn, .diff-btn, .tree-node, .shop-item, [role="button"] {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+    -webkit-tap-highlight-color: transparent;
   }
 
   @media (max-width: 380px) {
@@ -7101,6 +7128,7 @@ function _drifterV2_drawFlashes() {
   // ~16px over its lifetime and fades out. Simultaneous flashes stack
   // vertically above (newer below, older above so the upward float
   // separates them naturally).
+  ctx.shadowBlur = 8; // v1.9.0 perf: hoisted out of the loop (constant for all flashes)
   let i = 0;
   for (const f of _drifterV2_flashes) {
     const age = now - f.startTime;
@@ -7112,7 +7140,6 @@ function _drifterV2_drawFlashes() {
     const y = baseY - floatOffset;
     ctx.fillStyle = `rgba(${f.color},${(0.95 * fade).toFixed(2)})`;
     ctx.shadowColor = `rgba(${f.color},${(0.85 * fade).toFixed(2)})`;
-    ctx.shadowBlur = 8;
     ctx.fillText(f.text, player.x, y);
     i++;
   }
@@ -7428,7 +7455,7 @@ function _drifterV2_tickThreadSystems() {
     if (expired) {
       if (t.isLaser && t.tapestryArmed && !t.projectileFired) {
         const dx = t.ex - t.sx, dy = t.ey - t.sy;
-        const len = Math.hypot(dx, dy) || 1;
+        const len = Math.sqrt(dx * dx + dy * dy) || 1;
         const vx = (dx / len) * _drifterV2_PROJECTILE_SPEED;
         const vy = (dy / len) * _drifterV2_PROJECTILE_SPEED;
         _drifterV2_threadProjectiles.push({
@@ -7538,72 +7565,94 @@ function _drifterV2_drawThread() {
     ctx.stroke();
   }
   // Laser pass — solid glowing beam: outer halo, mid amber core, white-hot inner.
-  // v1.9.0 perf: shadowBlur is the dominant per-frame cost on mobile WebView.
-  // Halved on outer/core; dropped to 0 on white-hot center (the outer halo's
-  // wider glow carries the visible "hot beam" effect on its own).
+  // v1.9.0 perf (batch 1): every active laser shares identical style, so each
+  // of the three layers is rendered as ONE batched path + ONE stroke instead of
+  // 3 strokes per laser. shadowBlur (the dominant mobile cost) is set ONCE for
+  // the halo layer only; core + center carry no blur (the wide halo glow covers
+  // it). Net: 3 strokes / 1 blurred per frame regardless of laser count, vs the
+  // old 3×N strokes / 2×N blurred. Visual is identical for non-overlapping
+  // beams (overlaps composite once instead of twice — imperceptible).
+  const _laserPulse = 0.85 + 0.15 * Math.sin(now * 0.012);
+  let _anyLaser = false;
+  // Layer 1 — outer halo (the ONLY shadowBlur pass).
+  ctx.lineWidth = 14 * _laserPulse;
+  ctx.strokeStyle = 'rgba(255,180,60,0.18)';
+  ctx.shadowColor = 'rgba(255,180,60,0.7)';
+  ctx.shadowBlur = 8;
+  ctx.beginPath();
   for (const t of _drifterV2_threads) {
-    if (!t.isLaser) continue;
-    const age = now - t.startTime;
-    const mechanicalDone = age > t.durationMs;
-    if (mechanicalDone) continue; // projectile handles the visual post-expiry
-    // Slight pulsing so the laser feels alive.
-    const pulse = 0.85 + 0.15 * Math.sin(now * 0.012);
-    // Outer halo.
-    ctx.lineWidth = 14 * pulse;
-    ctx.strokeStyle = 'rgba(255,180,60,0.18)';
-    ctx.shadowColor = 'rgba(255,180,60,0.7)';
-    ctx.shadowBlur = 8;
-    ctx.beginPath(); ctx.moveTo(t.sx, t.sy); ctx.lineTo(t.ex, t.ey); ctx.stroke();
-    // Amber core.
-    ctx.lineWidth = 6;
-    ctx.strokeStyle = `rgba(255,200,90,${(0.85 * pulse).toFixed(2)})`;
-    ctx.shadowColor = 'rgba(255,200,90,0.85)';
-    ctx.shadowBlur = 4;
-    ctx.beginPath(); ctx.moveTo(t.sx, t.sy); ctx.lineTo(t.ex, t.ey); ctx.stroke();
-    // White-hot center — no shadowBlur (outer halo carries the glow).
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = `rgba(255,255,230,${pulse.toFixed(2)})`;
-    ctx.shadowBlur = 0;
-    ctx.beginPath(); ctx.moveTo(t.sx, t.sy); ctx.lineTo(t.ex, t.ey); ctx.stroke();
+    if (!t.isLaser || now - t.startTime > t.durationMs) continue;
+    _anyLaser = true;
+    ctx.moveTo(t.sx, t.sy); ctx.lineTo(t.ex, t.ey);
   }
+  if (_anyLaser) {
+    ctx.stroke();
+    // Layer 2 — amber core (no shadowBlur).
+    ctx.shadowBlur = 0;
+    ctx.lineWidth = 6;
+    ctx.strokeStyle = `rgba(255,200,90,${(0.85 * _laserPulse).toFixed(2)})`;
+    ctx.beginPath();
+    for (const t of _drifterV2_threads) {
+      if (!t.isLaser || now - t.startTime > t.durationMs) continue;
+      ctx.moveTo(t.sx, t.sy); ctx.lineTo(t.ex, t.ey);
+    }
+    ctx.stroke();
+    // Layer 3 — white-hot center.
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = `rgba(255,255,230,${_laserPulse.toFixed(2)})`;
+    ctx.beginPath();
+    for (const t of _drifterV2_threads) {
+      if (!t.isLaser || now - t.startTime > t.durationMs) continue;
+      ctx.moveTo(t.sx, t.sy); ctx.lineTo(t.ex, t.ey);
+    }
+    ctx.stroke();
+  }
+  ctx.shadowBlur = 0;
   // v4 Projectile pass — full-length glowing bar projectiles. Each bar
   // preserves the original thread length and slides forward along its axis.
   // Layered render: midpoint motion-blur trail, then concentric strokes for
   // the bar itself (outer halo / amber core / white-hot center) matching the
   // laser-thread aesthetic.
-  for (const p of _drifterV2_threadProjectiles) {
-    // Motion-blur trail from snapshotted midpoints.
-    // v1.9.0 perf: cull faded entries (lifeFrac < 0.25) — they read as
-    // near-invisible specks but still pay the shadowBlur cost.
-    for (let i = 0; i < p.trail.length; i++) {
-      const lifeFrac = (i + 1) / Math.max(1, p.trail.length);
-      if (lifeFrac < 0.25) continue;
-      const a = p.trail[i];
-      const bN = i + 1 < p.trail.length ? p.trail[i + 1] : { x: (p.sx + p.ex) * 0.5, y: (p.sy + p.ey) * 0.5 };
-      ctx.lineWidth = 4 * lifeFrac;
-      ctx.strokeStyle = `rgba(255,200,90,${(0.32 * lifeFrac).toFixed(2)})`;
-      ctx.shadowColor = `rgba(255,200,90,${(0.4 * lifeFrac).toFixed(2)})`;
-      ctx.shadowBlur = 3 * lifeFrac;
-      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(bN.x, bN.y); ctx.stroke();
+  // v1.9.0 perf (batch 1): same batching as the laser pass. Trails draw as ONE
+  // polyline per projectile (single stroke) instead of per-segment strokes;
+  // bar halo/core/center each batch into one path. shadowBlur set once (trail
+  // pass + bar-halo pass only). Projectiles are few (~2–4) and share style.
+  if (_drifterV2_threadProjectiles.length) {
+    // Motion-blur trails — one polyline per projectile, single shadowBlur set.
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(255,200,90,0.28)';
+    ctx.shadowColor = 'rgba(255,200,90,0.4)';
+    ctx.shadowBlur = 3;
+    ctx.beginPath();
+    for (const p of _drifterV2_threadProjectiles) {
+      if (p.trail.length < 2) continue;
+      ctx.moveTo(p.trail[0].x, p.trail[0].y);
+      for (let i = 1; i < p.trail.length; i++) ctx.lineTo(p.trail[i].x, p.trail[i].y);
     }
-    // Outer halo.
+    ctx.stroke();
+    // Bar — outer halo (the only bar shadowBlur pass), all projectiles batched.
     ctx.lineWidth = 18;
     ctx.strokeStyle = 'rgba(255,180,60,0.22)';
     ctx.shadowColor = 'rgba(255,180,60,0.8)';
     ctx.shadowBlur = 10;
-    ctx.beginPath(); ctx.moveTo(p.sx, p.sy); ctx.lineTo(p.ex, p.ey); ctx.stroke();
-    // Amber core.
+    ctx.beginPath();
+    for (const p of _drifterV2_threadProjectiles) { ctx.moveTo(p.sx, p.sy); ctx.lineTo(p.ex, p.ey); }
+    ctx.stroke();
+    // Amber core (no shadowBlur).
+    ctx.shadowBlur = 0;
     ctx.lineWidth = 8;
     ctx.strokeStyle = 'rgba(255,200,90,0.95)';
-    ctx.shadowColor = 'rgba(255,200,90,0.9)';
-    ctx.shadowBlur = 6;
-    ctx.beginPath(); ctx.moveTo(p.sx, p.sy); ctx.lineTo(p.ex, p.ey); ctx.stroke();
-    // White-hot center — no shadowBlur (outer halo carries the glow).
+    ctx.beginPath();
+    for (const p of _drifterV2_threadProjectiles) { ctx.moveTo(p.sx, p.sy); ctx.lineTo(p.ex, p.ey); }
+    ctx.stroke();
+    // White-hot center.
     ctx.lineWidth = 3;
     ctx.strokeStyle = 'rgba(255,255,230,1)';
-    ctx.shadowBlur = 0;
-    ctx.beginPath(); ctx.moveTo(p.sx, p.sy); ctx.lineTo(p.ex, p.ey); ctx.stroke();
+    ctx.beginPath();
+    for (const p of _drifterV2_threadProjectiles) { ctx.moveTo(p.sx, p.sy); ctx.lineTo(p.ex, p.ey); }
+    ctx.stroke();
   }
+  ctx.shadowBlur = 0;
   ctx.restore();
 }
 
@@ -8746,6 +8795,7 @@ function _phantomV2_drawFlashes() {
   ctx.save();
   ctx.font = 'bold 11px Orbitron, monospace';
   ctx.textAlign = 'center';
+  ctx.shadowBlur = 6; // v1.9.0 perf: hoisted out of the loop (constant for all flashes)
   let i = 0;
   for (const f of _phantomV2_flashes) {
     const age = now - f.startTime;
@@ -8757,7 +8807,6 @@ function _phantomV2_drawFlashes() {
     const y = baseY - floatOffset;
     ctx.fillStyle = `rgba(${f.color},${(0.95 * fade).toFixed(2)})`;
     ctx.shadowColor = `rgba(${f.color},${(0.85 * fade).toFixed(2)})`;
-    ctx.shadowBlur = 6;
     ctx.fillText(f.text, player.x, y);
     i++;
   }
@@ -8914,13 +8963,20 @@ function _phantomV2_drawDeathBursts(tctx) {
     // 1) Soft expanding aura — radial gradient under a crisp outer stroke.
     // The aura uses 'lighter' for glow; the stroke goes on source-over so
     // its bright violet edge reads against the bloom.
-    const auraR = 14 + life * (g.maxR - 14);
+    // v1.9.0 perf: cache the aura gradient by integer radius (it's built in
+    // translated space at the origin, so only the radius varies). Bucketing to
+    // 1px is sub-pixel on a soft glow — imperceptible — and turns a per-burst
+    // per-frame createRadialGradient into a cache hit after the first use.
+    const auraR = Math.round(14 + life * (g.maxR - 14));
     _ctx.globalCompositeOperation = 'lighter';
     _ctx.globalAlpha = fade * 0.55;
-    const grad = _ctx.createRadialGradient(0, 0, 0, 0, 0, auraR);
-    grad.addColorStop(0,    'rgba(220,180,255,0.85)');
-    grad.addColorStop(0.45, 'rgba(180,120,235,0.40)');
-    grad.addColorStop(1,    'rgba(140,90,200,0)');
+    const grad = getCachedGradient('pv2burstAura_' + auraR, (c) => {
+      const gr = c.createRadialGradient(0, 0, 0, 0, 0, auraR);
+      gr.addColorStop(0,    'rgba(220,180,255,0.85)');
+      gr.addColorStop(0.45, 'rgba(180,120,235,0.40)');
+      gr.addColorStop(1,    'rgba(140,90,200,0)');
+      return gr;
+    }, _ctx);
     _ctx.fillStyle = grad;
     _ctx.beginPath(); _ctx.arc(0, 0, auraR, 0, 6.28); _ctx.fill();
     // 1b) OUTER RING stroke — bright violet, reads at a glance like the
@@ -8940,7 +8996,7 @@ function _phantomV2_drawDeathBursts(tctx) {
       const dFade = 1 - dLife;
       const t = age * 0.001;
       // Perpendicular swirl direction from velocity vector — gives a curved drift.
-      const vmag = Math.hypot(d.vx, d.vy) || 1;
+      const vmag = Math.sqrt(d.vx * d.vx + d.vy * d.vy) || 1;
       const px = -d.vy / vmag, py = d.vx / vmag;
       const swirlAmp = 8 * dFade;
       const swirlOff = Math.sin(t * 5 + d.swirl) * swirlAmp;
@@ -8960,14 +9016,17 @@ function _phantomV2_drawDeathBursts(tctx) {
     const flashT = Math.min(1, age / 200);
     if (flashT < 1) {
       const fk = 1 - flashT;
-      const fr = 22 * fk;
+      const fr = Math.max(1, Math.round(22 * fk));
       _ctx.globalAlpha = fk * 0.85;
-      const flash = _ctx.createRadialGradient(0, 0, 0, 0, 0, Math.max(0.5, fr));
-      flash.addColorStop(0,    'rgba(255,240,255,1)');
-      flash.addColorStop(0.55, 'rgba(220,180,255,0.85)');
-      flash.addColorStop(1,    'rgba(180,120,235,0)');
+      const flash = getCachedGradient('pv2burstFlash_' + fr, (c) => {
+        const fl = c.createRadialGradient(0, 0, 0, 0, 0, fr);
+        fl.addColorStop(0,    'rgba(255,240,255,1)');
+        fl.addColorStop(0.55, 'rgba(220,180,255,0.85)');
+        fl.addColorStop(1,    'rgba(180,120,235,0)');
+        return fl;
+      }, _ctx);
       _ctx.fillStyle = flash;
-      _ctx.beginPath(); _ctx.arc(0, 0, Math.max(0.5, fr), 0, 6.28); _ctx.fill();
+      _ctx.beginPath(); _ctx.arc(0, 0, fr, 0, 6.28); _ctx.fill();
     }
     _ctx.restore();
   }
@@ -9167,6 +9226,23 @@ function _phantomV2_killBodyByWraith(idx) {
   bodies.splice(idx, 1);
   checkDestroyProc(b, 'phantomV2_wraith');
 }
+// v1.9.0 perf: single shared nearest-live-body finder for wraith targeting. The
+// three former inlined copies (armed-fire, dash-retarget, vengeance-expiry) were
+// byte-identical filters; consolidating removes the duplication and gives one
+// tight, JIT-friendly scan. It must scan the LIVE bodies array (not a frame-start
+// snapshot) because wraith impacts splice bodies mid-loop — a stale snapshot would
+// let a wraith target an already-killed body, changing behavior.
+function _phantomV2_nearestLiveBody(wx, wy) {
+  let best = null, bestD2 = Infinity;
+  for (const b of bodies) {
+    if (!b || isNaN(b.x) || isNaN(b.y)) continue;
+    if (b.y < -b.radius || b.y > H + b.radius) continue;
+    const dx = b.x - wx, dy = b.y - wy;
+    const d2 = dx * dx + dy * dy;
+    if (d2 < bestD2) { bestD2 = d2; best = b; }
+  }
+  return best;
+}
 function _phantomV2_tickWraiths() {
   if (!_phantomV2_hasRevenant() && !_phantomV2_wraiths.length) return;
   if (state !== 'playing' && state !== 'devmode') return;
@@ -9187,21 +9263,14 @@ function _phantomV2_tickWraiths() {
       w.y = w.armedY;
       if (now >= w.fireTime) {
         // Acquire nearest live body.
-        let best = null, bestD2 = Infinity;
-        for (const b of bodies) {
-          if (!b || isNaN(b.x) || isNaN(b.y)) continue;
-          if (b.y < -b.radius || b.y > H + b.radius) continue;
-          const dx = b.x - w.x, dy = b.y - w.y;
-          const d2 = dx * dx + dy * dy;
-          if (d2 < bestD2) { bestD2 = d2; best = b; }
-        }
+        const best = _phantomV2_nearestLiveBody(w.x, w.y);
         if (best) {
           w.armed = false;
           w.dashing = true;
           w.target = best;
           w.dashStartTime = now;
           const dx = best.x - w.x, dy = best.y - w.y;
-          const dist = Math.hypot(dx, dy) || 1;
+          const dist = Math.sqrt(dx * dx + dy * dy) || 1;
           const speed = 600;
           w.vx = (dx / dist) * speed;
           w.vy = (dy / dist) * speed;
@@ -9232,18 +9301,11 @@ function _phantomV2_tickWraiths() {
         for (const b of bodies) if (b === w.target) { targetAlive = true; break; }
       }
       if (!targetAlive) {
-        let best = null, bestD2 = Infinity;
-        for (const b of bodies) {
-          if (!b || isNaN(b.x) || isNaN(b.y)) continue;
-          if (b.y < -b.radius || b.y > H + b.radius) continue;
-          const dx = b.x - w.x, dy = b.y - w.y;
-          const d2 = dx * dx + dy * dy;
-          if (d2 < bestD2) { bestD2 = d2; best = b; }
-        }
+        const best = _phantomV2_nearestLiveBody(w.x, w.y);
         if (best) {
           w.target = best;
           const dx = best.x - w.x, dy = best.y - w.y;
-          const dist = Math.hypot(dx, dy) || 1;
+          const dist = Math.sqrt(dx * dx + dy * dy) || 1;
           const speed = 600;
           w.vx = (dx / dist) * speed;
           w.vy = (dy / dist) * speed;
@@ -9257,7 +9319,7 @@ function _phantomV2_tickWraiths() {
       // Homing + impact check against current target.
       if (w.target) {
         const dx = w.target.x - w.x, dy = w.target.y - w.y;
-        const dist = Math.hypot(dx, dy) || 1;
+        const dist = Math.sqrt(dx * dx + dy * dy) || 1;
         if (dist < (w.target.radius + 8)) {
           // Impact: kill body + 150px ghost-dust burst. Source tag depends
           // on which capstone authored the dash — Lord-armed wraiths route
@@ -9307,14 +9369,7 @@ function _phantomV2_tickWraiths() {
         // dash-lost-target, off-screen, or in-place burst) rolls the 40%
         // Vengeance respawn via _phantomV2_wraithDeathRespawn.
         w.fromVengeance = true;
-        let best = null, bestD2 = Infinity;
-        for (const b of bodies) {
-          if (!b || isNaN(b.x) || isNaN(b.y)) continue;
-          if (b.y < -b.radius || b.y > H + b.radius) continue;
-          const dx = b.x - w.x, dy = b.y - w.y;
-          const d2 = dx * dx + dy * dy;
-          if (d2 < bestD2) { bestD2 = d2; best = b; }
-        }
+        const best = _phantomV2_nearestLiveBody(w.x, w.y);
         if (best) {
           // Convert to a dashing wraith. fromLord=false so source-tagging
           // stays 'phantomV2_wraith' (Vengeance doesn't trigger Lord's
@@ -9324,7 +9379,7 @@ function _phantomV2_tickWraiths() {
           w.target = best;
           w.dashStartTime = now;
           const dx = best.x - w.x, dy = best.y - w.y;
-          const dist = Math.hypot(dx, dy) || 1;
+          const dist = Math.sqrt(dx * dx + dy * dy) || 1;
           const speed = 600;
           w.vx = (dx / dist) * speed;
           w.vy = (dy / dist) * speed;
@@ -9398,7 +9453,7 @@ function _phantomV2_drawWraiths() {
     ctx.beginPath(); ctx.arc(w.x, w.y, 4 * sm, 0, 6.28); ctx.fill();
     // Motion blur streak.
     if (w.dashing) {
-      const mag = Math.hypot(w.vx, w.vy) || 1;
+      const mag = Math.sqrt(w.vx * w.vx + w.vy * w.vy) || 1;
       const dx = -w.vx / mag, dy = -w.vy / mag;
       ctx.globalAlpha = baseAlpha * 0.5;
       ctx.strokeStyle = 'rgba(220,170,255,1)';
@@ -9464,6 +9519,11 @@ function _phantomV2_capstoneLordOfTheDeadOnBurst() {
 // to full HP on any ghost activation (pickup, combo, or revive event).
 
 let _phantomV2_movementBuffer = [];
+// v1.9.0 perf: logical front-of-window pointer for the movement buffer. Trimming
+// expired entries advances this index (O(1)) instead of Array.shift() reindexing
+// the whole ~750-entry buffer every frame. The backing array is compacted only
+// when the dead prefix grows large, so it stays bounded without per-frame memmoves.
+let _phantomV2_moveHead = 0;
 const PHANTOMV2_MOVEMENT_BUFFER_MS = 12000;
 const PHANTOMV2_ECHO_HP_MAX = 2;
 // Echo entity list. Each: { delayMs, hp, alive, prevPos, refrainCDs,
@@ -9541,17 +9601,22 @@ function _phantomV2_recordMovement() {
   if (state !== 'playing' && state !== 'devmode') return;
   if (!player || isNaN(player.x) || isNaN(player.y)) return;
   const now = Date.now();
-  const last = _phantomV2_movementBuffer.length
-    ? _phantomV2_movementBuffer[_phantomV2_movementBuffer.length - 1]
-    : null;
+  const buf = _phantomV2_movementBuffer;
+  const liveLen = buf.length - _phantomV2_moveHead;
+  const last = liveLen > 0 ? buf[buf.length - 1] : null;
   // Only push every ~16ms to keep buffer reasonable (~750 entries at 12s).
   if (!last || now - last.t >= 16) {
-    _phantomV2_movementBuffer.push({ x: player.x, y: player.y, t: now });
+    buf.push({ x: player.x, y: player.y, t: now });
   }
-  // Trim ahead-of-window entries.
+  // Trim ahead-of-window entries by advancing the logical head (O(1)/frame), then
+  // compact the dead prefix out of the backing array only once it's grown large.
   const cutoff = now - PHANTOMV2_MOVEMENT_BUFFER_MS - 1000;
-  while (_phantomV2_movementBuffer.length && _phantomV2_movementBuffer[0].t < cutoff) {
-    _phantomV2_movementBuffer.shift();
+  while (_phantomV2_moveHead < buf.length && buf[_phantomV2_moveHead].t < cutoff) {
+    _phantomV2_moveHead++;
+  }
+  if (_phantomV2_moveHead > 256 && _phantomV2_moveHead * 2 > buf.length) {
+    buf.splice(0, _phantomV2_moveHead);
+    _phantomV2_moveHead = 0;
   }
   // Reverberation: detect pause (player stationary >= 2s) → record drop center.
   if (rankOf('phantomV2_reverberation') >= 1) {
@@ -9580,11 +9645,13 @@ function _phantomV2_sampleMovementAt(t) {
   // Find buffer entries straddling time `t` and lerp. If `t` is before the
   // first entry, return null (echo not "born" yet).
   const buf = _phantomV2_movementBuffer;
-  if (!buf.length) return null;
-  if (t < buf[0].t) return null;
-  if (t >= buf[buf.length - 1].t) return { x: buf[buf.length - 1].x, y: buf[buf.length - 1].y };
-  // Binary search.
-  let lo = 0, hi = buf.length - 1;
+  const head = _phantomV2_moveHead;
+  const len = buf.length;
+  if (head >= len) return null;
+  if (t < buf[head].t) return null;
+  if (t >= buf[len - 1].t) return { x: buf[len - 1].x, y: buf[len - 1].y };
+  // Binary search over the live window [head, len-1].
+  let lo = head, hi = len - 1;
   while (lo < hi - 1) {
     const mid = (lo + hi) >> 1;
     if (buf[mid].t <= t) lo = mid; else hi = mid;
@@ -9817,9 +9884,17 @@ let _phantomV2_ghostMarks = [];    // dead-mark positions, last 1s (for Sever)
 // destroys at most PHANTOMV2_SEVER_MAX_KILLS planets, then SNAPS (stops killing,
 // plays a string-break visual). Keyed "idLo|idHi" off lazily-assigned stable
 // mark ids (_severId). Pruned each frame to drop pairs whose marks are gone.
-let _phantomV2_severTethers = new Map(); // key -> { kills, snapped }
+let _phantomV2_severTethers = new Map(); // numeric key -> { kills, snapped }
 let _phantomV2_severSnaps = [];          // active snap visuals: { x1,y1,x2,y2, startTime }
 let _phantomV2_nextSeverId = 1;
+// Numeric pair-key base: key = min(idA,idB)*BIG + max(idA,idB). Replaces the old
+// "idLo|idHi" string concat (~1000 short-lived strings/frame at peak). Ids are
+// monotonic and never approach 1e7 in a session, so keys stay collision-free and
+// well under 2^53. Shared per-frame tether set: built ONCE in the haunt update
+// (section 6) and reused by drawHaunt — no rebuild, no second pairing pass.
+const PHANTOMV2_SEVER_KEY_BIG = 1e7;
+const _phantomV2_currentFrameTethers = []; // { x, y, alpha, ent } reused each frame
+const _phantomV2_severSeenKeys = new Set(); // reused for Map pruning (.clear() per frame)
 const PHANTOMV2_SEVER_MAX_KILLS = 1;
 const PHANTOMV2_SEVER_SNAP_MS = 320;
 function _phantomV2_severId(ent) {
@@ -10216,51 +10291,69 @@ function _phantomV2_tickHaunt() {
     }
   }
 
-  // 6) Sever tethers — pair every alive mark with every other (including
-  // ghost marks within their per-entry lifetime). Bodies crossing die.
+  // 6) Sever tethers — build the per-frame tether-point set ONCE here (bodies +
+  // phantom marks + still-living ghost marks). drawHaunt reuses this exact array
+  // (_phantomV2_currentFrameTethers) — no rebuild, no second pairing pass. Bodies
+  // crossing a live tether die; the tether snaps after PHANTOMV2_SEVER_MAX_KILLS.
   if (rankOf('phantomV2_sever') >= 1) {
-    const tetherPoints = [];
-    for (const m of marks) tetherPoints.push({ x: m.x, y: m.y, ent: m.body || m.phantom || m });
+    const tetherPoints = _phantomV2_currentFrameTethers;
+    tetherPoints.length = 0; // reuse — no per-frame array allocation
+    for (const m of marks) tetherPoints.push({ x: m.x, y: m.y, alpha: 1, ent: m.body || m.phantom || m });
     for (const g of _phantomV2_ghostMarks) {
       const life = g.life || PHANTOMV2_GHOST_MARK_LIFE_MS;
-      if (now - g.t < life) tetherPoints.push({ x: g.x, y: g.y, ent: g });
+      const age = (now - g.t) / life;
+      if (age < 1) tetherPoints.push({ x: g.x, y: g.y, alpha: 1 - age, ent: g });
     }
-    const seenKeys = new Set();
-    for (let a = 0; a < tetherPoints.length; a++) {
-      for (let z = a + 1; z < tetherPoints.length; z++) {
-        const p1 = tetherPoints[a], p2 = tetherPoints[z];
-        const idA = _phantomV2_severId(p1.ent), idB = _phantomV2_severId(p2.ent);
-        const key = idA < idB ? idA + '|' + idB : idB + '|' + idA;
-        seenKeys.add(key);
-        let rec = _phantomV2_severTethers.get(key);
-        if (rec && rec.snapped) continue; // tether already snapped — no more kills
-        for (let i = bodies.length - 1; i >= 0; i--) {
-          const b = bodies[i];
-          if (!b || b._phantomMarked) continue;
-          if (_phantomV2_segmentHitsCircle(p1.x, p1.y, p2.x, p2.y, b.x, b.y, b.radius + 6)) {
-            _phantomV2_killBodyByCurse(i, 'phantomV2_sever');
-            if (!rec) { rec = { kills: 0, snapped: false }; _phantomV2_severTethers.set(key, rec); }
-            rec.kills++;
-            if (rec.kills >= PHANTOMV2_SEVER_MAX_KILLS) {
-              // SNAP: tether is spent. Record the break for the render-side
-              // string-snap effect, layer a sharp slash on top of the kill's
-              // own slash, and stop this tether killing for good.
-              rec.snapped = true;
-              _phantomV2_severSnaps.push({ x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y, startTime: now });
-              if (_phantomV2_severSnaps.length > 16) _phantomV2_severSnaps.shift();
-              try { SFX.phantomBladeSlash(); } catch {}
-              try { emitDestroyBurst((p1.x + p2.x) / 2, (p1.y + p2.y) / 2, '255,120,180'); } catch {}
-              break;
+    // The only side-effect of the pairing pass is killing UNMARKED bodies (and the
+    // snaps those trigger). If no unmarked body exists, or fewer than 2 points, the
+    // O(marks²×bodies) work produces nothing — skip it entirely. (Render is separate
+    // and always draws from the array built above.)
+    let anyTarget = false;
+    for (let i = 0; i < bodies.length; i++) { const b = bodies[i]; if (b && !b._phantomMarked) { anyTarget = true; break; } }
+    if (anyTarget && tetherPoints.length >= 2) {
+      const seenKeys = _phantomV2_severSeenKeys;
+      seenKeys.clear(); // reuse — no new Set() per frame
+      const BIG = PHANTOMV2_SEVER_KEY_BIG;
+      for (let a = 0; a < tetherPoints.length; a++) {
+        for (let z = a + 1; z < tetherPoints.length; z++) {
+          const p1 = tetherPoints[a], p2 = tetherPoints[z];
+          const idA = _phantomV2_severId(p1.ent), idB = _phantomV2_severId(p2.ent);
+          const key = idA < idB ? idA * BIG + idB : idB * BIG + idA; // numeric, no string alloc
+          seenKeys.add(key);
+          let rec = _phantomV2_severTethers.get(key);
+          if (rec && rec.snapped) continue; // tether already snapped — no more kills
+          for (let i = bodies.length - 1; i >= 0; i--) {
+            const b = bodies[i];
+            if (!b || b._phantomMarked) continue;
+            if (_phantomV2_segmentHitsCircle(p1.x, p1.y, p2.x, p2.y, b.x, b.y, b.radius + 6)) {
+              _phantomV2_killBodyByCurse(i, 'phantomV2_sever');
+              if (!rec) { rec = { kills: 0, snapped: false }; _phantomV2_severTethers.set(key, rec); }
+              rec.kills++;
+              if (rec.kills >= PHANTOMV2_SEVER_MAX_KILLS) {
+                // SNAP: tether is spent. Record the break for the render-side
+                // string-snap effect, layer a sharp slash on top of the kill's
+                // own slash, and stop this tether killing for good.
+                rec.snapped = true;
+                _phantomV2_severSnaps.push({ x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y, startTime: now });
+                if (_phantomV2_severSnaps.length > 16) _phantomV2_severSnaps.shift();
+                try { SFX.phantomBladeSlash(); } catch {}
+                try { emitDestroyBurst((p1.x + p2.x) / 2, (p1.y + p2.y) / 2, '255,120,180'); } catch {}
+                break;
+              }
             }
           }
         }
       }
-    }
-    // Drop tether records whose marks vanished this frame (keeps the Map bounded
-    // and lets a brand-new pair re-arm rather than inherit a stale snap).
-    if (_phantomV2_severTethers.size) {
-      for (const k of _phantomV2_severTethers.keys()) {
-        if (!seenKeys.has(k)) _phantomV2_severTethers.delete(k);
+      // Drop tether records whose marks vanished this frame (keeps the Map bounded
+      // and lets a brand-new pair re-arm rather than inherit a stale snap). Tied to
+      // the same gate as the pairing: on skipped frames no kills/snaps occur, so
+      // deferring the prune is harmless — snapped records simply persist until the
+      // next frame that actually pairs (monotonic ids mean vanished pairs can never
+      // reform, so a lingering spent record is inert).
+      if (_phantomV2_severTethers.size) {
+        for (const k of _phantomV2_severTethers.keys()) {
+          if (!seenKeys.has(k)) _phantomV2_severTethers.delete(k);
+        }
       }
     }
   }
@@ -10468,21 +10561,18 @@ function _phantomV2_drawHaunt() {
   // Sever tethers — including persistence with ghost marks. Snapped tethers
   // (those that hit the kill cap) are skipped so the line visibly vanishes.
   if (rankOf('phantomV2_sever') >= 1) {
-    const tetherPoints = [];
-    for (const b of bodies) if (b._phantomMarked) tetherPoints.push({ x: b.x, y: b.y, alpha: 1, ent: b });
-    for (const p of _phantomV2_phantomMarks) tetherPoints.push({ x: p.x, y: p.y, alpha: 1, ent: p });
-    for (const g of _phantomV2_ghostMarks) {
-      const life = g.life || PHANTOMV2_GHOST_MARK_LIFE_MS;
-      const age = (now - g.t) / life;
-      if (age < 1) tetherPoints.push({ x: g.x, y: g.y, alpha: 1 - age, ent: g });
-    }
+    // Reuse the exact tether-point set the update tick built this frame — no
+    // rebuild, no second pairing. Positions are stable update→render within a
+    // frame, so the geometry is identical to drawing from live bodies/marks.
+    const tetherPoints = _phantomV2_currentFrameTethers;
+    const BIG = PHANTOMV2_SEVER_KEY_BIG;
     for (let a = 0; a < tetherPoints.length; a++) {
       for (let z = a + 1; z < tetherPoints.length; z++) {
         const p1 = tetherPoints[a], p2 = tetherPoints[z];
         // Read (don't assign) the stable ids; the update tick owns assignment.
         if (p1.ent._severId != null && p2.ent._severId != null) {
           const idA = p1.ent._severId, idB = p2.ent._severId;
-          const key = idA < idB ? idA + '|' + idB : idB + '|' + idA;
+          const key = idA < idB ? idA * BIG + idB : idB * BIG + idA;
           const rec = _phantomV2_severTethers.get(key);
           if (rec && rec.snapped) continue;
         }
@@ -10632,6 +10722,7 @@ function _phantomV2_resetRunState() {
   _phantomV2_packHuntersFlashGate = 0;
   _phantomV2_soulTetherFlashGate = 0;
   _phantomV2_movementBuffer = [];
+  _phantomV2_moveHead = 0;
   _phantomV2_echoes = [];
   _phantomV2_lastGhostEndTime = 0;
   _phantomV2_lastPlayerPos = { x: 0, y: 0 };
@@ -10655,6 +10746,8 @@ function _phantomV2_resetRunState() {
   _phantomV2_brandSfxGate = 0;
   _phantomV2_severTethers.clear();
   _phantomV2_severSnaps = [];
+  _phantomV2_currentFrameTethers.length = 0;
+  _phantomV2_severSeenKeys.clear();
   _phantomV2_stopSustainedAudio();
 }
 
@@ -11615,6 +11708,8 @@ function spawnButterflyEffectSplit(x, y, type) {
     pulse: Math.random() * 6.28,
     collected: false,
   });
+  // v1.9.0 perf: hard cap to bound worst-case render at extreme split rates.
+  if (butterflyEffectVisuals.length >= VISUAL_ARRAY_HARD_CAP) butterflyEffectVisuals.shift();
   butterflyEffectVisuals.push({
     x, y, type,
     startTime: Date.now(),
@@ -11776,14 +11871,19 @@ function drawGhostlightBursts(tctx = ctx) {
     const flashT = Math.min(1, age / 200);
     if (flashT < 1) {
       const fk = 1 - flashT;
-      const fr = 24 * fk;
+      // v1.9.0 perf: cache the center-flash gradient by integer radius (origin-
+      // translated, radius-only variance). 1px bucketing is sub-pixel here.
+      const fr = Math.max(1, Math.round(24 * fk));
       _ctx.globalAlpha = fk;
-      const flash = _ctx.createRadialGradient(0, 0, 0, 0, 0, Math.max(0.5, fr));
-      flash.addColorStop(0,    'rgba(255,255,255,1)');
-      flash.addColorStop(0.55, 'rgba(220,180,255,0.85)');
-      flash.addColorStop(1,    'rgba(180,120,235,0)');
+      const flash = getCachedGradient('ghostlightFlash_' + fr, (c) => {
+        const fl = c.createRadialGradient(0, 0, 0, 0, 0, fr);
+        fl.addColorStop(0,    'rgba(255,255,255,1)');
+        fl.addColorStop(0.55, 'rgba(220,180,255,0.85)');
+        fl.addColorStop(1,    'rgba(180,120,235,0)');
+        return fl;
+      }, _ctx);
       _ctx.fillStyle = flash;
-      _ctx.beginPath(); _ctx.arc(0, 0, Math.max(0.5, fr), 0, 6.28); _ctx.fill();
+      _ctx.beginPath(); _ctx.arc(0, 0, fr, 0, 6.28); _ctx.fill();
     }
 
     _ctx.restore();
@@ -12320,6 +12420,12 @@ let runPowerupsUsed = 0;
 let runBurstCount = 0;
 let destroyCount = 0;
 let streakHistory = [];
+// v1.9.0 perf: rolling-cap streakHistory at 200 entries to bound memory on long
+// runs AND avoid a Math.max(0, ...streakHistory) spread over thousands of args
+// (call-stack risk). The all-time max is tracked separately so the derived
+// "longest streak" is identical to scanning the full (uncapped) history.
+const STREAK_HISTORY_CAP = 200;
+let streakHistoryMax = 0;
 
 // --- Powerups ---
 const POWERUP_TYPES = ['shield','nova','hyperspeed','ghost'];
@@ -12433,6 +12539,11 @@ let pickupParticles = [];
 let salvageSparkles = [];
 const SALVAGE_SPARKLE_CAP = 40;
 const SALVAGE_SPARKLE_LIFE_MS = 700;
+// v1.9.0 perf: shared hard cap for transient render-only visual arrays
+// (twilightEchoVisuals / butterflyEffectVisuals / phantomBlades). Bounds the
+// per-frame draw cost at pathological proc rates; in normal play these never
+// approach the cap, so behavior is unchanged.
+const VISUAL_ARRAY_HARD_CAP = 64;
 // v1.6.3 visual pass: Twilight Echo refresh cue. Pulse ring + "ECHO" text
 // float above player for 500 ms on auto-refresh fire.
 let twilightEchoVisuals = [];
@@ -14540,7 +14651,7 @@ async function sendAnalytics() {
     if (isProfaneName(pilot)) return;
     const crystalMult = (DIFFICULTIES[difficulty] && DIFFICULTIES[difficulty].crystalMult) || 1;
     const longestStreak = streakHistory.length
-      ? Math.max(0, ...streakHistory)
+      ? streakHistoryMax
       : (destroyStreak || 0);
     const payload = {
       sessionId,
@@ -16799,6 +16910,9 @@ function emitPickupParticles(x, y, type) {
 // v1.6.3 visual pass: Twilight Echo refresh cue — purple expanding ring
 // + "ECHO" text float. Spawned once per successful TE auto-refresh.
 function spawnTwilightEchoVisual() {
+  // v1.9.0 perf: hard cap to bound worst-case render at extreme refresh rates.
+  // Drops the oldest visual — imperceptible (it would be near its fade anyway).
+  if (twilightEchoVisuals.length >= VISUAL_ARRAY_HARD_CAP) twilightEchoVisuals.shift();
   twilightEchoVisuals.push({
     x: player.x,
     y: player.y,
@@ -16874,6 +16988,8 @@ function drawButterflyEffectVisuals() {
 // v1.6.3 visual pass part 2: Phantom Blade blade visual. Elongated purple
 // diamond (~20 × 40 px) that spins 180° over 200 ms then fades out.
 function spawnPhantomBlade(x, y) {
+  // v1.9.0 perf: hard cap to bound worst-case render at extreme proc rates.
+  if (phantomBlades.length >= VISUAL_ARRAY_HARD_CAP) phantomBlades.shift();
   phantomBlades.push({
     x, y,
     startTime: Date.now(),
@@ -17311,13 +17427,22 @@ function drawDestroyEffects() {
       ctx.beginPath(); ctx.arc(e.x, e.y, 1.4, 0, 6.28); ctx.fill();
 
     } else if (e.kind === 'shieldAfter') {
-      const alpha = (1 - t) * 0.55;
-      const g = ctx.createRadialGradient(e.x, e.y, 0, e.x, e.y, e.r);
-      g.addColorStop(0, `rgba(180,240,255,${alpha})`);
-      g.addColorStop(1, 'rgba(180,240,255,0)');
-      ctx.globalAlpha = 1;
-      ctx.fillStyle = g;
-      ctx.beginPath(); ctx.arc(e.x, e.y, e.r, 0, 6.28); ctx.fill();
+      // v1.9.0 perf: cache by integer radius. The fade alpha is moved out of the
+      // gradient's color stop and applied via globalAlpha — globalAlpha × the
+      // gradient's 1.0/0.0 stops reproduces the original (1-t)*0.55 → 0 ramp
+      // exactly, so the gradient itself depends only on radius and caches.
+      const rR = Math.round(e.r);
+      ctx.save();
+      ctx.translate(e.x, e.y);
+      ctx.globalAlpha = (1 - t) * 0.55;
+      ctx.fillStyle = getCachedGradient('shieldAfter_' + rR, (c) => {
+        const g = c.createRadialGradient(0, 0, 0, 0, 0, rR);
+        g.addColorStop(0, 'rgba(180,240,255,1)');
+        g.addColorStop(1, 'rgba(180,240,255,0)');
+        return g;
+      }, ctx);
+      ctx.beginPath(); ctx.arc(0, 0, rR, 0, 6.28); ctx.fill();
+      ctx.restore();
 
     } else if (e.kind === 'barrierStreak') {
       ctx.globalAlpha = 1 - t;
@@ -17386,6 +17511,8 @@ function addDestroyPoints() {
   lastDestroyTime = Date.now();
   destroyCount++;
   streakHistory.push(destroyStreak);
+  if (destroyStreak > streakHistoryMax) streakHistoryMax = destroyStreak;
+  if (streakHistory.length > STREAK_HISTORY_CAP) streakHistory.shift();
   const streakForScore = Math.min(destroyStreak, getStreakCap());
   // Flat ×4 multiplier per streak slot — max per kill = 15 × 4 = 60 pts.
   const pts = streakForScore * 4;
@@ -18339,6 +18466,7 @@ function resetGame(isResume) {
   runBurstCount = 0;
   destroyCount = 0;
   streakHistory = [];
+  streakHistoryMax = 0;
   document.getElementById('streakDisplay').classList.remove('visible');
   powerups = [];
   novaRings = []; screenShake = 0;
@@ -18510,7 +18638,7 @@ function applyForce() {
       );
       const side = player.x - closestBody.x;
       rnx = (side === 0 ? -1 : Math.sign(side)) * nudgeStrength;
-      const mag = Math.hypot(rnx, rny);
+      const mag = Math.sqrt(rnx * rnx + rny * rny);
       rnx /= mag; rny /= mag;
     }
     player.vx += rnx*f*dtScale; player.vy += rny*f*dtScale;
@@ -18967,7 +19095,7 @@ function updateBodyTypes(spd) {
       b.x += (player.x - b.x) * 0.0008;
       b.eyePulse += 0.08;
       const dx = player.x - b.x, dy = player.y - b.y;
-      const mag = Math.hypot(dx, dy) || 1;
+      const mag = Math.sqrt(dx * dx + dy * dy) || 1;
       const maxOff = b.radius * 0.3;
       b.pupilDx = (dx / mag) * maxOff;
       b.pupilDy = (dy / mag) * maxOff;
@@ -20621,12 +20749,18 @@ function drawApocalypseOverlay(tctx = ctx) {
       ctx.fillStyle = 'rgba(255,255,255,1)';
       ctx.fillRect(0, 0, W, H);
     }
-    // Fade white → black 0.7 → 1.2.
+    // Fade white → black 0.7 → 1.2. v1.9.0 perf: the old two sequential
+    // full-screen fills (white@(1-k) then black@k) compose algebraically into a
+    // SINGLE source-over fill. Over any background B the pair yields
+    //   B·(k - k²) + white·(1-k)²
+    // which equals one fill rgba(c,c,c,a) with a = 1 - k + k² and
+    // c = 255·(1-k)²/a. Pixel-identical to the original (modulo 8-bit rounding),
+    // one full-screen pass instead of two.
     if (impactT > 0.7 && impactT <= 1.2) {
       const k = (impactT - 0.7) / 0.5;
-      ctx.fillStyle = `rgba(255,255,255,${1 - k})`;
-      ctx.fillRect(0, 0, W, H);
-      ctx.fillStyle = `rgba(0,0,0,${k})`;
+      const a = 1 - k + k * k;
+      const c = Math.round(255 * (1 - k) * (1 - k) / a);
+      ctx.fillStyle = `rgba(${c},${c},${c},${a})`;
       ctx.fillRect(0, 0, W, H);
     }
   }
@@ -22609,7 +22743,7 @@ function drawVoid(b, tctx = ctx) {
   // Repel force arrows — short outward-pointing lines between void and player.
   if (b.voidRepellingPlayer) {
     const dx = player.x - b.x, dy = player.y - b.y;
-    const d = Math.hypot(dx, dy) || 1;
+    const d = Math.sqrt(dx * dx + dy * dy) || 1;
     const nx = dx / d, ny = dy / d;
     // Place 5 arrows along the void→player segment, inside the repel zone.
     const inner = b.radius * 1.3;
@@ -22844,7 +22978,7 @@ function drawMirror(b, tctx = ctx) {
     try {
       const pdx = (typeof player !== 'undefined' ? player.x : b.x) - b.x;
       const pdy = (typeof player !== 'undefined' ? player.y : b.y) - b.y;
-      const pd = Math.hypot(pdx, pdy) || 1;
+      const pd = Math.sqrt(pdx * pdx + pdy * pdy) || 1;
       const px = b.x + (pdx / pd) * b.radius * 0.6;
       const py = b.y + (pdy / pd) * b.radius * 0.6;
       // Mirror the CURRENT orb's color so the dot matches whatever the player
@@ -24104,21 +24238,29 @@ function drawPlayer(tctx = ctx) {
   if (hyperSpeedStacks > 0 && hyperspeedCurrentMult > 1.05) {
     const tint = hyperStackTint(hyperSpeedStacks);
     const intensity = (hyperspeedCurrentMult - 1) / 2;
-    ctx.globalAlpha = 0.55 * intensity * ghostAlpha;
-    const hg = ctx.createRadialGradient(0,0,0,0,0,PLAYER_R*3.8);
-    hg.addColorStop(0,   `rgba(${tint.r},${tint.g},${tint.b},0.75)`);
-    hg.addColorStop(0.5, `rgba(${tint.r},${tint.g},${tint.b},0.25)`);
-    hg.addColorStop(1,   `rgba(${tint.r},${tint.g},${tint.b},0)`);
-    ctx.fillStyle = hg;
-    ctx.beginPath(); ctx.arc(0,0,PLAYER_R*3.8,0,6.28); ctx.fill();
+    // v1.9.0 perf: skip the gradient alloc + fill when the resulting alpha rounds
+    // to 0 over 8-bit (e.g. while ghostAlpha fades out) — the draw is invisible.
+    const glowA = 0.55 * intensity * ghostAlpha;
+    if (Math.round(glowA * 255) > 0) {
+      ctx.globalAlpha = glowA;
+      const hg = ctx.createRadialGradient(0,0,0,0,0,PLAYER_R*3.8);
+      hg.addColorStop(0,   `rgba(${tint.r},${tint.g},${tint.b},0.75)`);
+      hg.addColorStop(0.5, `rgba(${tint.r},${tint.g},${tint.b},0.25)`);
+      hg.addColorStop(1,   `rgba(${tint.r},${tint.g},${tint.b},0)`);
+      ctx.fillStyle = hg;
+      ctx.beginPath(); ctx.arc(0,0,PLAYER_R*3.8,0,6.28); ctx.fill();
+    }
     if (tint.white) {
       const pulse = (Math.sin(frame * 0.3) + 1) * 0.5;
-      ctx.globalAlpha = (0.45 + 0.45 * pulse) * intensity * ghostAlpha;
-      const wg = ctx.createRadialGradient(0,0,0,0,0,PLAYER_R*1.9);
-      wg.addColorStop(0, 'rgba(255,255,255,0.9)');
-      wg.addColorStop(1, 'rgba(255,255,255,0)');
-      ctx.fillStyle = wg;
-      ctx.beginPath(); ctx.arc(0,0,PLAYER_R*1.9,0,6.28); ctx.fill();
+      const whiteA = (0.45 + 0.45 * pulse) * intensity * ghostAlpha;
+      if (Math.round(whiteA * 255) > 0) {
+        ctx.globalAlpha = whiteA;
+        const wg = ctx.createRadialGradient(0,0,0,0,0,PLAYER_R*1.9);
+        wg.addColorStop(0, 'rgba(255,255,255,0.9)');
+        wg.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.fillStyle = wg;
+        ctx.beginPath(); ctx.arc(0,0,PLAYER_R*1.9,0,6.28); ctx.fill();
+      }
     }
   }
 
@@ -24594,27 +24736,38 @@ function drawBurnZones() {
     // Larger pulse amplitude for "alive" feel.
     const pulse = 0.7 + 0.4 * Math.sin(age * 0.022);
     ctx.save();
+    // v1.9.0 perf: translate to the zone center and build the halo/core gradients
+    // at the origin so they depend only on the (fixed) radius — cacheable across
+    // every zone and every frame instead of two createRadialGradient calls per
+    // zone per frame. Zone radius is constant (BURN_ZONE_RADIUS), so this collapses
+    // to a single cached halo + single cached core for the whole run.
+    ctx.translate(z.x, z.y);
+    const R = z.radius;
     // Outer halo — stronger opacity + more saturated red-orange.
     ctx.globalAlpha = 0.45 * fade;
-    const halo = ctx.createRadialGradient(z.x, z.y, 0, z.x, z.y, z.radius);
-    halo.addColorStop(0,    'rgba(255,140,40,0.85)');
-    halo.addColorStop(0.55, 'rgba(255,90,30,0.45)');
-    halo.addColorStop(1,    'rgba(255,60,20,0)');
-    ctx.fillStyle = halo;
-    ctx.beginPath(); ctx.arc(z.x, z.y, z.radius, 0, 6.28); ctx.fill();
+    ctx.fillStyle = getCachedGradient('burnHalo_' + R, (c) => {
+      const g = c.createRadialGradient(0, 0, 0, 0, 0, R);
+      g.addColorStop(0,    'rgba(255,140,40,0.85)');
+      g.addColorStop(0.55, 'rgba(255,90,30,0.45)');
+      g.addColorStop(1,    'rgba(255,60,20,0)');
+      return g;
+    }, ctx);
+    ctx.beginPath(); ctx.arc(0, 0, R, 0, 6.28); ctx.fill();
     // Sharp edge ring — defines the hazard boundary.
     ctx.globalAlpha = 0.55 * fade;
     ctx.strokeStyle = 'rgba(255,160,60,0.95)';
     ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.arc(z.x, z.y, z.radius * 0.94, 0, 6.28); ctx.stroke();
+    ctx.beginPath(); ctx.arc(0, 0, R * 0.94, 0, 6.28); ctx.stroke();
     // Inner bright core — more saturated, brighter peak.
     ctx.globalAlpha = 0.85 * fade * pulse;
-    const core = ctx.createRadialGradient(z.x, z.y, 0, z.x, z.y, z.radius * 0.55);
-    core.addColorStop(0,   'rgba(255,235,160,1)');
-    core.addColorStop(0.45,'rgba(255,170,70,0.7)');
-    core.addColorStop(1,   'rgba(255,120,40,0)');
-    ctx.fillStyle = core;
-    ctx.beginPath(); ctx.arc(z.x, z.y, z.radius * 0.55, 0, 6.28); ctx.fill();
+    ctx.fillStyle = getCachedGradient('burnCore_' + R, (c) => {
+      const g = c.createRadialGradient(0, 0, 0, 0, 0, R * 0.55);
+      g.addColorStop(0,   'rgba(255,235,160,1)');
+      g.addColorStop(0.45,'rgba(255,170,70,0.7)');
+      g.addColorStop(1,   'rgba(255,120,40,0)');
+      return g;
+    }, ctx);
+    ctx.beginPath(); ctx.arc(0, 0, R * 0.55, 0, 6.28); ctx.fill();
     // Ember particles — 7 per zone, deterministic from startTime so cost
     // stays bounded (no continuous spawn) but more visible than the prior 5.
     ctx.globalAlpha = 0.85 * fade;
@@ -24623,8 +24776,8 @@ function drawBurnZones() {
       const seed = (z.startTime | 0) + i * 17;
       const ang = ((seed % 628) / 100) + age * 0.003 * ((i % 2) ? 1 : -1);
       const rr = z.radius * (0.5 + (((seed >> 3) % 45) / 100));
-      const ex = z.x + Math.cos(ang) * rr;
-      const ey = z.y + Math.sin(ang) * rr - age * 0.02;
+      const ex = Math.cos(ang) * rr;
+      const ey = Math.sin(ang) * rr - age * 0.02;
       ctx.fillRect(ex - 1.2, ey - 1.2, 2.4, 2.4);
     }
     ctx.restore();
@@ -24911,6 +25064,8 @@ function updateTopStackVisibility() {
   topStackEl.classList.toggle('visible', visible);
 }
 
+// v1.9.0 perf: last-written cache for updatePowerupTimer style props (change-check).
+let _ptLastWidth = '', _ptLastFillColor = '', _ptLastComboColor = '';
 function updatePowerupTimer() {
   // Thin wrapper: run the core, then fire onUpdatePowerupTimer. Like update(),
   // this emits on every call so the old Roamer ptCombo-suppression wrap (which
@@ -24959,9 +25114,18 @@ function _updatePowerupTimerCore() {
   if (!powerupTimerEl.classList.contains('visible'))
     powerupTimerEl.classList.add('visible');
   if (ptLabelEl.textContent !== label) ptLabelEl.textContent = label;
-  ptFillEl.style.width = (pct * 100) + '%';
-  ptFillEl.style.background = fillColor;
-  ptFillEl.style.boxShadow = `0 0 8px ${fillColor}`;
+  // v1.9.0 perf: guard style writes behind a change-check. Setting a style prop
+  // triggers a style recalc even when the value is unchanged; background/boxShadow
+  // only change when the active powerup type changes (rare), and width only when
+  // the rounded percentage actually moves. Skipping no-op writes avoids per-frame
+  // layout thrash on the HUD banner.
+  const widthStr = (pct * 100) + '%';
+  if (_ptLastWidth !== widthStr) { ptFillEl.style.width = widthStr; _ptLastWidth = widthStr; }
+  if (_ptLastFillColor !== fillColor) {
+    ptFillEl.style.background = fillColor;
+    ptFillEl.style.boxShadow = `0 0 8px ${fillColor}`;
+    _ptLastFillColor = fillColor;
+  }
 
   // Combo label as a second line — most recently activated combo
   let activeKey = lastComboLabel;
@@ -24974,7 +25138,7 @@ function _updatePowerupTimerCore() {
     const def = COMBO_DEFS[activeKey];
     const text = '\u26A1 ' + def.name;
     if (ptComboEl.textContent !== text) ptComboEl.textContent = text;
-    ptComboEl.style.color = def.labelColor;
+    if (_ptLastComboColor !== def.labelColor) { ptComboEl.style.color = def.labelColor; _ptLastComboColor = def.labelColor; }
     if (!ptComboEl.classList.contains('visible'))
       ptComboEl.classList.add('visible');
   } else if (ptComboEl.classList.contains('visible')) {
@@ -26661,8 +26825,12 @@ function drawRainbowReverseParticles() {
       // Soft motion-trail tail toward spawn position, fading.
       const tailLen = Math.max(0, 14 * (1 - tRaw));
       if (tailLen > 1) {
-        const tx2 = p.x - (p.tx - p.sx) / Math.hypot(p.tx - p.sx, p.ty - p.sy + 0.01) * tailLen;
-        const ty2 = p.y - (p.ty - p.sy) / Math.hypot(p.tx - p.sx, p.ty - p.sy + 0.01) * tailLen;
+        // v1.9.0 perf: compute the tail magnitude once (was hypot'd twice) and
+        // via sqrt. Epsilon stays on the y term inside the magnitude only.
+        const _tdx = p.tx - p.sx, _tdyE = p.ty - p.sy + 0.01;
+        const _tmag = Math.sqrt(_tdx * _tdx + _tdyE * _tdyE);
+        const tx2 = p.x - _tdx / _tmag * tailLen;
+        const ty2 = p.y - (p.ty - p.sy) / _tmag * tailLen;
         ctx.globalAlpha = alpha * 0.35;
         ctx.strokeStyle = `rgba(${p.rgb},1)`;
         ctx.lineWidth = radius * 0.9;
@@ -30250,7 +30418,7 @@ function tickPreviewAnimations() {
         tx = W / 2; ty = H / 2;
       }
       const dx = tx - b.x, dy = ty - b.y;
-      const mag = Math.hypot(dx, dy) || 1;
+      const mag = Math.sqrt(dx * dx + dy * dy) || 1;
       const maxOff = b.radius * 0.3;
       b.pupilDx = (dx / mag) * maxOff;
       b.pupilDy = (dy / mag) * maxOff;
