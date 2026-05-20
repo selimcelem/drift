@@ -5042,15 +5042,31 @@ try {
   const c = parseInt(localStorage.getItem('drift_crystals') || '0', 10);
   if (!isNaN(c) && c >= 0) totalCrystals = c;
   const o = localStorage.getItem('drift_orb');
-  if (o && ORB_DEFS[o]) activeOrb = o;
+  // Do NOT validate against ORB_DEFS here. This block runs at script-load,
+  // BEFORE the experimental orbs (drifterV2/phantomV2) register their ORB_DEFS
+  // entries further down the file. Filtering now silently dropped those orbs
+  // from unlockedOrbs / activeOrb on every browser load — mobile only escaped
+  // it because PGS syncFromRemote re-validated later, re-adding them. Load the
+  // raw values and defer all ORB_DEFS validation to _validateOrbState(), which
+  // is called after every orb is registered (just before loadTreeState()).
+  if (o) activeOrb = o;
   const u = localStorage.getItem('drift_unlocked_orbs');
   if (u) {
     const arr = JSON.parse(u);
-    if (Array.isArray(arr)) unlockedOrbs = arr.filter(x => ORB_DEFS[x]);
+    if (Array.isArray(arr)) unlockedOrbs = arr.slice();
   }
   if (!unlockedOrbs.includes('cyan')) unlockedOrbs.push('cyan');
-  if (!unlockedOrbs.includes(activeOrb)) activeOrb = 'cyan';
 } catch {}
+
+// Validate persisted orb state against ORB_DEFS. MUST be called after all orbs
+// (including the experimental drifterV2/phantomV2) have registered, so their
+// keys survive the filter. Drops genuinely-unknown keys (typos / removed orbs)
+// and falls back to cyan if the saved active orb is invalid or not unlocked.
+function _validateOrbState() {
+  unlockedOrbs = unlockedOrbs.filter(x => ORB_DEFS[x]);
+  if (!unlockedOrbs.includes('cyan')) unlockedOrbs.push('cyan');
+  if (!ORB_DEFS[activeOrb] || !unlockedOrbs.includes(activeOrb)) activeOrb = 'cyan';
+}
 
 function saveCrystals() {
   try { localStorage.setItem('drift_crystals', String(Math.max(0, totalCrystals))); } catch {}
@@ -9752,6 +9768,19 @@ function _phantomV2_capstoneHallOfMirrorsOnBurst() {
 let _phantomV2_lingerZones = [];   // { x, y, radius, startTime, lifeMs, fromPlague }
 let _phantomV2_phantomMarks = [];  // Lethal-Touch mirrored duplicates
 let _phantomV2_ghostMarks = [];    // dead-mark positions, last 1s (for Sever)
+// Sever per-tether destroy tracking. Each tether (an unordered pair of marks)
+// destroys at most PHANTOMV2_SEVER_MAX_KILLS planets, then SNAPS (stops killing,
+// plays a string-break visual). Keyed "idLo|idHi" off lazily-assigned stable
+// mark ids (_severId). Pruned each frame to drop pairs whose marks are gone.
+let _phantomV2_severTethers = new Map(); // key -> { kills, snapped }
+let _phantomV2_severSnaps = [];          // active snap visuals: { x1,y1,x2,y2, startTime }
+let _phantomV2_nextSeverId = 1;
+const PHANTOMV2_SEVER_MAX_KILLS = 3;
+const PHANTOMV2_SEVER_SNAP_MS = 320;
+function _phantomV2_severId(ent) {
+  if (ent._severId == null) ent._severId = _phantomV2_nextSeverId++;
+  return ent._severId;
+}
 let _phantomV2_markCountForCoven = 0;
 let _phantomV2_covenActiveUntil = 0;
 let _phantomV2_ghostWasOn = false;
@@ -10145,23 +10174,48 @@ function _phantomV2_tickHaunt() {
   // 6) Sever tethers — pair every alive mark with every other (including
   // ghost marks within their per-entry lifetime). Bodies crossing die.
   if (rankOf('phantomV2_sever') >= 1) {
-    const tetherPoints = marks.slice();
+    const tetherPoints = [];
+    for (const m of marks) tetherPoints.push({ x: m.x, y: m.y, ent: m.body || m.phantom || m });
     for (const g of _phantomV2_ghostMarks) {
       const life = g.life || PHANTOMV2_GHOST_MARK_LIFE_MS;
-      if (now - g.t < life) {
-        tetherPoints.push({ x: g.x, y: g.y });
-      }
+      if (now - g.t < life) tetherPoints.push({ x: g.x, y: g.y, ent: g });
     }
+    const seenKeys = new Set();
     for (let a = 0; a < tetherPoints.length; a++) {
       for (let z = a + 1; z < tetherPoints.length; z++) {
         const p1 = tetherPoints[a], p2 = tetherPoints[z];
+        const idA = _phantomV2_severId(p1.ent), idB = _phantomV2_severId(p2.ent);
+        const key = idA < idB ? idA + '|' + idB : idB + '|' + idA;
+        seenKeys.add(key);
+        let rec = _phantomV2_severTethers.get(key);
+        if (rec && rec.snapped) continue; // tether already snapped — no more kills
         for (let i = bodies.length - 1; i >= 0; i--) {
           const b = bodies[i];
           if (!b || b._phantomMarked) continue;
           if (_phantomV2_segmentHitsCircle(p1.x, p1.y, p2.x, p2.y, b.x, b.y, b.radius + 6)) {
             _phantomV2_killBodyByCurse(i, 'phantomV2_sever');
+            if (!rec) { rec = { kills: 0, snapped: false }; _phantomV2_severTethers.set(key, rec); }
+            rec.kills++;
+            if (rec.kills >= PHANTOMV2_SEVER_MAX_KILLS) {
+              // SNAP: tether is spent. Record the break for the render-side
+              // string-snap effect, layer a sharp slash on top of the kill's
+              // own slash, and stop this tether killing for good.
+              rec.snapped = true;
+              _phantomV2_severSnaps.push({ x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y, startTime: now });
+              if (_phantomV2_severSnaps.length > 16) _phantomV2_severSnaps.shift();
+              try { SFX.phantomBladeSlash(); } catch {}
+              try { emitDestroyBurst((p1.x + p2.x) / 2, (p1.y + p2.y) / 2, '255,120,180'); } catch {}
+              break;
+            }
           }
         }
+      }
+    }
+    // Drop tether records whose marks vanished this frame (keeps the Map bounded
+    // and lets a brand-new pair re-arm rather than inherit a stale snap).
+    if (_phantomV2_severTethers.size) {
+      for (const k of _phantomV2_severTethers.keys()) {
+        if (!seenKeys.has(k)) _phantomV2_severTethers.delete(k);
       }
     }
   }
@@ -10346,19 +10400,27 @@ function _phantomV2_drawHaunt() {
     drawMarkVisual(p.x, p.y, p.radius, p.markTime, true);
   }
 
-  // Sever tethers — including persistence with ghost marks.
+  // Sever tethers — including persistence with ghost marks. Snapped tethers
+  // (those that hit the kill cap) are skipped so the line visibly vanishes.
   if (rankOf('phantomV2_sever') >= 1) {
     const tetherPoints = [];
-    for (const b of bodies) if (b._phantomMarked) tetherPoints.push({ x: b.x, y: b.y, alpha: 1 });
-    for (const p of _phantomV2_phantomMarks) tetherPoints.push({ x: p.x, y: p.y, alpha: 1 });
+    for (const b of bodies) if (b._phantomMarked) tetherPoints.push({ x: b.x, y: b.y, alpha: 1, ent: b });
+    for (const p of _phantomV2_phantomMarks) tetherPoints.push({ x: p.x, y: p.y, alpha: 1, ent: p });
     for (const g of _phantomV2_ghostMarks) {
       const life = g.life || PHANTOMV2_GHOST_MARK_LIFE_MS;
       const age = (now - g.t) / life;
-      if (age < 1) tetherPoints.push({ x: g.x, y: g.y, alpha: 1 - age });
+      if (age < 1) tetherPoints.push({ x: g.x, y: g.y, alpha: 1 - age, ent: g });
     }
     for (let a = 0; a < tetherPoints.length; a++) {
       for (let z = a + 1; z < tetherPoints.length; z++) {
         const p1 = tetherPoints[a], p2 = tetherPoints[z];
+        // Read (don't assign) the stable ids; the update tick owns assignment.
+        if (p1.ent._severId != null && p2.ent._severId != null) {
+          const idA = p1.ent._severId, idB = p2.ent._severId;
+          const key = idA < idB ? idA + '|' + idB : idB + '|' + idA;
+          const rec = _phantomV2_severTethers.get(key);
+          if (rec && rec.snapped) continue;
+        }
         const pairA = Math.min(p1.alpha, p2.alpha);
         ctx.globalAlpha = 0.45 * pairA;
         ctx.strokeStyle = 'rgba(255,90,150,1)';
@@ -10370,6 +10432,36 @@ function _phantomV2_drawHaunt() {
         ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke();
       }
     }
+  }
+
+  // Sever SNAP effects — a string breaking: a quick bright flash at the break
+  // point + the line split into two halves retracting toward their anchors,
+  // fading out fast. (The particle burst is emitted at snap time in tickHaunt.)
+  if (_phantomV2_severSnaps.length) {
+    const keep = [];
+    for (const s of _phantomV2_severSnaps) {
+      const age = now - s.startTime;
+      if (age >= PHANTOMV2_SEVER_SNAP_MS) continue;
+      keep.push(s);
+      const t = age / PHANTOMV2_SEVER_SNAP_MS; // 0 → 1
+      const fade = 1 - t;
+      const mx = (s.x1 + s.x2) / 2, my = (s.y1 + s.y2) / 2;
+      // Brief expanding flash at the break point.
+      if (t < 0.3) {
+        ctx.globalAlpha = (1 - t / 0.3) * 0.9;
+        ctx.fillStyle = 'rgba(255,225,240,1)';
+        ctx.beginPath(); ctx.arc(mx, my, 4 + t * 20, 0, 6.28); ctx.fill();
+      }
+      // Two halves retract from the midpoint back toward each anchor.
+      const ax = mx + (s.x1 - mx) * t, ay = my + (s.y1 - my) * t;
+      const bx = mx + (s.x2 - mx) * t, by = my + (s.y2 - my) * t;
+      ctx.globalAlpha = 0.9 * fade;
+      ctx.strokeStyle = 'rgba(255,200,220,1)';
+      ctx.lineWidth = 1.6;
+      ctx.beginPath(); ctx.moveTo(s.x1, s.y1); ctx.lineTo(ax, ay); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(s.x2, s.y2); ctx.lineTo(bx, by); ctx.stroke();
+    }
+    _phantomV2_severSnaps = keep;
   }
 
   // Coven screen-wide septagram.
@@ -10496,6 +10588,8 @@ function _phantomV2_resetRunState() {
   _phantomV2_lordImpactPitchIdx = 0;
   _phantomV2_wraithSpawnSfxGate = 0;
   _phantomV2_brandSfxGate = 0;
+  _phantomV2_severTethers.clear();
+  _phantomV2_severSnaps = [];
   _phantomV2_stopSustainedAudio();
 }
 
@@ -10603,6 +10697,12 @@ OrbHooks.on('onUpdate', () => {
 // =====================================================================
 // PHANTOMV2 (PHANTASM) EXPERIMENTAL ORB END
 // =====================================================================
+
+// Now that every orb (incl. drifterV2/phantomV2) is registered in ORB_DEFS,
+// validate the persisted unlockedOrbs / activeOrb that were loaded raw at
+// script-start. This is what makes the experimental orbs survive a browser
+// refresh (previously the early ORB_DEFS filter dropped them).
+_validateOrbState();
 
 // Initial load. refreshActiveTreeCache() is called at the end; active orb
 // defaults to cyan so it will be safe even before any real equip happens.
