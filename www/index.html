@@ -7767,7 +7767,8 @@ OrbHooks.on('onAddDestroyPoints', (basePts) => {
 // directly in _drifterV2_onSinglePickup and _drifterV2_onPairPickup.
 
 // checkDestroyProc — feeds Thread + Pressure + Breaking-Point auto-fire.
-OrbHooks.on('onDestroy', (body, source) => {
+OrbHooks.on('onDestroy', (info) => {
+  const body = info && info.body;
   if (state !== 'playing' && state !== 'devmode') return;
   if (!isDrifterV2Active() || !body) return;
   if (_drifterV2_hasThread())   _drifterV2_threadOnDestroy(body);
@@ -8062,8 +8063,8 @@ TREE_DEFS.phantomV2 = {
           desc: 'Echoes pick up powerups they pass through (1.5s cooldown per type, per echo).',
           effect: r => r ? 'Echoes grab powerups' : 'Locked' },
         { key: 'phantomV2_reverberation', name: 'Reverberation', tier: 2, max: 1, costOverride: [6000], pointCost: 3,
-          desc: 'Hold still for 2s+ and your echoes will drop a 120px ghostly burst at that spot when they reach it. 5s cooldown per echo.',
-          effect: r => r ? '120px burst on pauses' : 'Locked' },
+          desc: 'Hold still for 2s+ and your echoes will drop a 150px ghostly burst at that spot when they reach it. 5s cooldown per echo.',
+          effect: r => r ? '150px burst on pauses' : 'Locked' },
         { key: 'phantomV2_twoBeat', name: 'Two-Beat', tier: 1, max: 1, costOverride: [4000], pointCost: 2,
           desc: 'While an echo is within 80px of you, every kill has a 25% chance to extend or grant ghost by +1s (cap 2× base).',
           effect: r => r ? '25% +1s ghost near echo' : 'Locked' },
@@ -8088,11 +8089,11 @@ TREE_DEFS.phantomV2 = {
           desc: 'When a marked planet exits the side wall, it leaves a 100px curse zone there for 2s. The zone destroys any planet that drifts into it.',
           effect: r => r ? '100px zone · 2s' : 'Locked' },
         { key: 'phantomV2_sever', name: 'Sever', tier: 2, max: 1, costOverride: [6500], pointCost: 3,
-          desc: 'A glowing tether connects every pair of marked planets and destroys anything crossing it. After a mark dies the tether lingers 1s — or as long as the Linger zone it spawned, if Linger is active.',
-          effect: r => r ? 'Tether kills · ghost 1s+' : 'Locked' },
+          desc: 'A glowing tether connects every pair of marked planets and destroys the first planet crossing it — then snaps (1 hit). After a mark dies the tether lingers 1s — or as long as the Linger zone it spawned, if Linger is active.',
+          effect: r => r ? 'Tether: 1 kill then snaps · ghost 1s+' : 'Locked' },
         { key: 'phantomV2_plague', name: 'Plague', tier: 2, max: 1, costOverride: [6000], pointCost: 3,
-          desc: 'Requires Linger active. Planets entering a Linger zone get MARKED (and fly off) instead of destroyed. Linger zones also last 2s longer (4s total). Plague-spawned Linger zones don\'t re-mark — no infinite chain.',
-          effect: r => r ? 'Linger marks · +2s Linger' : 'Locked' },
+          desc: 'Requires Linger active. The first 2 planets entering a Linger zone get MARKED (and fly off) instead of destroyed; further entrants are destroyed. Linger zones also last 2s longer (4s total). Plague-spawned Linger zones re-mark too — each capped at 2.',
+          effect: r => r ? 'Linger marks 2 · +2s Linger' : 'Locked' },
         { key: 'phantomV2_lethalTouch', name: 'Lethal Touch', tier: 1, max: 1, costOverride: [4500], pointCost: 2,
           desc: 'Every 10 marks, a mirrored phantom mark spawns on the opposite side of the screen — same curse field, mirrored arc and exit.',
           effect: r => r ? 'Mirror every 10 marks' : 'Locked' },
@@ -9701,7 +9702,7 @@ function _phantomV2_tickAfterimage() {
           && _phantomV2_reverbDropPositions.length) {
         for (const d of _phantomV2_reverbDropPositions) {
           if (_phantomV2_segmentHitsCircle(prev.x, prev.y, pos.x, pos.y, d.x, d.y, 18)) {
-            _phantomV2_spawnDeathBurst(d.x, d.y, 120, 'phantomV2_echo');
+            _phantomV2_spawnDeathBurst(d.x, d.y, 150, 'phantomV2_echo');
             e.reverbLastFire = now;
             _phantomV2_addFlash('REVERBERATION', '210,150,255');
             // v1.9.0 SFX: distinct sine ping + reverb tail so the pause-spot
@@ -9843,7 +9844,7 @@ let _phantomV2_ghostMarks = [];    // dead-mark positions, last 1s (for Sever)
 let _phantomV2_severTethers = new Map(); // key -> { kills, snapped }
 let _phantomV2_severSnaps = [];          // active snap visuals: { x1,y1,x2,y2, startTime }
 let _phantomV2_nextSeverId = 1;
-const PHANTOMV2_SEVER_MAX_KILLS = 3;
+const PHANTOMV2_SEVER_MAX_KILLS = 1;
 const PHANTOMV2_SEVER_SNAP_MS = 320;
 function _phantomV2_severId(ent) {
   if (ent._severId == null) ent._severId = _phantomV2_nextSeverId++;
@@ -10310,9 +10311,11 @@ function _phantomV2_tickHaunt() {
     }
   }
 
-  // 8) Linger zone tick. Plague: bodies entering a non-Plague-source zone
-  // get MARKED instead of destroyed. Zones spawned BY Plague-source marks
-  // skip the re-mark branch (anti-perpetuation).
+  // 8) Linger zone tick. Plague: a body entering a zone gets MARKED (and flies
+  // off) instead of destroyed — but each zone converts only its first 2 entrants
+  // (z.markCount cap), after which it reverts to destroying. Plague-spawned
+  // zones DO re-mark now (also capped at 2): the chain is bounded per-zone and
+  // by the live body / zone-array caps rather than a blanket fromPlague block.
   if (_phantomV2_lingerZones.length) {
     const plagueActive = rankOf('phantomV2_plague') >= 1 && rankOf('phantomV2_linger') >= 1;
     const keep = [];
@@ -10324,7 +10327,8 @@ function _phantomV2_tickHaunt() {
         const dx = b.x - z.x, dy = b.y - z.y;
         const tot = z.radius + b.radius;
         if (dx * dx + dy * dy < tot * tot) {
-          if (plagueActive && !z.fromPlague) {
+          if (plagueActive && (z.markCount | 0) < 2) {
+            z.markCount = (z.markCount | 0) + 1;
             _phantomV2_markBody(b, { fromPlague: true });
             // v1.9.0 SFX: descending sweep for the viral-spread conversion.
             // Throttled via the flash gate so a chain doesn't machine-gun.
@@ -10343,15 +10347,21 @@ function _phantomV2_tickHaunt() {
     _phantomV2_lingerZones = keep;
   }
 
-  // 9) Coven sweep — MARK every non-marked body during the 3s window.
-  // Marks made during this window don't count toward the next Coven
-  // (gated inside _phantomV2_registerMark). Newly-marked bodies fly off
-  // via the standard arc + curse field.
+  // 9) Coven sweep — MARK only the non-marked bodies that actually TOUCH the
+  // screen-wide septagram (a proper hitbox), not every body on screen. The
+  // septagram is drawn centered at (W/2, H/2) with radius R = min(W,H)·0.42
+  // (see _phantomV2_drawHaunt); a body counts as hit when it overlaps that
+  // circumscribed circle. Marks made during this window don't count toward the
+  // next Coven (gated inside _phantomV2_registerMark).
   if (now < _phantomV2_covenActiveUntil) {
+    const _covCx = W / 2, _covCy = H / 2;
+    const _covR = Math.min(W, H) * 0.42;
     for (let i = bodies.length - 1; i >= 0; i--) {
       const b = bodies[i];
       if (!b || b._phantomMarked) continue;
-      _phantomV2_markBody(b);
+      const dx = b.x - _covCx, dy = b.y - _covCy;
+      const reach = _covR + b.radius;
+      if (dx * dx + dy * dy <= reach * reach) _phantomV2_markBody(b);
     }
   }
 
@@ -10365,19 +10375,30 @@ function _phantomV2_tickHaunt() {
   }
 }
 
-// Brand: when ANY non-Haunt destroy happens while ghost (or any ghost combo)
-// is active, spawn a phantom-mark CLONE at the destroyed body's position.
-// Pass-through marking is handled in tickHaunt; this hook covers kills made
-// by the player's burst, EMP, nova rings, combo procs, etc.
-function _phantomV2_onAnyDestroyForHaunt(body, source) {
+// Brand: when ANY non-Haunt-curse destroy happens while ghost (or any ghost
+// combo) is active, spawn a phantom-mark CLONE at the kill site. Covers player
+// burst, EMP, nova rings, combo procs — AND (Phase 2.5 fix) wraith contact,
+// wraith detonation, Lord cascade, and Afterimage echo kills.
+//
+// Recursion guard: ONLY a mark's own curse-field family is skipped. A Brand
+// clone has a curse field (kills tagged 'phantomV2_curse'), Sever tether
+// ('phantomV2_sever'), Wake trail ('phantomV2_wake'), and Linger zone
+// ('phantomV2_linger'); seeding new clones off those would loop. Wraith/echo/
+// Lord kills are NOT in this set, so they correctly seed clones — the previous
+// `source.indexOf('phantomV2_') === 0` test was too broad and silently dropped
+// them (the reported Brand bug).
+const _PHANTOMV2_HAUNT_CURSE_SOURCES = new Set([
+  'phantomV2_curse', 'phantomV2_sever', 'phantomV2_wake', 'phantomV2_linger',
+]);
+function _phantomV2_onAnyDestroyForHaunt(body, source, info) {
   if (!_phantomV2_hasHaunt()) return;
   if (state !== 'playing' && state !== 'devmode') return;
   if (!body) return;
-  // Skip Phantom-Haunt-source kills (curse field, sever, wake, linger,
-  // coven, plague) to prevent recursion. Also skip wraith / echo / wraithLord
-  // — those are Phantasm's own mechanics; they shouldn't seed Brand clones.
-  if (source && typeof source === 'string' && source.indexOf('phantomV2_') === 0) return;
-  if (!_phantomV2_isAnyGhostActive()) return;
+  if (source && _PHANTOMV2_HAUNT_CURSE_SOURCES.has(source)) return;
+  // Use the unified event's duringGhost (identical to _phantomV2_isAnyGhostActive);
+  // fall back to the live check if called without the payload.
+  const duringGhost = info ? info.duringGhost : _phantomV2_isAnyGhostActive();
+  if (!duringGhost) return;
   _phantomV2_spawnPhantomCloneAt(body.x, body.y, body.radius || 16);
 }
 
@@ -10703,12 +10724,14 @@ function _phantomV2_onDestroyForAfterimage(body, source) {
 }
 
 // (was: checkDestroyProc wrap) routes destroys to Revenant + Afterimage + Haunt.
-OrbHooks.on('onDestroy', (body, source) => {
+OrbHooks.on('onDestroy', (info) => {
+  const body = info && info.body;
+  const source = info && info.source;
   if (state !== 'playing' && state !== 'devmode') return;
   if (!isPhantomV2Active() || !body) return;
   _phantomV2_onDestroyForRevenant(body, source);
   _phantomV2_onDestroyForAfterimage(body, source);
-  _phantomV2_onAnyDestroyForHaunt(body, source);
+  _phantomV2_onAnyDestroyForHaunt(body, source, info);
 });
 
 // scrollSpeed multiplier — 2× during the Coven pulse. Composed (×) onto the
@@ -11175,10 +11198,37 @@ function checkDestroyProc(body, source) {
     const b2Chances = [0.02, 0.04, 0.06, 0.08, 0.10];
     if (r > 0 && Math.random() < b2Chances[r - 1]) bastion2Proc();
   }
-  // Orb destroy hooks (was: Roamer thread/pressure/Breaking-Point + Phantasm
-  // revenant/afterimage/haunt wraps). Only reached when playing/devmode (the
-  // early return above), matching the old wraps' own state gate.
-  OrbHooks.emit('onDestroy', body, source);
+  // === Canonical "body destroyed" event (Phase 2.5 unified destroy system) ===
+  // checkDestroyProc is the single chokepoint every kill path funnels through
+  // (player burst, nova/EMP rings, ghost passthrough, shield, wraith contact +
+  // detonation, echo, curse field, Sever, Wake, Linger, Roamer laser/projectile
+  // — all call checkDestroyProc after addDestroyPoints). So OrbHooks 'onDestroy'
+  // IS the one canonical bodyDestroyed event; we just enrich its payload here so
+  // listeners (Brand, future skills) get consistent context and never miss a
+  // kill source. Stats/score/particles stay inline in the kill helpers (they
+  // already fire on every path); only reactive skill logic listens here.
+  const _gOn = (activeEffects.ghost > 0)
+    || !!(activeCombos && (activeCombos.ghost_ghost || activeCombos.nova_ghost
+      || activeCombos.hyperspeed_ghost || activeCombos.ghost_shield));
+  const info = {
+    body: body,
+    x: body ? body.x : 0,
+    y: body ? body.y : 0,
+    source: source,
+    duringGhost: _gOn,
+    duringPowerup: {
+      shield: activeEffects.shield > 0,
+      nova: !!(activeEffects.nova > 0),
+      ghost: activeEffects.ghost > 0,
+      hyperspeed: activeEffects.hyperspeed > 0,
+    },
+    // Killed by an orb's own mechanic (prefix-tagged source) vs a player-direct
+    // powerup kill. Informational; note Roamer laser/projectile kills use the
+    // 'nova' source tag, so they read as player-direct here.
+    isOrbInternal: typeof source === 'string'
+      && (source.indexOf('phantomV2_') === 0 || source.indexOf('drifterV2_') === 0),
+  };
+  OrbHooks.emit('onDestroy', info);
 }
 
 // --- Tree-node mechanics state (non-capstone, non-destroy-proc) ---
@@ -18363,6 +18413,11 @@ function resetGame() {
 function findClosest() {
   let best = null, bd = Infinity;
   for (const b of bodies) {
+    // Phantasm: marked / phantom-marked planets fly their own arc — the
+    // attract/repel gravity should ignore them so the player doesn't get
+    // yanked toward a planet that's phasing away. (No-op for other orbs:
+    // nothing sets _phantomMarked outside Phantasm Haunt.)
+    if (b._phantomMarked) continue;
     const d = dist(player, b);
     if (d < bd) { bd = d; best = b; }
   }
