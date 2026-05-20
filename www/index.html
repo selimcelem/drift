@@ -4990,6 +4990,7 @@ const OrbHooks = {
   handlers: {
     onUpdate: [], onRender: [], onResetGame: [], onDestroy: [],
     onPickup: [], afterBurstFired: [], onAddDestroyPoints: [], onUpdatePowerupTimer: [],
+    afterLoadTreeState: [],
   },
   on(event, handler) {
     if (!this.handlers[event]) this.handlers[event] = [];
@@ -5113,6 +5114,61 @@ ORB_BEHAVIOR.default.hyperspeedMaxStacks = _HYPERSPEED_MAX_STACKS_default;
 ORB_BEHAVIOR.default.executeBurst = _executeBurst_default;
 ORB_BEHAVIOR.default.scrollSpeed = _scrollSpeed_default;
 ORB_BEHAVIOR.default.onActivateCombo = _activateCombo_default;
+
+// === Phase 3: tree/shop UI dispatchers ===============================
+// These dispatch by the tree being VIEWED (treeUiCurrentOrb / the orbKey arg /
+// treeDetailCurrent.orbKey), NOT by the equipped orb — the skill-tree menu can
+// browse any orb's tree. Orb blocks register overrides into ORB_BEHAVIOR.<orb>.
+
+// renderTreeOverlay: the inline-style reset (formerly done inside the orb wraps
+// for every orb so a custom branching layout doesn't leak into a grid orb's
+// tree) is hoisted here so it always runs, then we dispatch by viewed orb.
+function renderTreeOverlay() {
+  const _pathsEl = document.getElementById('treePaths');
+  if (_pathsEl) {
+    _pathsEl.style.display = '';
+    _pathsEl.style.gap = '';
+    _pathsEl.style.justifyContent = '';
+    _pathsEl.style.flexWrap = '';
+    _pathsEl.style.overflowX = '';
+    _pathsEl.style.overflowY = '';
+    _pathsEl.style.webkitOverflowScrolling = '';
+    _pathsEl.style.padding = '';
+    _pathsEl.style.maxHeight = '';
+  }
+  const _capsEl = document.getElementById('treeCapstones');
+  if (_capsEl) {
+    _capsEl.style.display = '';
+    _capsEl.style.flexDirection = '';
+    _capsEl.style.alignItems = '';
+    _capsEl.style.gap = '';
+  }
+  const orbKey = (typeof treeUiCurrentOrb !== 'undefined') ? treeUiCurrentOrb : null;
+  const b = ORB_BEHAVIOR[orbKey];
+  return (b && b.renderTreeOverlay) ? b.renderTreeOverlay() : ORB_BEHAVIOR.default.renderTreeOverlay();
+}
+function renderTreeDetail() {
+  const orbKey = (typeof treeDetailCurrent !== 'undefined' && treeDetailCurrent) ? treeDetailCurrent.orbKey : null;
+  const b = ORB_BEHAVIOR[orbKey];
+  return (b && b.renderTreeDetail) ? b.renderTreeDetail() : ORB_BEHAVIOR.default.renderTreeDetail();
+}
+function respecNode(orbKey, pathKey, nodeIdx) {
+  const b = ORB_BEHAVIOR[orbKey];
+  return (b && b.respecNode) ? b.respecNode(orbKey, pathKey, nodeIdx) : ORB_BEHAVIOR.default.respecNode(orbKey, pathKey, nodeIdx);
+}
+function fullTreeRespecCost(orbKey) {
+  const b = ORB_BEHAVIOR[orbKey];
+  return (b && b.fullTreeRespecCost) ? b.fullTreeRespecCost(orbKey) : ORB_BEHAVIOR.default.fullTreeRespecCost(orbKey);
+}
+function respecTree(orbKey) {
+  const b = ORB_BEHAVIOR[orbKey];
+  return (b && b.respecTree) ? b.respecTree(orbKey) : ORB_BEHAVIOR.default.respecTree(orbKey);
+}
+ORB_BEHAVIOR.default.renderTreeOverlay = _renderTreeOverlay_default;
+ORB_BEHAVIOR.default.renderTreeDetail = _renderTreeDetail_default;
+ORB_BEHAVIOR.default.respecNode = _respecNode_default;
+ORB_BEHAVIOR.default.fullTreeRespecCost = _fullTreeRespecCost_default;
+ORB_BEHAVIOR.default.respecTree = _respecTree_default;
 
 try {
   const c = parseInt(localStorage.getItem('drift_crystals') || '0', 10);
@@ -5323,15 +5379,15 @@ const TREE_DEFS = {
       inferno: {
         name: 'INFERNO',
         nodes: [
-          { key: 'cinder',     name: 'Cinder',     tier: 1, max: 3, desc: 'Nova-killed bodies leave a 3s, 60px burn zone at the kill position (world-static, no scroll).', effect: r => `${[10,20,30][r-1]||0}% proc` },
-          { key: 'firebrand',  name: 'Firebrand',  tier: 2, max: 5, desc: 'On body destroyed, chance to fire a single half-size nova ring at the body position. (3s cooldown)', effect: r => `${[2,4,6,8,10][r-1]||0}% per destroy` },
+          { key: 'cinder',     name: 'Cinder',     tier: 1, max: 3, desc: 'Nova-killed bodies leave a 2s, 40px burn zone at the kill position (world-static, no scroll).', effect: r => `${[10,20,30][r-1]||0}% proc` },
+          { key: 'firebrand',  name: 'Firebrand',  tier: 2, max: 5, desc: 'On body destroyed, chance to fire a single half-size nova ring at the body position. (6s cooldown)', effect: r => `${[2,4,6,8,10][r-1]||0}% per destroy` },
           { key: 'combustion', name: 'Combustion', tier: 3, max: 3, desc: 'Each nova cast adds +1 to a bonus-wave counter; counter consumed by the next nova cast within 2s. 15s cooldown.', effect: r => `Cap +${[1,2,3][r-1]||0} bonus waves` },
         ],
       },
     },
     capstones: [
-      { key: 'sunForge',     name: 'SUN FORGE',     desc: 'Supernova auto-fires every 45s.' },
-      { key: 'criticalMass', name: 'CRITICAL MASS', desc: '10+ destroys from one nova cast triggers a free 6-wave nova. 30s cooldown; kill counter paused during cooldown.' },
+      { key: 'sunForge',     name: 'SUN FORGE',     desc: 'Supernova auto-fires every 60s.' },
+      { key: 'criticalMass', name: 'CRITICAL MASS', desc: '10+ destroys from one nova cast triggers a free 6-wave nova. 45s cooldown; kill counter paused during cooldown.' },
     ],
   },
   nebula: {
@@ -5541,6 +5597,11 @@ function loadTreeState() {
     }
   } catch {}
   refreshActiveTreeCache();
+  // Orb activePoints restoration (was: Roamer/Phantasm loadTreeState wraps).
+  // Both subscribers re-read localStorage (untouched by the load above) and
+  // restore their activePoints map — additive, runs every load regardless of
+  // active orb, in registration order (Roamer then Phantasm).
+  OrbHooks.emit('afterLoadTreeState');
 }
 function saveTreeState() {
   try { localStorage.setItem('drift_orb_trees', JSON.stringify(orbTrees)); } catch {}
@@ -5688,7 +5749,7 @@ function totalRanksInvested(orbKey) {
   }
   return sum;
 }
-function fullTreeRespecCost(orbKey) {
+function _fullTreeRespecCost_default(orbKey) {
   return TREE_RESPEC_PER_RANK * totalRanksInvested(orbKey);
 }
 
@@ -5799,7 +5860,7 @@ function capstonePrereqMet(orbKey, capKey) {
 }
 
 // Single-node respec: refund all ranks of that node, spend a flat fee.
-function respecNode(orbKey, pathKey, nodeIdx) {
+function _respecNode_default(orbKey, pathKey, nodeIdx) {
   const def = TREE_DEFS[orbKey];
   const state = orbTrees[orbKey];
   if (!def || !state) return false;
@@ -5833,7 +5894,7 @@ function respecNode(orbKey, pathKey, nodeIdx) {
 }
 
 // Full-tree respec: refund everything spent in the tree, spend 1.4k × ranks fee.
-function respecTree(orbKey) {
+function _respecTree_default(orbKey) {
   const def = TREE_DEFS[orbKey];
   const state = orbTrees[orbKey];
   if (!def || !state) return false;
@@ -6302,13 +6363,10 @@ ORB_BEHAVIOR.drifterV2.rankOf = function(nodeKey) {
   return _rankOf_default(nodeKey);
 };
 
-// Wrap loadTreeState — restore activePoints map after the original load
-// (which drops unknown fields). Also handles migration from the v1 schema
-// (paths husk/weave/escalation) by wiping incompatible state.
-const _drifterV2_origLoadTreeState = loadTreeState;
-loadTreeState = function() {
-  // Snapshot raw localStorage to recover activePoints after the default
-  // loader discards it.
+// afterLoadTreeState — restore drifterV2's activePoints map (the base loader
+// drops unknown fields). Also migrates the v1 schema (husk/weave/escalation).
+// Re-reads localStorage (untouched by the base load) since the base already ran.
+OrbHooks.on('afterLoadTreeState', () => {
   let rawDrifterV2 = null;
   try {
     const raw = localStorage.getItem('drift_orb_trees');
@@ -6317,7 +6375,6 @@ loadTreeState = function() {
       if (parsed && parsed.drifterV2) rawDrifterV2 = parsed.drifterV2;
     }
   } catch {}
-  _drifterV2_origLoadTreeState.apply(this, arguments);
   // Migration check: old schema had path keys (husk, weave, escalation). If
   // those are still present in the rebuilt state from the original loader,
   // wipe and reset. Note: original loader uses TREE_DEFS to enumerate paths,
@@ -6337,7 +6394,7 @@ loadTreeState = function() {
       }
     }
   }
-};
+});
 
 // ---------------------------------------------------------------------
 // Milestone 2: free + full refund for drifterV2 (no tax, no per-rank fee).
@@ -6345,9 +6402,8 @@ loadTreeState = function() {
 // Single-node respec: skip the 4k crystal deduction, refund all spent.
 // Full-tree respec: skip the 1.4k×ranks deduction, refund all spent.
 // All other orbs keep the existing economy.
-const _drifterV2_origRespecNode = respecNode;
-respecNode = function(orbKey, pathKey, nodeIdx) {
-  if (orbKey !== 'drifterV2') return _drifterV2_origRespecNode(orbKey, pathKey, nodeIdx);
+// Dispatched (by orbKey) only for 'drifterV2'. Free single-node refund.
+ORB_BEHAVIOR.drifterV2.respecNode = function(orbKey, pathKey, nodeIdx) {
   const def = TREE_DEFS.drifterV2;
   const state = orbTrees.drifterV2;
   if (!def || !state) return false;
@@ -6362,14 +6418,10 @@ respecNode = function(orbKey, pathKey, nodeIdx) {
   if (orbKey === activeOrb) refreshActiveTreeCache();
   return true;
 };
-const _drifterV2_origFullTreeRespecCost = fullTreeRespecCost;
-fullTreeRespecCost = function(orbKey) {
-  if (orbKey === 'drifterV2') return 0;
-  return _drifterV2_origFullTreeRespecCost(orbKey);
+ORB_BEHAVIOR.drifterV2.fullTreeRespecCost = function(orbKey) {
+  return 0;
 };
-const _drifterV2_origRespecTree = respecTree;
-respecTree = function(orbKey) {
-  if (orbKey !== 'drifterV2') return _drifterV2_origRespecTree(orbKey);
+ORB_BEHAVIOR.drifterV2.respecTree = function(orbKey) {
   const def = TREE_DEFS.drifterV2;
   const state = orbTrees.drifterV2;
   if (!def || !state) return false;
@@ -6682,36 +6734,11 @@ function _drifterV2_renderCustomTreeOverlay() {
 // renderer a clean slate (otherwise the leftover flex/gap/justify-content
 // would override the .tree-paths grid rules and the other orbs' nodes would
 // visibly jumble — Issue 4).
-const _drifterV2_origRenderTreeOverlay = renderTreeOverlay;
-renderTreeOverlay = function() {
-  const _pathsEl = document.getElementById('treePaths');
-  if (_pathsEl) {
-    _pathsEl.style.display = '';
-    _pathsEl.style.gap = '';
-    _pathsEl.style.justifyContent = '';
-    _pathsEl.style.flexWrap = '';
-    // v1.9.0 polish: also clear horizontal-scroll inline styles set by
-    // _drifterV2_renderCustomTreeOverlay so other orbs' grid layout
-    // doesn't inherit overflow/padding/max-height when switching from
-    // drifterV2 → cyan (etc).
-    _pathsEl.style.overflowX = '';
-    _pathsEl.style.overflowY = '';
-    _pathsEl.style.webkitOverflowScrolling = '';
-    _pathsEl.style.padding = '';
-    _pathsEl.style.maxHeight = '';
-  }
-  const _capsEl = document.getElementById('treeCapstones');
-  if (_capsEl) {
-    _capsEl.style.display = '';
-    _capsEl.style.flexDirection = '';
-    _capsEl.style.alignItems = '';
-    _capsEl.style.gap = '';
-  }
-  if (typeof treeUiCurrentOrb !== 'undefined' && treeUiCurrentOrb === 'drifterV2') {
-    _drifterV2_renderCustomTreeOverlay();
-    return;
-  }
-  return _drifterV2_origRenderTreeOverlay.apply(this, arguments);
+// Dispatched only when treeUiCurrentOrb === 'drifterV2'. The shared inline-style
+// reset now lives in the renderTreeOverlay dispatcher, so this just draws the
+// custom branching overlay.
+ORB_BEHAVIOR.drifterV2.renderTreeOverlay = function() {
+  _drifterV2_renderCustomTreeOverlay();
 };
 
 // Wrap renderTreeDetail — for drifterV2 nodes, swap the standard
@@ -6722,13 +6749,14 @@ renderTreeOverlay = function() {
 //   - Owned, active: DEACTIVATE (free, frees N points)
 //   - Locked: no upgrade button (description only)
 //   Respec button stays as a free per-node refund.
-const _drifterV2_origRenderTreeDetail = renderTreeDetail;
-renderTreeDetail = function() {
-  if (!treeDetailCurrent || treeDetailCurrent.orbKey !== 'drifterV2' || treeDetailCurrent.kind !== 'node') {
-    return _drifterV2_origRenderTreeDetail.apply(this, arguments);
+// Dispatched (by treeDetailCurrent.orbKey) only for 'drifterV2'. Non-node kinds
+// (path/capstone panels) fall back to the default detail renderer.
+ORB_BEHAVIOR.drifterV2.renderTreeDetail = function() {
+  if (!treeDetailCurrent || treeDetailCurrent.kind !== 'node') {
+    return _renderTreeDetail_default();
   }
-  // Let the original handle title/description/ranks rendering...
-  _drifterV2_origRenderTreeDetail.apply(this, arguments);
+  // Let the default handle title/description/ranks rendering...
+  _renderTreeDetail_default();
   // ...then override the buttons.
   const t = treeDetailCurrent;
   const def = TREE_DEFS.drifterV2;
@@ -6846,38 +6874,10 @@ renderTreeDetail = function() {
 };
 
 // ---------------------------------------------------------------------
-// Milestone 2: visibility gate — drifterV2 stays out of the orb-browser
-// cycle until Bulwark (asteroid) is unlocked. Direction-aware: a player
-// pressing PREV while next to drifterV2 keeps cycling backward, not
-// snapping forward.
+// refreshOrbBrowser: NO wrap. The old visibility-gate skip became a permanent
+// no-op once Roamer was made a first-class browser orb (always reachable), so
+// the wrap was removed in Phase 3 — the base refreshOrbBrowser handles all orbs.
 // ---------------------------------------------------------------------
-// v1.9.0: Roamer is a first-class orb in the browser — always present and
-// reachable like every other orb (you browse to it, then UNLOCK it). The
-// old gate hid it until Bulwark (asteroid) was unlocked, which made it
-// unreachable in the cycle and skewed LEFT/RIGHT wrap-around. Always-true
-// turns the skip block below into a no-op so navigation is a clean modulo.
-function _drifterV2_visibleInBrowser() { return true; }
-// Initialized to 0; the wrapper updates it after every refresh. orbBrowserIndex
-// is declared with `let` further down the file (~21900), so reading it at
-// script-load here would hit a temporal-dead-zone ReferenceError — and `typeof`
-// doesn't guard against that for let-declared identifiers.
-let _drifterV2_lastBrowserIdx = 0;
-const _drifterV2_origRefreshOrbBrowser = refreshOrbBrowser;
-refreshOrbBrowser = function() {
-  if (ORB_ORDER[orbBrowserIndex] === 'drifterV2' && !_drifterV2_visibleInBrowser()) {
-    const prior = _drifterV2_lastBrowserIdx;
-    const newIdx = orbBrowserIndex;
-    const fwdDelta = (((newIdx - prior) % ORB_ORDER.length) + ORB_ORDER.length) % ORB_ORDER.length;
-    const step = (fwdDelta === 1 || fwdDelta === 0) ? 1 : -1;
-    let attempts = 0;
-    while (attempts < ORB_ORDER.length && ORB_ORDER[orbBrowserIndex] === 'drifterV2') {
-      orbBrowserIndex = (orbBrowserIndex + step + ORB_ORDER.length) % ORB_ORDER.length;
-      attempts++;
-    }
-  }
-  _drifterV2_lastBrowserIdx = orbBrowserIndex;
-  return _drifterV2_origRefreshOrbBrowser.apply(this, arguments);
-};
 
 // ---------------------------------------------------------------------
 // v2 KEYSTONE SYSTEMS — PULSE / THREAD / PRESSURE
@@ -8034,17 +8034,17 @@ TREE_DEFS.phantomV2 = {
           desc: 'When 3 or more wraiths are alive, they grow 30% larger and spin 30% faster.',
           effect: r => r ? '+30% size & spin at 3+' : 'Locked' },
         { key: 'phantomV2_vengeance', name: 'Vengeance', tier: 1, max: 1, costOverride: [4000], pointCost: 2,
-          desc: 'A wraith that expires without a kill dashes at the closest planet and detonates on impact in a 150px ghostly burst.',
-          effect: r => r ? 'Dash + 150px burst on expire' : 'Locked' },
+          desc: 'A wraith that expires without a kill dashes at the closest planet and detonates on impact in a 150px ghostly burst. Each Vengeance explosion has a 40% chance to spawn a fresh wraith.',
+          effect: r => r ? 'Dash + 150px burst · 40% respawn' : 'Locked' },
         { key: 'phantomV2_soulTether', name: 'Soul Tether', tier: 2, max: 1, costOverride: [6500], pointCost: 3,
-          desc: 'While 5+ wraiths are alive, a wraith that scores a kill extends its OWN duration by +1s (capped at its max duration).',
-          effect: r => r ? '+1s own life per kill at 5+' : 'Locked' },
+          desc: 'While 5+ wraiths are alive, a wraith that scores a kill extends its OWN duration by +2s (capped at 2× its max duration).',
+          effect: r => r ? '+2s own life per kill at 5+ (cap 2×)' : 'Locked' },
         { key: 'phantomV2_phantomHost', name: 'Phantom Host', tier: 2, max: 1, costOverride: [7500], pointCost: 3,
           desc: 'Wraith cap +2.',
           effect: r => r ? 'Cap +2 wraiths' : 'Locked' },
         { key: 'phantomV2_lordOfTheDead', name: 'Lord of the Dead', tier: 3, max: 1, costOverride: [10000], pointCost: 5,
-          desc: 'CAPSTONE (5 pts). Wraith cap +3. On burst, every wraith locks on then fires one by one at its nearest planet — guaranteed impact and a 150px explosion. Each kill (impact or explosion) has a 40% chance to refill your wraiths to full cap.',
-          effect: r => r ? 'Cap +3 · sequential · 40% fill-to-cap' : 'Locked' },
+          desc: 'CAPSTONE (5 pts). Wraith cap +3. On burst, every wraith locks on then fires one by one at its nearest planet — guaranteed impact and a 150px explosion. Each wraith you fire off has a 25% chance, on its impact or explosion, to refill your wraiths to the cap.',
+          effect: r => r ? 'Cap +3 · sequential · 25% refill-to-cap' : 'Locked' },
       ],
     },
     afterimage: {
@@ -8092,7 +8092,7 @@ TREE_DEFS.phantomV2 = {
           desc: 'A glowing tether connects every pair of marked planets and destroys the first planet crossing it — then snaps (1 hit). After a mark dies the tether lingers 1s — or as long as the Linger zone it spawned, if Linger is active.',
           effect: r => r ? 'Tether: 1 kill then snaps · ghost 1s+' : 'Locked' },
         { key: 'phantomV2_plague', name: 'Plague', tier: 2, max: 1, costOverride: [6000], pointCost: 3,
-          desc: 'Requires Linger active. The first 2 planets entering a Linger zone get MARKED (and fly off) instead of destroyed; further entrants are destroyed. Linger zones also last 2s longer (4s total). Plague-spawned Linger zones re-mark too — each capped at 2.',
+          desc: 'Requires Linger active. The first 2 planets entering a Linger zone get MARKED (and fly off) instead of destroyed; further entrants are destroyed. Linger zones also last 2s longer (4s total). Plague-spawned Linger zones don\'t re-mark — no infinite chain.',
           effect: r => r ? 'Linger marks 2 · +2s Linger' : 'Locked' },
         { key: 'phantomV2_lethalTouch', name: 'Lethal Touch', tier: 1, max: 1, costOverride: [4500], pointCost: 2,
           desc: 'Every 10 marks, a mirrored phantom mark spawns on the opposite side of the screen — same curse field, mirrored arc and exit.',
@@ -8363,8 +8363,9 @@ ORB_BEHAVIOR.phantomV2.rankOf = function(nodeKey) {
 };
 
 // loadTreeState wrap: restore activePoints map.
-const _phantomV2_origLoadTreeState = loadTreeState;
-loadTreeState = function() {
+// afterLoadTreeState — restore phantomV2's activePoints (additive; runs after
+// the Roamer handler). Re-reads localStorage, untouched by the base load.
+OrbHooks.on('afterLoadTreeState', () => {
   let rawPhantomV2 = null;
   try {
     const raw = localStorage.getItem('drift_orb_trees');
@@ -8373,7 +8374,6 @@ loadTreeState = function() {
       if (parsed && parsed.phantomV2) rawPhantomV2 = parsed.phantomV2;
     }
   } catch {}
-  _phantomV2_origLoadTreeState.apply(this, arguments);
   _phantomV2_ensureActiveMap();
   if (rawPhantomV2 && rawPhantomV2.activePoints && typeof rawPhantomV2.activePoints === 'object') {
     for (const k of Object.keys(rawPhantomV2.activePoints)) {
@@ -8382,12 +8382,10 @@ loadTreeState = function() {
       }
     }
   }
-};
+});
 
-// Free + full refund respec for phantomV2.
-const _phantomV2_origRespecNode = respecNode;
-respecNode = function(orbKey, pathKey, nodeIdx) {
-  if (orbKey !== 'phantomV2') return _phantomV2_origRespecNode(orbKey, pathKey, nodeIdx);
+// Free + full refund respec for phantomV2. Dispatched (by orbKey) only for it.
+ORB_BEHAVIOR.phantomV2.respecNode = function(orbKey, pathKey, nodeIdx) {
   const def = TREE_DEFS.phantomV2;
   const state = orbTrees.phantomV2;
   if (!def || !state) return false;
@@ -8404,14 +8402,10 @@ respecNode = function(orbKey, pathKey, nodeIdx) {
   if (orbKey === activeOrb) refreshActiveTreeCache();
   return true;
 };
-const _phantomV2_origFullTreeRespecCost = fullTreeRespecCost;
-fullTreeRespecCost = function(orbKey) {
-  if (orbKey === 'phantomV2') return 0;
-  return _phantomV2_origFullTreeRespecCost(orbKey);
+ORB_BEHAVIOR.phantomV2.fullTreeRespecCost = function(orbKey) {
+  return 0;
 };
-const _phantomV2_origRespecTree = respecTree;
-respecTree = function(orbKey) {
-  if (orbKey !== 'phantomV2') return _phantomV2_origRespecTree(orbKey);
+ORB_BEHAVIOR.phantomV2.respecTree = function(orbKey) {
   const def = TREE_DEFS.phantomV2;
   const state = orbTrees.phantomV2;
   if (!def || !state) return false;
@@ -8620,41 +8614,19 @@ function _phantomV2_renderCustomTreeOverlay() {
   full.disabled = ranks === 0;
 }
 
-const _phantomV2_origRenderTreeOverlay = renderTreeOverlay;
-renderTreeOverlay = function() {
-  if (typeof treeUiCurrentOrb !== 'undefined' && treeUiCurrentOrb === 'phantomV2') {
-    // Clear inline styles set by other custom renderers so we start clean.
-    const _pathsEl = document.getElementById('treePaths');
-    if (_pathsEl) {
-      _pathsEl.style.display = '';
-      _pathsEl.style.gap = '';
-      _pathsEl.style.justifyContent = '';
-      _pathsEl.style.flexWrap = '';
-      _pathsEl.style.overflowX = '';
-      _pathsEl.style.overflowY = '';
-      _pathsEl.style.webkitOverflowScrolling = '';
-      _pathsEl.style.padding = '';
-      _pathsEl.style.maxHeight = '';
-    }
-    const _capsEl = document.getElementById('treeCapstones');
-    if (_capsEl) {
-      _capsEl.style.display = '';
-      _capsEl.style.flexDirection = '';
-      _capsEl.style.alignItems = '';
-      _capsEl.style.gap = '';
-    }
-    _phantomV2_renderCustomTreeOverlay();
-    return;
-  }
-  return _phantomV2_origRenderTreeOverlay.apply(this, arguments);
+// Dispatched only when treeUiCurrentOrb === 'phantomV2'. Style reset lives in
+// the renderTreeOverlay dispatcher; this just draws the custom overlay.
+ORB_BEHAVIOR.phantomV2.renderTreeOverlay = function() {
+  _phantomV2_renderCustomTreeOverlay();
 };
 
-const _phantomV2_origRenderTreeDetail = renderTreeDetail;
-renderTreeDetail = function() {
-  if (!treeDetailCurrent || treeDetailCurrent.orbKey !== 'phantomV2' || treeDetailCurrent.kind !== 'node') {
-    return _phantomV2_origRenderTreeDetail.apply(this, arguments);
+// Dispatched (by treeDetailCurrent.orbKey) only for 'phantomV2'. Non-node kinds
+// fall back to the default detail renderer.
+ORB_BEHAVIOR.phantomV2.renderTreeDetail = function() {
+  if (!treeDetailCurrent || treeDetailCurrent.kind !== 'node') {
+    return _renderTreeDetail_default();
   }
-  _phantomV2_origRenderTreeDetail.apply(this, arguments);
+  _renderTreeDetail_default();
   const t = treeDetailCurrent;
   const def = TREE_DEFS.phantomV2;
   const state = orbTrees.phantomV2;
@@ -8769,28 +8741,8 @@ renderTreeDetail = function() {
   }
 };
 
-// v1.9.0: Phantasm is a first-class orb in the browser — always present and
-// reachable like every other orb (browse to it, then UNLOCK it). The old gate
-// hid it until Phantom (cosmic) was unlocked, making it unreachable in the
-// cycle. Always-true turns the skip block below into a no-op.
-function _phantomV2_visibleInBrowser() { return true; }
-let _phantomV2_lastBrowserIdx = 0;
-const _phantomV2_origRefreshOrbBrowser = refreshOrbBrowser;
-refreshOrbBrowser = function() {
-  if (ORB_ORDER[orbBrowserIndex] === 'phantomV2' && !_phantomV2_visibleInBrowser()) {
-    const prior = _phantomV2_lastBrowserIdx;
-    const newIdx = orbBrowserIndex;
-    const fwdDelta = (((newIdx - prior) % ORB_ORDER.length) + ORB_ORDER.length) % ORB_ORDER.length;
-    const step = (fwdDelta === 1 || fwdDelta === 0) ? 1 : -1;
-    let attempts = 0;
-    while (attempts < ORB_ORDER.length && ORB_ORDER[orbBrowserIndex] === 'phantomV2') {
-      orbBrowserIndex = (orbBrowserIndex + step + ORB_ORDER.length) % ORB_ORDER.length;
-      attempts++;
-    }
-  }
-  _phantomV2_lastBrowserIdx = orbBrowserIndex;
-  return _phantomV2_origRefreshOrbBrowser.apply(this, arguments);
-};
+// refreshOrbBrowser: NO wrap (Phase 3). Phantasm is a first-class browser orb;
+// the old visibility-gate skip is a permanent no-op, so the wrap was removed.
 
 // --- Active-skill flash system -------------------------------------------
 let _phantomV2_flashes = [];
@@ -9087,13 +9039,16 @@ function _phantomV2_wraithSizeMul() {
   }
   return 1.0;
 }
-function _phantomV2_spawnWraith(killedBody, ignoreLockout) {
+function _phantomV2_spawnWraith(killedBody, ignoreLockout, bypassCap) {
   if (!_phantomV2_hasRevenant()) return;
   // Lord of the Dead's respawn buff passes ignoreLockout=true so the
   // cascade's own kills can seed new orbital wraiths even while the
   // capstone's regular-spawn lockout is still active.
   if (!ignoreLockout && Date.now() < _phantomV2_capstoneLockoutUntil) return;
-  if (_phantomV2_wraiths.length >= _phantomV2_wraithCap()) return;
+  // bypassCap: the Lord/Vengeance per-detonation respawn already checked the
+  // ORBITAL wraith count against the cap, so the still-present dashing wraith
+  // that's leaving this frame must not block its own replacement.
+  if (!bypassCap && _phantomV2_wraiths.length >= _phantomV2_wraithCap()) return;
   const startAngle = (_phantomV2_wraiths.length) * (Math.PI * 2 / Math.max(1, _phantomV2_wraithCap())) + Math.random() * 0.4;
   const orbitR = _phantomV2_wraithOrbitR() + Math.random() * 6;
   _phantomV2_wraiths.push({
@@ -9125,6 +9080,47 @@ function _phantomV2_spawnWraith(killedBody, ignoreLockout) {
     try { SFX.pickup('ghost', { pitch: 1.2, gain: 0.3 }); } catch {}
   }
 }
+// Count ORBITAL (non-dashing/armed) wraiths — the leaving cascade/Vengeance
+// wraiths shouldn't count against the cap when respawning replacements.
+function _phantomV2_orbitalWraithCount() {
+  let n = 0;
+  for (const w of _phantomV2_wraiths) if (!w.dashing && !w.armed) n++;
+  return n;
+}
+// Bring back ONE orbital wraith (fresh duration), bypassing the raw-length cap
+// (the orbital count above is the real gate). Used by Vengeance.
+function _phantomV2_respawnOrbitalWraith() {
+  if (!_phantomV2_hasRevenant()) return;
+  if (_phantomV2_orbitalWraithCount() >= _phantomV2_wraithCap()) return;
+  _phantomV2_spawnWraith(player, true, true);
+}
+// Refill orbital wraiths up to the current cap (whatever it is given the
+// player's owned/active skills). Used by Lord of the Dead.
+function _phantomV2_fillWraithsToCap() {
+  if (!_phantomV2_hasRevenant()) return;
+  const cap = _phantomV2_wraithCap();
+  let orbital = _phantomV2_orbitalWraithCount();
+  let safety = cap + 4; // guard against any pathological non-spawn
+  while (orbital < cap && safety-- > 0) {
+    const before = _phantomV2_wraiths.length;
+    _phantomV2_spawnWraith(player, true, true);
+    if (_phantomV2_wraiths.length === before) break; // spawn no-op'd — stop
+    orbital++;
+  }
+}
+// Per-detonation respawn roll. Called at EVERY wraith detonation site (impact
+// or in-place explosion). Lord-cascade wraiths roll 25% to REFILL to max cap;
+// Vengeance wraiths roll 40% to bring ONE wraith back. (This per-detonation
+// hook replaced the old fill-on-kill version that almost never fired — the
+// cascade's still-present dashing wraiths kept the array at cap.)
+function _phantomV2_wraithDeathRespawn(w) {
+  if (!w) return;
+  if (w.fromLord) {
+    if (rankOf('phantomV2_lordOfTheDead') >= 1 && Math.random() < 0.25) _phantomV2_fillWraithsToCap();
+  } else if (w.fromVengeance) {
+    if (rankOf('phantomV2_vengeance') >= 1 && Math.random() < 0.40) _phantomV2_respawnOrbitalWraith();
+  }
+}
 // "Any form of ghost is active" — covers raw ghost timer + every ghost-bearing
 // pair combo. Used everywhere we mean "during ghost" so that Eternal Phantom
 // (from burst), Phantom Blast, Spectral Rush, and Wraith all count, even if
@@ -9141,18 +9137,17 @@ function _phantomV2_onDestroyForRevenant(body, source) {
   if (!_phantomV2_hasRevenant()) return;
   if (state !== 'playing' && state !== 'devmode') return;
   const wraithSource = (source === 'phantomV2_wraith' || source === 'phantomV2_wraithLord');
-  // Soul Tether: while 5+ wraiths are alive, the wraith that authored this
-  // kill extends ITS OWN duration by +1s.
-  // _phantomV2_currentKillerWraith is set/cleared by the kill path (orbit
-  // contact, Vengeance burst, Lord dash + radius). Each wraith's own lifeMs
-  // is the cap — moving its startTime forward to "now" tops remaining at
-  // full lifeMs. Dashing / armed wraiths (Lord cascade) are duration-immune
-  // so this is a no-op for them.
+  // Soul Tether: while 5+ wraiths are alive, the wraith that authored this kill
+  // extends ITS OWN duration by +2s, capped at 2× its max duration. startTime
+  // is pushed forward (or into the near future): remaining = lifeMs-(now-start),
+  // so a startTime of now+lifeMs yields 2×lifeMs remaining. Dashing/armed
+  // wraiths (Lord cascade) are duration-immune, so skipped.
   if (wraithSource && rankOf('phantomV2_soulTether') >= 1 && _phantomV2_wraiths.length >= 5) {
     const w = _phantomV2_currentKillerWraith;
     if (w && !w.dashing && !w.armed) {
       const now = Date.now();
-      const newStart = Math.min(now, w.startTime + 1000);
+      const lifeMs = w.lifeMs || _phantomV2_wraithLifeMs();
+      const newStart = Math.min(now + lifeMs, w.startTime + 2000);
       if (newStart !== w.startTime) {
         w.startTime = newStart;
         if (now - _phantomV2_soulTetherFlashGate > 1500) {
@@ -9162,19 +9157,10 @@ function _phantomV2_onDestroyForRevenant(body, source) {
       }
     }
   }
-  // Lord of the Dead buff: kills caused by the capstone (impact + radius)
-  // have a 40% chance to top up wraiths to the current cap — one proc fills
-  // every empty slot in one shot. ignoreLockout=true so the capstone's own
-  // spawn-lockout doesn't suppress these mid-cascade.
-  if (source === 'phantomV2_wraithLord' && rankOf('phantomV2_lordOfTheDead') >= 1) {
-    if (Math.random() < 0.40) {
-      const cap = _phantomV2_wraithCap();
-      let safety = cap + 2; // hard guard against infinite loop on bad spawn
-      while (_phantomV2_wraiths.length < cap && safety-- > 0) {
-        _phantomV2_spawnWraith(body, true);
-      }
-    }
-  }
+  // (Lord of the Dead's respawn is now rolled PER DETONATION in tickWraiths via
+  // _phantomV2_wraithDeathRespawn — see there. The old fill-to-cap-on-kill roll
+  // here almost never fired because the cascade's dashing wraiths kept the
+  // array at cap.)
   // Skip the regular per-destroy spawn for wraith-caused kills (no chain).
   if (wraithSource) return;
   const ghostOn = _phantomV2_isAnyGhostActive();
@@ -9242,6 +9228,7 @@ function _phantomV2_tickWraiths() {
           // No bodies on screen — detonate in place; capstone still pops.
           _phantomV2_spawnDeathBurst(w.x, w.y, 150, 'phantomV2_wraithLord', w);
           _phantomV2_wraithDetonationSfx(true);
+          _phantomV2_wraithDeathRespawn(w);
           continue;
         }
       } else {
@@ -9282,6 +9269,7 @@ function _phantomV2_tickWraiths() {
         } else {
           // No bodies left on the entire screen — detonate where we are.
           _phantomV2_spawnDeathBurst(w.x, w.y, 150, w.fromLord ? 'phantomV2_wraithLord' : 'phantomV2_wraith', w);
+          _phantomV2_wraithDeathRespawn(w);
           continue;
         }
       }
@@ -9305,6 +9293,7 @@ function _phantomV2_tickWraiths() {
           } finally { _phantomV2_currentKillerWraith = prevKiller; }
           _phantomV2_spawnDeathBurst(w.x, w.y, 150, srcTag, w);
           _phantomV2_wraithDetonationSfx(w.fromLord);
+          _phantomV2_wraithDeathRespawn(w);
           continue;
         }
         // Update velocity toward target each frame — keeps the homing tight
@@ -9317,6 +9306,7 @@ function _phantomV2_tickWraiths() {
       // here rather than infinite-streaming off the screen.
       if (w.x < -120 || w.x > W + 120 || w.y < -120 || w.y > H + 120) {
         _phantomV2_spawnDeathBurst(Math.max(0, Math.min(W, w.x)), Math.max(0, Math.min(H, w.y)), 150, w.fromLord ? 'phantomV2_wraithLord' : 'phantomV2_wraith', w);
+        _phantomV2_wraithDeathRespawn(w);
         continue;
       }
       keep.push(w);
@@ -9332,6 +9322,10 @@ function _phantomV2_tickWraiths() {
       // (Lord-of-the-Dead style) and detonate on impact. Falls back to
       // in-place burst when no body is on screen.
       if (rankOf('phantomV2_vengeance') >= 1 && !w.killedSomething) {
+        // Tag as a Vengeance detonation so every exit path below (dash impact,
+        // dash-lost-target, off-screen, or in-place burst) rolls the 40%
+        // Vengeance respawn via _phantomV2_wraithDeathRespawn.
+        w.fromVengeance = true;
         let best = null, bestD2 = Infinity;
         for (const b of bodies) {
           if (!b || isNaN(b.x) || isNaN(b.y)) continue;
@@ -9361,6 +9355,7 @@ function _phantomV2_tickWraiths() {
         _phantomV2_spawnDeathBurst(w.x, w.y, 150, 'phantomV2_wraith', w);
         _phantomV2_wraithDetonationSfx(false);
         _phantomV2_addFlash('VENGEANCE', '210,150,255');
+        _phantomV2_wraithDeathRespawn(w);
       }
       continue;
     }
@@ -10311,11 +10306,11 @@ function _phantomV2_tickHaunt() {
     }
   }
 
-  // 8) Linger zone tick. Plague: a body entering a zone gets MARKED (and flies
-  // off) instead of destroyed — but each zone converts only its first 2 entrants
-  // (z.markCount cap), after which it reverts to destroying. Plague-spawned
-  // zones DO re-mark now (also capped at 2): the chain is bounded per-zone and
-  // by the live body / zone-array caps rather than a blanket fromPlague block.
+  // 8) Linger zone tick. Plague: a body entering a NON-plague-spawned zone gets
+  // MARKED (and flies off) instead of destroyed — but each such zone converts
+  // only its first 2 entrants (z.markCount cap), after which it reverts to
+  // destroying. Plague-spawned zones never re-mark (anti-perpetuation): they
+  // always destroy, so the chain can't run away.
   if (_phantomV2_lingerZones.length) {
     const plagueActive = rankOf('phantomV2_plague') >= 1 && rankOf('phantomV2_linger') >= 1;
     const keep = [];
@@ -10327,7 +10322,7 @@ function _phantomV2_tickHaunt() {
         const dx = b.x - z.x, dy = b.y - z.y;
         const tot = z.radius + b.radius;
         if (dx * dx + dy * dy < tot * tot) {
-          if (plagueActive && (z.markCount | 0) < 2) {
+          if (plagueActive && !z.fromPlague && (z.markCount | 0) < 2) {
             z.markCount = (z.markCount | 0) + 1;
             _phantomV2_markBody(b, { fromPlague: true });
             // v1.9.0 SFX: descending sweep for the viral-spread conversion.
@@ -10806,7 +10801,7 @@ loadTreeState();
 // table:
 //   Siphon     — global 500 ms cooldown
 //   Soulbound  — hard cap at 2× base ghost duration; at-cap procs no-op
-//   Firebrand  — global 1000 ms cooldown + respects nova-overload guard
+//   Firebrand  — global 6000 ms cooldown + respects nova-overload guard
 //   Slipstream — no cooldown (existing refresh-soonest-timer absorbs at max)
 //   Bastion II — EMP-sourced destroys excluded; at-cap → +0.5 s shield
 //
@@ -10938,8 +10933,8 @@ function secondFlameRollForCast(source, px, py, waveCount, isSupernova) {
 
 function firebrandProc(bodyX, bodyY) {
   const now = Date.now();
-  // 3 s per-proc cooldown.
-  if (now - lastFirebrandProc < 3000) { treeLog('firebrand: cooldown-blocked'); return; }
+  // 6 s per-proc cooldown (Inferno nerf).
+  if (now - lastFirebrandProc < 6000) { treeLog('firebrand: cooldown-blocked'); return; }
   // v1.6.3 rework: fires a single half-size nova ring at the destroyed
   // body's position (not a full fireTripleNova at player). Always a
   // non-supernova ring regardless of current combo state; no wave cascade.
@@ -11020,7 +11015,7 @@ function bastion2Proc() {
 // Lingering Horizon nerf — back to 90 s cadence.
 const SHROUD_FLAG_ARM_MS         = 30000;
 const NIGHT_SHADE_CYCLE_MS       = 20000;
-const SUN_FORGE_CYCLE_MS         = 45000;
+const SUN_FORGE_CYCLE_MS         = 60000;
 const AEGIS_CYCLE_MS             = 60000;
 const LINGERING_HORIZON_CYCLE_MS = 90000;
 
@@ -11331,8 +11326,8 @@ function rainbowMaxRankFor(key) {
 }
 // Cinder (Inferno Inferno T1): persistent burn zones left by nova-kills.
 let burnZones = [];
-const BURN_ZONE_LIFETIME_MS = 3000;
-const BURN_ZONE_RADIUS = 60;
+const BURN_ZONE_LIFETIME_MS = 2000;
+const BURN_ZONE_RADIUS = 40;
 // Second Flame (Inferno Pyre T3): setTimeouts for bonus waves — tracked so
 // we can clear on resetGame() to avoid a ghost wave firing after restart.
 let secondFlamePending = [];
@@ -19914,7 +19909,7 @@ function _updateCore() {
             if (Date.now() >= criticalMassCooldownEnd) {
               novaCastKillCount++;
               if (novaCastKillCount >= 10) {
-                criticalMassCooldownEnd = Date.now() + 30000;
+                criticalMassCooldownEnd = Date.now() + 45000;
                 novaCastKillCount = 0;
                 const id = setTimeout(() => {
                   if (state !== 'playing' && state !== 'devmode') return;
@@ -28835,7 +28830,7 @@ function closeTreeOverlay() {
     try { refreshOrbBrowser(); } catch {}
   }
 }
-function renderTreeOverlay() {
+function _renderTreeOverlay_default() {
   const orbKey = treeUiCurrentOrb;
   const def = TREE_DEFS[orbKey];
   const state = orbTrees[orbKey];
@@ -28982,7 +28977,7 @@ function closeTreeDetail() {
   treeDetailCurrent = null;
   document.getElementById('treeNodeDetail').classList.remove('visible');
 }
-function renderTreeDetail() {
+function _renderTreeDetail_default() {
   if (!treeDetailCurrent) return;
   const t = treeDetailCurrent;
   const def = TREE_DEFS[t.orbKey];
