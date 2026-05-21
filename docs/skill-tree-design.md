@@ -9,6 +9,20 @@ for them to stay accurate). Tree unlock costs live at
 `ORB_CAPSTONE_COST_SCALE`. Behaviour notes below summarise current
 implementation; consult the code for exact constants and proc gates.
 
+> **⚠️ v1.9.0 supersedes most of this doc.** Orbs are being reworked from the
+> multi-rank model described below to a **single-rank + 25-point active-budget**
+> model (the one Roamer and Phantasm use): each node is unlocked once, then
+> toggled active/inactive within a limited active-point budget. **Drifter,
+> Phantom (and the new Roamer/Phantasm)** already use this model — their nodes
+> are `max:1` with a `costOverride` + `pointCost`, capstones are folded into
+> the paths, and there is no separate tree-unlock fee. Budgets: Roamer/Phantasm
+> base 25 / cap 30; the reworked original orbs (Drifter, Phantom) base 20 /
+> cap 25, expandable via crystals. The cost tables, tree-unlock fees, and
+> per-rank scaling below now apply **only to the not-yet-reworked orbs
+> (Inferno, Warp, Bulwark)**. The code (`ActiveBudget`, `TREE_DEFS`,
+> `ORB_BEHAVIOR.<orb>`) remains the source of truth. This doc will be rewritten
+> once all five originals are migrated.
+
 ## Overview
 
 Each orb has a three-path tree (T1 / T2 / T3 + capstones). Trees are

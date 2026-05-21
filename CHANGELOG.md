@@ -6,6 +6,50 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Each version header links to its GitHub release; see the release notes for full
 detail beyond the summaries here.
 
+## v1.9.0-wip — Orb rework (single-rank / active-budget skill trees)
+
+The original-five orbs are being migrated, one at a time, from the old
+multi-rank "grind every node" trees to the same single-rank +
+active-point-budget model used by Roamer and Phantasm: each node is
+unlocked once with crystals, then toggled active/inactive within a limited
+active-point budget — so build choice, not grind, defines a run.
+
+### Phantom (cosmic) — full rework (headline)
+- Rebuilt as a single-rank / active-budget tree: 3 paths — **DUSK**
+  (ghost duration & uptime), **WRAITH** (offense during ghost), **VEIL**
+  (phasing & safety) — **18 nodes, 69,000 💎 / 57 active points** to fully
+  unlock. New branching activate/deactivate tree UI with horizontal scroll.
+- New/reworked mechanics: **Eternal Veil** keystone (+2s to every ghost
+  duration), **Endless Dusk** (auto-ghost on a cycle), **Nightfall**
+  (gaining ghost shaves the burst cooldown), **Phantom Blade** reworked into
+  a 2-second sweep, **Hollow Edge** homing blade, **Soul Reaver**, **Reaping
+  Storm** capstone (a ghost-kill counter that unleashes chaining EMP bursts
+  with a lightning-arc visual), the **Spectral Drift / Veilwalk / Eclipse**
+  clone/decoy entities, and **Umbral Step** (one cheat-death emergency ghost).
+- Ghost-duration cap pinned to 10s with every ghost-extension source clamped
+  to it. One-time migration refunds legacy Phantom investments at the old
+  rates (schema-versioned and safe across PGS cloud-merge).
+
+### Drifter (cyan)
+- Active-point budget tightened to **base 20 / cap 25** (was 25/30) — the
+  original-orb reworks run leaner than Roamer/Phantasm's 25/30.
+- **Steady Hands** now procs every **500 points** earned (was 1,000), shaving
+  10% off the live burst cooldown each time.
+- Player-facing skill descriptions reworded.
+
+### Roamer (drifterV2) — Pressure path buff
+- **Threshold 50 → Threshold 40** and **Threshold 75 → Threshold 60** (their
+  effects now trigger at the lower Pressure levels), and **Crescendo** now
+  fires at **Pressure ≥ 70** (was > 80). Names, descriptions, on-screen flash
+  cues, and the ascending pressure tones updated to match.
+
+### Under the hood
+- Generalized the active-budget engine into a reusable orb-keyed module
+  (`ActiveBudget`) so each future orb rework registers a config instead of
+  copy-pasting the system.
+- Per-orb save-schema versioning + shape-based cloud-merge guards so a
+  reworked orb's legacy save can't resurrect old nodes for free on PGS sync.
+
 ## v1.8.2 — Polish
 
 ### Improvements

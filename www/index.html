@@ -5373,8 +5373,8 @@ const TREE_DEFS = {
             desc: 'Time-bonus interval halved (30s → 15s) — score ticks twice as often.',
             effect: r => r ? '15s time-bonus interval' : 'Locked' },
           { key: 'steadyHands', name: 'Steady Hands', tier: 1, max: 1, costOverride: [1500], pointCost: 2,
-            desc: 'Every 1,000 points earned shaves 10% off your CURRENT burst cooldown (only while a burst is on cooldown). No cap — keeps shaving all run.',
-            effect: r => r ? '−10% live burst CD per 1,000 pts' : 'Locked' },
+            desc: 'Every 500 points you score shaves 10% off your current burst cooldown. Keep the points flowing and your burst comes back faster.',
+            effect: r => r ? '−10% burst CD / 500 pts' : 'Locked' },
           { key: 'hotStart', name: 'Hot Start', tier: 2, max: 1, costOverride: [3000], pointCost: 3,
             desc: 'For 5s after a burst fires, the next planet you destroy sets your kill streak straight to the cap (12 with Prime Mover). Once per burst; later kills then build on top.',
             effect: r => r ? 'First kill after burst → streak cap (5s)' : 'Locked' },
@@ -5406,6 +5406,10 @@ const TREE_DEFS = {
     },
     capstones: [],
   },
+  // v1.9.0 PHANTOM REWORK: single-rank + 25-pt active-budget tree (cosmic), same
+  // schema as cyan/drifterV2/phantomV2. Effects fire only when a node is owned
+  // AND active (gated via ORB_BEHAVIOR.cosmic.rankOf). Ghost = invulnerable
+  // phasing (5s base on cosmic); destroy-on-contact needs Razor Veil or a shield.
   cosmic: {
     name: 'PHANTOM',
     color: '192,132,252',
@@ -5413,32 +5417,74 @@ const TREE_DEFS = {
       dusk: {
         name: 'DUSK',
         nodes: [
-          { key: 'lingeringVeil', name: 'Lingering Veil', tier: 1, max: 3, desc: 'Single-pickup ghost +0.5s per rank (Phantom baseline 5s).', effect: r => `+${0.5*r}s ghost (${5 + 0.5*r}s total)` },
-          { key: 'eternalEmber',  name: 'Eternal Ember',  tier: 2, max: 4, desc: 'Eternal Phantom duration bonus per rank (Phantom baseline 7s).', effect: r => `+${[0.5,1,1.5,2][r-1]||0}s (${7+([0.5,1,1.5,2][r-1]||0)}s total)` },
-          { key: 'twilightEcho',  name: 'Twilight Echo',  tier: 3, max: 3, desc: 'If ghost ends within 2s of any other combo ending, auto-refresh ghost for half its base duration. 15s cooldown.', effect: r => `${[10,25,40][r-1]||0}% chance` },
+          { key: 'eternalVeil', name: 'Eternal Veil', tier: 3, max: 1, costOverride: [5500], pointCost: 5,
+            desc: 'KEYSTONE. The dark lingers — every ghost you summon lasts 1s longer. Some nights simply refuse to end.',
+            effect: r => r ? '+1s to every ghost duration' : 'Locked' },
+          { key: 'eternalEmber', name: 'Eternal Ember', tier: 1, max: 1, costOverride: [2000], pointCost: 2,
+            desc: 'Your Eternal Phantom (ghost+ghost) burns 1s longer.',
+            effect: r => r ? '+1s Eternal Phantom' : 'Locked' },
+          { key: 'twilightEcho', name: 'Twilight Echo', tier: 2, max: 1, costOverride: [4000], pointCost: 3,
+            desc: 'If your ghost fades within 2s of any combo ending, 40% chance to instantly re-cast it at half duration. 10s cooldown.',
+            effect: r => r ? '40% ghost re-cast (10s CD)' : 'Locked' },
+          { key: 'shadowRegen', name: 'Shadow Regen', tier: 1, max: 1, costOverride: [2000], pointCost: 2,
+            desc: 'Grab a ghost while already phasing and it stacks on top of the full reset — pushing your ghost past its normal length, up to double.',
+            effect: r => r ? '+25% stacked ghost (up to 2× cap)' : 'Locked' },
+          { key: 'nightfall', name: 'Nightfall', tier: 1, max: 1, costOverride: [2000], pointCost: 2,
+            desc: 'Slipping into the dark quickens your hands — every time you gain ghost, shave 10% off whatever is left of your burst cooldown.',
+            effect: r => r ? '−10% remaining burst CD on ghost' : 'Locked' },
+          { key: 'endlessDusk', name: 'Endless Dusk', tier: 3, max: 1, costOverride: [7500], pointCost: 5,
+            desc: 'CAPSTONE. Night falls on its own — every 20s, a fresh ghost is granted. If you are already phasing it adds to your current ghost instead of cutting it short (clamped to the 2× cap).',
+            effect: r => r ? 'Auto-ghost every 20s' : 'Locked' },
         ],
       },
       wraith: {
         name: 'WRAITH',
         nodes: [
-          { key: 'razorVeil',    name: 'Razor Veil',    tier: 1, max: 3, desc: 'Destroy-on-contact during ghost without needing a shield.', effect: r => `Every ${[3,2,1][r-1]||0}s` },
-          { key: 'ghostlight',   name: 'Ghostlight',    tier: 2, max: 3, desc: 'All ghost-flavored kills (ghost aura, Razor Veil, Phantom Blade) have a chance to spawn an EMP-lite burst (no chain). Radius scales 90 / 120 / 150 px per rank.', effect: r => `${[20,40,60][r-1]||0}% trigger, ${[90,120,150][r-1]||0}px radius` },
-          { key: 'phantomBlade', name: 'Phantom Blade', tier: 3, max: 3, desc: 'During ghost or Eternal Phantom, periodically spawn blades that destroy bodies within 160px.', effect: r => `Every ${[3,2,1][r-1]||0}s` },
+          { key: 'razorVeil', name: 'Razor Veil', tier: 3, max: 1, costOverride: [5500], pointCost: 5,
+            desc: 'KEYSTONE. While ghost or Eternal Phantom is active, you destroy anything you touch — no shield needed, continuously. Dive in and delete.',
+            effect: r => r ? 'Continuous destroy-on-contact in ghost' : 'Locked' },
+          { key: 'ghostlight', name: 'Ghostlight', tier: 1, max: 1, costOverride: [2000], pointCost: 2,
+            desc: '50% of your ghost-related kills detonate a 120px EMP-lite burst (the purple one) that destroys nearby bodies.',
+            effect: r => r ? '50% kills → 120px burst' : 'Locked' },
+          { key: 'phantomBlade', name: 'Phantom Blade', tier: 2, max: 1, costOverride: [4000], pointCost: 3,
+            desc: 'Every 10s, spectral blades sweep the field for 2s, shredding everything within 160px.',
+            effect: r => r ? '2s blade sweep / 10s' : 'Locked' },
+          { key: 'hollowEdge', name: 'Hollow Edge', tier: 1, max: 1, costOverride: [2000], pointCost: 2,
+            desc: '30% of your ghost contact-kills loose a single homing blade that hunts down and destroys another body. One in flight at a time.',
+            effect: r => r ? '30% kills → homing blade' : 'Locked' },
+          { key: 'soulReaver', name: 'Soul Reaver', tier: 1, max: 1, costOverride: [2000], pointCost: 2,
+            desc: 'Your blades come faster — Phantom Blade sweeps every 6s instead of 10s. Requires Phantom Blade.',
+            effect: r => r ? 'Phantom Blade 10s → 6s' : 'Locked' },
+          { key: 'reapingStorm', name: 'Reaping Storm', tier: 3, max: 1, costOverride: [7500], pointCost: 5,
+            desc: 'CAPSTONE. Every 20 ghost-related kills unleashes a 5s Reaping Storm: every ghost-related kill detonates a guaranteed 150px EMP-lite burst that arcs to one more nearby body. Kills during the storm don’t count toward the next one.',
+            effect: r => r ? '20 kills → 5s storm of chaining bursts' : 'Locked' },
         ],
       },
       veil: {
         name: 'VEIL',
         nodes: [
-          { key: 'shadowRegen', name: 'Shadow Regen', tier: 1, max: 3, desc: 'Ghost pickups stack on top of the default reset (whichever ends later wins). Cap: 2× base duration.', effect: r => `+${[15,20,25][r-1]||0}% stack on reset` },
-          { key: 'soulbound',   name: 'Soulbound',    tier: 2, max: 5, desc: 'On body destroyed, chance to extend ghost by +1s. 5s cooldown. Cap: 2× base ghost duration.', effect: r => `${[2,4,6,8,10][r-1]||0}% per destroy` },
-          { key: 'beyond',      name: 'Beyond',       tier: 3, max: 3, desc: 'When ghost ends, remain invulnerable for an afterimage window.', effect: r => `${[0.5,1,1.5][r-1]||0}s afterimage` },
+          { key: 'phaseShift', name: 'Phase Shift', tier: 3, max: 1, costOverride: [5500], pointCost: 5,
+            desc: 'KEYSTONE. When your ghost ends, you keep phasing — 1.5s of invulnerable afterimage. Death is a suggestion.',
+            effect: r => r ? '1.5s invuln afterimage on ghost end' : 'Locked' },
+          { key: 'soulbound', name: 'Soulbound', tier: 2, max: 1, costOverride: [4000], pointCost: 3,
+            desc: 'Every body you destroy has a 10% chance to feed your ghost +1s (5s cooldown, up to the 2× cap).',
+            effect: r => r ? '10% / destroy → +1s ghost' : 'Locked' },
+          { key: 'spectralDrift', name: 'Spectral Drift', tier: 1, max: 1, costOverride: [2000], pointCost: 2,
+            desc: 'Gaining a ghost and ending one each leave a clone behind for 3s — anything that touches it detonates a 120px EMP-lite burst.',
+            effect: r => r ? 'Clones detonate on contact' : 'Locked' },
+          { key: 'veilwalk', name: 'Veilwalk', tier: 1, max: 1, costOverride: [2000], pointCost: 2,
+            desc: 'Entering ghost leaves a clone that drags nearby bodies toward it for 2s — pull them in for the kill.',
+            effect: r => r ? 'Clone pulls bodies (2s)' : 'Locked' },
+          { key: 'umbralStep', name: 'Umbral Step', tier: 1, max: 1, costOverride: [2000], pointCost: 2,
+            desc: 'A hit that should kill you while you are NOT phasing instead drops you into a 1s emergency ghost. 40s cooldown — your one free escape.',
+            effect: r => r ? 'Cheat death → 1s ghost (40s CD)' : 'Locked' },
+          { key: 'eclipse', name: 'Eclipse', tier: 3, max: 1, costOverride: [7500], pointCost: 5,
+            desc: 'CAPSTONE. Every ghost blooms into an eclipse — 4 clones snap into place around you (N/S/E/W) for the whole ghost, each detonating a 120px EMP-lite burst on contact. Phase, and the field collapses around you.',
+            effect: r => r ? '4 detonating clones every ghost' : 'Locked' },
         ],
       },
     },
-    capstones: [
-      { key: 'shroud',     name: 'SHROUD',      desc: 'Every 30s, the next single pickup fires as a ghost pair combo.' },
-      { key: 'nightShade', name: 'NIGHT SHADE', desc: 'Every 20s of gameplay, auto-activate a 3s ghost.' },
-    ],
+    capstones: [],
   },
   solar: {
     name: 'INFERNO',
@@ -5771,7 +5817,7 @@ function purchaseTreeUnlock(orbKey) {
 // to the nearest 500 crystals for clean display.
 const ORB_COST_SCALE = {
   cyan:     1.0,   // Drifter v1.9.0 rework: raw costOverride values (active-budget tree)
-  cosmic:   0.22,  // Phantom −78%   (prior 0.40 × 0.55)
+  cosmic:   1.0,   // Phantom v1.9.0 rework: raw costOverride values (active-budget tree)
   solar:    0.27,  // Inferno −73%   (prior 0.45 × 0.60)
   nebula:   0.325, // Warp    −67.5% (prior 0.50 × 0.65)
   asteroid: 0.385, // Bulwark −61.5% (prior 0.55 × 0.70)
@@ -5796,7 +5842,7 @@ function orbCostScale(orbKey) {
 // v1.9.0: cyan (Drifter) left this set when it migrated to the costOverride +
 // active-budget model — its nodes price from costOverride at scale 1.0, like
 // drifterV2/phantomV2. The remaining four still use flat tier pricing.
-const ORIGINAL_5_ORBS = new Set(['cosmic', 'solar', 'nebula', 'asteroid']);
+const ORIGINAL_5_ORBS = new Set(['solar', 'nebula', 'asteroid']);
 const ORIGINAL_5_FLAT_CAPSTONE = 5000;
 function roundCrystals500(n) {
   return Math.round(n / 500) * 500;
@@ -5974,10 +6020,8 @@ function capstonePrereqMet(orbKey, capKey) {
   };
   // cyan capstones (Dead Center / Cadenza / Butterfly) are path nodes in the
   // active-budget tree now — gated by ActiveBudget prereqs, not this pool.
-  if (orbKey === 'cosmic') {
-    if (capKey === 'shroud')     return countT2Invested() >= 2;
-    if (capKey === 'nightShade') return anyT3('cosmic');
-  }
+  // cosmic capstones (Endless Dusk / Reaping Storm / Eclipse) are path nodes in
+  // the active-budget tree now — gated by ActiveBudget prereqs, not this pool.
   if (orbKey === 'solar') {
     if (capKey === 'sunForge')     return anyAtRank('pyre',0,1) && anyAtRank('corona',0,1) && anyAtRank('inferno',0,1);
     if (capKey === 'criticalMass') return anyT3('solar');
@@ -6195,15 +6239,15 @@ TREE_DEFS.drifterV2 = {
         { key: 'drifterV2_tenacity', name: 'Tenacity', tier: 2, max: 1, costOverride: [5000], pointCost: 3,
           desc: 'Slower decay — full Pressure to zero in 10s instead of 6s.',
           effect: r => r ? '10s decay' : 'Locked' },
-        { key: 'drifterV2_threshold50', name: 'Threshold 50', tier: 1, max: 1, costOverride: [3000], pointCost: 2,
-          desc: 'At Pressure ≥ 50: destroys add +1 extra counter (2 total per destroy).',
-          effect: r => r ? '+1 counter at 50+' : 'Locked' },
-        { key: 'drifterV2_threshold75', name: 'Threshold 75', tier: 2, max: 1, costOverride: [5000], pointCost: 3,
-          desc: 'At Pressure ≥ 75, every destroy fires a free nova ring at the killed planet (3s cooldown between fires).',
-          effect: r => r ? 'Nova on kill at 75+ (3s CD)' : 'Locked' },
+        { key: 'drifterV2_threshold50', name: 'Threshold 40', tier: 1, max: 1, costOverride: [3000], pointCost: 2,
+          desc: 'At Pressure ≥ 40: destroys add +1 extra counter (2 total per destroy).',
+          effect: r => r ? '+1 counter at 40+' : 'Locked' },
+        { key: 'drifterV2_threshold75', name: 'Threshold 60', tier: 2, max: 1, costOverride: [5000], pointCost: 3,
+          desc: 'At Pressure ≥ 60, every destroy fires a free nova ring at the killed planet (3s cooldown between fires).',
+          effect: r => r ? 'Nova on kill at 60+ (3s CD)' : 'Locked' },
         { key: 'drifterV2_crescendo', name: 'Crescendo', tier: 2, max: 1, costOverride: [5000], pointCost: 3,
-          desc: 'At Pressure > 80, every powerup pickup fires the picked-up powerup AND a random pair combo. Pair-combo pickups fire another random pair on top.',
-          effect: r => r ? 'Pickups → double-event at 80+' : 'Locked' },
+          desc: 'At Pressure ≥ 70, every powerup pickup fires the picked-up powerup AND a random pair combo. Pair-combo pickups fire another random pair on top.',
+          effect: r => r ? 'Pickups → double-event at 70+' : 'Locked' },
         { key: 'drifterV2_breakingPoint', name: 'Breaking Point', tier: 3, max: 1, costOverride: [9000], pointCost: 5,
           desc: 'CAPSTONE (5 pts). At Pressure 100, the next destroy detonates Personal Apocalypse — Fortress Shield, Eternal Phantom, full hyperspeed, and Supernova all at once. Hyperspeed cap +1 for the run (max 10×). 15s cooldown.',
           effect: r => r ? 'Apocalypse · 15s CD · +1 cap (max 10×)' : 'Locked' },
@@ -6710,7 +6754,7 @@ const CYAN_TREE_LAYOUTS = {
   } },
 };
 ActiveBudget.register('cyan', {
-  base: 25, expandMax: 5, expandCost: 2000,
+  base: 20, expandMax: 5, expandCost: 2000, // base 20, cap 25 (original-orb reworks run tighter than Roamer/Phantasm's 25/30)
   bonusKey: 'drift_cyan_budget_bonus',
   keystones: CYAN_KEYSTONES,
   prereqs: CYAN_PREREQS,
@@ -6847,23 +6891,22 @@ OrbHooks.on('onRender', () => { if (activeOrb === 'cyan') { _cyan_drawButterflyR
 // each fire (score earned during the lockout doesn't count toward the next).
 let _cyanCadenzaBaseline = 0;
 let _cyanCadenzaLockoutEnd = 0;
-let _cyanSteadyK = 0;            // last 1k-score threshold flashed for Steady Hands
+let _cyanSteadyK = 0;            // last 500-pt score threshold consumed by Steady Hands
 let _cyanHotStartUntil = 0;      // Hot Start armed-window deadline (after a burst)
 let _cyanHotStartUsed = false;   // Hot Start already consumed this burst window
 let _cyanLastDiceReset = 0;      // last time a burst CD was reset (Loaded Dice / Snake Eyes)
 const _CYAN_PAIR_COMBO_KEYS = ['nova_nova','nova_hyperspeed','nova_ghost','nova_shield','hyperspeed_ghost','hyperspeed_shield','ghost_shield','ghost_ghost','shield_shield'];
 OrbHooks.on('onUpdate', () => {
   if (activeOrb !== 'cyan') return;
-  // Steady Hands feedback: flash on each new 1,000-point threshold while active.
-  // The bonus caps at −50% (5k score), so flashes stop after the 5th threshold.
+  // Steady Hands: every 500 points crossed shaves 10% off the LIVE burst cooldown.
   if (rankOf('steadyHands') > 0) {
-    const k = Math.floor((score | 0) / 1000);
+    const k = Math.floor((score | 0) / 500);
     if (k > _cyanSteadyK) {
       const crossed = k - _cyanSteadyK;
       _cyanSteadyK = k;
-      // Each 1,000 pts shaves 10% of the current burst's cooldown DURATION off its
-      // live timer — but only while a burst is actually on cooldown. No cap; it
-      // procs every 1k all run (thresholds crossed with no burst pending do nothing).
+      // Shave 10% of the current burst's cooldown DURATION off its live timer per
+      // 500-pt threshold — only while a burst is actually on cooldown. No cap;
+      // thresholds crossed with no burst pending simply do nothing.
       const nowSH = Date.now();
       if (burstCooldownEnd > nowSH && burstCooldownDuration > 0) {
         burstCooldownEnd = Math.max(nowSH, burstCooldownEnd - crossed * 0.10 * burstCooldownDuration);
@@ -6955,6 +6998,403 @@ function maybeMigrateCyanV2() {
   // schedules a PGS write, pushing the clean cyan up to replace the legacy cloud
   // snapshot (so reinstalls / other devices read the migrated state).
   try { localStorage.setItem('drift_cyan_schema_version', String(CYAN_SCHEMA_VERSION)); localStorage.removeItem('drift_cyan_migrated_v2'); } catch {}
+  saveTreeState();
+}
+
+// === COSMIC (PHANTOM) ACTIVE-BUDGET CONFIG (mirrors the cyan pattern) ======
+const COSMIC_SCHEMA_VERSION = 2;
+const COSMIC_KEYSTONES = {
+  dusk:   'eternalVeil',
+  wraith: 'razorVeil',
+  veil:   'phaseShift',
+};
+const COSMIC_PREREQS = {
+  // DUSK
+  eternalEmber: { prereq: ['eternalVeil'] },
+  twilightEcho: { prereq: ['eternalVeil'] },
+  shadowRegen:  { prereq: ['eternalVeil'] },
+  nightfall:    { prereq: ['eternalVeil'] },
+  endlessDusk:  { prereq: ['eternalVeil'] },
+  // WRAITH
+  ghostlight:   { prereq: ['razorVeil'] },
+  phantomBlade: { prereq: ['razorVeil'] },
+  hollowEdge:   { prereq: ['razorVeil'] },
+  soulReaver:   { prereq: ['phantomBlade'], requiresActive: ['phantomBlade'] },
+  reapingStorm: { prereq: ['razorVeil'] },
+  // VEIL
+  soulbound:    { prereq: ['phaseShift'] },
+  spectralDrift:{ prereq: ['phaseShift'] },
+  veilwalk:     { prereq: ['phaseShift'] },
+  umbralStep:   { prereq: ['phaseShift'] },
+  eclipse:      { prereq: ['phaseShift'] },
+};
+// Per-path flash/render colours (twilight indigo / reaper magenta / pale veil).
+const COSMIC_PATH_COLORS = {
+  dusk:   '150,130,255',
+  wraith: '210,90,200',
+  veil:   '150,210,255',
+};
+const COSMIC_TREE_LAYOUTS = {
+  dusk: { name: 'DUSK', color: COSMIC_PATH_COLORS.dusk, nodes: {
+    eternalVeil:  { x: 100, y: 50, keystone: true },
+    eternalEmber: { x: 40,  y: 140 },
+    twilightEcho: { x: 160, y: 140 },
+    shadowRegen:  { x: 40,  y: 225 },
+    nightfall:    { x: 160, y: 225 },
+    endlessDusk:  { x: 100, y: 320, capstone: true },
+  } },
+  wraith: { name: 'WRAITH', color: COSMIC_PATH_COLORS.wraith, nodes: {
+    razorVeil:    { x: 100, y: 50, keystone: true },
+    ghostlight:   { x: 40,  y: 140 },
+    phantomBlade: { x: 160, y: 140 },
+    hollowEdge:   { x: 40,  y: 225 },
+    soulReaver:   { x: 160, y: 225 },
+    reapingStorm: { x: 100, y: 320, capstone: true },
+  } },
+  veil: { name: 'VEIL', color: COSMIC_PATH_COLORS.veil, nodes: {
+    phaseShift:   { x: 100, y: 50, keystone: true },
+    soulbound:    { x: 40,  y: 140 },
+    spectralDrift:{ x: 160, y: 140 },
+    veilwalk:     { x: 40,  y: 225 },
+    umbralStep:   { x: 160, y: 225 },
+    eclipse:      { x: 100, y: 320, capstone: true },
+  } },
+};
+ActiveBudget.register('cosmic', {
+  base: 20, expandMax: 5, expandCost: 2000, // base 20, cap 25 (original-orb reworks run tighter than Roamer/Phantasm's 25/30)
+  bonusKey: 'drift_cosmic_budget_bonus',
+  keystones: COSMIC_KEYSTONES,
+  prereqs: COSMIC_PREREQS,
+});
+function getCosmicBudgetCap()        { return ActiveBudget.budgetCap('cosmic'); }
+function getCosmicBudgetBonus()      { return ActiveBudget.budgetBonus('cosmic'); }
+function purchaseCosmicBudgetExpand() { return ActiveBudget.purchaseExpand('cosmic'); }
+function isCosmicActive()            { return activeOrb === 'cosmic'; }
+
+ORB_BEHAVIOR.cosmic = ORB_BEHAVIOR.cosmic || {};
+ORB_BEHAVIOR.cosmic.rankOf = function(nodeKey) {
+  if (typeof nodeKey === 'string' && ActiveBudget.resolveNode('cosmic', nodeKey)) {
+    return ActiveBudget.isActive('cosmic', nodeKey) ? 1 : 0;
+  }
+  return _rankOf_default(nodeKey);
+};
+ORB_BEHAVIOR.cosmic.pathPrereqMet = function(state, pathKey, nodeIdx) {
+  if (state !== orbTrees.cosmic) return _pathPrereqMet_default(state, pathKey, nodeIdx);
+  return ActiveBudget.pathPrereqMet('cosmic', pathKey, nodeIdx);
+};
+ORB_BEHAVIOR.cosmic.respecNode = function(orbKey, pathKey, nodeIdx) {
+  const def = TREE_DEFS.cosmic; const state = orbTrees.cosmic;
+  if (!def || !state) return false;
+  const node = def.paths[pathKey] && def.paths[pathKey].nodes[nodeIdx];
+  if (!node) return false;
+  const current = state[pathKey][nodeIdx] | 0;
+  if (current <= 0) return false;
+  const invested = nodeCrystalsInvested(orbKey, node, current);
+  const fee = refundFee(invested);
+  if (totalCrystals < fee) return false;
+  totalCrystals = Math.max(0, totalCrystals - fee);
+  totalCrystals += invested;
+  state[pathKey][nodeIdx] = 0;
+  ActiveBudget.deactivate('cosmic', node.key);
+  saveCrystals(); saveTreeState();
+  if (orbKey === activeOrb) refreshActiveTreeCache();
+  return true;
+};
+ORB_BEHAVIOR.cosmic.fullTreeRespecCost = function(orbKey) { return refundFee(treeCrystalsInvested(orbKey)); };
+ORB_BEHAVIOR.cosmic.respecTree = function(orbKey) {
+  const def = TREE_DEFS.cosmic; const state = orbTrees.cosmic;
+  if (!def || !state) return false;
+  if (totalRanksInvested(orbKey) <= 0) return false;
+  const invested = treeCrystalsInvested(orbKey);
+  const fee = refundFee(invested);
+  if (totalCrystals < fee) return false;
+  totalCrystals = Math.max(0, totalCrystals - fee);
+  for (const pKey of Object.keys(def.paths)) {
+    const nodes = def.paths[pKey].nodes; const arr = state[pKey];
+    for (let i = 0; i < nodes.length; i++) {
+      totalCrystals += nodeCrystalsInvested(orbKey, nodes[i], arr[i] | 0);
+      arr[i] = 0;
+    }
+  }
+  state.activePoints = {};
+  saveCrystals(); saveTreeState();
+  if (orbKey === activeOrb) refreshActiveTreeCache();
+  return true;
+};
+OrbHooks.on('afterLoadTreeState', () => { maybeMigrateCosmic(); ActiveBudget.restoreActivePoints('cosmic'); });
+
+// === COSMIC flash feedback (path-coloured, throttled) ======================
+let _cosmic_flashes = [];
+let _cosmic_flashGates = {};
+function _cosmic_addFlash(text, color, durationMs) {
+  if (activeOrb !== 'cosmic') return;
+  _cosmic_flashes.push({ text: String(text || ''), color: color || '192,132,252', startTime: Date.now(), durationMs: durationMs || 700 });
+  if (_cosmic_flashes.length > 6) _cosmic_flashes.shift();
+}
+function _cosmic_flash(key, text, color, minMs) {
+  const now = Date.now();
+  if (now - (_cosmic_flashGates[key] || 0) < (minMs || 0)) return;
+  _cosmic_flashGates[key] = now;
+  _cosmic_addFlash(text, color);
+}
+function _cosmic_drawFlashes() {
+  if (state !== 'playing' && state !== 'paused' && state !== 'apocalypse') return;
+  if (!_cosmic_flashes.length) return;
+  if (!player || isNaN(player.x) || isNaN(player.y)) return;
+  const now = Date.now();
+  const visible = [];
+  ctx.save();
+  ctx.font = 'bold 11px Orbitron, monospace';
+  ctx.textAlign = 'center';
+  ctx.shadowBlur = 8;
+  let i = 0;
+  for (const f of _cosmic_flashes) {
+    const age = now - f.startTime;
+    if (age >= f.durationMs) continue;
+    visible.push(f);
+    const fade = 1 - age / f.durationMs;
+    const y = player.y - 28 - (i * 13) - (age / f.durationMs) * 16;
+    ctx.fillStyle = `rgba(${f.color},${(0.95 * fade).toFixed(2)})`;
+    ctx.shadowColor = `rgba(${f.color},${(0.85 * fade).toFixed(2)})`;
+    ctx.fillText(f.text, player.x, y);
+    i++;
+  }
+  _cosmic_flashes = visible;
+  ctx.restore();
+}
+// Bottom-left Reaping Storm counter (mirrors Phantasm's MARKS HUD).
+let _cosmic_hudEl = null;
+let _cosmic_hudReapEl = null;
+function _cosmic_ensureHud() {
+  if (_cosmic_hudEl) return _cosmic_hudEl;
+  const el = document.createElement('div');
+  el.id = 'cosmicHud';
+  el.style.cssText = 'position:absolute; bottom:calc(var(--safe-bottom) + 100px); left:calc(var(--safe-left) + 8px); pointer-events:none; z-index:6; font-family:Orbitron,monospace; font-size:10px; letter-spacing:2px; display:none;';
+  const reap = document.createElement('div'); reap.id = 'cosmicHudReap';
+  reap.style.cssText = 'color:rgba(210,90,200,0.95); text-shadow:0 0 6px rgba(210,90,200,0.6);';
+  reap.textContent = 'REAP 0/20';
+  el.appendChild(reap);
+  (document.getElementById('gameWrapper') || document.body).appendChild(el);
+  _cosmic_hudEl = el; _cosmic_hudReapEl = reap;
+  return el;
+}
+function _cosmic_updateHud() {
+  _cosmic_ensureHud();
+  const show = activeOrb === 'cosmic' && rankOf('reapingStorm') > 0 && (state === 'playing' || state === 'apocalypse');
+  _cosmic_hudEl.style.display = show ? 'block' : 'none';
+  if (!show) return;
+  _cosmic_hudReapEl.textContent = (Date.now() < _cosmicReapWindowEnd) ? 'REAPING STORM!' : ('REAP ' + _cosmicReapKills + '/20');
+}
+OrbHooks.on('onRender', () => { if (activeOrb === 'cosmic') { _cosmic_drawFlashes(); _cosmic_updateHud(); } });
+
+// === COSMIC new-systems: ghost edges, clones, homing blade, Reaping Storm ===
+let _cosmicPrevGhost = false;
+let _cosmicClones = [];          // {x,y,born,lifeMs,mode:'detonate'|'attract',radius}
+let _cosmicHomingBlade = null;   // {x,y,born,lifeMs,ang}
+let _cosmicArcs = [];            // Reaping Storm chain visuals {x1,y1,x2,y2,born,lifeMs}
+let _cosmicReapKills = 0;        // ghost-related kill counter (toward Reaping Storm)
+let _cosmicReapWindowEnd = 0;    // active Reaping Storm window deadline
+let _cosmicBladeSweepUntil = 0;  // Phantom Blade 2s sweep deadline
+let _cosmicUmbralNextTime = 0;   // Umbral Step internal cooldown
+let _cosmicLastGhostEnd = 0;     // last seen ghostEndTime (Spectral Drift grant detection)
+function _cosmicSpawnClone(x, y, lifeMs, mode) {
+  _cosmicClones.push({ x, y, born: Date.now(), lifeMs, mode, radius: 14 });
+  if (_cosmicClones.length > 12) _cosmicClones.shift();
+}
+function _cosmicSpawnHomingBlade(x, y) {
+  if (_cosmicHomingBlade) return; // one in flight at a time
+  _cosmicHomingBlade = { x, y, born: Date.now(), lifeMs: 4000, ang: 0 };
+}
+// Reaping Storm window burst: guaranteed 150px + single chain to nearest body.
+function _cosmicReapBurst(x, y) {
+  ghostlightBurst(x, y, 3); // 150px
+  let best = null, bestD2 = Infinity;
+  for (const b of bodies) { const dx = b.x - x, dy = b.y - y; const d2 = dx*dx + dy*dy; if (d2 > 4 && d2 < bestD2) { bestD2 = d2; best = b; } }
+  if (best && bestD2 < 240 * 240) {
+    ghostlightBurst(best.x, best.y, 3);
+    _cosmicArcs.push({ x1: x, y1: y, x2: best.x, y2: best.y, born: Date.now(), lifeMs: 220 });
+  }
+}
+// Every ghost-related kill routes here: counts toward Reaping Storm, and during
+// an active storm fires the chaining burst instead of counting (lockout).
+function _cosmicGhostKill(x, y) {
+  if (rankOf('reapingStorm') <= 0) return;
+  const now = Date.now();
+  if (now < _cosmicReapWindowEnd) { _cosmicReapBurst(x, y); return; }
+  if (++_cosmicReapKills >= 20) {
+    _cosmicReapKills = 0;
+    _cosmicReapWindowEnd = now + 5000;
+    _cosmic_addFlash('REAPING STORM', COSMIC_PATH_COLORS.wraith);
+    triggerHitstop(140); addShake(12);
+  }
+}
+function _cosmicOnGhostGained() {
+  const now = Date.now();
+  // Nightfall (DUSK): shave 10% off the remaining burst cooldown.
+  if (rankOf('nightfall') > 0 && burstCooldownEnd > now) {
+    burstCooldownEnd = now + Math.floor((burstCooldownEnd - now) * 0.90);
+    _cosmic_flash('nightfall', 'NIGHTFALL', COSMIC_PATH_COLORS.dusk, 250);
+    triggerHitstop(40);
+  }
+  // Spectral Drift fires on EVERY ghost gain (incl. re-grabs while already
+  // phasing) — handled by the grant detector in the onUpdate hook, not here.
+  // Veilwalk (VEIL): attracting clone for 2s.
+  if (rankOf('veilwalk') > 0) _cosmicSpawnClone(player.x, player.y, 2000, 'attract');
+  // Eclipse (VEIL capstone): 4 detonating clones N/S/E/W for the whole ghost.
+  if (rankOf('eclipse') > 0) {
+    const life = Math.max(1000, activeEffects.ghost | 0);
+    _cosmicSpawnClone(player.x, player.y - 80, life, 'detonate');
+    _cosmicSpawnClone(player.x, player.y + 80, life, 'detonate');
+    _cosmicSpawnClone(player.x - 80, player.y, life, 'detonate');
+    _cosmicSpawnClone(player.x + 80, player.y, life, 'detonate');
+    _cosmic_addFlash('ECLIPSE', COSMIC_PATH_COLORS.veil);
+    triggerHitstop(130); addShake(10);
+  }
+}
+function _cosmicOnGhostEnded() {
+  if (rankOf('spectralDrift') > 0) _cosmicSpawnClone(player.x, player.y, 3000, 'detonate');
+}
+function _cosmicTickEntities() {
+  const now = Date.now();
+  if (_cosmicClones.length) {
+    const alive = [];
+    for (const c of _cosmicClones) {
+      if (now - c.born >= c.lifeMs) continue;
+      if (c.mode === 'attract') {
+        for (const b of bodies) {
+          const dx = c.x - b.x, dy = c.y - b.y;
+          const d = Math.max(10, Math.sqrt(dx * dx + dy * dy));
+          b.x += (dx / d) * 0.4 * dtScale; b.y += (dy / d) * 0.4 * dtScale;
+        }
+        alive.push(c);
+      } else {
+        let hit = false;
+        for (const b of bodies) {
+          const dx = c.x - b.x, dy = c.y - b.y, rr = c.radius + b.radius;
+          if (dx * dx + dy * dy < rr * rr) { hit = true; break; }
+        }
+        if (hit) {
+          ghostlightBurst(c.x, c.y, 2); // 120px ghost burst
+          _cosmicGhostKill(c.x, c.y);
+          triggerHitstop(45); addShake(6);
+          _cosmic_flash('clone', 'SPECTRAL', COSMIC_PATH_COLORS.veil, 200);
+        } else alive.push(c);
+      }
+    }
+    _cosmicClones = alive;
+  }
+  const w = _cosmicHomingBlade;
+  if (w) {
+    if (now - w.born > w.lifeMs) { _cosmicHomingBlade = null; }
+    else {
+      let best = null, bestD2 = Infinity;
+      for (const b of bodies) { const dx = b.x - w.x, dy = b.y - w.y; const d2 = dx * dx + dy * dy; if (d2 < bestD2) { bestD2 = d2; best = b; } }
+      if (best) {
+        const d = Math.max(1, Math.sqrt(bestD2));
+        w.x += ((best.x - w.x) / d) * 9 * dtScale;
+        w.y += ((best.y - w.y) / d) * 9 * dtScale;
+        w.ang += 0.5;
+        if (d < best.radius + 12) {
+          const idx = bodies.indexOf(best);
+          if (idx >= 0) {
+            emitDestroyBurst(best.x, best.y, POWERUP_COLORS.ghost.rgb);
+            emitDestroyEffects(best, 'ghost'); SFX.planetDestroyed('ghost'); addDestroyPoints();
+            shakeKill(best); triggerHitstop(35); releaseBodyCanvases(best); bodies.splice(idx, 1);
+            checkDestroyProc(best, 'ghost'); _cosmicGhostKill(best.x, best.y);
+          }
+          _cosmicHomingBlade = null;
+        }
+      }
+    }
+  }
+}
+function _cosmicDrawEntities() {
+  if (state !== 'playing' && state !== 'apocalypse') return;
+  const now = Date.now();
+  ctx.save();
+  for (const c of _cosmicClones) {
+    const life = 1 - (now - c.born) / c.lifeMs;
+    const col = c.mode === 'attract' ? COSMIC_PATH_COLORS.veil : '192,132,252';
+    ctx.globalAlpha = (0.4 + 0.3 * Math.sin(now * 0.012)) * Math.max(0, life);
+    ctx.strokeStyle = `rgba(${col},0.8)`; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(c.x, c.y, c.radius + 4 * Math.sin(now * 0.01), 0, 6.28); ctx.stroke();
+    ctx.globalAlpha = 0.25 * Math.max(0, life); ctx.fillStyle = `rgba(${col},0.5)`;
+    ctx.beginPath(); ctx.arc(c.x, c.y, c.radius, 0, 6.28); ctx.fill();
+  }
+  const w = _cosmicHomingBlade;
+  if (w) {
+    ctx.globalAlpha = 0.9; ctx.translate(w.x, w.y); ctx.rotate(w.ang || 0);
+    ctx.fillStyle = 'rgba(210,90,200,0.9)';
+    ctx.beginPath(); ctx.moveTo(0, -12); ctx.lineTo(7, 0); ctx.lineTo(0, 12); ctx.lineTo(-7, 0); ctx.closePath(); ctx.fill();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+  }
+  const arcsAlive = [];
+  for (const a of _cosmicArcs) {
+    const t = (now - a.born) / a.lifeMs; if (t >= 1) continue; arcsAlive.push(a);
+    ctx.globalAlpha = (1 - t) * 0.9; ctx.strokeStyle = `rgba(${COSMIC_PATH_COLORS.wraith},1)`;
+    ctx.lineWidth = 2 + 2 * (1 - t); ctx.shadowColor = `rgba(${COSMIC_PATH_COLORS.wraith},0.8)`; ctx.shadowBlur = 8;
+    ctx.beginPath(); ctx.moveTo(a.x1, a.y1);
+    for (let s = 1; s < 4; s++) { const u = s / 4; ctx.lineTo(a.x1 + (a.x2 - a.x1) * u + (Math.random() - 0.5) * 14, a.y1 + (a.y2 - a.y1) * u + (Math.random() - 0.5) * 14); }
+    ctx.lineTo(a.x2, a.y2); ctx.stroke();
+  }
+  _cosmicArcs = arcsAlive;
+  ctx.restore();
+}
+OrbHooks.on('onUpdate', () => {
+  if (activeOrb !== 'cosmic') return;
+  const ghosting = activeEffects.ghost > 0;
+  if (ghosting && !_cosmicPrevGhost) _cosmicOnGhostGained();
+  else if (!ghosting && _cosmicPrevGhost) _cosmicOnGhostEnded();
+  // Spectral Drift: a detonating clone whenever you GAIN a ghost — including
+  // re-grabbing/re-casting one while already phasing (a fresh upward jump in
+  // ghostEndTime > 1s; small proc-extensions like Soulbound's +1s don't count).
+  if (rankOf('spectralDrift') > 0 && ghostEndTime > _cosmicLastGhostEnd + 1000) {
+    _cosmicSpawnClone(player.x, player.y, 3000, 'detonate');
+  }
+  _cosmicLastGhostEnd = ghostEndTime;
+  _cosmicPrevGhost = ghosting;
+  _cosmicTickEntities();
+});
+OrbHooks.on('onRender', () => { if (activeOrb === 'cosmic') _cosmicDrawEntities(); });
+OrbHooks.on('onResetGame', () => {
+  _cosmic_flashes = []; _cosmic_flashGates = {}; _cosmicPrevGhost = false;
+  _cosmicClones = []; _cosmicHomingBlade = null; _cosmicArcs = [];
+  _cosmicReapKills = 0; _cosmicReapWindowEnd = 0; _cosmicBladeSweepUntil = 0; _cosmicUmbralNextTime = 0;
+  _cosmicLastGhostEnd = 0;
+  if (_cosmic_hudEl) _cosmic_hudEl.style.display = 'none';
+});
+
+// === COSMIC schema migration (version-gated, mirrors cyan) =================
+function _cosmicLooksLegacy(rawCosmic) {
+  if (!rawCosmic) return false;
+  if (rawCosmic.capstones && (Object.prototype.hasOwnProperty.call(rawCosmic.capstones, 'shroud') ||
+                              Object.prototype.hasOwnProperty.call(rawCosmic.capstones, 'nightShade'))) return true;
+  if (Array.isArray(rawCosmic.dusk) && rawCosmic.dusk.length === 3) return true;
+  return false;
+}
+function maybeMigrateCosmic() {
+  let stored = 0;
+  try { const v = localStorage.getItem('drift_cosmic_schema_version'); if (v != null) stored = parseInt(v, 10) | 0; } catch {}
+  if (stored >= COSMIC_SCHEMA_VERSION) return;
+  let rawCosmic = null;
+  try { const r = localStorage.getItem('drift_orb_trees'); if (r) { const p = JSON.parse(r); rawCosmic = p && p.cosmic; } } catch {}
+  if (_cosmicLooksLegacy(rawCosmic)) {
+    const T = [0, 1000, 2000, 3000]; // OLD per-rank flat cost by tier
+    const sumPath = (arr, tiers) => {
+      if (!Array.isArray(arr)) return 0;
+      let s = 0; for (let i = 0; i < arr.length && i < tiers.length; i++) s += (arr[i] | 0) * (T[tiers[i]] || 0);
+      return s;
+    };
+    let refund = 0;
+    refund += sumPath(rawCosmic.dusk,   [1, 2, 3]); // lingeringVeil·eternalEmber·twilightEcho
+    refund += sumPath(rawCosmic.wraith, [1, 2, 3]); // razorVeil·ghostlight·phantomBlade
+    refund += sumPath(rawCosmic.veil,   [1, 2, 3]); // shadowRegen·soulbound·beyond
+    if (rawCosmic.capstones) for (const k of ['shroud', 'nightShade']) if (rawCosmic.capstones[k]) refund += 5000;
+    orbTrees.cosmic = freshOrbTreeState('cosmic');
+    if (refund > 0) { totalCrystals += refund; saveCrystals(); }
+    treeLog('cosmic schema migrate v' + stored + '→v' + COSMIC_SCHEMA_VERSION + ': refunded ' + refund + ' crystals; tree reset');
+  }
+  try { localStorage.setItem('drift_cosmic_schema_version', String(COSMIC_SCHEMA_VERSION)); } catch {}
   saveTreeState();
 }
 
@@ -7746,6 +8186,260 @@ ORB_BEHAVIOR.cyan.renderTreeDetail = function() {
   }
 };
 
+// === Custom branching tree UI for cosmic (PHANTOM) — mirrors the cyan renderer.
+function _cosmic_nodeState(nodeKey) {
+  const r = ActiveBudget.resolveNode('cosmic', nodeKey);
+  if (!r) return 'locked';
+  const state = orbTrees.cosmic;
+  const current = state[r.pathKey][r.nodeIdx] | 0;
+  const prereqOk = pathPrereqMet(state, r.pathKey, r.nodeIdx);
+  if (current > 0 && ActiveBudget.isActive('cosmic', nodeKey)) return 'active';
+  if (current > 0) return 'owned';
+  if (prereqOk) return 'available';
+  return 'locked';
+}
+function _cosmic_buildTreeColumn(pathKey) {
+  const layout = COSMIC_TREE_LAYOUTS[pathKey];
+  const col = document.createElement('div');
+  col.className = 'dv2-tree-col';
+  col.style.cssText = 'position:relative; width:200px; height:430px; flex-shrink:0;';
+  const svgNS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(svgNS, 'svg');
+  svg.setAttribute('viewBox', '0 0 200 430');
+  svg.setAttribute('width', '200');
+  svg.setAttribute('height', '430');
+  svg.style.cssText = 'position:absolute; top:0; left:0; pointer-events:none;';
+  for (const nKey of Object.keys(layout.nodes)) {
+    const spec = COSMIC_PREREQS[nKey];
+    if (!spec || !Array.isArray(spec.prereq)) continue;
+    const me = layout.nodes[nKey];
+    for (const parentKey of spec.prereq) {
+      const parent = layout.nodes[parentKey];
+      if (!parent) continue;
+      const bothActive = _cosmic_nodeState(nKey) === 'active' && _cosmic_nodeState(parentKey) === 'active';
+      const line = document.createElementNS(svgNS, 'line');
+      line.setAttribute('x1', parent.x); line.setAttribute('y1', parent.y);
+      line.setAttribute('x2', me.x); line.setAttribute('y2', me.y);
+      line.setAttribute('stroke', bothActive ? `rgba(${layout.color},0.9)` : 'rgba(120,120,140,0.35)');
+      line.setAttribute('stroke-width', bothActive ? '3' : '2');
+      if (bothActive) line.setAttribute('filter', 'drop-shadow(0 0 4px rgba(' + layout.color + ',0.6))');
+      svg.appendChild(line);
+    }
+  }
+  col.appendChild(svg);
+  const label = document.createElement('div');
+  label.style.cssText = `position:absolute; bottom:8px; left:0; right:0; text-align:center; font-family:Orbitron,monospace; font-size:11px; letter-spacing:3px; color:rgba(${layout.color},0.85);`;
+  label.textContent = layout.name;
+  col.appendChild(label);
+  for (const nKey of Object.keys(layout.nodes)) {
+    const pos = layout.nodes[nKey];
+    const r = ActiveBudget.resolveNode('cosmic', nKey);
+    if (!r) continue;
+    const nodeDef = r.node;
+    const nState = _cosmic_nodeState(nKey);
+    const isCapstone = !!pos.capstone;
+    const isKeystone = !!pos.keystone;
+    const size = isCapstone ? 38 : isKeystone ? 34 : 28;
+    const btn = document.createElement('button');
+    btn.dataset.nodeKey = nKey;
+    btn.style.cssText = `
+      position:absolute; left:${pos.x - size/2}px; top:${pos.y - size/2}px;
+      width:${size}px; height:${size}px;
+      border-radius:${isCapstone ? '8px' : '50%'};
+      border:2px solid rgba(${layout.color},${nState === 'locked' ? 0.18 : nState === 'available' ? 0.45 : 0.9});
+      background:${nState === 'active' ? `rgba(${layout.color},0.85)` : 'rgba(10,12,24,0.85)'};
+      box-shadow:${nState === 'active' ? `0 0 14px rgba(${layout.color},0.7)` : 'none'};
+      color:${nState === 'active' ? 'rgba(0,0,0,0.9)' : `rgba(${layout.color},${nState === 'locked' ? 0.3 : 0.95})`};
+      font-family:Orbitron,monospace; font-size:${isCapstone ? 12 : 10}px; font-weight:bold;
+      cursor:pointer; padding:0; transition: all 0.15s;
+      ${nState === 'locked' ? 'opacity:0.45;' : ''}
+    `;
+    btn.textContent = (nodeDef.pointCost | 0) || 1;
+    const _unitCost = nodeCost(nodeDef.tier, 1, 'cosmic', nodeDef);
+    btn.title = `${nodeDef.name} — ${(nodeDef.pointCost | 0) || 1} pt · ${formatCrystals(_unitCost)} 💎 (${nState})`;
+    btn.addEventListener('click', () => {
+      SFX.clickSecondary();
+      treeDetailCurrent = { kind: 'node', orbKey: 'cosmic', pathKey: r.pathKey, nodeIdx: r.nodeIdx };
+      renderTreeDetail();
+      document.getElementById('treeNodeDetail').classList.add('visible');
+    });
+    col.appendChild(btn);
+    if (nState === 'available' || nState === 'locked') {
+      const costLbl = document.createElement('div');
+      const lblW = 56;
+      costLbl.style.cssText = `position:absolute; left:${pos.x - lblW / 2}px; top:${pos.y + size / 2 + 2}px; width:${lblW}px; text-align:center; font-family:Orbitron,monospace; font-size:9px; letter-spacing:0.5px; color:rgba(${layout.color},${nState === 'locked' ? 0.35 : 0.85}); pointer-events:none; line-height:1;`;
+      costLbl.textContent = `${formatCrystals(_unitCost)} 💎`;
+      col.appendChild(costLbl);
+    }
+  }
+  return col;
+}
+function _cosmic_renderCustomTreeOverlay() {
+  const def = TREE_DEFS.cosmic;
+  const state = orbTrees.cosmic;
+  if (!def || !state) return;
+  document.getElementById('treeTitle').textContent = 'PHANTOM';
+  document.getElementById('treeTitle').style.color = 'rgba(192,132,252,1)';
+  document.getElementById('treeCrystals').textContent = '💎 ' + formatCrystals(totalCrystals);
+  const pathsEl = document.getElementById('treePaths');
+  pathsEl.innerHTML = '';
+  pathsEl.style.display = 'flex';
+  pathsEl.style.gap = '14px';
+  pathsEl.style.flexWrap = 'nowrap';
+  pathsEl.style.overflowX = 'auto';
+  pathsEl.style.overflowY = 'hidden';
+  pathsEl.style.webkitOverflowScrolling = 'touch';
+  pathsEl.style.padding = '6px 8px 12px';
+  pathsEl.style.maxHeight = '450px';
+  pathsEl.style.justifyContent = 'flex-start';
+  for (const pKey of ['dusk', 'wraith', 'veil']) {
+    pathsEl.appendChild(_cosmic_buildTreeColumn(pKey));
+  }
+  const capsEl = document.getElementById('treeCapstones');
+  capsEl.innerHTML = '';
+  capsEl.style.display = 'flex';
+  capsEl.style.flexDirection = 'column';
+  capsEl.style.alignItems = 'center';
+  capsEl.style.gap = '6px';
+  const total = ActiveBudget.activePointsTotal('cosmic');
+  const cap = getCosmicBudgetCap();
+  const bonus = getCosmicBudgetBonus();
+  const overBudget = total > cap;
+  const budget = document.createElement('div');
+  budget.style.cssText = `display:flex; align-items:center; gap:10px; padding:10px 8px; font-family:Orbitron,monospace; font-size:13px; letter-spacing:3px; color:rgba(192,132,252,0.85);`;
+  const totalColor = overBudget ? 'rgba(255,90,90,1)' : 'rgba(210,160,255,1)';
+  const label = document.createElement('span');
+  label.innerHTML = `ACTIVE POINTS: <span style="color:${totalColor}; font-weight:bold; font-size:16px;">${total}</span> <span style="opacity:0.6;">/ ${cap}</span>`;
+  budget.appendChild(label);
+  const expandMax = ActiveBudget.expandMaxFor('cosmic');
+  const expandCost = ActiveBudget.expandCostFor('cosmic');
+  const expandBtn = document.createElement('button');
+  expandBtn.style.cssText = `background:transparent; border:1px solid rgba(210,160,255,0.55); color:rgba(210,160,255,0.95); font-family:Orbitron,monospace; font-size:12px; letter-spacing:1px; padding:4px 10px; cursor:pointer; border-radius:3px; transition:all 0.18s; min-height:26px; text-transform:uppercase;`;
+  if (bonus >= expandMax) {
+    expandBtn.textContent = 'MAXED';
+    expandBtn.disabled = true;
+    expandBtn.style.opacity = '0.45';
+    expandBtn.style.cursor = 'not-allowed';
+  } else {
+    expandBtn.textContent = '＋';
+    expandBtn.title = `Expand active points capacity by +1 — ${formatCrystals(expandCost)} 💎`;
+    expandBtn.addEventListener('click', () => {
+      SFX.clickSecondary();
+      const remaining = expandMax - bonus;
+      confirmTreeAction(
+        `Expand active points capacity by +1? Cost: ${formatCrystals(expandCost)} 💎. (${remaining} expansion${remaining === 1 ? '' : 's'} remaining)`,
+        () => { if (purchaseCosmicBudgetExpand()) { SFX.clickPrimary(); renderTreeOverlay(); } }
+      );
+    });
+  }
+  budget.appendChild(expandBtn);
+  capsEl.appendChild(budget);
+  const ranks = totalRanksInvested('cosmic');
+  const full = document.getElementById('treeRespecFullBtn');
+  const _fullFee = fullTreeRespecCost('cosmic');
+  full.textContent = ranks > 0 ? `REFUND ALL (${formatCrystals(_fullFee)} 💎)` : 'REFUND ALL';
+  full.disabled = ranks === 0 || totalCrystals < _fullFee;
+}
+ORB_BEHAVIOR.cosmic.renderTreeOverlay = function() { _cosmic_renderCustomTreeOverlay(); };
+ORB_BEHAVIOR.cosmic.renderTreeDetail = function() {
+  if (!treeDetailCurrent || treeDetailCurrent.kind !== 'node') return _renderTreeDetail_default();
+  _renderTreeDetail_default();
+  const t = treeDetailCurrent;
+  const def = TREE_DEFS.cosmic;
+  const state = orbTrees.cosmic;
+  const node = def.paths[t.pathKey].nodes[t.nodeIdx];
+  const current = state[t.pathKey][t.nodeIdx] | 0;
+  const prereqOk = pathPrereqMet(state, t.pathKey, t.nodeIdx);
+  const upBtn = document.getElementById('treeDetailUpgradeBtn');
+  const respecBtn = document.getElementById('treeDetailRespecBtn');
+  if (!upBtn || !respecBtn) return;
+  const isActive = ActiveBudget.isActive('cosmic', node.key);
+  const pointCost = (node.pointCost | 0) || 1;
+  const total = ActiveBudget.activePointsTotal('cosmic');
+  if (current <= 0) {
+    upBtn.style.visibility = '';
+    if (!prereqOk) {
+      upBtn.textContent = 'PREREQ MISSING';
+      upBtn.disabled = true;
+    } else {
+      const nextCost = nodeCost(node.tier, 1, t.orbKey, node);
+      upBtn.textContent = `UNLOCK — ${formatCrystals(nextCost)} 💎`;
+      upBtn.disabled = totalCrystals < nextCost;
+      upBtn.onclick = () => {
+        if (purchaseNodeRank(t.orbKey, t.pathKey, t.nodeIdx)) {
+          treeLog('cosmic unlocked: ' + node.key);
+          SFX.clickPrimary(); renderTreeOverlay(); renderTreeDetail();
+        }
+      };
+    }
+    respecBtn.style.visibility = 'hidden';
+    respecBtn.disabled = true;
+  } else if (!isActive) {
+    upBtn.style.visibility = '';
+    const requiredKs = ActiveBudget.keystoneRequiredFor('cosmic', node.key);
+    const ksMissing = !!requiredKs && !ActiveBudget.isActive('cosmic', requiredKs);
+    let intraReqMissingKey = null;
+    const spec = COSMIC_PREREQS[node.key];
+    if (spec && Array.isArray(spec.requiresActive)) {
+      for (const rq of spec.requiresActive) { if (!ActiveBudget.isActive('cosmic', rq)) { intraReqMissingKey = rq; break; } }
+    }
+    const fits = total + pointCost <= getCosmicBudgetCap();
+    if (ksMissing) {
+      const ksResolved = ActiveBudget.resolveNode('cosmic', requiredKs);
+      const ksName = (ksResolved && ksResolved.node && ksResolved.node.name) || 'keystone';
+      upBtn.textContent = `ACTIVATE ${ksName.toUpperCase()} FIRST`;
+      upBtn.disabled = true;
+    } else if (intraReqMissingKey) {
+      const r2 = ActiveBudget.resolveNode('cosmic', intraReqMissingKey);
+      const reqName = (r2 && r2.node && r2.node.name) || 'parent';
+      upBtn.textContent = `ACTIVATE ${reqName.toUpperCase()} FIRST`;
+      upBtn.disabled = true;
+    } else if (!fits) {
+      upBtn.textContent = 'BUDGET FULL';
+      upBtn.disabled = true;
+    } else {
+      upBtn.textContent = `ACTIVATE (${pointCost} PT${pointCost > 1 ? 'S' : ''})`;
+      upBtn.disabled = false;
+    }
+    upBtn.onclick = () => {
+      if (ActiveBudget.activate('cosmic', node.key)) {
+        treeLog('cosmic activated: ' + node.key);
+        SFX.clickPrimary(); renderTreeOverlay(); renderTreeDetail();
+      }
+    };
+    respecBtn.style.visibility = '';
+    {
+      const _fee = respecNodeCost(t.orbKey, t.pathKey, t.nodeIdx);
+      respecBtn.disabled = totalCrystals < _fee;
+      respecBtn.textContent = `REFUND (${formatCrystals(_fee)} 💎)`;
+      respecBtn.onclick = () => {
+        confirmTreeAction(`Refund ${node.name}? Costs ${formatCrystals(_fee)} 💎 and returns all spent crystals.`, () => {
+          if (respecNode(t.orbKey, t.pathKey, t.nodeIdx)) { SFX.clickSecondary(); renderTreeOverlay(); closeTreeDetail(); }
+        });
+      };
+    }
+  } else {
+    upBtn.style.visibility = '';
+    upBtn.textContent = `DEACTIVATE (FREES ${pointCost} PT${pointCost > 1 ? 'S' : ''})`;
+    upBtn.disabled = false;
+    upBtn.onclick = () => {
+      ActiveBudget.deactivate('cosmic', node.key);
+      SFX.clickPrimary(); renderTreeOverlay(); renderTreeDetail();
+    };
+    respecBtn.style.visibility = '';
+    {
+      const _fee = respecNodeCost(t.orbKey, t.pathKey, t.nodeIdx);
+      respecBtn.disabled = totalCrystals < _fee;
+      respecBtn.textContent = `REFUND (${formatCrystals(_fee)} 💎)`;
+      respecBtn.onclick = () => {
+        confirmTreeAction(`Refund ${node.name}? Costs ${formatCrystals(_fee)} 💎, frees ${pointCost} budget point${pointCost > 1 ? 's' : ''} and returns all spent crystals.`, () => {
+          if (respecNode(t.orbKey, t.pathKey, t.nodeIdx)) { SFX.clickSecondary(); renderTreeOverlay(); closeTreeDetail(); }
+        });
+      };
+    }
+  }
+};
+
 // ---------------------------------------------------------------------
 // refreshOrbBrowser: NO wrap. The old visibility-gate skip became a permanent
 // no-op once Roamer was made a first-class browser orb (always reachable), so
@@ -7878,7 +8572,7 @@ let _drifterV2_crescendoLastFire = 0;
 function _drifterV2_maybeFireCrescendo() {
   if (!_drifterV2_hasPressure()) return;
   if (rankOf('drifterV2_crescendo') < 1) return;
-  if (_drifterV2_pressureCount <= 80) return;
+  if (_drifterV2_pressureCount < 70) return;
   const now = Date.now();
   if (now - _drifterV2_crescendoLastFire < 1500) return;
   _drifterV2_crescendoLastFire = now;
@@ -8528,7 +9222,7 @@ function _drifterV2_pressureScrollMult() {
 function _drifterV2_maybeFireThreshold75(body) {
   if (!body) return;
   if (rankOf('drifterV2_threshold75') < 1) return;
-  if (_drifterV2_pressureCount < 75) return;
+  if (_drifterV2_pressureCount < 60) return;
   const now = Date.now();
   if (now - _drifterV2_threshold75LastFire < 3000) return;
   pushNovaRingCapped({
@@ -8537,6 +9231,7 @@ function _drifterV2_maybeFireThreshold75(body) {
   });
   try { emitNovaSpecks(body.x, body.y); } catch {}
   try { SFX.pickup('nova'); } catch {}
+  _drifterV2_addFlash('THRESHOLD 60', '255,90,90');
   _drifterV2_threshold75LastFire = now;
 }
 function _drifterV2_pressureOnDestroy(body) {
@@ -8549,18 +9244,18 @@ function _drifterV2_pressureOnDestroy(body) {
     _drifterV2_maybeFireThreshold75(body);
     return;
   }
-  // Base +1 per destroy, +1 more at ≥50 (Threshold 50).
+  // Base +1 per destroy, +1 more at ≥40 (Threshold 40).
   let add = 1;
-  const wasAtFifty = _drifterV2_pressureCount >= 50;
-  if (rankOf('drifterV2_threshold50') >= 1 && wasAtFifty) add += 1;
+  const wasAtForty = _drifterV2_pressureCount >= 40;
+  if (rankOf('drifterV2_threshold50') >= 1 && wasAtForty) add += 1;
   const _pressurePrev = _drifterV2_pressureCount;
   _drifterV2_pressureCount = Math.min(100, _drifterV2_pressureCount + add);
   // v1.9.0 SFX: ascending triangle tones on each upward threshold crossing
-  // (50/75/80) give audible build-progression feedback. Pressure only climbs
+  // (40/60/70) give audible build-progression feedback. Pressure only climbs
   // here, so a crossing fires once until decay drops it back below the line.
-  if (_pressurePrev < 50 && _drifterV2_pressureCount >= 50) { try { SFX.pressureTone(440); } catch {} }
-  if (_pressurePrev < 75 && _drifterV2_pressureCount >= 75) { try { SFX.pressureTone(660); } catch {} }
-  if (_pressurePrev < 80 && _drifterV2_pressureCount >= 80 && rankOf('drifterV2_crescendo') >= 1) { try { SFX.pressureTone(880); } catch {} }
+  if (_pressurePrev < 40 && _drifterV2_pressureCount >= 40) { try { SFX.pressureTone(440); } catch {} }
+  if (_pressurePrev < 60 && _drifterV2_pressureCount >= 60) { try { SFX.pressureTone(660); } catch {} }
+  if (_pressurePrev < 70 && _drifterV2_pressureCount >= 70 && rankOf('drifterV2_crescendo') >= 1) { try { SFX.pressureTone(880); } catch {} }
   if (_drifterV2_pressureCount > _drifterV2_pressurePeak) _drifterV2_pressurePeak = _drifterV2_pressureCount;
   _drifterV2_pressureLastDestroy = Date.now();
   // Threshold 75: Firebrand-style half-size nova at the kill site (3s CD).
@@ -11990,17 +12685,17 @@ function tickCapstoneTimers() {
   }
   // NIGHT SHADE (Phantom) v1.6.3 buff: auto-ghost 3 s every 20 s.
   // (Not in the rainbow capstone set, so no rainbow-run bypass.)
-  if (activeOrb === 'cosmic' && hasCapstone('nightShade')) {
+  if (activeOrb === 'cosmic' && rankOf('endlessDusk') > 0) {
     if (now >= nightShadeNextFireTime) {
-      if (activeEffects.ghost <= 0) {
-        ghostEndTime = now + 3000;
-        activeEffects.ghost = 3000;
-        shakeCapstone('nightShade');
-        treeLog('nightShade: auto-ghost 3s');
-      } else {
-        treeLog('nightShade: ghost already active, skipping');
-      }
+      // Endless Dusk: ADD a full ghost to the current timer (never downgrade),
+      // clamped to the 2× cap. Keeps the NIGHT SHADE HUD ring + cadence.
+      const grant = GHOST_DURATION();
+      ghostEndTime = Math.min(Math.max(ghostEndTime, now) + grant, now + ghostDurationCap());
+      activeEffects.ghost = ghostEndTime - now;
       nightShadeNextFireTime = now + NIGHT_SHADE_CYCLE_MS;
+      _cosmic_addFlash('ENDLESS DUSK', COSMIC_PATH_COLORS.dusk);
+      triggerHitstop(120);
+      treeLog('endlessDusk: +ghost ' + grant + 'ms');
     }
   }
   // SUN FORGE (Inferno): auto-supernova every 15 s. Bypasses nova-overload
@@ -12097,7 +12792,7 @@ function checkDestroyProc(body, source) {
   }
   if (activeOrb === 'cosmic' || rainbowRunActive) {
     const r = rankOf('soulbound');
-    if (r > 0 && Math.random() < TREE_PROC_CHANCES[r - 1]) soulboundProc();
+    if (r > 0 && Math.random() < 0.10) { soulboundProc(); _cosmic_flash('soulbound', 'SOULBOUND', COSMIC_PATH_COLORS.veil, 800); } // single-rank 10%
   }
   if (activeOrb === 'solar' || rainbowRunActive) {
     const r = rankOf('firebrand');
@@ -12235,7 +12930,7 @@ let rainbowRunActive = false;
 let rainbowOutcome = null; // 'died' | 'reachedEnd' | null
 
 // Set of capstones unlocked during a Rainbow Orb run.
-const RAINBOW_CAPSTONES = new Set(['sunForge', 'superluminal', 'aegis', 'shroud']);
+const RAINBOW_CAPSTONES = new Set(['sunForge', 'superluminal', 'aegis']);
 
 // v1.8.0 PART A rebalance: returns rank 1 for any known tree node during
 // the rainbow run (was previously max rank, which made the run feel
@@ -12914,6 +13609,9 @@ const PGS = (() => {
       if (orb === 'cyan') {
         if (_cyanLooksLegacy(aOrb)) aOrb = null;
         if (_cyanLooksLegacy(bOrb)) bOrb = null;
+      } else if (orb === 'cosmic') {
+        if (_cosmicLooksLegacy(aOrb)) aOrb = null;
+        if (_cosmicLooksLegacy(bOrb)) bOrb = null;
       }
       for (const pKey of Object.keys(def.paths)) {
         const nodes = def.paths[pKey].nodes;
@@ -13443,7 +14141,7 @@ function _BURST_COOLDOWN_default() {
   if (activeOrb === 'cyan' || rainbowRunActive) {
     if (rankOf('metronome') > 0) cd *= 0.70; // Metronome keystone: −30% burst CD
     // Steady Hands is NOT a permanent CD multiplier — it shaves the LIVE cooldown
-    // by 10% per 1,000 points earned (handled in the cyan onUpdate hook).
+    // by 10% per 500 points earned (handled in the cyan onUpdate hook).
   }
   return Math.max(5000, Math.floor(cd));
 }
@@ -13528,19 +14226,21 @@ function GHOST_DURATION() {
   // even though activeOrb is forced to 'asteroid' — Phantom-tree effects
   // should all apply during rainbow runs.
   const cosmicLike = activeOrb === 'cosmic' || rainbowRunActive;
-  let base = cosmicLike ? GHOST_DURATION_MS_COSMIC : GHOST_DURATION_MS_DEFAULT;
-  // Skill tree: Lingering Veil (+0.5s/rank), Phantom-only.
-  if (cosmicLike) base += 500 * rankOf('lingeringVeil');
+  // v1.9.0: Phantom's regular ghost now matches every other orb (3s base) — its
+  // length comes from the tree, not a baked-in baseline. Eternal Veil adds +1s.
+  let base = GHOST_DURATION_MS_DEFAULT;
+  if (cosmicLike && rankOf('eternalVeil') > 0) base += 1000;
   return base;
 }
 function GHOST_ETERNAL_DURATION() {
   const cosmicLike = activeOrb === 'cosmic' || rainbowRunActive;
-  let base = cosmicLike ? GHOST_ETERNAL_DURATION_COSMIC : GHOST_ETERNAL_DURATION_DEFAULT;
-  // Skill tree: Eternal Ember (+1s/rank), Phantom-only.
+  // v1.9.0: Eternal Phantom base matches other orbs (5s); Phantom's bonus comes
+  // from the tree — Eternal Veil +1s (all ghosts) and Eternal Ember +1s
+  // (Eternal Phantom only). Both single-rank.
+  let base = GHOST_ETERNAL_DURATION_DEFAULT;
   if (cosmicLike) {
-    const eeRank = rankOf('eternalEmber');
-    // v1.6.3 nerf: +0.5/1/1.5/2 s at ranks 1-4 (was +1 per rank flat).
-    base += [500, 1000, 1500, 2000][eeRank - 1] || 0;
+    if (rankOf('eternalVeil') > 0)  base += 1000;
+    if (rankOf('eternalEmber') > 0) base += 1000;
   }
   return base;
 }
@@ -13550,7 +14250,10 @@ function GHOST_ETERNAL_DURATION() {
 // 8 s, non-Cosmic at 4 s (post-nerf). Callers apply Math.min(proposedEnd,
 // now + cap).
 function ghostDurationCap() {
-  return 2 * GHOST_DURATION();
+  // v1.9.0: cosmic keeps a roomy 10s ceiling for DUSK ghost-stacking even though
+  // its base ghost now matches other orbs (3s); non-cosmic caps at 2× base (6s).
+  const cosmicLike = activeOrb === 'cosmic' || rainbowRunActive;
+  return cosmicLike ? 10000 : 2 * GHOST_DURATION_MS_DEFAULT;
 }
 // Absolute end timestamps for the primary effects. activeEffects.shield /
 // .ghost are recomputed each frame as `max(0, endTime - Date.now())`.
@@ -18802,7 +19505,7 @@ function rawActivate(type, x, y) {
     const add = GHOST_DURATION();
     const srRank = (activeOrb === 'cosmic' || rainbowRunActive) ? rankOf('shadowRegen') : 0;
     if (srRank > 0 && ghostEndTime > now) {
-      const frac = [0.15, 0.20, 0.25][srRank - 1] || 0;
+      const frac = 0.25; // Shadow Regen: single-rank +25% stack
       const addMs = Math.floor(add * frac);
       // v1.6.3: apply the shared ghost duration cap so stacks can't exceed
       // 2× base duration (also prevents Shadow Regen + Soulbound/Eternal
@@ -19696,32 +20399,32 @@ function checkCollisions() {
     const wraith = activeEffects.shield > 0;
     const rvRank = (activeOrb === 'cosmic' || rainbowRunActive) ? rankOf('razorVeil') : 0;
     const glRank = (activeOrb === 'cosmic' || rainbowRunActive) ? rankOf('ghostlight') : 0;
-    // v1.7.0 rebalance: 40/60/80% → 20/40/60%.
-    const glChance = [0.20, 0.40, 0.60][glRank - 1] || 0;
+    // v1.9.0: Ghostlight single-rank — 50% of ghost kills → fixed 120px burst.
+    const glChance = glRank > 0 ? 0.50 : 0;
     for (let i = bodies.length - 1; i >= 0; i--) {
       const b = bodies[i];
       if (bodyHits(b, 0)) {
-        // Razor Veil gate: no shield, but rank-gated rearm allows one
-        // destroy-on-contact kill per cooldown window.
-        const razorArmed = !wraith && rvRank > 0 && Date.now() >= razorVeilNextArmTime;
+        // Razor Veil (WRAITH keystone): continuous destroy-on-contact during
+        // ghost — no shield, no rearm cooldown.
+        const razorArmed = !wraith && rvRank > 0;
         if (wraith || razorArmed) {
           emitDestroyBurst(b.x, b.y, POWERUP_COLORS.ghost.rgb);
           emitDestroyEffects(b, 'ghost');
           addDestroyPoints();
-          // Wraith eats the planet — use the file-backed shield destroy clip
-          // so it feels like a destroy, not the soft ghost passthrough.
           SFX.planetDestroyed('shield');
           if (wraith) spawnEmpRing(b.x, b.y);
-          if (razorArmed) {
-            razorVeilNextArmTime = Date.now() + razorVeilRearmMs();
-            treeLog('razorVeil: kill, rearm in ' + razorVeilRearmMs() + 'ms');
+          _cosmicGhostKill(b.x, b.y); // Reaping Storm counter / storm burst
+          // Hollow Edge: 30% of Razor Veil kills loose a homing blade.
+          if (razorArmed && rankOf('hollowEdge') > 0 && Math.random() < 0.30) {
+            _cosmicSpawnHomingBlade(b.x, b.y);
+            _cosmic_flash('hollowEdge', 'HOLLOW EDGE', COSMIC_PATH_COLORS.wraith, 400);
           }
-          // Ghostlight: chance per ghost-destroy to spawn a rank-scaled
-          // EMP-lite burst (90/120/150 px) that clears crack fragments and
-          // streaks +1.
+          // Ghostlight: 50% per ghost-destroy → 120px EMP-lite burst.
           if (glRank > 0 && Math.random() < glChance) {
-            ghostlightBurst(b.x, b.y, glRank);
-            addDestroyPoints(); // +1 streak per Ghostlight design
+            ghostlightBurst(b.x, b.y, 2);
+            addDestroyPoints();
+            _cosmic_flash('ghostlight', 'GHOSTLIGHT', COSMIC_PATH_COLORS.wraith, 350);
+            triggerHitstop(45);
           }
           shakeKill(b); // per-body shake for Razor Veil / Wraith contact kill
           releaseBodyCanvases(b);
@@ -19803,15 +20506,34 @@ function checkCollisions() {
     return false;
   }
 
+  let _lethal = null;
   for (const b of bodies) {
     // Phantasm Brand: marked bodies phase through the player. They're the
     // player's curse, not a threat to it.
     if (b._phantomMarked) continue;
-    if (bodyHits(b, -3)) { lastDeathCause = b.type || 'unknown'; return true; }
+    if (bodyHits(b, -3)) { _lethal = b.type || 'unknown'; break; }
   }
   // Crack fragments are lethal on contact as well.
-  for (const f of crackFragments) {
-    if (dist(player, f) < f.radius + PLAYER_R - 2) { lastDeathCause = 'cracked_fragment'; return true; }
+  if (!_lethal) {
+    for (const f of crackFragments) {
+      if (dist(player, f) < f.radius + PLAYER_R - 2) { _lethal = 'cracked_fragment'; break; }
+    }
+  }
+  if (_lethal) {
+    // Umbral Step (Phantom VEIL): a lethal hit while NOT phasing drops you into
+    // a 1s emergency ghost instead of dying. 30s internal cooldown.
+    if ((activeOrb === 'cosmic' || rainbowRunActive) && rankOf('umbralStep') > 0 &&
+        activeEffects.ghost <= 0 && Date.now() >= _cosmicUmbralNextTime) {
+      const nowU = Date.now();
+      ghostEndTime = nowU + 1000;
+      activeEffects.ghost = 1000;
+      _cosmicUmbralNextTime = nowU + 40000;
+      _cosmic_addFlash('UMBRAL STEP', COSMIC_PATH_COLORS.veil);
+      triggerHitstop(120); addShake(10);
+      return false; // cheat death
+    }
+    lastDeathCause = _lethal;
+    return true;
   }
   return false;
 }
@@ -20396,26 +21118,23 @@ function _updateCore() {
   if (prevGhostActive && activeEffects.ghost <= 0 && (activeOrb === 'cosmic' || rainbowRunActive)) {
     const teRank = rankOf('twilightEcho');
     if (teRank > 0 && nowMs - lastComboEndTime < 2000 && nowMs >= twilightEchoNextFireTime) {
-      const chance = [0.10, 0.25, 0.40][teRank - 1] || 0;
-      if (Math.random() < chance) {
+      if (Math.random() < 0.40) { // v1.9.0 single-rank 40%
         const refresh = Math.floor(GHOST_DURATION() / 2);
-        // v1.6.3: all ghost-extension sites clamp to the absolute cap.
         const cap = ghostDurationCap();
         ghostEndTime = Math.min(nowMs + refresh, nowMs + cap);
         activeEffects.ghost = ghostEndTime - nowMs;
-        twilightEchoNextFireTime = nowMs + 15000;
-        // v1.6.3 visual pass: purple pulse + "ECHO" text float cue.
+        twilightEchoNextFireTime = nowMs + 10000; // v1.9.0: 10s CD (was 15s)
         spawnTwilightEchoVisual();
+        _cosmic_flash('twilightEcho', 'TWILIGHT ECHO', COSMIC_PATH_COLORS.dusk, 300);
         treeLog('twilightEcho: auto-refresh ghost ' + activeEffects.ghost + 'ms');
       }
     }
     // Beyond fires on every real ghost-end, even when Twilight Echo didn't
     // fire (so the afterimage still protects you on plain expiry).
     if (activeEffects.ghost <= 0) {
-      const beRank = rankOf('beyond');
+      const beRank = rankOf('phaseShift');
       if (beRank > 0) {
-        // v1.6.3 buff: 0.5/1/1.5s (was 0.33/0.66/1s).
-        const dur = [500, 1000, 1500][beRank - 1] || 0;
+        const dur = 1500; // Phase Shift: single-rank 1.5s invuln afterimage
         beyondEndTime = nowMs + dur;
         // v1.6.3 visual pass part 2: afterimage indicator + echo SFX.
         beyondAfterimage = { startTime: nowMs, maxLifeMs: dur };
@@ -20551,43 +21270,42 @@ function _updateCore() {
   // Ghostlight synergy (matches Razor Veil kill source). Visual passes
   // the purple ghost-destroy burst; dedicated blade visual + SFX is a
   // CRITICAL flag for the visual pass.
-  if ((activeOrb === 'cosmic' || rainbowRunActive) && activeEffects.ghost > 0) {
+  // v1.9.0 Phantom Blade rework: every 10s (6s with Soul Reaver), open a 2s
+  // sweep that continuously shreds everything within 160px. Not ghost-gated.
+  if (activeOrb === 'cosmic' || rainbowRunActive) {
     const pbRank = rankOf('phantomBlade');
-    if (pbRank > 0 && Date.now() >= phantomBladeNextTickTime) {
-      const reach = 160;
-      const glRank = rankOf('ghostlight');
-      // v1.7.0 rebalance: 40/60/80% → 20/40/60%.
-      const glChance = [0.20, 0.40, 0.60][glRank - 1] || 0;
-      const survivors = [];
-      let killedAny = false;
-      let pbKillCount = 0;
-      for (const b of bodies) {
-        if (dist(player, b) < reach + b.radius) {
-          emitDestroyBurst(b.x, b.y, POWERUP_COLORS.ghost.rgb);
-          emitDestroyEffects(b, 'ghost');
-          addDestroyPoints();
-          SFX.planetDestroyed('ghost');
-          checkDestroyProc(b, 'ghost');
-          if (glRank > 0 && Math.random() < glChance) {
-            ghostlightBurst(b.x, b.y, glRank);
-            addDestroyPoints();
-          }
-          // v1.6.3 visual pass part 2: spawn a spinning purple blade visual
-          // on top of the destroyed body so Phantom Blade reads as distinct
-          // from Razor Veil ghost kills.
-          spawnPhantomBlade(b.x, b.y);
-          killedAny = true;
-          pbKillCount++;
-          releaseBodyCanvases(b);
-          treeLog('phantomBlade: tick kill at ' + Math.round(b.x) + ',' + Math.round(b.y));
-        } else survivors.push(b);
+    if (pbRank > 0) {
+      const nowPB = Date.now();
+      if (nowPB >= phantomBladeNextTickTime) {
+        _cosmicBladeSweepUntil = nowPB + 2000;
+        phantomBladeNextTickTime = nowPB + (rankOf('soulReaver') > 0 ? 6000 : 10000);
+        _cosmic_addFlash('PHANTOM BLADE', COSMIC_PATH_COLORS.wraith);
+        triggerHitstop(90);
       }
-      bodies = survivors;
-      if (killedAny) SFX.phantomBladeSlash();
-      // v1.7.0: ONE shake for the whole tick (multi-kill or single).
-      if (pbKillCount === 1) shakeKill({ radius: 22 });
-      else if (pbKillCount > 1) shakeMassDestroy(pbKillCount);
-      phantomBladeNextTickTime = Date.now() + (4 - pbRank) * 1000;
+      if (nowPB < _cosmicBladeSweepUntil) {
+        const reach = 160;
+        const glRank = rankOf('ghostlight');
+        const glChance = glRank > 0 ? 0.50 : 0;
+        const survivors = [];
+        let pbKillCount = 0;
+        for (const b of bodies) {
+          if (dist(player, b) < reach + b.radius) {
+            emitDestroyBurst(b.x, b.y, POWERUP_COLORS.ghost.rgb);
+            emitDestroyEffects(b, 'ghost');
+            addDestroyPoints();
+            SFX.planetDestroyed('ghost');
+            checkDestroyProc(b, 'ghost');
+            _cosmicGhostKill(b.x, b.y);
+            if (glRank > 0 && Math.random() < glChance) { ghostlightBurst(b.x, b.y, 2); addDestroyPoints(); }
+            spawnPhantomBlade(b.x, b.y);
+            pbKillCount++;
+            releaseBodyCanvases(b);
+          } else survivors.push(b);
+        }
+        bodies = survivors;
+        if (pbKillCount === 1) shakeKill({ radius: 22 });
+        else if (pbKillCount > 1) shakeMassDestroy(pbKillCount);
+      }
     }
   }
 
@@ -25857,7 +26575,7 @@ function updateCapstoneCountdowns() {
   }
   // NIGHT SHADE — Phantom. Cycle constant shared with tickCapstoneTimers.
   {
-    const owned = (activeOrb === 'cosmic' || rainbowRunActive) && hasCapstone('nightShade');
+    const owned = (activeOrb === 'cosmic' || rainbowRunActive) && rankOf('endlessDusk') > 0;
     const fireTs = nightShadeNextFireTime || now;
     const elapsed = NIGHT_SHADE_CYCLE_MS - Math.max(0, fireTs - now);
     const progress = Math.max(0, Math.min(1, elapsed / NIGHT_SHADE_CYCLE_MS));
@@ -26850,6 +27568,9 @@ function applyPauseDeltaShift(pauseDelta) {
   if (soulboundNextProcTime) soulboundNextProcTime += pauseDelta;
   if (slipstreamNextProcTime) slipstreamNextProcTime += pauseDelta;
   if (phantomBladeNextTickTime) phantomBladeNextTickTime += pauseDelta;
+  if (_cosmicBladeSweepUntil) _cosmicBladeSweepUntil += pauseDelta;
+  if (_cosmicReapWindowEnd) _cosmicReapWindowEnd += pauseDelta;
+  if (_cosmicUmbralNextTime) _cosmicUmbralNextTime += pauseDelta;
   if (infiniteGateNextFireTime) infiniteGateNextFireTime += pauseDelta;
   if (warpHarmonicNextFireTime) warpHarmonicNextFireTime += pauseDelta;
   if (hyperspeedEndTime) hyperspeedEndTime += pauseDelta;
