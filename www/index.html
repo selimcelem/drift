@@ -5273,7 +5273,7 @@ function getOrbBonus() { return ORB_DEFS[activeOrb] || ORB_DEFS.cyan; }
 function getStreakCap() {
   // Skill tree: Prime Mover (+1/rank), Drifter-only. Activates the previously
   // inert streakCap:10 on cyan and extends up to 12.
-  if (activeOrb === 'cyan' || rainbowRunActive) return 8 + rankOf('primeMover');
+  if (activeOrb === 'cyan' || rainbowRunActive) return 8 + (rankOf('primeMover') > 0 ? 4 : 0);
   return 8;
 }
 function activeOrbColor() {
@@ -5331,6 +5331,11 @@ function isCapstoneComingSoon(capKey) { return COMING_SOON_CAPSTONES.has(capKey)
 //   effect(rank) — returns display string for current rank's numeric effect
 // Capstones have { key, name, desc, prereq(orb,state) → bool }.
 const TREE_DEFS = {
+  // v1.9.0 DRIFTER REWORK: single-rank + 25-pt active-budget tree (the original-5
+  // prototype). Same schema as drifterV2/phantomV2 — each node max:1 with
+  // costOverride + pointCost; capstones are folded into paths as nodes (the
+  // empty `capstones: []` array signals "no legacy capstone pool"). Effects fire
+  // only when a node is BOTH owned and ACTIVE (gated via ORB_BEHAVIOR.cyan.rankOf).
   cyan: {
     name: 'DRIFTER',
     color: '125,232,255',
@@ -5338,33 +5343,68 @@ const TREE_DEFS = {
       chance: {
         name: 'CHANCE',
         nodes: [
-          { key: 'loadedDice',    name: 'Loaded Dice',     tier: 1, max: 3, desc: 'Each burst has a chance to instantly reset burst cooldown.', effect: r => `${[10,20,30][r-1]||0}% chance, 20s cooldown` },
-          { key: 'fortuneFavors', name: 'Fortune Favors',  tier: 2, max: 3, desc: 'Natural single-pickup spawns biased toward your longest-expired type; chance to spawn a second extra pickup. (10s cooldown on extra)', effect: r => `${[25,50,75][r-1]||0}% bias, ${[10,20,30][r-1]||0}% extra (10s CD)` },
-          { key: 'doubleNothing', name: 'Double or Nothing', tier: 3, max: 3, desc: 'After burst fires, chance to immediately fire a second random single powerup.', effect: r => `${[30,60,90][r-1]||0}% second-fire chance` },
+          { key: 'doubleNothing', name: 'Double or Nothing', tier: 3, max: 1, costOverride: [5000], pointCost: 5,
+            desc: 'KEYSTONE. After every burst, instantly fire a second different random single powerup (guaranteed).',
+            effect: r => r ? 'Guaranteed 2nd powerup per burst' : 'Locked' },
+          { key: 'loadedDice', name: 'Loaded Dice', tier: 2, max: 1, costOverride: [3000], pointCost: 3,
+            desc: '30% chance to instantly reset burst cooldown after a burst fires. 20s internal cooldown.',
+            effect: r => r ? '30% burst CD reset (20s CD)' : 'Locked' },
+          { key: 'fortuneFavors', name: 'Fortune Favors', tier: 2, max: 1, costOverride: [3000], pointCost: 3,
+            desc: '75% of natural single spawns bias to your longest-expired type; 30% chance of a 2nd extra pickup (10s CD).',
+            effect: r => r ? '75% bias · 30% extra (10s CD)' : 'Locked' },
+          { key: 'snakeEyes', name: 'Snake Eyes', tier: 1, max: 1, costOverride: [1500], pointCost: 2,
+            desc: 'Pity timer: if Loaded Dice has not reset a burst in 20s, the next burst is a guaranteed reset.',
+            effect: r => r ? 'Pity burst-CD reset' : 'Locked' },
+          { key: 'deadCenter', name: 'Dead Center', tier: 3, max: 1, costOverride: [6500], pointCost: 5,
+            desc: 'CAPSTONE. Tap burst to pause and pick a powerup from a radial menu (auto-picks if you wait). The pick fires DOUBLED (its self-pair combo). With Double or Nothing active, a different single also fires right after.',
+            effect: r => r ? 'Radial pick → self-pair combo' : 'Locked' },
         ],
       },
       cadence: {
         name: 'CADENCE',
         nodes: [
-          { key: 'restlessOrb', name: 'Restless Orb', tier: 1, max: 3, desc: 'Burst cooldown reduced by 10% per rank.', effect: r => `-${10*r}% burst CD` },
-          { key: 'primeMover',  name: 'Prime Mover',  tier: 2, max: 4, desc: 'Streak cap +1 per rank. Max pts per kill rises from 32 to (8+rank)×4.', effect: r => `Streak cap ${8+r} (${(8+r)*4} pts/kill)` },
-          { key: 'tempo',       name: 'Tempo',        tier: 3, max: 3, desc: 'Time bonus interval shrinks from 30s.', effect: r => `${30 - [5,10,15][r-1]}s interval` },
+          { key: 'metronome', name: 'Metronome', tier: 3, max: 1, costOverride: [5000], pointCost: 5,
+            desc: 'KEYSTONE. Burst cooldown −30%.',
+            effect: r => r ? '−30% burst CD' : 'Locked' },
+          { key: 'primeMover', name: 'Prime Mover', tier: 2, max: 1, costOverride: [3000], pointCost: 3,
+            desc: 'Streak cap 12 (48 pts/kill). Missed planets grant +5 points instead of +1.',
+            effect: r => r ? 'Streak cap 12 · +5 / missed planet' : 'Locked' },
+          { key: 'tempo', name: 'Tempo', tier: 2, max: 1, costOverride: [3000], pointCost: 3,
+            desc: 'Time-bonus interval halved (30s → 15s) — score ticks twice as often.',
+            effect: r => r ? '15s time-bonus interval' : 'Locked' },
+          { key: 'steadyHands', name: 'Steady Hands', tier: 1, max: 1, costOverride: [1500], pointCost: 2,
+            desc: 'Every 1,000 points earned shaves 10% off your CURRENT burst cooldown (only while a burst is on cooldown). No cap — keeps shaving all run.',
+            effect: r => r ? '−10% live burst CD per 1,000 pts' : 'Locked' },
+          { key: 'hotStart', name: 'Hot Start', tier: 2, max: 1, costOverride: [3000], pointCost: 3,
+            desc: 'For 5s after a burst fires, the next planet you destroy sets your kill streak straight to the cap (12 with Prime Mover). Once per burst; later kills then build on top.',
+            effect: r => r ? 'First kill after burst → streak cap (5s)' : 'Locked' },
+          { key: 'cadenza', name: 'Cadenza', tier: 3, max: 1, costOverride: [6500], pointCost: 5,
+            desc: 'CAPSTONE. Every 2,000 points earned auto-fires a random pair combo. 5s lockout after each fire; score earned during the lockout does not count toward the next 2,000.',
+            effect: r => r ? 'Auto pair combo / 2,000 pts' : 'Locked' },
         ],
       },
       convergence: {
         name: 'CONVERGENCE',
         nodes: [
-          { key: 'oracleEdge', name: 'Oracle Edge', tier: 1, max: 3, desc: 'Pair spawn chance +10% (multiplicative) per rank.', effect: r => `+${10*r}% pair spawn` },
-          { key: 'siphon',     name: 'Siphon',      tier: 2, max: 5, desc: 'On body destroyed, chance to grant a random powerup. (1.5s global cooldown)', effect: r => `${[2,4,6,8,10][r-1]||0}% per destroy` },
-          { key: 'keystone',   name: 'Keystone',    tier: 3, max: 3, desc: 'Pair combos have a chance to also grant a random bonus single powerup of a different type.', effect: r => `${[10,20,30][r-1]||0}% bonus chance` },
+          { key: 'confluence', name: 'Confluence', tier: 3, max: 1, costOverride: [5000], pointCost: 5,
+            desc: 'KEYSTONE. +20% pair-spawn chance, and pair combos have a 30% chance to also grant a bonus single powerup of a different type.',
+            effect: r => r ? '+20% pairs · 30% bonus single' : 'Locked' },
+          { key: 'siphon', name: 'Siphon', tier: 2, max: 1, costOverride: [3000], pointCost: 3,
+            desc: '10% chance per destroy to trigger a random powerup immediately. 5s cooldown.',
+            effect: r => r ? '10% / destroy → powerup (5s CD)' : 'Locked' },
+          { key: 'oracleEdge', name: 'Oracle Edge', tier: 1, max: 1, costOverride: [1500], pointCost: 2,
+            desc: '+10% pair-spawn chance (stacks additively with Confluence → 30% total).',
+            effect: r => r ? '+10% pair spawn' : 'Locked' },
+          { key: 'cascade', name: 'Cascade', tier: 1, max: 1, costOverride: [1500], pointCost: 2,
+            desc: 'Bonus singles from Confluence and Siphon have a 25% chance to trigger twice in a row (≈0.4s apart).',
+            effect: r => r ? '25% double-trigger on bonus singles' : 'Locked' },
+          { key: 'butterfly', name: 'Butterfly Effect', tier: 3, max: 1, costOverride: [6500], pointCost: 5,
+            desc: 'CAPSTONE. 30% chance at powerup spawn that the powerup is "butterflied" — pulled strongly toward the player. Applies to singles and pairs; rolled once at spawn.',
+            effect: r => r ? '30% spawned powerups pulled to you' : 'Locked' },
         ],
       },
     },
-    capstones: [
-      { key: 'deadCenter',       name: 'DEAD CENTER',       desc: 'Tap burst to pause and pick a powerup from a radial menu.' },
-      { key: 'calculatedDrift',  name: 'CALCULATED DRIFT',  desc: 'DEAD CENTER picks fire as pair combos instead of single powerups.' },
-      { key: 'butterfly',        name: 'BUTTERFLY EFFECT',  desc: 'Chance to duplicate pickups when grabbed. 10s cooldown. 15% chance, splits visibly at top of screen.' },
-    ],
+    capstones: [],
   },
   cosmic: {
     name: 'PHANTOM',
@@ -5730,7 +5770,7 @@ function purchaseTreeUnlock(orbKey) {
 // shared global table, then multiplied by the orb's scale factor. Rounded
 // to the nearest 500 crystals for clean display.
 const ORB_COST_SCALE = {
-  cyan:     0.175, // Drifter −82.5% (v1.6.4 pricing pass: prior 0.35 × 0.50)
+  cyan:     1.0,   // Drifter v1.9.0 rework: raw costOverride values (active-budget tree)
   cosmic:   0.22,  // Phantom −78%   (prior 0.40 × 0.55)
   solar:    0.27,  // Inferno −73%   (prior 0.45 × 0.60)
   nebula:   0.325, // Warp    −67.5% (prior 0.50 × 0.65)
@@ -5753,7 +5793,10 @@ function orbCostScale(orbKey) {
 // TREE_NODE_COSTS table, ORB_COST_SCALE, and any per-node costOverride. The v2
 // orbs (Roamer/Phantasm) keep their existing costOverride-driven prices, so the
 // table/scales below are intentionally left unchanged.
-const ORIGINAL_5_ORBS = new Set(['cyan', 'cosmic', 'solar', 'nebula', 'asteroid']);
+// v1.9.0: cyan (Drifter) left this set when it migrated to the costOverride +
+// active-budget model — its nodes price from costOverride at scale 1.0, like
+// drifterV2/phantomV2. The remaining four still use flat tier pricing.
+const ORIGINAL_5_ORBS = new Set(['cosmic', 'solar', 'nebula', 'asteroid']);
 const ORIGINAL_5_FLAT_CAPSTONE = 5000;
 function roundCrystals500(n) {
   return Math.round(n / 500) * 500;
@@ -5929,11 +5972,8 @@ function capstonePrereqMet(orbKey, capKey) {
     }
     return false;
   };
-  if (orbKey === 'cyan') {
-    if (capKey === 'deadCenter')      return anyT3('cyan');
-    if (capKey === 'calculatedDrift') return !!s.capstones.deadCenter;
-    if (capKey === 'butterfly')       return countT2Invested() >= 2;
-  }
+  // cyan capstones (Dead Center / Cadenza / Butterfly) are path nodes in the
+  // active-budget tree now — gated by ActiveBudget prereqs, not this pool.
   if (orbKey === 'cosmic') {
     if (capKey === 'shroud')     return countT2Invested() >= 2;
     if (capKey === 'nightShade') return anyT3('cosmic');
@@ -5988,11 +6028,7 @@ function _respecNode_default(orbKey, pathKey, nodeIdx) {
       if (state.capstones[cap.key] && !capstonePrereqMet(orbKey, cap.key)) {
         state.capstones[cap.key] = false;
         totalCrystals += _capRefund;
-        // DEAD CENTER refund implies CALCULATED DRIFT also refunds (gated by it).
-        if (cap.key === 'deadCenter' && state.capstones.calculatedDrift) {
-          state.capstones.calculatedDrift = false;
-          totalCrystals += _capRefund;
-        }
+        // (cyan's CALCULATED DRIFT was removed in v1.9.0 — no cascade needed.)
       }
     }
   }
@@ -6083,11 +6119,11 @@ ORB_ORDER.push('drifterV2');
 // v2 (redesigned per testing feedback): three trees with smaller node sets,
 // every node net-positive at 1pt, capstones as inline path-endpoints. Point
 // costs feed the 25-point active budget (separate from crystal-unlock cost).
-// v1.9.0 polish — costOverrides re-targeted so each tree's full unlock costs
-// ~10.5k (half of fully unlocking original Drifter at rank-1: 21k across 3
-// paths, ÷ 2 = 10,500). Distribution: keystone 2.5k, capstone 3k, support
-// nodes 0.5–1.5k. orbCostScale set to 1.0 below so per-node displayed costs
-// equal these literals (no scaling indirection — easier to QA).
+// v1.9.0 polish — costOverrides priced against Phantasm's tiers minus 1k per
+// node: tier-1 support 3k, tier-2 support 5k, keystone (tier-3 entry) 6.5k,
+// capstone (tier-3) 9k. Full-unlock totals vary by tree shape: Pulse ~32.5k,
+// Thread ~38.5k, Pressure ~36.5k. orbCostScale set to 1.0 below so per-node
+// displayed costs equal these literals (no scaling indirection — easier to QA).
 TREE_DEFS.drifterV2 = {
   name: 'ROAMER',
   // Tree title color stays amber for now — the spec only changes the BASE orb
@@ -6098,25 +6134,25 @@ TREE_DEFS.drifterV2 = {
     pulse: {
       name: 'PULSE',
       nodes: [
-        { key: 'drifterV2_pulse', name: 'Pulse', tier: 3, max: 1, costOverride: [2500], pointCost: 5,
+        { key: 'drifterV2_pulse', name: 'Pulse', tier: 3, max: 1, costOverride: [6500], pointCost: 5,
           desc: 'KEYSTONE (5 pts). Burst cooldown 30s → 20s. Burst fires the type of your most recently grabbed pickup (predictable, not random).',
           effect: r => r ? '20s CD · targeted burst' : 'Locked' },
-        { key: 'drifterV2_tempo', name: 'Tempo', tier: 1, max: 1, costOverride: [500], pointCost: 2,
+        { key: 'drifterV2_tempo', name: 'Tempo', tier: 1, max: 1, costOverride: [3000], pointCost: 2,
           desc: 'Burst cooldown −2s (now 18s with Pulse).',
           effect: r => r ? '−2s burst CD' : 'Locked' },
-        { key: 'drifterV2_doubleTime', name: 'Double Time', tier: 1, max: 1, costOverride: [1000], pointCost: 2,
+        { key: 'drifterV2_doubleTime', name: 'Double Time', tier: 1, max: 1, costOverride: [3000], pointCost: 2,
           desc: 'Burst cooldown −2s more (now 16s with Pulse + Tempo).',
           effect: r => r ? '−2s burst CD' : 'Locked' },
-        { key: 'drifterV2_surge', name: 'Surge', tier: 1, max: 1, costOverride: [1000], pointCost: 2,
+        { key: 'drifterV2_surge', name: 'Surge', tier: 1, max: 1, costOverride: [3000], pointCost: 2,
           desc: 'Burst fires a pair combo of the last-grabbed type + a RANDOM DIFFERENT type (never the same type as last grabbed).',
           effect: r => r ? 'Mixed combo burst' : 'Locked' },
-        { key: 'drifterV2_echo', name: 'Echo', tier: 2, max: 1, costOverride: [1500], pointCost: 3,
+        { key: 'drifterV2_echo', name: 'Echo', tier: 2, max: 1, costOverride: [5000], pointCost: 3,
           desc: '30% chance per burst to fully reset its own cooldown — burst is immediately ready again.',
           effect: r => r ? '30% full CD reset' : 'Locked' },
-        { key: 'drifterV2_heartbeat', name: 'Heartbeat', tier: 1, max: 1, costOverride: [1000], pointCost: 2,
+        { key: 'drifterV2_heartbeat', name: 'Heartbeat', tier: 1, max: 1, costOverride: [3000], pointCost: 2,
           desc: '1 stack per 3s of no powerup pickups (cap 3). At max stacks, Fortress Shield fires automatically and stacks reset.',
           effect: r => r ? 'Auto-Fortress at 3 stacks' : 'Locked' },
-        { key: 'drifterV2_drumroll', name: 'Drumroll', tier: 3, max: 1, costOverride: [3000], pointCost: 5,
+        { key: 'drifterV2_drumroll', name: 'Drumroll', tier: 3, max: 1, costOverride: [9000], pointCost: 5,
           desc: 'CAPSTONE (5 pts). Every 4th burst automatically fires ALL FOUR pair combos in rapid succession. No gesture, no lockout — pure automatic.',
           effect: r => r ? 'Every 4th burst → all combos' : 'Locked' },
       ],
@@ -6124,25 +6160,25 @@ TREE_DEFS.drifterV2 = {
     thread: {
       name: 'THREAD',
       nodes: [
-        { key: 'drifterV2_thread', name: 'Thread', tier: 3, max: 1, costOverride: [2500], pointCost: 5,
+        { key: 'drifterV2_thread', name: 'Thread', tier: 3, max: 1, costOverride: [6500], pointCost: 5,
           desc: 'KEYSTONE (5 pts). Each destroy draws a 2s thread to the previous destroy. Extending destroys (≥200px) fill a Charge meter +5%. When the meter fills, all active threads become destructive lasers that destroy any planet they touch for the remainder of their duration. Charge gain is paused while lasers are active.',
           effect: r => r ? 'Threads + Laser meter' : 'Locked' },
-        { key: 'drifterV2_reach', name: 'Reach', tier: 2, max: 1, costOverride: [1000], pointCost: 2,
+        { key: 'drifterV2_reach', name: 'Reach', tier: 2, max: 1, costOverride: [5000], pointCost: 2,
           desc: 'Extending threshold drops 200px → 150px (procs faster).',
           effect: r => r ? '150px threshold' : 'Locked' },
-        { key: 'drifterV2_resonance', name: 'Resonance', tier: 1, max: 1, costOverride: [500], pointCost: 2,
+        { key: 'drifterV2_resonance', name: 'Resonance', tier: 1, max: 1, costOverride: [3000], pointCost: 2,
           desc: 'Threads last 1s longer (3s). Charge meter gains doubled while any powerup is active. Charge gain is suppressed during laser duration.',
           effect: r => r ? '+1s thread · 2× charge w/ powerup' : 'Locked' },
-        { key: 'drifterV2_tension', name: 'Tension', tier: 2, max: 1, costOverride: [1000], pointCost: 2,
+        { key: 'drifterV2_tension', name: 'Tension', tier: 2, max: 1, costOverride: [5000], pointCost: 2,
           desc: 'Every thread of length ≥200px fires a nova explosion at the destroyed planet (5s cooldown between fires).',
           effect: r => r ? 'Nova on long thread (5s CD)' : 'Locked' },
-        { key: 'drifterV2_loom', name: 'Loom', tier: 2, max: 1, costOverride: [1500], pointCost: 3,
+        { key: 'drifterV2_loom', name: 'Loom', tier: 2, max: 1, costOverride: [5000], pointCost: 3,
           desc: 'Requires Tension active. Tension distance threshold drops 200px → 120px so short threads trigger novas too.',
           effect: r => r ? '120px Tension threshold' : 'Locked' },
-        { key: 'drifterV2_pattern', name: 'Pattern', tier: 2, max: 1, costOverride: [1000], pointCost: 3,
+        { key: 'drifterV2_pattern', name: 'Pattern', tier: 2, max: 1, costOverride: [5000], pointCost: 3,
           desc: 'Charge meter fills at double rate (+10% per extending destroy instead of +5%).',
           effect: r => r ? '2× Charge fill rate' : 'Locked' },
-        { key: 'drifterV2_tapestry', name: 'Tapestry', tier: 3, max: 1, costOverride: [3000], pointCost: 5,
+        { key: 'drifterV2_tapestry', name: 'Tapestry', tier: 3, max: 1, costOverride: [9000], pointCost: 5,
           desc: 'CAPSTONE (5 pts). When laser threads finish their duration, each one launches forward as a full-length laser bar in the direction it was drawn (older to newer endpoint). The bars destroy every planet they cross.',
           effect: r => r ? 'Threads → laser bars' : 'Locked' },
       ],
@@ -6150,25 +6186,25 @@ TREE_DEFS.drifterV2 = {
     pressure: {
       name: 'PRESSURE',
       nodes: [
-        { key: 'drifterV2_pressure', name: 'Pressure', tier: 3, max: 1, costOverride: [2500], pointCost: 5,
+        { key: 'drifterV2_pressure', name: 'Pressure', tier: 3, max: 1, costOverride: [6500], pointCost: 5,
           desc: 'KEYSTONE (5 pts). Per-destroy counter +1 per destroy (cap 100). 2s grace, then rapid falloff (full to zero in 6s). Scroll speed +0.5%/pt (cap 1.3×). Score per kill +1%/pt (no cap).',
           effect: r => r ? '+1/destroy · scaling' : 'Locked' },
-        { key: 'drifterV2_patience', name: 'Patience', tier: 1, max: 1, costOverride: [500], pointCost: 2,
+        { key: 'drifterV2_patience', name: 'Patience', tier: 1, max: 1, costOverride: [3000], pointCost: 2,
           desc: 'Grace period extends 2s → 4s before decay starts.',
           effect: r => r ? '4s grace' : 'Locked' },
-        { key: 'drifterV2_tenacity', name: 'Tenacity', tier: 2, max: 1, costOverride: [1500], pointCost: 3,
+        { key: 'drifterV2_tenacity', name: 'Tenacity', tier: 2, max: 1, costOverride: [5000], pointCost: 3,
           desc: 'Slower decay — full Pressure to zero in 10s instead of 6s.',
           effect: r => r ? '10s decay' : 'Locked' },
-        { key: 'drifterV2_threshold50', name: 'Threshold 50', tier: 1, max: 1, costOverride: [1000], pointCost: 2,
+        { key: 'drifterV2_threshold50', name: 'Threshold 50', tier: 1, max: 1, costOverride: [3000], pointCost: 2,
           desc: 'At Pressure ≥ 50: destroys add +1 extra counter (2 total per destroy).',
           effect: r => r ? '+1 counter at 50+' : 'Locked' },
-        { key: 'drifterV2_threshold75', name: 'Threshold 75', tier: 2, max: 1, costOverride: [1500], pointCost: 3,
+        { key: 'drifterV2_threshold75', name: 'Threshold 75', tier: 2, max: 1, costOverride: [5000], pointCost: 3,
           desc: 'At Pressure ≥ 75, every destroy fires a free nova ring at the killed planet (3s cooldown between fires).',
           effect: r => r ? 'Nova on kill at 75+ (3s CD)' : 'Locked' },
-        { key: 'drifterV2_crescendo', name: 'Crescendo', tier: 2, max: 1, costOverride: [500], pointCost: 3,
+        { key: 'drifterV2_crescendo', name: 'Crescendo', tier: 2, max: 1, costOverride: [5000], pointCost: 3,
           desc: 'At Pressure > 80, every powerup pickup fires the picked-up powerup AND a random pair combo. Pair-combo pickups fire another random pair on top.',
           effect: r => r ? 'Pickups → double-event at 80+' : 'Locked' },
-        { key: 'drifterV2_breakingPoint', name: 'Breaking Point', tier: 3, max: 1, costOverride: [3000], pointCost: 5,
+        { key: 'drifterV2_breakingPoint', name: 'Breaking Point', tier: 3, max: 1, costOverride: [9000], pointCost: 5,
           desc: 'CAPSTONE (5 pts). At Pressure 100, the next destroy detonates Personal Apocalypse — Fortress Shield, Eternal Phantom, full hyperspeed, and Supernova all at once. Hyperspeed cap +1 for the run (max 10×). 15s cooldown.',
           effect: r => r ? 'Apocalypse · 15s CD · +1 cap (max 10×)' : 'Locked' },
       ],
@@ -6465,6 +6501,461 @@ function _drifterV2_clearActiveMap() {
   if (orbTrees.drifterV2) orbTrees.drifterV2.activePoints = {};
   saveTreeState();
   if (activeOrb === 'drifterV2') refreshActiveTreeCache();
+}
+
+// === GENERIC ACTIVE-BUDGET FRAMEWORK (orb-keyed) ======================
+// Reusable single-rank + active-point-budget engine for the original-5 orb
+// reworks (cyan/Drifter is the first adopter). drifterV2/phantomV2 keep their
+// own hard-coded copies above for now to avoid behavioral risk — this module
+// is the generalized form they COULD migrate to later. To add an orb:
+//   1. ActiveBudget.register(orbKey, { base, expandMax, expandCost, bonusKey,
+//      keystones:{pathKey->nodeKey}, prereqs:{nodeKey->{prereq,requiresActive}} })
+//   2. Add its TREE_DEFS entry (single-rank schema, capstones folded into paths)
+//   3. Add its ORB_BEHAVIOR entry (delegates rankOf/pathPrereqMet/respec/render here)
+//   4. Add an afterLoadTreeState hook calling ActiveBudget.restoreActivePoints(orbKey)
+// All gameplay-meaning flows through rankOf: a node returns rank 1 only when it
+// is BOTH owned (crystal-unlocked) AND active in the budget.
+const ActiveBudget = (() => {
+  const configs = {};   // orbKey -> normalized config
+  const bonus = {};     // orbKey -> purchased +budget points (persisted)
+
+  function register(orbKey, cfg) {
+    configs[orbKey] = {
+      base:       cfg.base       != null ? cfg.base       : 25,
+      expandMax:  cfg.expandMax  != null ? cfg.expandMax  : 5,
+      expandCost: cfg.expandCost != null ? cfg.expandCost : 2000,
+      bonusKey:   cfg.bonusKey,
+      keystones:  cfg.keystones || {},   // pathKey -> keystone nodeKey
+      prereqs:    cfg.prereqs   || {},   // nodeKey -> { prereq:[], requiresActive:[] }
+    };
+    let b = 0;
+    try { const raw = localStorage.getItem(cfg.bonusKey); b = raw == null ? 0 : (parseInt(raw, 10) | 0); } catch {}
+    bonus[orbKey] = Math.max(0, Math.min(configs[orbKey].expandMax, b));
+    ensureActiveMap(orbKey);
+  }
+  function has(orbKey) { return !!configs[orbKey]; }
+  function budgetCap(orbKey) { const c = configs[orbKey]; return c ? c.base + (bonus[orbKey] | 0) : 0; }
+  function budgetBonus(orbKey) { return bonus[orbKey] | 0; }
+  function expandMaxFor(orbKey) { const c = configs[orbKey]; return c ? c.expandMax : 0; }
+  function expandCostFor(orbKey) { const c = configs[orbKey]; return c ? c.expandCost : 0; }
+  function purchaseExpand(orbKey) {
+    const c = configs[orbKey]; if (!c) return false;
+    if ((bonus[orbKey] | 0) >= c.expandMax) return false;
+    if (totalCrystals < c.expandCost) return false;
+    totalCrystals = Math.max(0, totalCrystals - c.expandCost);
+    bonus[orbKey] = Math.min(c.expandMax, (bonus[orbKey] | 0) + 1);
+    try { localStorage.setItem(c.bonusKey, String(bonus[orbKey])); } catch {}
+    saveCrystals();
+    return true;
+  }
+  function ensureActiveMap(orbKey) {
+    const st = orbTrees[orbKey]; if (!st) return null;
+    if (!st.activePoints || typeof st.activePoints !== 'object') st.activePoints = {};
+    return st.activePoints;
+  }
+  function resolveNode(orbKey, nodeKey) {
+    const def = TREE_DEFS[orbKey]; if (!def) return null;
+    for (const pKey of Object.keys(def.paths)) {
+      const nodes = def.paths[pKey].nodes;
+      for (let i = 0; i < nodes.length; i++) if (nodes[i].key === nodeKey) return { pathKey: pKey, nodeIdx: i, node: nodes[i] };
+    }
+    return null;
+  }
+  function rankByKey(orbKey, nodeKey) {
+    const def = TREE_DEFS[orbKey], st = orbTrees[orbKey]; if (!def || !st) return 0;
+    for (const pKey of Object.keys(def.paths)) {
+      const nodes = def.paths[pKey].nodes;
+      for (let i = 0; i < nodes.length; i++) if (nodes[i].key === nodeKey) return (st[pKey][i] | 0);
+    }
+    return 0;
+  }
+  function isActive(orbKey, nodeKey) { const st = orbTrees[orbKey]; return !!(st && st.activePoints && st.activePoints[nodeKey]); }
+  function pointCostFor(orbKey, nodeKey) { const r = resolveNode(orbKey, nodeKey); return r ? ((r.node.pointCost | 0) || 1) : 0; }
+  function activePointsTotal(orbKey) {
+    const st = orbTrees[orbKey]; const m = st && st.activePoints; if (!m) return 0;
+    let s = 0; for (const k of Object.keys(m)) if (m[k]) s += pointCostFor(orbKey, k); return s;
+  }
+  function keystoneRequiredFor(orbKey, nodeKey) {
+    const c = configs[orbKey]; const r = resolveNode(orbKey, nodeKey); if (!c || !r) return null;
+    const ks = c.keystones[r.pathKey]; if (!ks || nodeKey === ks) return null; return ks;
+  }
+  function pathPrereqMet(orbKey, pathKey, nodeIdx) {
+    const c = configs[orbKey]; const def = TREE_DEFS[orbKey];
+    if (!c || !def || !def.paths[pathKey]) return false;
+    const node = def.paths[pathKey].nodes[nodeIdx]; if (!node) return false;
+    const spec = c.prereqs[node.key]; if (!spec) return true; // keystones: always available
+    if (Array.isArray(spec.prereq)) for (const k of spec.prereq) if (rankByKey(orbKey, k) < 1) return false;
+    return true;
+  }
+  function activate(orbKey, nodeKey) {
+    const c = configs[orbKey]; if (!c) return false;
+    if (rankByKey(orbKey, nodeKey) < 1) return false;            // must be owned
+    const ks = keystoneRequiredFor(orbKey, nodeKey);
+    if (ks && !isActive(orbKey, ks)) return false;               // keystone-active gate
+    const spec = c.prereqs[nodeKey];
+    if (spec && Array.isArray(spec.requiresActive)) for (const req of spec.requiresActive) if (!isActive(orbKey, req)) return false;
+    const map = ensureActiveMap(orbKey); if (map[nodeKey]) return true;
+    const cost = pointCostFor(orbKey, nodeKey);
+    if (activePointsTotal(orbKey) + cost > budgetCap(orbKey)) return false;
+    map[nodeKey] = true; saveTreeState();
+    if (activeOrb === orbKey) refreshActiveTreeCache();
+    return true;
+  }
+  function deactivate(orbKey, nodeKey) {
+    const c = configs[orbKey]; if (!c) return false;
+    const map = ensureActiveMap(orbKey); if (!map[nodeKey]) return true;
+    delete map[nodeKey];
+    const r = resolveNode(orbKey, nodeKey);
+    if (r && nodeKey === c.keystones[r.pathKey]) {               // keystone cascade
+      const def = TREE_DEFS[orbKey];
+      if (def && def.paths[r.pathKey]) for (const n of def.paths[r.pathKey].nodes) if (n.key !== nodeKey && map[n.key]) delete map[n.key];
+    }
+    let cascaded = true;                                         // requiresActive cascade
+    while (cascaded) {
+      cascaded = false;
+      for (const key of Object.keys(c.prereqs)) {
+        const s = c.prereqs[key]; if (!s || !Array.isArray(s.requiresActive)) continue;
+        if (!map[key]) continue;
+        for (const req of s.requiresActive) if (!map[req]) { delete map[key]; cascaded = true; break; }
+      }
+    }
+    saveTreeState();
+    if (activeOrb === orbKey) refreshActiveTreeCache();
+    return true;
+  }
+  function clearActiveMap(orbKey) {
+    if (orbTrees[orbKey]) orbTrees[orbKey].activePoints = {};
+    saveTreeState();
+    if (activeOrb === orbKey) refreshActiveTreeCache();
+  }
+  // Re-read raw localStorage activePoints after the base loadTreeState (which
+  // drops the unknown `activePoints` field for non-v2 orbs). Call from an
+  // afterLoadTreeState hook, mirroring the drifterV2/phantomV2 pattern.
+  function restoreActivePoints(orbKey) {
+    let raw = null;
+    try { const r = localStorage.getItem('drift_orb_trees'); if (r) { const p = JSON.parse(r); if (p && p[orbKey]) raw = p[orbKey]; } } catch {}
+    ensureActiveMap(orbKey);
+    if (raw && raw.activePoints && typeof raw.activePoints === 'object') {
+      for (const k of Object.keys(raw.activePoints)) if (raw.activePoints[k] && resolveNode(orbKey, k)) orbTrees[orbKey].activePoints[k] = true;
+    }
+  }
+  return {
+    register, has, budgetCap, budgetBonus, expandMaxFor, expandCostFor, purchaseExpand,
+    ensureActiveMap, resolveNode, rankByKey, isActive, pointCostFor, activePointsTotal,
+    keystoneRequiredFor, pathPrereqMet, activate, deactivate, clearActiveMap, restoreActivePoints,
+  };
+})();
+
+// === CYAN (DRIFTER) ACTIVE-BUDGET CONFIG (first ActiveBudget adopter) =====
+// Path keystones (entry node per tree) and the prereq graph. Keystones have no
+// prereq entry (always purchasable). Supports require their keystone; capstones
+// require their keystone. Snake Eyes additionally requiresActive Loaded Dice.
+// Save schema version for the cyan tree. A migration runs only when the stored
+// version is below this target; each future cyan rework bumps it, so an old
+// migration can never accidentally re-run on already-migrated data. (Reusable
+// pattern for the other orbs' v2.0.0+ reworks — give each its own key/version.)
+const CYAN_SCHEMA_VERSION = 2;
+const CYAN_KEYSTONES = {
+  chance:      'doubleNothing',
+  cadence:     'metronome',
+  convergence: 'confluence',
+};
+const CYAN_PREREQS = {
+  // CHANCE
+  loadedDice:    { prereq: ['doubleNothing'] },
+  fortuneFavors: { prereq: ['doubleNothing'] },
+  snakeEyes:     { prereq: ['loadedDice'], requiresActive: ['loadedDice'] },
+  deadCenter:    { prereq: ['doubleNothing'] },
+  // CADENCE
+  primeMover:    { prereq: ['metronome'] },
+  tempo:         { prereq: ['metronome'] },
+  steadyHands:   { prereq: ['metronome'] },
+  hotStart:      { prereq: ['metronome'] },
+  cadenza:       { prereq: ['metronome'] },
+  // CONVERGENCE
+  siphon:        { prereq: ['confluence'] },
+  oracleEdge:    { prereq: ['confluence'] },
+  cascade:       { prereq: ['confluence'] },
+  butterfly:     { prereq: ['confluence'] },
+};
+// Per-path flash/render colours (gambling gold / rhythm cyan / overflow violet).
+const CYAN_PATH_COLORS = {
+  chance:      '255,210,90',
+  cadence:     '120,230,255',
+  convergence: '180,140,255',
+};
+// Branching layout for the custom tree renderer (lands next; data defined now).
+const CYAN_TREE_LAYOUTS = {
+  chance: { name: 'CHANCE', color: CYAN_PATH_COLORS.chance, nodes: {
+    doubleNothing: { x: 100, y: 50, keystone: true },
+    loadedDice:    { x: 40,  y: 140 },
+    fortuneFavors: { x: 160, y: 140 },
+    snakeEyes:     { x: 40,  y: 225 },
+    deadCenter:    { x: 100, y: 320, capstone: true },
+  } },
+  cadence: { name: 'CADENCE', color: CYAN_PATH_COLORS.cadence, nodes: {
+    metronome:   { x: 100, y: 50, keystone: true },
+    primeMover:  { x: 40,  y: 140 },
+    tempo:       { x: 160, y: 140 },
+    steadyHands: { x: 160, y: 225 },
+    hotStart:    { x: 40,  y: 225 },
+    cadenza:     { x: 100, y: 320, capstone: true },
+  } },
+  convergence: { name: 'CONVERGENCE', color: CYAN_PATH_COLORS.convergence, nodes: {
+    confluence: { x: 100, y: 50, keystone: true },
+    siphon:     { x: 40,  y: 140 },
+    oracleEdge: { x: 160, y: 140 },
+    cascade:    { x: 160, y: 225 },
+    butterfly:  { x: 100, y: 320, capstone: true },
+  } },
+};
+ActiveBudget.register('cyan', {
+  base: 25, expandMax: 5, expandCost: 2000,
+  bonusKey: 'drift_cyan_budget_bonus',
+  keystones: CYAN_KEYSTONES,
+  prereqs: CYAN_PREREQS,
+});
+function getCyanBudgetCap()       { return ActiveBudget.budgetCap('cyan'); }
+function getCyanBudgetBonus()     { return ActiveBudget.budgetBonus('cyan'); }
+function purchaseCyanBudgetExpand() { return ActiveBudget.purchaseExpand('cyan'); }
+function isCyanActive()           { return activeOrb === 'cyan'; }
+
+// ORB_BEHAVIOR.cyan — delegates rank/prereq/respec to the generic ActiveBudget
+// engine. Render overrides (branching ACTIVATE/DEACTIVATE UI) land next turn;
+// until then cyan falls through to the default tree renderer.
+ORB_BEHAVIOR.cyan = ORB_BEHAVIOR.cyan || {};
+// rankOf: a cyan node yields rank 1 only when owned AND active in the budget.
+ORB_BEHAVIOR.cyan.rankOf = function(nodeKey) {
+  if (typeof nodeKey === 'string' && ActiveBudget.resolveNode('cyan', nodeKey)) {
+    return ActiveBudget.isActive('cyan', nodeKey) ? 1 : 0;
+  }
+  return _rankOf_default(nodeKey);
+};
+ORB_BEHAVIOR.cyan.pathPrereqMet = function(state, pathKey, nodeIdx) {
+  if (state !== orbTrees.cyan) return _pathPrereqMet_default(state, pathKey, nodeIdx);
+  return ActiveBudget.pathPrereqMet('cyan', pathKey, nodeIdx);
+};
+ORB_BEHAVIOR.cyan.respecNode = function(orbKey, pathKey, nodeIdx) {
+  const def = TREE_DEFS.cyan; const state = orbTrees.cyan;
+  if (!def || !state) return false;
+  const node = def.paths[pathKey] && def.paths[pathKey].nodes[nodeIdx];
+  if (!node) return false;
+  const current = state[pathKey][nodeIdx] | 0;
+  if (current <= 0) return false;
+  const invested = nodeCrystalsInvested(orbKey, node, current);
+  const fee = refundFee(invested);
+  if (totalCrystals < fee) return false;
+  totalCrystals = Math.max(0, totalCrystals - fee);
+  totalCrystals += invested;                 // 100% refund
+  state[pathKey][nodeIdx] = 0;
+  ActiveBudget.deactivate('cyan', node.key); // free active points + cascade dependents
+  saveCrystals(); saveTreeState();
+  if (orbKey === activeOrb) refreshActiveTreeCache();
+  return true;
+};
+ORB_BEHAVIOR.cyan.fullTreeRespecCost = function(orbKey) { return refundFee(treeCrystalsInvested(orbKey)); };
+ORB_BEHAVIOR.cyan.respecTree = function(orbKey) {
+  const def = TREE_DEFS.cyan; const state = orbTrees.cyan;
+  if (!def || !state) return false;
+  if (totalRanksInvested(orbKey) <= 0) return false;
+  const invested = treeCrystalsInvested(orbKey);
+  const fee = refundFee(invested);
+  if (totalCrystals < fee) return false;
+  totalCrystals = Math.max(0, totalCrystals - fee);
+  for (const pKey of Object.keys(def.paths)) {
+    const nodes = def.paths[pKey].nodes; const arr = state[pKey];
+    for (let i = 0; i < nodes.length; i++) {
+      totalCrystals += nodeCrystalsInvested(orbKey, nodes[i], arr[i] | 0);
+      arr[i] = 0;
+    }
+  }
+  state.activePoints = {};
+  saveCrystals(); saveTreeState();
+  if (orbKey === activeOrb) refreshActiveTreeCache();
+  return true;
+};
+// Restore cyan's activePoints after the base loader (mirrors drifterV2/phantomV2),
+// running the one-time legacy→v2 migration first.
+OrbHooks.on('afterLoadTreeState', () => { maybeMigrateCyanV2(); ActiveBudget.restoreActivePoints('cyan'); });
+
+// === CYAN flash feedback (matches drifterV2/phantomV2 flash treatment) =====
+let _cyan_flashes = [];
+let _cyan_flashGates = {};
+function _cyan_addFlash(text, color, durationMs) {
+  if (activeOrb !== 'cyan') return; // never during rainbow / other orbs
+  _cyan_flashes.push({ text: String(text || ''), color: color || '125,232,255', startTime: Date.now(), durationMs: durationMs || 700 });
+  if (_cyan_flashes.length > 6) _cyan_flashes.shift();
+}
+// Throttled variant for high-frequency triggers (Confluence, Cascade, Siphon).
+function _cyan_flash(key, text, color, minMs) {
+  const now = Date.now();
+  if (now - (_cyan_flashGates[key] || 0) < (minMs || 0)) return;
+  _cyan_flashGates[key] = now;
+  _cyan_addFlash(text, color);
+}
+function _cyan_drawFlashes() {
+  if (state !== 'playing' && state !== 'paused' && state !== 'apocalypse') return;
+  if (!_cyan_flashes.length) return;
+  if (!player || isNaN(player.x) || isNaN(player.y)) return;
+  const now = Date.now();
+  const visible = [];
+  ctx.save();
+  ctx.font = 'bold 11px Orbitron, monospace';
+  ctx.textAlign = 'center';
+  ctx.shadowBlur = 8;
+  let i = 0;
+  for (const f of _cyan_flashes) {
+    const age = now - f.startTime;
+    if (age >= f.durationMs) continue;
+    visible.push(f);
+    const fade = 1 - age / f.durationMs;
+    const y = player.y - 28 - (i * 13) - (age / f.durationMs) * 16;
+    ctx.fillStyle = `rgba(${f.color},${(0.95 * fade).toFixed(2)})`;
+    ctx.shadowColor = `rgba(${f.color},${(0.85 * fade).toFixed(2)})`;
+    ctx.fillText(f.text, player.x, y);
+    i++;
+  }
+  _cyan_flashes = visible;
+  ctx.restore();
+}
+// Butterfly indicator: a pulsing cyan ring around butterflied powerups (the
+// ones being pulled). Drawn on the 2D ctx overlay so it shows over the PIXI
+// powerup layer (same compositing path the flashes use).
+function _cyan_drawButterflyRings() {
+  if (state !== 'playing' && state !== 'apocalypse') return;
+  let any = false;
+  for (const p of powerups) { if (p.bf && !p.collected) { any = true; break; } }
+  if (!any) return;
+  const t = Date.now() * 0.006;
+  ctx.save();
+  ctx.lineWidth = 2;
+  ctx.shadowColor = 'rgba(125,232,255,0.7)';
+  ctx.shadowBlur = 8;
+  for (const p of powerups) {
+    if (!p.bf || p.collected) continue;
+    const ph = p.pulse || 0;
+    const rr = (p.radius || 13) * 1.7 + 3 + Math.sin(t + ph) * 2;
+    ctx.strokeStyle = `rgba(125,232,255,${(0.55 + 0.25 * Math.sin(t + ph)).toFixed(2)})`;
+    ctx.beginPath(); ctx.arc(p.x, p.y, rr, 0, 6.28); ctx.stroke();
+  }
+  ctx.restore();
+}
+OrbHooks.on('onRender', () => { if (activeOrb === 'cyan') { _cyan_drawButterflyRings(); _cyan_drawFlashes(); } });
+
+// === CADENZA (Cadence capstone) ============================================
+// Auto-fire a random pair combo every 2,000 points earned; 5s lockout after
+// each fire (score earned during the lockout doesn't count toward the next).
+let _cyanCadenzaBaseline = 0;
+let _cyanCadenzaLockoutEnd = 0;
+let _cyanSteadyK = 0;            // last 1k-score threshold flashed for Steady Hands
+let _cyanHotStartUntil = 0;      // Hot Start armed-window deadline (after a burst)
+let _cyanHotStartUsed = false;   // Hot Start already consumed this burst window
+let _cyanLastDiceReset = 0;      // last time a burst CD was reset (Loaded Dice / Snake Eyes)
+const _CYAN_PAIR_COMBO_KEYS = ['nova_nova','nova_hyperspeed','nova_ghost','nova_shield','hyperspeed_ghost','hyperspeed_shield','ghost_shield','ghost_ghost','shield_shield'];
+OrbHooks.on('onUpdate', () => {
+  if (activeOrb !== 'cyan') return;
+  // Steady Hands feedback: flash on each new 1,000-point threshold while active.
+  // The bonus caps at −50% (5k score), so flashes stop after the 5th threshold.
+  if (rankOf('steadyHands') > 0) {
+    const k = Math.floor((score | 0) / 1000);
+    if (k > _cyanSteadyK) {
+      const crossed = k - _cyanSteadyK;
+      _cyanSteadyK = k;
+      // Each 1,000 pts shaves 10% of the current burst's cooldown DURATION off its
+      // live timer — but only while a burst is actually on cooldown. No cap; it
+      // procs every 1k all run (thresholds crossed with no burst pending do nothing).
+      const nowSH = Date.now();
+      if (burstCooldownEnd > nowSH && burstCooldownDuration > 0) {
+        burstCooldownEnd = Math.max(nowSH, burstCooldownEnd - crossed * 0.10 * burstCooldownDuration);
+        _cyan_flash('steadyHands', 'STEADY HANDS', CYAN_PATH_COLORS.cadence, 0);
+      }
+    }
+  }
+  // Cadenza: auto pair combo every 2,000 pts; 5s lockout (score frozen during it).
+  if (rankOf('cadenza') > 0) {
+    const now = Date.now();
+    if (now < _cyanCadenzaLockoutEnd) { _cyanCadenzaBaseline = score; }
+    else if ((score | 0) - _cyanCadenzaBaseline >= 2000) {
+      const key = _CYAN_PAIR_COMBO_KEYS[Math.floor(Math.random() * _CYAN_PAIR_COMBO_KEYS.length)];
+      activateCombo(key, player.x, player.y);
+      _cyanCadenzaLockoutEnd = now + 5000;
+      _cyan_addFlash('CADENZA', CYAN_PATH_COLORS.cadence);
+    }
+  }
+});
+
+// Bonus-single grant shared by Confluence + Siphon, with Cascade double-trigger.
+function _cyanGrantBonusSingle(type, x, y) {
+  activatePowerup(type, x, y);
+  powerupLastActivated[type] = Date.now();
+  if (activeOrb === 'cyan' && rankOf('cascade') > 0 && Math.random() < 0.25) {
+    setTimeout(() => {
+      if (state !== 'playing' && state !== 'apocalypse') return;
+      const t2 = POWERUP_TYPES[Math.floor(Math.random() * POWERUP_TYPES.length)];
+      activatePowerup(t2, player.x, player.y);
+      powerupLastActivated[t2] = Date.now();
+      _cyan_flash('cascade', 'CASCADE', CYAN_PATH_COLORS.convergence, 250);
+    }, 400);
+  }
+}
+OrbHooks.on('onResetGame', () => {
+  _cyan_flashes = []; _cyan_flashGates = {};
+  _cyanCadenzaBaseline = 0; _cyanCadenzaLockoutEnd = 0;
+  _cyanSteadyK = 0; _cyanHotStartUntil = 0; _cyanHotStartUsed = false;
+  _cyanLastDiceReset = Date.now(); // start the Snake Eyes pity timer at run start
+});
+
+// === CYAN schema migration (version-gated) =================================
+// Runs only when the stored cyan schema version is below CYAN_SCHEMA_VERSION.
+// The v1→v2 step detects a pre-rework multi-rank cyan tree (3-node paths /
+// legacy capstone pool), refunds the crystals invested at OLD flat rates
+// (T1=1k/T2=2k/T3=3k per rank, capstone 5k), wipes cyan to the new single-rank
+// schema, then stamps the version. Reads RAW localStorage (pre-clamp) so legacy
+// ranks aren't lost to the new max:1. Shape-checked so it never double-refunds.
+function _cyanLooksLegacy(rawCyan) {
+  if (!rawCyan) return false;
+  if (rawCyan.capstones && Object.prototype.hasOwnProperty.call(rawCyan.capstones, 'calculatedDrift')) return true;
+  if (Array.isArray(rawCyan.chance) && rawCyan.chance.length === 3) return true;
+  return false;
+}
+function maybeMigrateCyanV2() {
+  let stored = 0;
+  try {
+    const v = localStorage.getItem('drift_cyan_schema_version');
+    if (v != null) stored = parseInt(v, 10) | 0;
+    else if (localStorage.getItem('drift_cyan_migrated_v2') === '1') {
+      stored = 2; // already migrated under the old boolean flag → upgrade it to the versioned key
+      localStorage.setItem('drift_cyan_schema_version', '2');
+      localStorage.removeItem('drift_cyan_migrated_v2');
+    }
+  } catch {}
+  if (stored >= CYAN_SCHEMA_VERSION) return; // already at/past this schema — never re-run
+  let rawCyan = null;
+  try { const r = localStorage.getItem('drift_orb_trees'); if (r) { const p = JSON.parse(r); rawCyan = p && p.cyan; } } catch {}
+  // v1 → v2 step: refund + reset a legacy multi-rank cyan tree. Shape-checked so
+  // an already-new-shape save (old-flag migrated, or synced from another device)
+  // is never double-refunded — we just stamp the version below.
+  if (_cyanLooksLegacy(rawCyan)) {
+    const T = [0, 1000, 2000, 3000]; // OLD per-rank flat cost by tier
+    const sumPath = (arr, tiers) => {
+      if (!Array.isArray(arr)) return 0;
+      let s = 0; for (let i = 0; i < arr.length && i < tiers.length; i++) s += (arr[i] | 0) * (T[tiers[i]] || 0);
+      return s;
+    };
+    let refund = 0;
+    refund += sumPath(rawCyan.chance,      [1, 2, 3]); // loadedDice·fortuneFavors·doubleNothing
+    refund += sumPath(rawCyan.cadence,     [1, 2, 3]); // restlessOrb·primeMover·tempo
+    refund += sumPath(rawCyan.convergence, [1, 2, 3]); // oracleEdge·siphon·keystone
+    if (rawCyan.capstones) for (const k of ['deadCenter', 'calculatedDrift', 'butterfly']) if (rawCyan.capstones[k]) refund += 5000;
+    orbTrees.cyan = freshOrbTreeState('cyan'); // reset to new single-rank schema
+    if (refund > 0) { totalCrystals += refund; saveCrystals(); }
+    treeLog('cyan schema migrate v' + stored + '→v' + CYAN_SCHEMA_VERSION + ': refunded ' + refund + ' crystals; tree reset');
+  }
+  // Stamp the new schema version + drop the obsolete boolean key. saveTreeState
+  // schedules a PGS write, pushing the clean cyan up to replace the legacy cloud
+  // snapshot (so reinstalls / other devices read the migrated state).
+  try { localStorage.setItem('drift_cyan_schema_version', String(CYAN_SCHEMA_VERSION)); localStorage.removeItem('drift_cyan_migrated_v2'); } catch {}
+  saveTreeState();
 }
 
 // rankOf — drifterV2 nodes return rank only when ACTIVE in the budget. This is
@@ -6992,6 +7483,263 @@ ORB_BEHAVIOR.drifterV2.renderTreeDetail = function() {
             renderTreeOverlay();
             closeTreeDetail();
           }
+        });
+      };
+    }
+  }
+};
+
+// === Custom branching tree UI for cyan (DRIFTER) =====================
+// Mirrors the drifterV2 renderer but routes all state through the generic
+// ActiveBudget engine + the CYAN_* tables. Dispatched when treeUiCurrentOrb
+// === 'cyan'; the renderTreeOverlay dispatcher already resets inline styles.
+function _cyan_nodeState(nodeKey) {
+  const r = ActiveBudget.resolveNode('cyan', nodeKey);
+  if (!r) return 'locked';
+  const state = orbTrees.cyan;
+  const current = state[r.pathKey][r.nodeIdx] | 0;
+  const prereqOk = pathPrereqMet(state, r.pathKey, r.nodeIdx);
+  if (current > 0 && ActiveBudget.isActive('cyan', nodeKey)) return 'active';
+  if (current > 0) return 'owned';
+  if (prereqOk) return 'available';
+  return 'locked';
+}
+function _cyan_buildTreeColumn(pathKey) {
+  const layout = CYAN_TREE_LAYOUTS[pathKey];
+  const col = document.createElement('div');
+  col.className = 'dv2-tree-col';
+  col.style.cssText = 'position:relative; width:200px; height:430px; flex-shrink:0;';
+  const svgNS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(svgNS, 'svg');
+  svg.setAttribute('viewBox', '0 0 200 430');
+  svg.setAttribute('width', '200');
+  svg.setAttribute('height', '430');
+  svg.style.cssText = 'position:absolute; top:0; left:0; pointer-events:none;';
+  for (const nKey of Object.keys(layout.nodes)) {
+    const spec = CYAN_PREREQS[nKey];
+    if (!spec || !Array.isArray(spec.prereq)) continue;
+    const me = layout.nodes[nKey];
+    for (const parentKey of spec.prereq) {
+      const parent = layout.nodes[parentKey];
+      if (!parent) continue;
+      const bothActive = _cyan_nodeState(nKey) === 'active' && _cyan_nodeState(parentKey) === 'active';
+      const line = document.createElementNS(svgNS, 'line');
+      line.setAttribute('x1', parent.x); line.setAttribute('y1', parent.y);
+      line.setAttribute('x2', me.x); line.setAttribute('y2', me.y);
+      line.setAttribute('stroke', bothActive ? `rgba(${layout.color},0.9)` : 'rgba(120,120,140,0.35)');
+      line.setAttribute('stroke-width', bothActive ? '3' : '2');
+      if (bothActive) line.setAttribute('filter', 'drop-shadow(0 0 4px rgba(' + layout.color + ',0.6))');
+      svg.appendChild(line);
+    }
+  }
+  col.appendChild(svg);
+  const label = document.createElement('div');
+  label.style.cssText = `position:absolute; bottom:8px; left:0; right:0; text-align:center; font-family:Orbitron,monospace; font-size:11px; letter-spacing:3px; color:rgba(${layout.color},0.85);`;
+  label.textContent = layout.name;
+  col.appendChild(label);
+  for (const nKey of Object.keys(layout.nodes)) {
+    const pos = layout.nodes[nKey];
+    const r = ActiveBudget.resolveNode('cyan', nKey);
+    if (!r) continue;
+    const nodeDef = r.node;
+    const nState = _cyan_nodeState(nKey);
+    const isCapstone = !!pos.capstone;
+    const isKeystone = !!pos.keystone;
+    const size = isCapstone ? 38 : isKeystone ? 34 : 28;
+    const btn = document.createElement('button');
+    btn.dataset.nodeKey = nKey;
+    btn.style.cssText = `
+      position:absolute; left:${pos.x - size/2}px; top:${pos.y - size/2}px;
+      width:${size}px; height:${size}px;
+      border-radius:${isCapstone ? '8px' : '50%'};
+      border:2px solid rgba(${layout.color},${nState === 'locked' ? 0.18 : nState === 'available' ? 0.45 : 0.9});
+      background:${nState === 'active' ? `rgba(${layout.color},0.85)` : 'rgba(10,12,24,0.85)'};
+      box-shadow:${nState === 'active' ? `0 0 14px rgba(${layout.color},0.7)` : 'none'};
+      color:${nState === 'active' ? 'rgba(0,0,0,0.9)' : `rgba(${layout.color},${nState === 'locked' ? 0.3 : 0.95})`};
+      font-family:Orbitron,monospace; font-size:${isCapstone ? 12 : 10}px; font-weight:bold;
+      cursor:pointer; padding:0; transition: all 0.15s;
+      ${nState === 'locked' ? 'opacity:0.45;' : ''}
+    `;
+    btn.textContent = (nodeDef.pointCost | 0) || 1;
+    const _unitCost = nodeCost(nodeDef.tier, 1, 'cyan', nodeDef);
+    btn.title = `${nodeDef.name} — ${(nodeDef.pointCost | 0) || 1} pt · ${formatCrystals(_unitCost)} 💎 (${nState})`;
+    btn.addEventListener('click', () => {
+      SFX.clickSecondary();
+      treeDetailCurrent = { kind: 'node', orbKey: 'cyan', pathKey: r.pathKey, nodeIdx: r.nodeIdx };
+      renderTreeDetail();
+      document.getElementById('treeNodeDetail').classList.add('visible');
+    });
+    col.appendChild(btn);
+    if (nState === 'available' || nState === 'locked') {
+      const costLbl = document.createElement('div');
+      const lblW = 56;
+      costLbl.style.cssText = `position:absolute; left:${pos.x - lblW / 2}px; top:${pos.y + size / 2 + 2}px; width:${lblW}px; text-align:center; font-family:Orbitron,monospace; font-size:9px; letter-spacing:0.5px; color:rgba(${layout.color},${nState === 'locked' ? 0.35 : 0.85}); pointer-events:none; line-height:1;`;
+      costLbl.textContent = `${formatCrystals(_unitCost)} 💎`;
+      col.appendChild(costLbl);
+    }
+  }
+  return col;
+}
+function _cyan_renderCustomTreeOverlay() {
+  const def = TREE_DEFS.cyan;
+  const state = orbTrees.cyan;
+  if (!def || !state) return;
+  document.getElementById('treeTitle').textContent = 'DRIFTER';
+  document.getElementById('treeTitle').style.color = 'rgba(125,232,255,1)';
+  document.getElementById('treeCrystals').textContent = '💎 ' + formatCrystals(totalCrystals);
+  const pathsEl = document.getElementById('treePaths');
+  pathsEl.innerHTML = '';
+  pathsEl.style.display = 'flex';
+  pathsEl.style.gap = '14px';
+  pathsEl.style.flexWrap = 'nowrap';
+  pathsEl.style.overflowX = 'auto';
+  pathsEl.style.overflowY = 'hidden';
+  pathsEl.style.webkitOverflowScrolling = 'touch';
+  pathsEl.style.padding = '6px 8px 12px';
+  pathsEl.style.maxHeight = '450px';
+  pathsEl.style.justifyContent = 'flex-start';
+  for (const pKey of ['chance', 'cadence', 'convergence']) {
+    pathsEl.appendChild(_cyan_buildTreeColumn(pKey));
+  }
+  const capsEl = document.getElementById('treeCapstones');
+  capsEl.innerHTML = '';
+  capsEl.style.display = 'flex';
+  capsEl.style.flexDirection = 'column';
+  capsEl.style.alignItems = 'center';
+  capsEl.style.gap = '6px';
+  const total = ActiveBudget.activePointsTotal('cyan');
+  const cap = getCyanBudgetCap();
+  const bonus = getCyanBudgetBonus();
+  const overBudget = total > cap;
+  const budget = document.createElement('div');
+  budget.style.cssText = `display:flex; align-items:center; gap:10px; padding:10px 8px; font-family:Orbitron,monospace; font-size:13px; letter-spacing:3px; color:rgba(125,232,255,0.85);`;
+  const totalColor = overBudget ? 'rgba(255,90,90,1)' : 'rgba(150,235,255,1)';
+  const label = document.createElement('span');
+  label.innerHTML = `ACTIVE POINTS: <span style="color:${totalColor}; font-weight:bold; font-size:16px;">${total}</span> <span style="opacity:0.6;">/ ${cap}</span>`;
+  budget.appendChild(label);
+  const expandMax = ActiveBudget.expandMaxFor('cyan');
+  const expandCost = ActiveBudget.expandCostFor('cyan');
+  const expandBtn = document.createElement('button');
+  expandBtn.style.cssText = `background:transparent; border:1px solid rgba(150,235,255,0.55); color:rgba(150,235,255,0.95); font-family:Orbitron,monospace; font-size:12px; letter-spacing:1px; padding:4px 10px; cursor:pointer; border-radius:3px; transition:all 0.18s; min-height:26px; text-transform:uppercase;`;
+  if (bonus >= expandMax) {
+    expandBtn.textContent = 'MAXED';
+    expandBtn.disabled = true;
+    expandBtn.style.opacity = '0.45';
+    expandBtn.style.cursor = 'not-allowed';
+  } else {
+    expandBtn.textContent = '＋';
+    expandBtn.title = `Expand active points capacity by +1 — ${formatCrystals(expandCost)} 💎`;
+    expandBtn.addEventListener('click', () => {
+      SFX.clickSecondary();
+      const remaining = expandMax - bonus;
+      confirmTreeAction(
+        `Expand active points capacity by +1? Cost: ${formatCrystals(expandCost)} 💎. (${remaining} expansion${remaining === 1 ? '' : 's'} remaining)`,
+        () => { if (purchaseCyanBudgetExpand()) { SFX.clickPrimary(); renderTreeOverlay(); } }
+      );
+    });
+  }
+  budget.appendChild(expandBtn);
+  capsEl.appendChild(budget);
+  const ranks = totalRanksInvested('cyan');
+  const full = document.getElementById('treeRespecFullBtn');
+  const _fullFee = fullTreeRespecCost('cyan');
+  full.textContent = ranks > 0 ? `REFUND ALL (${formatCrystals(_fullFee)} 💎)` : 'REFUND ALL';
+  full.disabled = ranks === 0 || totalCrystals < _fullFee;
+}
+ORB_BEHAVIOR.cyan.renderTreeOverlay = function() { _cyan_renderCustomTreeOverlay(); };
+ORB_BEHAVIOR.cyan.renderTreeDetail = function() {
+  if (!treeDetailCurrent || treeDetailCurrent.kind !== 'node') return _renderTreeDetail_default();
+  _renderTreeDetail_default();
+  const t = treeDetailCurrent;
+  const def = TREE_DEFS.cyan;
+  const state = orbTrees.cyan;
+  const node = def.paths[t.pathKey].nodes[t.nodeIdx];
+  const current = state[t.pathKey][t.nodeIdx] | 0;
+  const prereqOk = pathPrereqMet(state, t.pathKey, t.nodeIdx);
+  const upBtn = document.getElementById('treeDetailUpgradeBtn');
+  const respecBtn = document.getElementById('treeDetailRespecBtn');
+  if (!upBtn || !respecBtn) return;
+  const isActive = ActiveBudget.isActive('cyan', node.key);
+  const pointCost = (node.pointCost | 0) || 1;
+  const total = ActiveBudget.activePointsTotal('cyan');
+  if (current <= 0) {
+    upBtn.style.visibility = '';
+    if (!prereqOk) {
+      upBtn.textContent = 'PREREQ MISSING';
+      upBtn.disabled = true;
+    } else {
+      const nextCost = nodeCost(node.tier, 1, t.orbKey, node);
+      upBtn.textContent = `UNLOCK — ${formatCrystals(nextCost)} 💎`;
+      upBtn.disabled = totalCrystals < nextCost;
+      upBtn.onclick = () => {
+        if (purchaseNodeRank(t.orbKey, t.pathKey, t.nodeIdx)) {
+          treeLog('cyan unlocked: ' + node.key);
+          SFX.clickPrimary(); renderTreeOverlay(); renderTreeDetail();
+        }
+      };
+    }
+    respecBtn.style.visibility = 'hidden';
+    respecBtn.disabled = true;
+  } else if (!isActive) {
+    upBtn.style.visibility = '';
+    const requiredKs = ActiveBudget.keystoneRequiredFor('cyan', node.key);
+    const ksMissing = !!requiredKs && !ActiveBudget.isActive('cyan', requiredKs);
+    let intraReqMissingKey = null;
+    const spec = CYAN_PREREQS[node.key];
+    if (spec && Array.isArray(spec.requiresActive)) {
+      for (const rq of spec.requiresActive) { if (!ActiveBudget.isActive('cyan', rq)) { intraReqMissingKey = rq; break; } }
+    }
+    const fits = total + pointCost <= getCyanBudgetCap();
+    if (ksMissing) {
+      const ksResolved = ActiveBudget.resolveNode('cyan', requiredKs);
+      const ksName = (ksResolved && ksResolved.node && ksResolved.node.name) || 'keystone';
+      upBtn.textContent = `ACTIVATE ${ksName.toUpperCase()} FIRST`;
+      upBtn.disabled = true;
+    } else if (intraReqMissingKey) {
+      const r2 = ActiveBudget.resolveNode('cyan', intraReqMissingKey);
+      const reqName = (r2 && r2.node && r2.node.name) || 'parent';
+      upBtn.textContent = `ACTIVATE ${reqName.toUpperCase()} FIRST`;
+      upBtn.disabled = true;
+    } else if (!fits) {
+      upBtn.textContent = 'BUDGET FULL';
+      upBtn.disabled = true;
+    } else {
+      upBtn.textContent = `ACTIVATE (${pointCost} PT${pointCost > 1 ? 'S' : ''})`;
+      upBtn.disabled = false;
+    }
+    upBtn.onclick = () => {
+      if (ActiveBudget.activate('cyan', node.key)) {
+        treeLog('cyan activated: ' + node.key);
+        SFX.clickPrimary(); renderTreeOverlay(); renderTreeDetail();
+      }
+    };
+    respecBtn.style.visibility = '';
+    {
+      const _fee = respecNodeCost(t.orbKey, t.pathKey, t.nodeIdx);
+      respecBtn.disabled = totalCrystals < _fee;
+      respecBtn.textContent = `REFUND (${formatCrystals(_fee)} 💎)`;
+      respecBtn.onclick = () => {
+        confirmTreeAction(`Refund ${node.name}? Costs ${formatCrystals(_fee)} 💎 and returns all spent crystals.`, () => {
+          if (respecNode(t.orbKey, t.pathKey, t.nodeIdx)) { SFX.clickSecondary(); renderTreeOverlay(); closeTreeDetail(); }
+        });
+      };
+    }
+  } else {
+    upBtn.style.visibility = '';
+    upBtn.textContent = `DEACTIVATE (FREES ${pointCost} PT${pointCost > 1 ? 'S' : ''})`;
+    upBtn.disabled = false;
+    upBtn.onclick = () => {
+      ActiveBudget.deactivate('cyan', node.key);
+      SFX.clickPrimary(); renderTreeOverlay(); renderTreeDetail();
+    };
+    respecBtn.style.visibility = '';
+    {
+      const _fee = respecNodeCost(t.orbKey, t.pathKey, t.nodeIdx);
+      respecBtn.disabled = totalCrystals < _fee;
+      respecBtn.textContent = `REFUND (${formatCrystals(_fee)} 💎)`;
+      respecBtn.onclick = () => {
+        confirmTreeAction(`Refund ${node.name}? Costs ${formatCrystals(_fee)} 💎, frees ${pointCost} budget point${pointCost > 1 ? 's' : ''} and returns all spent crystals.`, () => {
+          if (respecNode(t.orbKey, t.pathKey, t.nodeIdx)) { SFX.clickSecondary(); renderTreeOverlay(); closeTreeDetail(); }
         });
       };
     }
@@ -11029,11 +11777,8 @@ function spawnDestroyProcFlash(powerupType) {
   try { emitPickupParticles(player.x, player.y, powerupType); } catch {}
 }
 
-function siphonProc() {
+function _siphonApply(pick) {
   const now = Date.now();
-  if (now - lastSiphonProc < 1500) { treeLog('siphon: cooldown-blocked'); return; }
-  const picks = ['shield', 'nova', 'hyperspeed', 'ghost'];
-  const pick = picks[Math.floor(Math.random() * picks.length)];
   if (pick === 'shield') {
     shieldEndTime = now + SHIELD_DURATION();
     activeEffects.shield = SHIELD_DURATION();
@@ -11052,9 +11797,26 @@ function siphonProc() {
     ghostEndTime = now + GHOST_DURATION();
     activeEffects.ghost = GHOST_DURATION();
   }
+}
+function siphonProc() {
+  const now = Date.now();
+  if (now - lastSiphonProc < 5000) { treeLog('siphon: cooldown-blocked'); return; } // v1.9.0: 5s CD
+  const picks = ['shield', 'nova', 'hyperspeed', 'ghost'];
+  const pick = picks[Math.floor(Math.random() * picks.length)];
+  _siphonApply(pick);
   lastSiphonProc = now;
   spawnDestroyProcFlash(pick);
   treeLog('siphon: granted ' + pick);
+  _cyan_flash('siphon', 'SIPHON', CYAN_PATH_COLORS.convergence, 300);
+  // Cascade (Convergence T1): 25% chance to fire a second siphon effect ~0.4s
+  // later (a Cascade re-proc, bypassing the 5s gate).
+  if (activeOrb === 'cyan' && rankOf('cascade') > 0 && Math.random() < 0.25) {
+    setTimeout(() => {
+      if (state !== 'playing' && state !== 'apocalypse') return;
+      _siphonApply(picks[Math.floor(Math.random() * picks.length)]);
+      _cyan_flash('cascade', 'CASCADE', CYAN_PATH_COLORS.convergence, 250);
+    }, 400);
+  }
 }
 
 function soulboundProc() {
@@ -11331,8 +12093,7 @@ function checkDestroyProc(body, source) {
     }
   }
   if (activeOrb === 'cyan' || rainbowRunActive) {
-    const r = rankOf('siphon');
-    if (r > 0 && Math.random() < TREE_PROC_CHANCES[r - 1]) siphonProc();
+    if (rankOf('siphon') > 0 && Math.random() < 0.10) siphonProc(); // 10% / destroy
   }
   if (activeOrb === 'cosmic' || rainbowRunActive) {
     const r = rankOf('soulbound');
@@ -11696,55 +12457,40 @@ function resolveDeadCenter(pickedType) {
   if (deadCenterTimeoutId) { clearTimeout(deadCenterTimeoutId); deadCenterTimeoutId = null; }
   if (deadCenterCycleIntervalId) { clearInterval(deadCenterCycleIntervalId); deadCenterCycleIntervalId = null; }
   closeDeadCenterOverlay(true);
-  // Apply the chosen powerup/combo. CALCULATED DRIFT upgrades singles to
-  // pair combos; without it, fires the single powerup normally.
-  if (hasCapstone('calculatedDrift')) {
-    if (pickedType === 'shield') {
-      activateCombo('shield_shield', player.x, player.y);
-    } else if (pickedType === 'nova') {
-      activateCombo('nova_nova', player.x, player.y);
-    } else if (pickedType === 'hyperspeed') {
-      activateHyperspeed();
-      activateHyperspeed();
-      SFX.pickup('hyperspeed', { stacks: hyperSpeedStacks });
-    } else if (pickedType === 'ghost') {
-      activateCombo('ghost_ghost', player.x, player.y);
-    }
-    treeLog('deadCenter + calculatedDrift: ' + pickedType + ' combo');
-  } else {
-    activatePowerup(pickedType, player.x, player.y);
-    treeLog('deadCenter: ' + pickedType);
+  // v1.9.0: Dead Center fires the picked powerup DOUBLED — its self-pair combo
+  // (Calculated Drift folded in as default behavior, no longer a separate node).
+  if (pickedType === 'shield') {
+    activateCombo('shield_shield', player.x, player.y);
+  } else if (pickedType === 'nova') {
+    activateCombo('nova_nova', player.x, player.y);
+  } else if (pickedType === 'hyperspeed') {
+    activateHyperspeed();
+    activateHyperspeed();
+    SFX.pickup('hyperspeed', { stacks: hyperSpeedStacks });
+  } else if (pickedType === 'ghost') {
+    activateCombo('ghost_ghost', player.x, player.y);
   }
-  // v1.7.0: Double or Nothing now also rolls after DEAD CENTER's resolve so
-  // the Chance T3 investment isn't wasted by the capstone. Mirrors the
-  // executeBurst DON flow at :12747-12768; the player-picked type fills the
-  // role of the random first-fire. Fires regardless of whether CALCULATED
-  // DRIFT is owned (the second-fire is always a single, never a combo).
-  if (activeOrb === 'cyan') {
-    const donRank = rankOf('doubleNothing');
-    if (donRank > 0) {
-      const donChance = [0.30, 0.60, 0.90][donRank - 1] || 0;
-      if (Math.random() < donChance) {
-        const donTypes = ['shield','nova','hyperspeed','ghost'];
-        const donRemaining = donTypes.filter(t => t !== pickedType);
-        let donSecond = donRemaining[Math.floor(Math.random() * donRemaining.length)];
-        if (donSecond === 'nova') {
-          const novaActive = novaRings.length > 0
-            || activeCombos.nova_nova || activeCombos.nova_hyperspeed
-            || activeCombos.nova_ghost || activeCombos.nova_shield;
-          if (novaActive) {
-            const altDon = donRemaining.filter(t => t !== 'nova');
-            donSecond = altDon.length ? altDon[Math.floor(Math.random() * altDon.length)] : null;
-          }
-        }
-        if (donSecond) {
-          activatePowerup(donSecond, player.x, player.y);
-          powerupLastActivated[donSecond] = Date.now();
-          treeLog('doubleNothing: second fire ' + donSecond + ' (post-deadCenter)');
-        } else {
-          treeLog('doubleNothing: suppressed by nova-overload (post-deadCenter)');
-        }
+  _cyan_addFlash('DEAD CENTER', CYAN_PATH_COLORS.chance);
+  treeLog('deadCenter: ' + pickedType + ' self-pair');
+  // Double or Nothing (keystone): a different single fires right after, so the
+  // self-pair + this single read as a cross-type pair burst.
+  if (activeOrb === 'cyan' && rankOf('doubleNothing') > 0) {
+    const donTypes = ['shield','nova','hyperspeed','ghost'];
+    const donRemaining = donTypes.filter(t => t !== pickedType);
+    let donSecond = donRemaining[Math.floor(Math.random() * donRemaining.length)];
+    if (donSecond === 'nova') {
+      const novaActive = novaRings.length > 0
+        || activeCombos.nova_nova || activeCombos.nova_hyperspeed
+        || activeCombos.nova_ghost || activeCombos.nova_shield;
+      if (novaActive) {
+        const altDon = donRemaining.filter(t => t !== 'nova');
+        donSecond = altDon.length ? altDon[Math.floor(Math.random() * altDon.length)] : null;
       }
+    }
+    if (donSecond) {
+      activatePowerup(donSecond, player.x, player.y);
+      powerupLastActivated[donSecond] = Date.now();
+      treeLog('doubleNothing: second fire ' + donSecond + ' (post-deadCenter)');
     }
   }
   shakeCapstone('deadCenter');
@@ -11775,64 +12521,28 @@ function closeDeadCenterOverlay(resumePlay) {
 // effect of a type different from both pair members. Called once per
 // activateCombo() on pair keys (after the combo resolves).
 function maybeKeystoneBonus(comboKey) {
+  // Confluence (Convergence keystone): on any pair combo, 30% chance to also
+  // grant a bonus single of a type different from both pair members. Routed
+  // through _cyanGrantBonusSingle so Cascade can double-trigger it.
   if (activeOrb !== 'cyan') return;
-  const ksRank = rankOf('keystone');
-  if (ksRank <= 0) return;
-  const chance = [0.10, 0.20, 0.30][ksRank - 1] || 0;
-  if (Math.random() >= chance) return;
+  if (rankOf('confluence') <= 0) return;
+  if (Math.random() >= 0.30) return;
   const parts = comboKey.split('_');
   if (parts.length !== 2) return;
   const all = ['shield', 'nova', 'hyperspeed', 'ghost'];
   const candidates = all.filter(t => t !== parts[0] && t !== parts[1]);
   if (candidates.length === 0) return;
   const pick = candidates[Math.floor(Math.random() * candidates.length)];
-  activatePowerup(pick, player.x, player.y);
-  treeLog('keystone: bonus ' + pick + ' on ' + comboKey);
+  _cyanGrantBonusSingle(pick, player.x, player.y);
+  _cyan_flash('confluence', 'CONFLUENCE', CYAN_PATH_COLORS.convergence, 400);
+  treeLog('confluence: bonus ' + pick + ' on ' + comboKey);
 }
 
-// BUTTERFLY EFFECT (Drifter capstone): on a qualifying pickup event, roll
-// v1.6.3 rework: 15 % chance per pickup grab to spawn a duplicate at the
-// top of the screen, with a brief split visual + SFX. 10 s cooldown on
-// successful procs (failed rolls do NOT stamp the cooldown). One roll
-// per pair-pickup event (the roll is done at the pair call-site, not
-// per tethered piece).
-function maybeButterflyEffect(type, srcX, srcY) {
-  if (Date.now() < butterflyEffectNextProcTime) return;
-  if (Math.random() >= 0.15) return;
-  butterflyEffectNextProcTime = Date.now() + 10000;
-  // Spawn the duplicate offscreen-top so the player has to intercept
-  // it. Position is biased toward the player's current x to keep the
-  // duplicate within easy reach.
-  const topBodyY = bodies.length ? Math.min(...bodies.map(b => b.y)) : -100;
-  const spawnY = Math.min(-30, topBodyY - 60 - Math.random() * 80);
-  const dx = (Math.random() - 0.5) * 160; // ±80 px
-  const spawnX = Math.max(60, Math.min(W - 60, player.x + dx));
-  spawnButterflyEffectSplit(spawnX, spawnY, type);
-  shakeCapstone('butterflyEffect');
-}
-
-// v1.6.3 visual pass: Butterfly Effect split — pushes the duplicate
-// pickup, queues a brief expanding-ring + particle-burst animation at
-// the spawn site, and plays a soft mirror chime. Reuses
-// emitPickupParticles for the burst and butterflyEffectVisuals for the
-// ring (drawn from drawButterflyEffectVisuals).
-function spawnButterflyEffectSplit(x, y, type) {
-  powerups.push({
-    type, x, y, radius: 13,
-    pulse: Math.random() * 6.28,
-    collected: false,
-  });
-  // v1.9.0 perf: hard cap to bound worst-case render at extreme split rates.
-  if (butterflyEffectVisuals.length >= VISUAL_ARRAY_HARD_CAP) butterflyEffectVisuals.shift();
-  butterflyEffectVisuals.push({
-    x, y, type,
-    startTime: Date.now(),
-    maxLifeMs: BUTTERFLY_EFFECT_VISUAL_LIFE_MS,
-  });
-  emitPickupParticles(x, y, type);
-  try { SFX.playSfxBuffer('mirror', 0.18); } catch {}
-  treeLog('butterfly: split spawned ' + type + ' (10s CD)');
-}
+// BUTTERFLY EFFECT (Drifter capstone) was reworked in v1.9.0 from a pickup-time
+// duplicate-split into a spawn-time pull (see the powerup update loop, which
+// marks p.bf and pulls butterflied powerups toward the player, and
+// _cyan_drawButterflyRings for the visual). The old maybeButterflyEffect /
+// spawnButterflyEffectSplit functions were removed as dead code.
 
 // Ghostlight: circular EMP-lite burst expanding from the kill position.
 // Ghost-purple, fades over 300 ms. Kills any body inside the radius on
@@ -12194,16 +12904,27 @@ const PGS = (() => {
     for (const orb of orbs) {
       const def = TREE_DEFS[orb];
       out[orb] = freshOrbTreeState(orb);
+      let aOrb = (a && a[orb]) || null;
+      let bOrb = (b && b[orb]) || null;
+      // v1.9.0 shape-based guard: never let a LEGACY-shaped cyan snapshot
+      // contribute ranks — Math.max-merging the old 3-rank arrays into the new
+      // max:1 nodes would resurrect pre-rework nodes as FREE unlocks. Drop the
+      // legacy side; the new-shape side wins, and the crystal refund still
+      // propagates via the crystals max-merge. (Generalize per-orb in v2.0.0+.)
+      if (orb === 'cyan') {
+        if (_cyanLooksLegacy(aOrb)) aOrb = null;
+        if (_cyanLooksLegacy(bOrb)) bOrb = null;
+      }
       for (const pKey of Object.keys(def.paths)) {
         const nodes = def.paths[pKey].nodes;
-        const la = (a && a[orb] && a[orb][pKey]) || [];
-        const rb = (b && b[orb] && b[orb][pKey]) || [];
+        const la = (aOrb && aOrb[pKey]) || [];
+        const rb = (bOrb && bOrb[pKey]) || [];
         for (let i = 0; i < nodes.length; i++) {
           out[orb][pKey][i] = Math.max(0, Math.min(nodes[i].max, Math.max((la[i] | 0), (rb[i] | 0))));
         }
       }
-      const aCaps = (a && a[orb] && a[orb].capstones) || {};
-      const bCaps = (b && b[orb] && b[orb].capstones) || {};
+      const aCaps = (aOrb && aOrb.capstones) || {};
+      const bCaps = (bOrb && bOrb.capstones) || {};
       for (const cap of def.capstones) {
         out[orb].capstones[cap.key] = !!(aCaps[cap.key] || bCaps[cap.key]);
       }
@@ -12213,8 +12934,8 @@ const PGS = (() => {
       // every cloud sync. OR-merge across devices — a node marked active in
       // either snapshot stays active. Players who want to deactivate locally
       // can always do so via the tree UI.
-      const aActive = (a && a[orb] && a[orb].activePoints) || null;
-      const bActive = (b && b[orb] && b[orb].activePoints) || null;
+      const aActive = (aOrb && aOrb.activePoints) || null;
+      const bActive = (bOrb && bOrb.activePoints) || null;
       if (aActive || bActive) {
         out[orb].activePoints = {};
         if (aActive) for (const k of Object.keys(aActive)) if (aActive[k]) out[orb].activePoints[k] = true;
@@ -12719,7 +13440,11 @@ let burstCooldownDuration = BURST_COOLDOWN_MS;
 function _BURST_COOLDOWN_default() {
   let cd = BURST_COOLDOWN_MS;
   // Skill tree: Restless Orb -10%/rank (Drifter-only).
-  if (activeOrb === 'cyan' || rainbowRunActive) cd *= (1 - 0.10 * rankOf('restlessOrb'));
+  if (activeOrb === 'cyan' || rainbowRunActive) {
+    if (rankOf('metronome') > 0) cd *= 0.70; // Metronome keystone: −30% burst CD
+    // Steady Hands is NOT a permanent CD multiplier — it shaves the LIVE cooldown
+    // by 10% per 1,000 points earned (handled in the cyan onUpdate hook).
+  }
   return Math.max(5000, Math.floor(cd));
 }
 let burstTriggered = false;
@@ -16870,7 +17595,13 @@ function spawnPowerup() {
   // v1.7.0: Oracle Edge changed additive (+1.5 pp/rank) → multiplicative
   // (+10 %/rank). Closes the cross-difficulty gap (additive over-rewarded
   // the lower-base-rate difficulties at max rank).
-  if (activeOrb === 'cyan' || rainbowRunActive) pairChance *= 1 + 0.10 * rankOf('oracleEdge');
+  if (activeOrb === 'cyan' || rainbowRunActive) {
+    // Oracle Edge +10% and Confluence +20% pair-spawn chance (additive bonus).
+    let _pairBonus = 0;
+    if (rankOf('oracleEdge') > 0) _pairBonus += 0.10;
+    if (rankOf('confluence') > 0) _pairBonus += 0.20;
+    if (_pairBonus > 0) pairChance *= (1 + _pairBonus);
+  }
   if (Math.random() < pairChance) {
     // Pair-combo selection weighted by active orb's specialty: combos that
     // include the orb's bias type get 2x weight so they spawn more often.
@@ -16908,7 +17639,7 @@ function spawnPowerup() {
   if (activeOrb === 'cyan' || rainbowRunActive) {
     const ffRank = rankOf('fortuneFavors');
     if (ffRank > 0) {
-      const biasChance = [0.25, 0.50, 0.75][ffRank - 1] || 0;
+      const biasChance = 0.75; // single-rank value
       if (Math.random() < biasChance) {
         const nowFF = Date.now();
         let bestType = null, bestAge = -1;
@@ -16955,8 +17686,9 @@ function spawnPowerup() {
   if ((activeOrb === 'cyan' || rainbowRunActive) && Date.now() >= fortuneFavorsNextProcTime) {
     const ffRank = rankOf('fortuneFavors');
     if (ffRank > 0) {
-      const extraChance = [0.10, 0.20, 0.30][ffRank - 1] || 0;
+      const extraChance = 0.30; // single-rank value
       if (Math.random() < extraChance) {
+        _cyan_flash('fortuneFavors', 'FORTUNE FAVORS', CYAN_PATH_COLORS.chance, 700);
         let extraType = POWERUP_TYPES[Math.floor(Math.random() * POWERUP_TYPES.length)];
         if (extraType === 'nova') {
           const novaActive = novaRings.length > 0
@@ -17626,6 +18358,14 @@ function drawDestroyEffects() {
 }
 
 function addDestroyPoints() {
+  // Hot Start (Cadence): first kill within 5s of a burst seeds the streak to the
+  // current cap (12 with Prime Mover). The ++ below lands it exactly on cap; never
+  // lowers an already-higher streak. Once per armed burst window.
+  if (activeOrb === 'cyan' && rankOf('hotStart') > 0 && !_cyanHotStartUsed && Date.now() < _cyanHotStartUntil) {
+    destroyStreak = Math.max(destroyStreak, getStreakCap() - 1);
+    _cyanHotStartUsed = true;
+    _cyan_flash('hotStart', 'HOT START', CYAN_PATH_COLORS.cadence, 0);
+  }
   destroyStreak++;
   lastDestroyTime = Date.now();
   destroyCount++;
@@ -18025,12 +18765,8 @@ function activatePair(a, b) {
   // Rule 3 (random tie-break) on the next single pickup.
   lastGainedEffects = [a.type, b.type];
   lastGainedTimestamp = frame;
-  // BUTTERFLY EFFECT: one roll per pair event, mirror type picked randomly
-  // between the two tethered pieces. Never rolls twice for the same pair.
-  if (activeOrb === 'cyan' && hasCapstone('butterfly')) {
-    const mirrorType = Math.random() < 0.5 ? a.type : b.type;
-    maybeButterflyEffect(mirrorType, a.x, a.y);
-  }
+  // BUTTERFLY EFFECT (v1.9.0): no longer duplicates on pickup — it now pulls
+  // butterflied powerups toward the player at spawn (see the powerup update loop).
 }
 
 function rawActivate(type, x, y) {
@@ -18453,11 +19189,8 @@ function activatePowerup(type, x, y) {
   // use; the v1.6.3 Keystone rework no longer consults these fields).
   lastSingleType = type;
   lastSingleTime = Date.now();
-  // BUTTERFLY EFFECT (Drifter capstone): 15 % chance to spawn a mirror
-  // pickup of the same type 1 s later.
-  if (activeOrb === 'cyan' && hasCapstone('butterfly')) {
-    maybeButterflyEffect(type, x, y);
-  }
+  // BUTTERFLY EFFECT (v1.9.0): pull-at-spawn (see powerup update loop), no
+  // longer a pickup-time duplicate.
 }
 
 // --- Run timer ---
@@ -19124,42 +19857,34 @@ function _executeBurst_default() {
     // keeps the burst cooldown ticking — but applyPauseDeltaShift on
     // dismissal bumps burstCooldownEnd forward by the pause delta so the
     // cooldown effectively pauses during the picker.
-    if (hasCapstone('deadCenter')) {
+    if (rankOf('deadCenter') > 0) {
       openDeadCenterOverlay();
       runBurstCount++;
       return true;
     }
     const types = ['shield','nova','hyperspeed','ghost'];
-    const donRank = rankOf('doubleNothing');
-    // Fortune Favors' burst bias was removed in v1.6.3 — it now biases
-    // natural playfield spawns instead (see spawnPowerup).
     const type = types[Math.floor(Math.random() * types.length)];
     activatePowerup(type, player.x, player.y);
     powerupLastActivated[type] = Date.now();
-    // Double or Nothing: chance to immediately fire a second random single
-    // of a DIFFERENT type. Respects nova-overload guard so the second fire
-    // doesn't double-stack nova effects.
-    if (donRank > 0) {
-      const chance = [0.30, 0.60, 0.90][donRank - 1] || 0;
-      if (Math.random() < chance) {
-        const remaining = types.filter(t => t !== type);
-        let second = remaining[Math.floor(Math.random() * remaining.length)];
-        if (second === 'nova') {
-          const novaActive = novaRings.length > 0
-            || activeCombos.nova_nova || activeCombos.nova_hyperspeed
-            || activeCombos.nova_ghost || activeCombos.nova_shield;
-          if (novaActive) {
-            const alt2 = remaining.filter(t => t !== 'nova');
-            second = alt2.length ? alt2[Math.floor(Math.random() * alt2.length)] : null;
-          }
+    // Double or Nothing (keystone): GUARANTEED second fire of a DIFFERENT type.
+    // Respects the nova-overload guard so it doesn't double-stack nova.
+    if (rankOf('doubleNothing') > 0) {
+      const remaining = types.filter(t => t !== type);
+      let second = remaining[Math.floor(Math.random() * remaining.length)];
+      if (second === 'nova') {
+        const novaActive = novaRings.length > 0
+          || activeCombos.nova_nova || activeCombos.nova_hyperspeed
+          || activeCombos.nova_ghost || activeCombos.nova_shield;
+        if (novaActive) {
+          const alt2 = remaining.filter(t => t !== 'nova');
+          second = alt2.length ? alt2[Math.floor(Math.random() * alt2.length)] : null;
         }
-        if (second) {
-          activatePowerup(second, player.x, player.y);
-          powerupLastActivated[second] = Date.now();
-          treeLog('doubleNothing: second fire ' + second);
-        } else {
-          treeLog('doubleNothing: suppressed by nova-overload');
-        }
+      }
+      if (second) {
+        activatePowerup(second, player.x, player.y);
+        powerupLastActivated[second] = Date.now();
+        _cyan_flash('doubleNothing', 'DOUBLE OR NOTHING', CYAN_PATH_COLORS.chance, 250);
+        treeLog('doubleNothing: second fire ' + second);
       }
     }
   } else if (activeOrb === 'cosmic') {
@@ -19602,20 +20327,30 @@ function _updateCore() {
     executeBurst();
     burstCooldownDuration = BURST_COOLDOWN();
     burstCooldownEnd = Date.now() + burstCooldownDuration;
+    // Hot Start (Cadence): arm a 5s window so the next kill seeds streak to cap.
+    if (activeOrb === 'cyan' && rankOf('hotStart') > 0) { _cyanHotStartUntil = Date.now() + 5000; _cyanHotStartUsed = false; }
     // Loaded Dice (Drifter Chance T1) v1.6.3 rework: each burst has a
     // chance to instantly reset the burst cooldown to 0 (burst available
     // immediately again). 15 s internal cooldown. Failed rolls do NOT
     // stamp the cooldown — player keeps rolling on subsequent bursts.
     if (activeOrb === 'cyan' || rainbowRunActive) {
-      const ldRank = rankOf('loadedDice');
-      if (ldRank > 0 && Date.now() >= loadedDiceNextProcTime) {
-        const chance = [0.10, 0.20, 0.30][ldRank - 1] || 0;
-        if (Math.random() < chance) {
-          burstCooldownEnd = Date.now();
-          loadedDiceNextProcTime = Date.now() + 20000;
-          treeLog('loadedDice: burst CD reset (20s CD)');
-        }
+      const ldOwned = rankOf('loadedDice') > 0;
+      const seOwned = rankOf('snakeEyes') > 0;
+      const nowLD = Date.now();
+      let ldReset = false;
+      // Snake Eyes (pity): if Loaded Dice hasn't reset a burst in 20s, force one.
+      if (ldOwned && seOwned && (nowLD - _cyanLastDiceReset) >= 20000) {
+        ldReset = true;
+        _cyan_flash('snakeEyes', 'SNAKE EYES', CYAN_PATH_COLORS.chance, 0);
+        treeLog('snakeEyes: pity burst CD reset');
+      } else if (ldOwned && nowLD >= loadedDiceNextProcTime && Math.random() < 0.30) {
+        // Loaded Dice: single-rank 30% chance, own 20s internal cooldown.
+        ldReset = true;
+        loadedDiceNextProcTime = nowLD + 20000;
+        _cyan_flash('loadedDice', 'LOADED DICE', CYAN_PATH_COLORS.chance, 0);
+        treeLog('loadedDice: burst CD reset (20s CD)');
       }
+      if (ldReset) { burstCooldownEnd = nowLD; _cyanLastDiceReset = nowLD; }
     }
   }
   burstTriggered = false;
@@ -19901,10 +20636,12 @@ function _updateCore() {
     }
     if (!b.passed && b.y > H * 0.75) {
       b.passed = true;
-      score++;
+      // Prime Mover (Drifter Cadence): missed planets grant +5 instead of +1.
+      const _passPts = (activeOrb === 'cyan' && rankOf('primeMover') > 0) ? 5 : 1;
+      score += _passPts;
       planetsPassed++;
       runStats.totalPassed++;
-      runStats.pointsFromPassing++;
+      runStats.pointsFromPassing += _passPts;
       // v1.7.0 stats: cumulative passed-count.
       statsOnPassed();
       document.getElementById('score').textContent = score;
@@ -20027,9 +20764,23 @@ function _updateCore() {
   // Powerups scroll slightly slower than the world so the player always has
   // a touch more time to grab them, regardless of game speed.
   const powerupScrollSpeed = spd * 0.65 * dtScale;
+  const _cyanButterfly = (activeOrb === 'cyan' && rankOf('butterfly') > 0);
   for (const p of powerups) {
     p.y += powerupScrollSpeed;
     p.pulse += 0.11;
+    // BUTTERFLY EFFECT (Drifter capstone): roll once per powerup at first sight;
+    // butterflied powerups are pulled strongly toward the player (≈ Black Hole).
+    if (p.bf === undefined) {
+      p.bf = _cyanButterfly && Math.random() < 0.30;
+      if (p.bf) { emitPickupParticles(p.x, p.y, p.type); _cyan_flash('butterfly', 'BUTTERFLY', CYAN_PATH_COLORS.convergence, 600); }
+    }
+    if (p.bf && !p.collected) {
+      const _bdx = player.x - p.x, _bdy = player.y - p.y;
+      const _bd = Math.max(10, Math.sqrt(_bdx * _bdx + _bdy * _bdy));
+      const _bpull = 1.0 * dtScale;
+      p.x += (_bdx / _bd) * _bpull;
+      p.y += (_bdy / _bd) * _bpull;
+    }
     if (!p.collected && dist(player, p) < (p.radius + PLAYER_R + 6) * 1.1) {
       if (p.pairSibling && !p.pairSibling.collected) {
         p.collected = true;
@@ -21025,8 +21776,8 @@ function triggerDeath() {
   // effective interval cap scales so apocalypse-length runs still top out
   // proportionally (e.g. rank 3 at 15s → 40 intervals over 10 min).
   const elapsedAtDeath = elapsedRunSeconds();
-  const tempoRank = activeOrb === 'cyan' ? rankOf('tempo') : 0;
-  const tbInterval = 30 - 5 * tempoRank; // 30 / 25 / 20 / 15
+  const tempoActive = activeOrb === 'cyan' && rankOf('tempo') > 0;
+  const tbInterval = tempoActive ? 15 : 30; // Tempo halves the time-bonus interval (30→15s)
   const tbCap = Math.floor(600 / tbInterval); // 20 / 24 / 30 / 40
   const survivedIntervals = Math.min(tbCap, Math.floor(elapsedAtDeath / tbInterval));
   const timeBonus = Math.floor(score * 0.03 * survivedIntervals);
@@ -26117,6 +26868,8 @@ function applyPauseDeltaShift(pauseDelta) {
   if (lingeringHorizonNextFireTime) lingeringHorizonNextFireTime += pauseDelta;
   if (lingeringHorizonLastFireTime) lingeringHorizonLastFireTime += pauseDelta;
   if (loadedDiceNextProcTime) loadedDiceNextProcTime += pauseDelta;
+  if (_cyanHotStartUntil) _cyanHotStartUntil += pauseDelta;
+  if (_cyanLastDiceReset) _cyanLastDiceReset += pauseDelta;
   if (fortuneFavorsNextProcTime) fortuneFavorsNextProcTime += pauseDelta;
   if (butterflyEffectNextProcTime) butterflyEffectNextProcTime += pauseDelta;
   for (const v of butterflyEffectVisuals) {
