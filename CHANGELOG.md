@@ -40,12 +40,13 @@ active-point budget — so build choice, not grind, defines a run.
 - Inferno's baked-in nova advantage is **gone** — its novas now fire at the same
   base wave count as any other orb; the wave/size edge comes entirely from the tree.
 - New/reworked mechanics: **Pyre** (+2 waves to every nova), **Corona** (+20%
-  nova radius + a per-kill burst-CD refund), **Solar Wind** (tighter wave cadence),
+  nova radius + −0.5% burst CD per nova kill), **Solar Wind** (slower waves — a
+  longer-lasting barrage that keeps sweeping up planets that scroll in),
   **Wildfire** (nova kills leave burn zones), **Ember Spread**, **Backdraft** (5+
   overlapping burn zones detonate into half-novas as they expire), **Stellar
   Collapse** capstone (every 20 nova kills → an orbiting fireball that incinerates
   on contact, then launches at a planet and detonates a full nova), **Sun Forge**
-  (auto-supernova every 45s), and **Critical Mass** (every 20 nova kills → a free
+  (auto-supernova every 30s), and **Critical Mass** (every 20 nova kills → a free
   fully-loaded nova + guaranteed burn zones). Bottom-left COLLAPSE / MASS counters
   for the two kill-counter capstones.
 - **Burn zones redrawn as actual fire** — flickering flame tongues, glowing core,
