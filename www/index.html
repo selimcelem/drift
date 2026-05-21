@@ -5344,7 +5344,7 @@ const TREE_DEFS = {
         name: 'CHANCE',
         nodes: [
           { key: 'doubleNothing', name: 'Double or Nothing', tier: 3, max: 1, costOverride: [5000], pointCost: 5,
-            desc: 'KEYSTONE. After every burst, instantly fire a second different random single powerup (guaranteed).',
+            desc: 'KEYSTONE. After every burst, instantly fire a second different random single powerup (guaranteed). Fortune owes you a second roll.',
             effect: r => r ? 'Guaranteed 2nd powerup per burst' : 'Locked' },
           { key: 'loadedDice', name: 'Loaded Dice', tier: 2, max: 1, costOverride: [3000], pointCost: 3,
             desc: '30% chance to instantly reset burst cooldown after a burst fires. 20s internal cooldown.',
@@ -5364,7 +5364,7 @@ const TREE_DEFS = {
         name: 'CADENCE',
         nodes: [
           { key: 'metronome', name: 'Metronome', tier: 3, max: 1, costOverride: [5000], pointCost: 5,
-            desc: 'KEYSTONE. Burst cooldown −30%.',
+            desc: 'KEYSTONE. Burst cooldown −30%. Keep time, and the beat never keeps you waiting.',
             effect: r => r ? '−30% burst CD' : 'Locked' },
           { key: 'primeMover', name: 'Prime Mover', tier: 2, max: 1, costOverride: [3000], pointCost: 3,
             desc: 'Streak cap 12 (48 pts/kill). Missed planets grant +5 points instead of +1.',
@@ -5387,7 +5387,7 @@ const TREE_DEFS = {
         name: 'CONVERGENCE',
         nodes: [
           { key: 'confluence', name: 'Confluence', tier: 3, max: 1, costOverride: [5000], pointCost: 5,
-            desc: 'KEYSTONE. +20% pair-spawn chance, and pair combos have a 30% chance to also grant a bonus single powerup of a different type.',
+            desc: 'KEYSTONE. +20% pair-spawn chance, and pair combos have a 30% chance to also grant a bonus single powerup of a different type. Where currents meet, the tide carries more.',
             effect: r => r ? '+20% pairs · 30% bonus single' : 'Locked' },
           { key: 'siphon', name: 'Siphon', tier: 2, max: 1, costOverride: [3000], pointCost: 3,
             desc: '10% chance per destroy to trigger a random powerup immediately. 5s cooldown.',
@@ -5444,7 +5444,7 @@ const TREE_DEFS = {
             desc: 'KEYSTONE. While ghost or Eternal Phantom is active, you destroy anything you touch — no shield needed, continuously. Dive in and delete.',
             effect: r => r ? 'Continuous destroy-on-contact in ghost' : 'Locked' },
           { key: 'ghostlight', name: 'Ghostlight', tier: 1, max: 1, costOverride: [2000], pointCost: 2,
-            desc: '50% of your ghost-related kills detonate a 120px EMP-lite burst (the purple one) that destroys nearby bodies.',
+            desc: '50% of your ghost-related kills detonate a 120px EMP-lite burst that destroys nearby bodies.',
             effect: r => r ? '50% kills → 120px burst' : 'Locked' },
           { key: 'phantomBlade', name: 'Phantom Blade', tier: 2, max: 1, costOverride: [4000], pointCost: 3,
             desc: 'Every 10s, spectral blades sweep the field for 2s, shredding everything within 160px.',
@@ -5456,7 +5456,7 @@ const TREE_DEFS = {
             desc: 'Your blades come faster — Phantom Blade sweeps every 6s instead of 10s. Requires Phantom Blade.',
             effect: r => r ? 'Phantom Blade 10s → 6s' : 'Locked' },
           { key: 'reapingStorm', name: 'Reaping Storm', tier: 3, max: 1, costOverride: [7500], pointCost: 5,
-            desc: 'CAPSTONE. Every 20 ghost-related kills unleashes a 5s Reaping Storm: every ghost-related kill detonates a guaranteed 150px EMP-lite burst that arcs to one more nearby body. Kills during the storm don’t count toward the next one.',
+            desc: 'CAPSTONE. Every 20 ghost-related kills unleashes a 10s Reaping Storm: every ghost-related kill detonates a guaranteed 150px EMP-lite burst that arcs to one more nearby body. Kills during the storm don’t count toward the next one.',
             effect: r => r ? '20 kills → 5s storm of chaining bursts' : 'Locked' },
         ],
       },
@@ -5486,6 +5486,9 @@ const TREE_DEFS = {
     },
     capstones: [],
   },
+  // v1.9.0 INFERNO REWORK: single-rank + active-budget tree. Inferno's nova
+  // advantage now comes entirely from the tree, not a baked-in baseline (its
+  // novas fire at the same wave count as any other orb until you invest).
   solar: {
     name: 'INFERNO',
     color: '251,146,60',
@@ -5493,32 +5496,74 @@ const TREE_DEFS = {
       pyre: {
         name: 'PYRE',
         nodes: [
-          { key: 'kindling',      name: 'Kindling',      tier: 1, max: 3, desc: 'Single nova +1 wave per rank (Inferno baseline 4).', effect: r => `+${r} waves (${4+r} total)` },
-          { key: 'conflagration', name: 'Conflagration', tier: 2, max: 2, desc: 'Supernova wave bonus (Inferno baseline 4). 15s cooldown between applications.', effect: r => `+${[1,2][r-1]||0} waves (${4+([1,2][r-1]||0)} total)` },
-          { key: 'secondFlame',   name: 'Second Flame',  tier: 3, max: 3, desc: 'Chance per nova cast to fire one free bonus wave at the end. 10s cooldown.', effect: r => `${[20,30,40][r-1]||0}% chance` },
+          { key: 'pyre', name: 'Pyre', tier: 3, max: 1, costOverride: [6000], pointCost: 5,
+            desc: 'KEYSTONE. Every nova you fire — single or Supernova — erupts with +2 extra waves. The pyre only ever wants more.',
+            effect: r => r ? '+2 waves to every nova' : 'Locked' },
+          { key: 'kindling', name: 'Kindling', tier: 1, max: 1, costOverride: [2500], pointCost: 2,
+            desc: 'Your single novas fire +1 more wave.',
+            effect: r => r ? '+1 wave (single nova)' : 'Locked' },
+          { key: 'conflagration', name: 'Conflagration', tier: 2, max: 1, costOverride: [4500], pointCost: 3,
+            desc: 'Your Supernova fires +2 more waves. 15s cooldown between boosts.',
+            effect: r => r ? '+2 Supernova waves (15s CD)' : 'Locked' },
+          { key: 'combustion', name: 'Combustion', tier: 1, max: 1, costOverride: [2500], pointCost: 2,
+            desc: 'Each nova banks up to +2 bonus waves; the next nova within 5s unleashes them. 15s cooldown.',
+            effect: r => r ? 'Bank +2 waves (5s window)' : 'Locked' },
+          { key: 'secondFlame', name: 'Second Flame', tier: 1, max: 1, costOverride: [2500], pointCost: 2,
+            desc: '40% chance per nova cast to fire one free bonus wave at the end. 10s cooldown.',
+            effect: r => r ? '40% → free bonus wave' : 'Locked' },
+          { key: 'stellarCollapse', name: 'Stellar Collapse', tier: 3, max: 1, costOverride: [8000], pointCost: 5,
+            desc: 'CAPSTONE. Every 20 nova-related kills summons a blazing fireball that orbits you for 5s — it incinerates planets it touches with a ~50px blast, then hurls itself at a nearby planet and detonates a full-size nova. When the stars burn out, something has to give.',
+            effect: r => r ? '20 kills → orbiting fireball' : 'Locked' },
         ],
       },
       corona: {
         name: 'CORONA',
         nodes: [
-          { key: 'solarFlare',  name: 'Solar Flare',  tier: 1, max: 3, desc: 'Nova ring lethal radius bonus per rank (360px baseline).', effect: r => `+${[10,20,30][r-1]||0}% radius` },
-          { key: 'halo',        name: 'Halo',         tier: 2, max: 3, desc: 'Supernova radiusMult step coefficient boosted (0.10 → 0.133/0.167/0.20).', effect: r => `+${(3.3*r).toFixed(1)}% step` },
-          { key: 'coronalHold', name: 'Coronal Hold', tier: 3, max: 3, desc: 'Every nova kill reduces burst cooldown by a % of base.', effect: r => `-${[0.25,0.50,1][r-1]||0}% base CD per kill` },
+          { key: 'corona', name: 'Corona', tier: 3, max: 1, costOverride: [6000], pointCost: 5,
+            desc: 'KEYSTONE. Your novas burn +20% wider, and every nova kill shaves a sliver off your burst cooldown. The sun does not cool — it only reaches farther.',
+            effect: r => r ? '+20% radius · CD refund / kill' : 'Locked' },
+          { key: 'solarFlare', name: 'Solar Flare', tier: 1, max: 1, costOverride: [2500], pointCost: 2,
+            desc: 'Your novas burn +10% wider still (stacks with Corona).',
+            effect: r => r ? '+10% nova radius' : 'Locked' },
+          { key: 'halo', name: 'Halo', tier: 2, max: 1, costOverride: [4500], pointCost: 3,
+            desc: 'Your Supernova waves grow faster — each ring sweeps wider than the last.',
+            effect: r => r ? 'Supernova rings grow faster' : 'Locked' },
+          { key: 'coronalHold', name: 'Coronal Hold', tier: 1, max: 1, costOverride: [2500], pointCost: 2,
+            desc: 'Every nova kill shaves a bit more off your burst cooldown (stacks with Corona).',
+            effect: r => r ? 'More burst CD / nova kill' : 'Locked' },
+          { key: 'solarWind', name: 'Solar Wind', tier: 1, max: 1, costOverride: [2500], pointCost: 2,
+            desc: 'Your nova waves arrive in a tighter, faster burst — less delay between each wave of a cast.',
+            effect: r => r ? 'Faster nova-wave cadence' : 'Locked' },
+          { key: 'sunForge', name: 'Sun Forge', tier: 3, max: 1, costOverride: [8000], pointCost: 5,
+            desc: 'CAPSTONE. A Supernova auto-fires every 45s, inheriting all of your wave bonuses. The forge never goes cold.',
+            effect: r => r ? 'Auto-Supernova / 45s' : 'Locked' },
         ],
       },
       inferno: {
         name: 'INFERNO',
         nodes: [
-          { key: 'cinder',     name: 'Cinder',     tier: 1, max: 3, desc: 'Nova-killed bodies leave a 2s, 40px burn zone at the kill position (world-static, no scroll).', effect: r => `${[10,20,30][r-1]||0}% proc` },
-          { key: 'firebrand',  name: 'Firebrand',  tier: 2, max: 5, desc: 'On body destroyed, chance to fire a single half-size nova ring at the body position. (6s cooldown)', effect: r => `${[2,4,6,8,10][r-1]||0}% per destroy` },
-          { key: 'combustion', name: 'Combustion', tier: 3, max: 3, desc: 'Each nova cast adds +1 to a bonus-wave counter; counter consumed by the next nova cast within 2s. 15s cooldown.', effect: r => `Cap +${[1,2,3][r-1]||0} bonus waves` },
+          { key: 'wildfire', name: 'Wildfire', tier: 3, max: 1, costOverride: [6000], pointCost: 5,
+            desc: 'KEYSTONE. 30% of your nova kills leave a burning zone on the ground that destroys anything that touches it. Light it, then let it spread.',
+            effect: r => r ? '30% kills → burn zone' : 'Locked' },
+          { key: 'cinder', name: 'Cinder', tier: 1, max: 1, costOverride: [2500], pointCost: 2,
+            desc: 'Your burn zones last longer (3s) and burn wider (55px).',
+            effect: r => r ? 'Burn zones 3s · 55px' : 'Locked' },
+          { key: 'firebrand', name: 'Firebrand', tier: 2, max: 1, costOverride: [4500], pointCost: 3,
+            desc: '10% chance on any destroy to fire a half-size nova at the body. 6s cooldown.',
+            effect: r => r ? '10% / destroy → proc nova' : 'Locked' },
+          { key: 'emberSpread', name: 'Ember Spread', tier: 1, max: 1, costOverride: [2500], pointCost: 2,
+            desc: 'Firebrand’s proc-novas also leave a burn zone where they strike.',
+            effect: r => r ? 'Firebrand procs drop burn zones' : 'Locked' },
+          { key: 'backdraft', name: 'Backdraft', tier: 1, max: 1, costOverride: [2500], pointCost: 2,
+            desc: 'When 5+ burn zones overlap in time, they detonate into half-size novas as they expire instead of just fading out. 10s cooldown.',
+            effect: r => r ? 'Overlapping zones detonate' : 'Locked' },
+          { key: 'criticalMass', name: 'Critical Mass', tier: 3, max: 1, costOverride: [8000], pointCost: 5,
+            desc: 'CAPSTONE. Every 20 nova-related kills fires a free, fully-loaded nova carrying all your wave bonuses — and direct planet hits leave up to 3 burn zones. 30s cooldown; the counter pauses during it.',
+            effect: r => r ? '20 kills → loaded nova + zones' : 'Locked' },
         ],
       },
     },
-    capstones: [
-      { key: 'sunForge',     name: 'SUN FORGE',     desc: 'Supernova auto-fires every 60s.' },
-      { key: 'criticalMass', name: 'CRITICAL MASS', desc: '10+ destroys from one nova cast triggers a free 6-wave nova. 45s cooldown; kill counter paused during cooldown.' },
-    ],
+    capstones: [],
   },
   nebula: {
     name: 'WARP',
@@ -5818,7 +5863,7 @@ function purchaseTreeUnlock(orbKey) {
 const ORB_COST_SCALE = {
   cyan:     1.0,   // Drifter v1.9.0 rework: raw costOverride values (active-budget tree)
   cosmic:   1.0,   // Phantom v1.9.0 rework: raw costOverride values (active-budget tree)
-  solar:    0.27,  // Inferno −73%   (prior 0.45 × 0.60)
+  solar:    1.0,   // Inferno v1.9.0 rework: raw costOverride values (active-budget tree)
   nebula:   0.325, // Warp    −67.5% (prior 0.50 × 0.65)
   asteroid: 0.385, // Bulwark −61.5% (prior 0.55 × 0.70)
 };
@@ -5842,7 +5887,7 @@ function orbCostScale(orbKey) {
 // v1.9.0: cyan (Drifter) left this set when it migrated to the costOverride +
 // active-budget model — its nodes price from costOverride at scale 1.0, like
 // drifterV2/phantomV2. The remaining four still use flat tier pricing.
-const ORIGINAL_5_ORBS = new Set(['solar', 'nebula', 'asteroid']);
+const ORIGINAL_5_ORBS = new Set(['nebula', 'asteroid']);
 const ORIGINAL_5_FLAT_CAPSTONE = 5000;
 function roundCrystals500(n) {
   return Math.round(n / 500) * 500;
@@ -6022,10 +6067,8 @@ function capstonePrereqMet(orbKey, capKey) {
   // active-budget tree now — gated by ActiveBudget prereqs, not this pool.
   // cosmic capstones (Endless Dusk / Reaping Storm / Eclipse) are path nodes in
   // the active-budget tree now — gated by ActiveBudget prereqs, not this pool.
-  if (orbKey === 'solar') {
-    if (capKey === 'sunForge')     return anyAtRank('pyre',0,1) && anyAtRank('corona',0,1) && anyAtRank('inferno',0,1);
-    if (capKey === 'criticalMass') return anyT3('solar');
-  }
+  // solar capstones (Stellar Collapse / Sun Forge / Critical Mass) are path
+  // nodes in the active-budget tree now — gated by ActiveBudget prereqs.
   if (orbKey === 'nebula') {
     // v1.7.0: SUPERLUMINAL now gated by ANY single Warp path fully maxed
     // (was Overdrive rank ≥ 2). Reduces lock-in to a specific node.
@@ -6179,7 +6222,7 @@ TREE_DEFS.drifterV2 = {
       name: 'PULSE',
       nodes: [
         { key: 'drifterV2_pulse', name: 'Pulse', tier: 3, max: 1, costOverride: [6500], pointCost: 5,
-          desc: 'KEYSTONE (5 pts). Burst cooldown 30s → 20s. Burst fires the type of your most recently grabbed pickup (predictable, not random).',
+          desc: 'KEYSTONE (5 pts). Burst cooldown 30s → 20s. Burst fires the type of your most recently grabbed pickup (predictable, not random). No more guessing — the pulse answers to you.',
           effect: r => r ? '20s CD · targeted burst' : 'Locked' },
         { key: 'drifterV2_tempo', name: 'Tempo', tier: 1, max: 1, costOverride: [3000], pointCost: 2,
           desc: 'Burst cooldown −2s (now 18s with Pulse).',
@@ -6205,7 +6248,7 @@ TREE_DEFS.drifterV2 = {
       name: 'THREAD',
       nodes: [
         { key: 'drifterV2_thread', name: 'Thread', tier: 3, max: 1, costOverride: [6500], pointCost: 5,
-          desc: 'KEYSTONE (5 pts). Each destroy draws a 2s thread to the previous destroy. Extending destroys (≥200px) fill a Charge meter +5%. When the meter fills, all active threads become destructive lasers that destroy any planet they touch for the remainder of their duration. Charge gain is paused while lasers are active.',
+          desc: 'KEYSTONE (5 pts). Each destroy draws a 2s thread to the previous destroy. Extending destroys (≥200px) fill a Charge meter +5%. When the meter fills, all active threads become destructive lasers that destroy any planet they touch for the remainder of their duration. Charge gain is paused while lasers are active. Every kill is a thread — pull enough taut and they cut.',
           effect: r => r ? 'Threads + Laser meter' : 'Locked' },
         { key: 'drifterV2_reach', name: 'Reach', tier: 2, max: 1, costOverride: [5000], pointCost: 2,
           desc: 'Extending threshold drops 200px → 150px (procs faster).',
@@ -6231,7 +6274,7 @@ TREE_DEFS.drifterV2 = {
       name: 'PRESSURE',
       nodes: [
         { key: 'drifterV2_pressure', name: 'Pressure', tier: 3, max: 1, costOverride: [6500], pointCost: 5,
-          desc: 'KEYSTONE (5 pts). Per-destroy counter +1 per destroy (cap 100). 2s grace, then rapid falloff (full to zero in 6s). Scroll speed +0.5%/pt (cap 1.3×). Score per kill +1%/pt (no cap).',
+          desc: 'KEYSTONE (5 pts). Per-destroy counter +1 per destroy (cap 100). 2s grace, then rapid falloff (full to zero in 6s). Scroll speed +0.5%/pt (cap 1.3×). Score per kill +1%/pt (no cap). Keep it climbing — pressure was never meant to settle.',
           effect: r => r ? '+1/destroy · scaling' : 'Locked' },
         { key: 'drifterV2_patience', name: 'Patience', tier: 1, max: 1, costOverride: [3000], pointCost: 2,
           desc: 'Grace period extends 2s → 4s before decay starts.',
@@ -7223,7 +7266,7 @@ function _cosmicGhostKill(x, y) {
   if (now < _cosmicReapWindowEnd) { _cosmicReapBurst(x, y); return; }
   if (++_cosmicReapKills >= 20) {
     _cosmicReapKills = 0;
-    _cosmicReapWindowEnd = now + 5000;
+    _cosmicReapWindowEnd = now + 10000;
     _cosmic_addFlash('REAPING STORM', COSMIC_PATH_COLORS.wraith);
     triggerHitstop(140); addShake(12);
   }
@@ -7395,6 +7438,312 @@ function maybeMigrateCosmic() {
     treeLog('cosmic schema migrate v' + stored + '→v' + COSMIC_SCHEMA_VERSION + ': refunded ' + refund + ' crystals; tree reset');
   }
   try { localStorage.setItem('drift_cosmic_schema_version', String(COSMIC_SCHEMA_VERSION)); } catch {}
+  saveTreeState();
+}
+
+// === SOLAR (INFERNO) ACTIVE-BUDGET CONFIG (mirrors the cosmic pattern) =====
+const SOLAR_SCHEMA_VERSION = 2;
+const SOLAR_KEYSTONES = {
+  pyre:    'pyre',
+  corona:  'corona',
+  inferno: 'wildfire',
+};
+const SOLAR_PREREQS = {
+  // PYRE
+  kindling:       { prereq: ['pyre'] },
+  conflagration:  { prereq: ['pyre'] },
+  combustion:     { prereq: ['pyre'] },
+  secondFlame:    { prereq: ['pyre'] },
+  stellarCollapse:{ prereq: ['pyre'] },
+  // CORONA
+  solarFlare:     { prereq: ['corona'] },
+  halo:           { prereq: ['corona'] },
+  coronalHold:    { prereq: ['corona'] },
+  solarWind:      { prereq: ['corona'] },
+  sunForge:       { prereq: ['corona'] },
+  // INFERNO
+  cinder:         { prereq: ['wildfire'] },
+  firebrand:      { prereq: ['wildfire'] },
+  emberSpread:    { prereq: ['firebrand'], requiresActive: ['firebrand'] },
+  backdraft:      { prereq: ['wildfire'] },
+  criticalMass:   { prereq: ['wildfire'] },
+};
+// Fire-spectrum path colours: molten orange / solar gold-white / crimson ember.
+const SOLAR_PATH_COLORS = {
+  pyre:    '255,120,30',
+  corona:  '255,215,130',
+  inferno: '225,55,35',
+};
+const SOLAR_TREE_LAYOUTS = {
+  pyre: { name: 'PYRE', color: SOLAR_PATH_COLORS.pyre, nodes: {
+    pyre:            { x: 100, y: 50, keystone: true },
+    kindling:        { x: 40,  y: 140 },
+    conflagration:   { x: 160, y: 140 },
+    combustion:      { x: 40,  y: 225 },
+    secondFlame:     { x: 160, y: 225 },
+    stellarCollapse: { x: 100, y: 320, capstone: true },
+  } },
+  corona: { name: 'CORONA', color: SOLAR_PATH_COLORS.corona, nodes: {
+    corona:      { x: 100, y: 50, keystone: true },
+    solarFlare:  { x: 40,  y: 140 },
+    halo:        { x: 160, y: 140 },
+    coronalHold: { x: 40,  y: 225 },
+    solarWind:   { x: 160, y: 225 },
+    sunForge:    { x: 100, y: 320, capstone: true },
+  } },
+  inferno: { name: 'INFERNO', color: SOLAR_PATH_COLORS.inferno, nodes: {
+    wildfire:     { x: 100, y: 50, keystone: true },
+    cinder:       { x: 40,  y: 140 },
+    firebrand:    { x: 160, y: 140 },
+    emberSpread:  { x: 40,  y: 225 },
+    backdraft:    { x: 160, y: 225 },
+    criticalMass: { x: 100, y: 320, capstone: true },
+  } },
+};
+ActiveBudget.register('solar', {
+  base: 20, expandMax: 5, expandCost: 2000,
+  bonusKey: 'drift_solar_budget_bonus',
+  keystones: SOLAR_KEYSTONES,
+  prereqs: SOLAR_PREREQS,
+});
+function getSolarBudgetCap()         { return ActiveBudget.budgetCap('solar'); }
+function getSolarBudgetBonus()       { return ActiveBudget.budgetBonus('solar'); }
+function purchaseSolarBudgetExpand() { return ActiveBudget.purchaseExpand('solar'); }
+function isSolarActive()             { return activeOrb === 'solar'; }
+
+ORB_BEHAVIOR.solar = ORB_BEHAVIOR.solar || {};
+ORB_BEHAVIOR.solar.rankOf = function(nodeKey) {
+  if (typeof nodeKey === 'string' && ActiveBudget.resolveNode('solar', nodeKey)) {
+    return ActiveBudget.isActive('solar', nodeKey) ? 1 : 0;
+  }
+  return _rankOf_default(nodeKey);
+};
+ORB_BEHAVIOR.solar.pathPrereqMet = function(state, pathKey, nodeIdx) {
+  if (state !== orbTrees.solar) return _pathPrereqMet_default(state, pathKey, nodeIdx);
+  return ActiveBudget.pathPrereqMet('solar', pathKey, nodeIdx);
+};
+ORB_BEHAVIOR.solar.respecNode = function(orbKey, pathKey, nodeIdx) {
+  const def = TREE_DEFS.solar; const state = orbTrees.solar;
+  if (!def || !state) return false;
+  const node = def.paths[pathKey] && def.paths[pathKey].nodes[nodeIdx];
+  if (!node) return false;
+  const current = state[pathKey][nodeIdx] | 0;
+  if (current <= 0) return false;
+  const invested = nodeCrystalsInvested(orbKey, node, current);
+  const fee = refundFee(invested);
+  if (totalCrystals < fee) return false;
+  totalCrystals = Math.max(0, totalCrystals - fee);
+  totalCrystals += invested;
+  state[pathKey][nodeIdx] = 0;
+  ActiveBudget.deactivate('solar', node.key);
+  saveCrystals(); saveTreeState();
+  if (orbKey === activeOrb) refreshActiveTreeCache();
+  return true;
+};
+ORB_BEHAVIOR.solar.fullTreeRespecCost = function(orbKey) { return refundFee(treeCrystalsInvested(orbKey)); };
+ORB_BEHAVIOR.solar.respecTree = function(orbKey) {
+  const def = TREE_DEFS.solar; const state = orbTrees.solar;
+  if (!def || !state) return false;
+  if (totalRanksInvested(orbKey) <= 0) return false;
+  const invested = treeCrystalsInvested(orbKey);
+  const fee = refundFee(invested);
+  if (totalCrystals < fee) return false;
+  totalCrystals = Math.max(0, totalCrystals - fee);
+  for (const pKey of Object.keys(def.paths)) {
+    const nodes = def.paths[pKey].nodes; const arr = state[pKey];
+    for (let i = 0; i < nodes.length; i++) {
+      totalCrystals += nodeCrystalsInvested(orbKey, nodes[i], arr[i] | 0);
+      arr[i] = 0;
+    }
+  }
+  state.activePoints = {};
+  saveCrystals(); saveTreeState();
+  if (orbKey === activeOrb) refreshActiveTreeCache();
+  return true;
+};
+OrbHooks.on('afterLoadTreeState', () => { maybeMigrateSolar(); ActiveBudget.restoreActivePoints('solar'); });
+
+// === SOLAR flash feedback (path-coloured, throttled) =======================
+let _solar_flashes = [];
+let _solar_flashGates = {};
+function _solar_addFlash(text, color, durationMs) {
+  if (activeOrb !== 'solar') return;
+  _solar_flashes.push({ text: String(text || ''), color: color || '251,146,60', startTime: Date.now(), durationMs: durationMs || 700 });
+  if (_solar_flashes.length > 6) _solar_flashes.shift();
+}
+function _solar_flash(key, text, color, minMs) {
+  const now = Date.now();
+  if (now - (_solar_flashGates[key] || 0) < (minMs || 0)) return;
+  _solar_flashGates[key] = now;
+  _solar_addFlash(text, color);
+}
+function _solar_drawFlashes() {
+  if (state !== 'playing' && state !== 'paused' && state !== 'apocalypse') return;
+  if (!_solar_flashes.length) return;
+  if (!player || isNaN(player.x) || isNaN(player.y)) return;
+  const now = Date.now();
+  const visible = [];
+  ctx.save();
+  ctx.font = 'bold 11px Orbitron, monospace';
+  ctx.textAlign = 'center';
+  ctx.shadowBlur = 8;
+  let i = 0;
+  for (const f of _solar_flashes) {
+    const age = now - f.startTime;
+    if (age >= f.durationMs) continue;
+    visible.push(f);
+    const fade = 1 - age / f.durationMs;
+    const y = player.y - 28 - (i * 13) - (age / f.durationMs) * 16;
+    ctx.fillStyle = `rgba(${f.color},${(0.95 * fade).toFixed(2)})`;
+    ctx.shadowColor = `rgba(${f.color},${(0.85 * fade).toFixed(2)})`;
+    ctx.fillText(f.text, player.x, y);
+    i++;
+  }
+  _solar_flashes = visible;
+  ctx.restore();
+}
+OrbHooks.on('onRender', () => { if (activeOrb === 'solar') _solar_drawFlashes(); });
+OrbHooks.on('onResetGame', () => { _solar_flashes = []; _solar_flashGates = {}; _solarCMKills = 0; _solarCMBurnZonesPending = 0; });
+
+// === SOLAR new-systems: Stellar Collapse fireballs + Backdraft + HUD =======
+let _solarFireballs = [];          // {angle,orbitR,born,lifeMs,phase,x,y,target}
+let _solarStellarKills = 0;        // Stellar Collapse cumulative nova-kill counter
+let _solarBackdraftArmCD = 0;      // Backdraft re-arm cooldown
+function _solarSpawnFireball() {
+  if (_solarFireballs.length >= 3) return; // hard cap (runaway guard)
+  _solarFireballs.push({ angle: Math.random() * 6.28, orbitR: 72, born: Date.now(), lifeMs: 5000, phase: 'orbit', x: player.x, y: player.y, target: null });
+  _solar_addFlash('STELLAR COLLAPSE', SOLAR_PATH_COLORS.pyre);
+  triggerHitstop(120); addShake(11);
+}
+function _solarFireballImpact(x, y) {
+  // Full-size nova at impact, scaled by Corona/Solar Flare radius if invested.
+  pushNovaRingCapped({ x, y, radius: 0, life: 1, prevR: 0, startTime: Date.now(), sizeMult: 0.9, radiusMult: novaScale() });
+  emitNovaSpecks(x, y);
+  SFX.pickup('nova');
+  triggerHitstop(70); addShake(9);
+}
+function _solarTickFireballs() {
+  if (!_solarFireballs.length) return;
+  const now = Date.now();
+  const alive = [];
+  for (const fb of _solarFireballs) {
+    const age = now - fb.born;
+    if (fb.phase === 'orbit') {
+      fb.angle += 0.10 * dtScale;
+      fb.x = player.x + Math.cos(fb.angle) * fb.orbitR;
+      fb.y = player.y + Math.sin(fb.angle) * fb.orbitR;
+      // Contact mini-nova (~50px): destroy bodies directly (does NOT feed the
+      // nova-kill counters, so a fireball can't spawn more fireballs).
+      let hit = false;
+      for (let i = bodies.length - 1; i >= 0; i--) {
+        const b = bodies[i];
+        const dx = b.x - fb.x, dy = b.y - fb.y;
+        if (dx * dx + dy * dy < (50 + b.radius) * (50 + b.radius)) {
+          emitDestroyBurst(b.x, b.y, '255,170,60');
+          emitDestroyEffects(b, 'nova');
+          addDestroyPoints();
+          SFX.planetDestroyed('nova');
+          releaseBodyCanvases(b);
+          bodies.splice(i, 1);
+          hit = true;
+        }
+      }
+      if (hit) { triggerHitstop(25); addShake(5); }
+      if (age >= fb.lifeMs) {
+        let best = null, bestD2 = Infinity;
+        for (const b of bodies) { const dx = b.x - fb.x, dy = b.y - fb.y; const d2 = dx * dx + dy * dy; if (d2 < bestD2) { bestD2 = d2; best = b; } }
+        fb.phase = 'launch'; fb.target = best;
+        if (!best) { _solarFireballImpact(fb.x, fb.y); continue; }
+      }
+      alive.push(fb);
+    } else { // launch — fly to target, guaranteed hit, full nova on impact
+      const t = fb.target;
+      if (!t || bodies.indexOf(t) < 0) { _solarFireballImpact(fb.x, fb.y); continue; }
+      const dx = t.x - fb.x, dy = t.y - fb.y; const d = Math.max(1, Math.sqrt(dx * dx + dy * dy));
+      const spd = 14 * dtScale;
+      if (d <= spd + t.radius) { _solarFireballImpact(t.x, t.y); continue; }
+      fb.x += (dx / d) * spd; fb.y += (dy / d) * spd;
+      alive.push(fb);
+    }
+  }
+  _solarFireballs = alive;
+}
+function _solarDrawFireballs() {
+  if (!_solarFireballs.length) return;
+  if (state !== 'playing' && state !== 'apocalypse') return;
+  const now = Date.now();
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  for (const fb of _solarFireballs) {
+    const r = (16 + 3 * Math.sin(now * 0.03)) * (fb.phase === 'launch' ? 1.2 : 1);
+    const g = ctx.createRadialGradient(fb.x, fb.y, 0, fb.x, fb.y, r * 1.6);
+    g.addColorStop(0, 'rgba(255,245,200,0.95)');
+    g.addColorStop(0.4, 'rgba(255,160,50,0.8)');
+    g.addColorStop(1, 'rgba(255,80,20,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(fb.x, fb.y, r * 1.6, 0, 6.28); ctx.fill();
+  }
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.restore();
+}
+// Bottom-left counters (mirror Phantom's Reaping Storm / Phantasm MARKS HUD).
+let _solar_hudEl = null, _solar_hudCollapseEl = null, _solar_hudMassEl = null;
+function _solar_ensureHud() {
+  if (_solar_hudEl) return _solar_hudEl;
+  const el = document.createElement('div'); el.id = 'solarHud';
+  el.style.cssText = 'position:absolute; bottom:calc(var(--safe-bottom) + 100px); left:calc(var(--safe-left) + 8px); pointer-events:none; z-index:6; font-family:Orbitron,monospace; font-size:10px; letter-spacing:2px; display:none; flex-direction:column; gap:4px;';
+  const col = document.createElement('div'); col.style.cssText = 'color:rgba(255,150,60,0.95); text-shadow:0 0 6px rgba(255,150,60,0.6);'; col.textContent = 'COLLAPSE 0/20'; el.appendChild(col);
+  const mass = document.createElement('div'); mass.style.cssText = 'color:rgba(235,70,45,0.95); text-shadow:0 0 6px rgba(235,70,45,0.6);'; mass.textContent = 'MASS 0/20'; el.appendChild(mass);
+  (document.getElementById('gameWrapper') || document.body).appendChild(el);
+  _solar_hudEl = el; _solar_hudCollapseEl = col; _solar_hudMassEl = mass;
+  return el;
+}
+function _solar_updateHud() {
+  _solar_ensureHud();
+  const playing = state === 'playing' || state === 'apocalypse';
+  const hasCol = activeOrb === 'solar' && rankOf('stellarCollapse') > 0 && playing;
+  const hasMass = activeOrb === 'solar' && rankOf('criticalMass') > 0 && playing;
+  _solar_hudEl.style.display = (hasCol || hasMass) ? 'flex' : 'none';
+  if (hasCol) { _solar_hudCollapseEl.style.display = 'block'; _solar_hudCollapseEl.textContent = 'COLLAPSE ' + _solarStellarKills + '/20'; }
+  else _solar_hudCollapseEl.style.display = 'none';
+  if (hasMass) { _solar_hudMassEl.style.display = 'block'; _solar_hudMassEl.textContent = (Date.now() < criticalMassCooldownEnd) ? 'MASS …' : ('MASS ' + _solarCMKills + '/20'); }
+  else _solar_hudMassEl.style.display = 'none';
+}
+OrbHooks.on('onUpdate', () => { if (activeOrb === 'solar') _solarTickFireballs(); });
+OrbHooks.on('onRender', () => { if (activeOrb === 'solar') { _solarDrawFireballs(); _solar_updateHud(); } });
+OrbHooks.on('onResetGame', () => { _solarFireballs = []; _solarStellarKills = 0; _solarBackdraftArmCD = 0; if (_solar_hudEl) _solar_hudEl.style.display = 'none'; });
+
+// === SOLAR schema migration (version-gated, mirrors cosmic) ================
+function _solarLooksLegacy(rawSolar) {
+  if (!rawSolar) return false;
+  if (rawSolar.capstones && (Object.prototype.hasOwnProperty.call(rawSolar.capstones, 'sunForge') ||
+                             Object.prototype.hasOwnProperty.call(rawSolar.capstones, 'criticalMass'))) return true;
+  if (Array.isArray(rawSolar.pyre) && rawSolar.pyre.length === 3) return true;
+  return false;
+}
+function maybeMigrateSolar() {
+  let stored = 0;
+  try { const v = localStorage.getItem('drift_solar_schema_version'); if (v != null) stored = parseInt(v, 10) | 0; } catch {}
+  if (stored >= SOLAR_SCHEMA_VERSION) return;
+  let rawSolar = null;
+  try { const r = localStorage.getItem('drift_orb_trees'); if (r) { const p = JSON.parse(r); rawSolar = p && p.solar; } } catch {}
+  if (_solarLooksLegacy(rawSolar)) {
+    const T = [0, 1000, 2000, 3000]; // OLD per-rank flat cost by tier
+    const sumPath = (arr, tiers) => {
+      if (!Array.isArray(arr)) return 0;
+      let s = 0; for (let i = 0; i < arr.length && i < tiers.length; i++) s += (arr[i] | 0) * (T[tiers[i]] || 0);
+      return s;
+    };
+    let refund = 0;
+    refund += sumPath(rawSolar.pyre,    [1, 2, 3]); // kindling·conflagration·secondFlame
+    refund += sumPath(rawSolar.corona,  [1, 2, 3]); // solarFlare·halo·coronalHold
+    refund += sumPath(rawSolar.inferno, [1, 2, 3]); // cinder·firebrand·combustion
+    if (rawSolar.capstones) for (const k of ['sunForge', 'criticalMass']) if (rawSolar.capstones[k]) refund += 5000;
+    orbTrees.solar = freshOrbTreeState('solar');
+    if (refund > 0) { totalCrystals += refund; saveCrystals(); }
+    treeLog('solar schema migrate v' + stored + '→v' + SOLAR_SCHEMA_VERSION + ': refunded ' + refund + ' crystals; tree reset');
+  }
+  try { localStorage.setItem('drift_solar_schema_version', String(SOLAR_SCHEMA_VERSION)); } catch {}
   saveTreeState();
 }
 
@@ -8424,6 +8773,260 @@ ORB_BEHAVIOR.cosmic.renderTreeDetail = function() {
     upBtn.disabled = false;
     upBtn.onclick = () => {
       ActiveBudget.deactivate('cosmic', node.key);
+      SFX.clickPrimary(); renderTreeOverlay(); renderTreeDetail();
+    };
+    respecBtn.style.visibility = '';
+    {
+      const _fee = respecNodeCost(t.orbKey, t.pathKey, t.nodeIdx);
+      respecBtn.disabled = totalCrystals < _fee;
+      respecBtn.textContent = `REFUND (${formatCrystals(_fee)} 💎)`;
+      respecBtn.onclick = () => {
+        confirmTreeAction(`Refund ${node.name}? Costs ${formatCrystals(_fee)} 💎, frees ${pointCost} budget point${pointCost > 1 ? 's' : ''} and returns all spent crystals.`, () => {
+          if (respecNode(t.orbKey, t.pathKey, t.nodeIdx)) { SFX.clickSecondary(); renderTreeOverlay(); closeTreeDetail(); }
+        });
+      };
+    }
+  }
+};
+
+// === Custom branching tree UI for solar (INFERNO) — mirrors the cosmic renderer.
+function _solar_nodeState(nodeKey) {
+  const r = ActiveBudget.resolveNode('solar', nodeKey);
+  if (!r) return 'locked';
+  const state = orbTrees.solar;
+  const current = state[r.pathKey][r.nodeIdx] | 0;
+  const prereqOk = pathPrereqMet(state, r.pathKey, r.nodeIdx);
+  if (current > 0 && ActiveBudget.isActive('solar', nodeKey)) return 'active';
+  if (current > 0) return 'owned';
+  if (prereqOk) return 'available';
+  return 'locked';
+}
+function _solar_buildTreeColumn(pathKey) {
+  const layout = SOLAR_TREE_LAYOUTS[pathKey];
+  const col = document.createElement('div');
+  col.className = 'dv2-tree-col';
+  col.style.cssText = 'position:relative; width:200px; height:430px; flex-shrink:0;';
+  const svgNS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(svgNS, 'svg');
+  svg.setAttribute('viewBox', '0 0 200 430');
+  svg.setAttribute('width', '200');
+  svg.setAttribute('height', '430');
+  svg.style.cssText = 'position:absolute; top:0; left:0; pointer-events:none;';
+  for (const nKey of Object.keys(layout.nodes)) {
+    const spec = SOLAR_PREREQS[nKey];
+    if (!spec || !Array.isArray(spec.prereq)) continue;
+    const me = layout.nodes[nKey];
+    for (const parentKey of spec.prereq) {
+      const parent = layout.nodes[parentKey];
+      if (!parent) continue;
+      const bothActive = _solar_nodeState(nKey) === 'active' && _solar_nodeState(parentKey) === 'active';
+      const line = document.createElementNS(svgNS, 'line');
+      line.setAttribute('x1', parent.x); line.setAttribute('y1', parent.y);
+      line.setAttribute('x2', me.x); line.setAttribute('y2', me.y);
+      line.setAttribute('stroke', bothActive ? `rgba(${layout.color},0.9)` : 'rgba(120,120,140,0.35)');
+      line.setAttribute('stroke-width', bothActive ? '3' : '2');
+      if (bothActive) line.setAttribute('filter', 'drop-shadow(0 0 4px rgba(' + layout.color + ',0.6))');
+      svg.appendChild(line);
+    }
+  }
+  col.appendChild(svg);
+  const label = document.createElement('div');
+  label.style.cssText = `position:absolute; bottom:8px; left:0; right:0; text-align:center; font-family:Orbitron,monospace; font-size:11px; letter-spacing:3px; color:rgba(${layout.color},0.85);`;
+  label.textContent = layout.name;
+  col.appendChild(label);
+  for (const nKey of Object.keys(layout.nodes)) {
+    const pos = layout.nodes[nKey];
+    const r = ActiveBudget.resolveNode('solar', nKey);
+    if (!r) continue;
+    const nodeDef = r.node;
+    const nState = _solar_nodeState(nKey);
+    const isCapstone = !!pos.capstone;
+    const isKeystone = !!pos.keystone;
+    const size = isCapstone ? 38 : isKeystone ? 34 : 28;
+    const btn = document.createElement('button');
+    btn.dataset.nodeKey = nKey;
+    btn.style.cssText = `
+      position:absolute; left:${pos.x - size/2}px; top:${pos.y - size/2}px;
+      width:${size}px; height:${size}px;
+      border-radius:${isCapstone ? '8px' : '50%'};
+      border:2px solid rgba(${layout.color},${nState === 'locked' ? 0.18 : nState === 'available' ? 0.45 : 0.9});
+      background:${nState === 'active' ? `rgba(${layout.color},0.85)` : 'rgba(20,12,8,0.85)'};
+      box-shadow:${nState === 'active' ? `0 0 14px rgba(${layout.color},0.7)` : 'none'};
+      color:${nState === 'active' ? 'rgba(0,0,0,0.9)' : `rgba(${layout.color},${nState === 'locked' ? 0.3 : 0.95})`};
+      font-family:Orbitron,monospace; font-size:${isCapstone ? 12 : 10}px; font-weight:bold;
+      cursor:pointer; padding:0; transition: all 0.15s;
+      ${nState === 'locked' ? 'opacity:0.45;' : ''}
+    `;
+    btn.textContent = (nodeDef.pointCost | 0) || 1;
+    const _unitCost = nodeCost(nodeDef.tier, 1, 'solar', nodeDef);
+    btn.title = `${nodeDef.name} — ${(nodeDef.pointCost | 0) || 1} pt · ${formatCrystals(_unitCost)} 💎 (${nState})`;
+    btn.addEventListener('click', () => {
+      SFX.clickSecondary();
+      treeDetailCurrent = { kind: 'node', orbKey: 'solar', pathKey: r.pathKey, nodeIdx: r.nodeIdx };
+      renderTreeDetail();
+      document.getElementById('treeNodeDetail').classList.add('visible');
+    });
+    col.appendChild(btn);
+    if (nState === 'available' || nState === 'locked') {
+      const costLbl = document.createElement('div');
+      const lblW = 56;
+      costLbl.style.cssText = `position:absolute; left:${pos.x - lblW / 2}px; top:${pos.y + size / 2 + 2}px; width:${lblW}px; text-align:center; font-family:Orbitron,monospace; font-size:9px; letter-spacing:0.5px; color:rgba(${layout.color},${nState === 'locked' ? 0.35 : 0.85}); pointer-events:none; line-height:1;`;
+      costLbl.textContent = `${formatCrystals(_unitCost)} 💎`;
+      col.appendChild(costLbl);
+    }
+  }
+  return col;
+}
+function _solar_renderCustomTreeOverlay() {
+  const def = TREE_DEFS.solar;
+  const state = orbTrees.solar;
+  if (!def || !state) return;
+  document.getElementById('treeTitle').textContent = 'INFERNO';
+  document.getElementById('treeTitle').style.color = 'rgba(251,146,60,1)';
+  document.getElementById('treeCrystals').textContent = '💎 ' + formatCrystals(totalCrystals);
+  const pathsEl = document.getElementById('treePaths');
+  pathsEl.innerHTML = '';
+  pathsEl.style.display = 'flex';
+  pathsEl.style.gap = '14px';
+  pathsEl.style.flexWrap = 'nowrap';
+  pathsEl.style.overflowX = 'auto';
+  pathsEl.style.overflowY = 'hidden';
+  pathsEl.style.webkitOverflowScrolling = 'touch';
+  pathsEl.style.padding = '6px 8px 12px';
+  pathsEl.style.maxHeight = '450px';
+  pathsEl.style.justifyContent = 'flex-start';
+  for (const pKey of ['pyre', 'corona', 'inferno']) {
+    pathsEl.appendChild(_solar_buildTreeColumn(pKey));
+  }
+  const capsEl = document.getElementById('treeCapstones');
+  capsEl.innerHTML = '';
+  capsEl.style.display = 'flex';
+  capsEl.style.flexDirection = 'column';
+  capsEl.style.alignItems = 'center';
+  capsEl.style.gap = '6px';
+  const total = ActiveBudget.activePointsTotal('solar');
+  const cap = getSolarBudgetCap();
+  const bonus = getSolarBudgetBonus();
+  const overBudget = total > cap;
+  const budget = document.createElement('div');
+  budget.style.cssText = `display:flex; align-items:center; gap:10px; padding:10px 8px; font-family:Orbitron,monospace; font-size:13px; letter-spacing:3px; color:rgba(251,146,60,0.85);`;
+  const totalColor = overBudget ? 'rgba(255,90,90,1)' : 'rgba(255,185,95,1)';
+  const label = document.createElement('span');
+  label.innerHTML = `ACTIVE POINTS: <span style="color:${totalColor}; font-weight:bold; font-size:16px;">${total}</span> <span style="opacity:0.6;">/ ${cap}</span>`;
+  budget.appendChild(label);
+  const expandMax = ActiveBudget.expandMaxFor('solar');
+  const expandCost = ActiveBudget.expandCostFor('solar');
+  const expandBtn = document.createElement('button');
+  expandBtn.style.cssText = `background:transparent; border:1px solid rgba(255,185,95,0.55); color:rgba(255,185,95,0.95); font-family:Orbitron,monospace; font-size:12px; letter-spacing:1px; padding:4px 10px; cursor:pointer; border-radius:3px; transition:all 0.18s; min-height:26px; text-transform:uppercase;`;
+  if (bonus >= expandMax) {
+    expandBtn.textContent = 'MAXED';
+    expandBtn.disabled = true;
+    expandBtn.style.opacity = '0.45';
+    expandBtn.style.cursor = 'not-allowed';
+  } else {
+    expandBtn.textContent = '＋';
+    expandBtn.title = `Expand active points capacity by +1 — ${formatCrystals(expandCost)} 💎`;
+    expandBtn.addEventListener('click', () => {
+      SFX.clickSecondary();
+      const remaining = expandMax - bonus;
+      confirmTreeAction(
+        `Expand active points capacity by +1? Cost: ${formatCrystals(expandCost)} 💎. (${remaining} expansion${remaining === 1 ? '' : 's'} remaining)`,
+        () => { if (purchaseSolarBudgetExpand()) { SFX.clickPrimary(); renderTreeOverlay(); } }
+      );
+    });
+  }
+  budget.appendChild(expandBtn);
+  capsEl.appendChild(budget);
+  const ranks = totalRanksInvested('solar');
+  const full = document.getElementById('treeRespecFullBtn');
+  const _fullFee = fullTreeRespecCost('solar');
+  full.textContent = ranks > 0 ? `REFUND ALL (${formatCrystals(_fullFee)} 💎)` : 'REFUND ALL';
+  full.disabled = ranks === 0 || totalCrystals < _fullFee;
+}
+ORB_BEHAVIOR.solar.renderTreeOverlay = function() { _solar_renderCustomTreeOverlay(); };
+ORB_BEHAVIOR.solar.renderTreeDetail = function() {
+  if (!treeDetailCurrent || treeDetailCurrent.kind !== 'node') return _renderTreeDetail_default();
+  _renderTreeDetail_default();
+  const t = treeDetailCurrent;
+  const def = TREE_DEFS.solar;
+  const state = orbTrees.solar;
+  const node = def.paths[t.pathKey].nodes[t.nodeIdx];
+  const current = state[t.pathKey][t.nodeIdx] | 0;
+  const prereqOk = pathPrereqMet(state, t.pathKey, t.nodeIdx);
+  const upBtn = document.getElementById('treeDetailUpgradeBtn');
+  const respecBtn = document.getElementById('treeDetailRespecBtn');
+  if (!upBtn || !respecBtn) return;
+  const isActive = ActiveBudget.isActive('solar', node.key);
+  const pointCost = (node.pointCost | 0) || 1;
+  const total = ActiveBudget.activePointsTotal('solar');
+  if (current <= 0) {
+    upBtn.style.visibility = '';
+    if (!prereqOk) {
+      upBtn.textContent = 'PREREQ MISSING';
+      upBtn.disabled = true;
+    } else {
+      const nextCost = nodeCost(node.tier, 1, t.orbKey, node);
+      upBtn.textContent = `UNLOCK — ${formatCrystals(nextCost)} 💎`;
+      upBtn.disabled = totalCrystals < nextCost;
+      upBtn.onclick = () => {
+        if (purchaseNodeRank(t.orbKey, t.pathKey, t.nodeIdx)) {
+          treeLog('solar unlocked: ' + node.key);
+          SFX.clickPrimary(); renderTreeOverlay(); renderTreeDetail();
+        }
+      };
+    }
+    respecBtn.style.visibility = 'hidden';
+    respecBtn.disabled = true;
+  } else if (!isActive) {
+    upBtn.style.visibility = '';
+    const requiredKs = ActiveBudget.keystoneRequiredFor('solar', node.key);
+    const ksMissing = !!requiredKs && !ActiveBudget.isActive('solar', requiredKs);
+    let intraReqMissingKey = null;
+    const spec = SOLAR_PREREQS[node.key];
+    if (spec && Array.isArray(spec.requiresActive)) {
+      for (const rq of spec.requiresActive) { if (!ActiveBudget.isActive('solar', rq)) { intraReqMissingKey = rq; break; } }
+    }
+    const fits = total + pointCost <= getSolarBudgetCap();
+    if (ksMissing) {
+      const ksResolved = ActiveBudget.resolveNode('solar', requiredKs);
+      const ksName = (ksResolved && ksResolved.node && ksResolved.node.name) || 'keystone';
+      upBtn.textContent = `ACTIVATE ${ksName.toUpperCase()} FIRST`;
+      upBtn.disabled = true;
+    } else if (intraReqMissingKey) {
+      const r2 = ActiveBudget.resolveNode('solar', intraReqMissingKey);
+      const reqName = (r2 && r2.node && r2.node.name) || 'parent';
+      upBtn.textContent = `ACTIVATE ${reqName.toUpperCase()} FIRST`;
+      upBtn.disabled = true;
+    } else if (!fits) {
+      upBtn.textContent = 'BUDGET FULL';
+      upBtn.disabled = true;
+    } else {
+      upBtn.textContent = `ACTIVATE (${pointCost} PT${pointCost > 1 ? 'S' : ''})`;
+      upBtn.disabled = false;
+    }
+    upBtn.onclick = () => {
+      if (ActiveBudget.activate('solar', node.key)) {
+        treeLog('solar activated: ' + node.key);
+        SFX.clickPrimary(); renderTreeOverlay(); renderTreeDetail();
+      }
+    };
+    respecBtn.style.visibility = '';
+    {
+      const _fee = respecNodeCost(t.orbKey, t.pathKey, t.nodeIdx);
+      respecBtn.disabled = totalCrystals < _fee;
+      respecBtn.textContent = `REFUND (${formatCrystals(_fee)} 💎)`;
+      respecBtn.onclick = () => {
+        confirmTreeAction(`Refund ${node.name}? Costs ${formatCrystals(_fee)} 💎 and returns all spent crystals.`, () => {
+          if (respecNode(t.orbKey, t.pathKey, t.nodeIdx)) { SFX.clickSecondary(); renderTreeOverlay(); closeTreeDetail(); }
+        });
+      };
+    }
+  } else {
+    upBtn.style.visibility = '';
+    upBtn.textContent = `DEACTIVATE (FREES ${pointCost} PT${pointCost > 1 ? 'S' : ''})`;
+    upBtn.disabled = false;
+    upBtn.onclick = () => {
+      ActiveBudget.deactivate('solar', node.key);
       SFX.clickPrimary(); renderTreeOverlay(); renderTreeDetail();
     };
     respecBtn.style.visibility = '';
@@ -9593,7 +10196,7 @@ TREE_DEFS.phantomV2 = {
       name: 'REVENANT',
       nodes: [
         { key: 'phantomV2_summoning', name: 'Summoning', tier: 3, max: 1, costOverride: [7500], pointCost: 5,
-          desc: 'KEYSTONE (5 pts). During ghost (or any ghost combo), every kill spawns a wraith that orbits you and destroys planets it touches. Lasts 8s. Cap: 3.',
+          desc: 'KEYSTONE (5 pts). During ghost (or any ghost combo), every kill spawns a wraith that orbits you and destroys planets it touches. Lasts 8s. Cap: 3. In the dark, you are never alone.',
           effect: r => r ? 'Wraiths on ghost-kill' : 'Locked' },
         { key: 'phantomV2_tether', name: 'Tether', tier: 1, max: 1, costOverride: [4000], pointCost: 2,
           desc: 'Wraiths orbit wider and last 2s longer (10s).',
@@ -9622,7 +10225,7 @@ TREE_DEFS.phantomV2 = {
       name: 'AFTERIMAGE',
       nodes: [
         { key: 'phantomV2_temporalEcho', name: 'Temporal Echo', tier: 3, max: 1, costOverride: [7500], pointCost: 5,
-          desc: 'KEYSTONE (5 pts). A spectral echo of you spawns on ghost activation and replays your movement on a 3s delay. Planets it passes through are destroyed in a 150px ghostly burst. Echo has 2 HP — each kill costs 1 HP. Picking up ghost (or activating any ghost combo) respawns it or restores its HP to full.',
+          desc: 'KEYSTONE (5 pts). A spectral echo of you spawns on ghost activation and replays your movement on a 3s delay. Planets it passes through are destroyed in a 150px ghostly burst. Echo has 2 HP — each kill costs 1 HP. Picking up ghost (or activating any ghost combo) respawns it or restores its HP to full. Your shadow has learned your every move.',
           effect: r => r ? '3s echo · 2 HP · 150px burst' : 'Locked' },
         { key: 'phantomV2_lag', name: 'Lag', tier: 1, max: 1, costOverride: [4000], pointCost: 2,
           desc: 'All your echoes have their delay increased by 1s. (Conflicts with Lead.)',
@@ -9651,7 +10254,7 @@ TREE_DEFS.phantomV2 = {
       name: 'HAUNT',
       nodes: [
         { key: 'phantomV2_brand', name: 'Brand', tier: 3, max: 1, costOverride: [7500], pointCost: 5,
-          desc: 'KEYSTONE (5 pts). During ghost (or any ghost combo), planets you pass through get MARKED, AND planets you destroy by any other means spawn a phantom mark at the kill site. Marked planets phase through you, then fly off in an arc to the opposite side of the screen — dragging a 40px curse field that destroys anything else they pass.',
+          desc: 'KEYSTONE (5 pts). During ghost (or any ghost combo), planets you pass through get MARKED, AND planets you destroy by any other means spawn a phantom mark at the kill site. Marked planets phase through you, then fly off in an arc to the opposite side of the screen — dragging a 40px curse field that destroys anything else they pass. What you touch, you curse.',
           effect: r => r ? 'Mark on touch · clone on kill' : 'Locked' },
         { key: 'phantomV2_spread', name: 'Spread', tier: 1, max: 1, costOverride: [4000], pointCost: 2,
           desc: 'Curse field +30px (70px around each marked planet).',
@@ -12554,9 +13157,9 @@ function secondFlameRollForCast(source, px, py, waveCount, isSupernova) {
   if (now < secondFlameNextFireTime) return;
   const sfRank = rankOf('secondFlame');
   if (sfRank <= 0) return;
-  const chance = [0.20, 0.30, 0.40][sfRank - 1] || 0;
-  if (Math.random() >= chance) return;
+  if (Math.random() >= 0.40) return; // single-rank 40%
   secondFlameNextFireTime = now + 10000;
+  _solar_flash('secondFlame', 'SECOND FLAME', SOLAR_PATH_COLORS.pyre, 600);
   const delayMs = Math.max(waveCount | 0, 1) * 400;
   const spawnX = px, spawnY = py;
   const id = setTimeout(() => {
@@ -12603,6 +13206,13 @@ function firebrandProc(bodyX, bodyY) {
   recentNovaFrames = 1500;
   lastFirebrandProc = now;
   spawnDestroyProcFlash('nova');
+  // Ember Spread (Inferno support): Firebrand's proc-novas also drop a burn zone.
+  if (rankOf('emberSpread') > 0 && rankOf('wildfire') > 0) {
+    const big = rankOf('cinder') > 0;
+    burnZones.push({ x: px, y: py, radius: big ? 55 : 40, startTime: now, lifeMs: big ? 3000 : 2000 });
+    if (burnZones.length > BURN_ZONE_CAP) burnZones.shift();
+  }
+  _solar_flash('firebrand', 'FIREBRAND', SOLAR_PATH_COLORS.inferno, 600);
   treeLog('firebrand: single half-ring at ' + Math.round(px) + ',' + Math.round(py));
 }
 
@@ -12660,7 +13270,7 @@ function bastion2Proc() {
 // Lingering Horizon nerf — back to 90 s cadence.
 const SHROUD_FLAG_ARM_MS         = 30000;
 const NIGHT_SHADE_CYCLE_MS       = 20000;
-const SUN_FORGE_CYCLE_MS         = 60000;
+const SUN_FORGE_CYCLE_MS         = 45000;
 const AEGIS_CYCLE_MS             = 60000;
 const LINGERING_HORIZON_CYCLE_MS = 90000;
 
@@ -12701,11 +13311,12 @@ function tickCapstoneTimers() {
   // SUN FORGE (Inferno): auto-supernova every 15 s. Bypasses nova-overload
   // guard — nova_nova is the documented exception that always re-fires.
   // v1.8.0: rainbow run bypasses the activeOrb gate.
-  if ((activeOrb === 'solar' || rainbowRunActive) && hasCapstone('sunForge')) {
+  if (activeOrb === 'solar' && rankOf('sunForge') > 0) {
     if (now >= sunForgeNextFireTime) {
       activateCombo('nova_nova', player.x, player.y);
       shakeCapstone('sunForge');
       triggerHitstop(50);
+      _solar_addFlash('SUN FORGE', SOLAR_PATH_COLORS.corona);
       treeLog('sunForge: auto-supernova');
       sunForgeNextFireTime = now + SUN_FORGE_CYCLE_MS;
     }
@@ -12795,8 +13406,7 @@ function checkDestroyProc(body, source) {
     if (r > 0 && Math.random() < 0.10) { soulboundProc(); _cosmic_flash('soulbound', 'SOULBOUND', COSMIC_PATH_COLORS.veil, 800); } // single-rank 10%
   }
   if (activeOrb === 'solar' || rainbowRunActive) {
-    const r = rankOf('firebrand');
-    if (r > 0 && Math.random() < TREE_PROC_CHANCES[r - 1]) firebrandProc(body.x, body.y);
+    if (rankOf('firebrand') > 0 && Math.random() < 0.10) firebrandProc(body.x, body.y); // single-rank 10%
   }
   if (activeOrb === 'nebula' || rainbowRunActive) {
     const r = rankOf('slipstream');
@@ -12930,7 +13540,7 @@ let rainbowRunActive = false;
 let rainbowOutcome = null; // 'died' | 'reachedEnd' | null
 
 // Set of capstones unlocked during a Rainbow Orb run.
-const RAINBOW_CAPSTONES = new Set(['sunForge', 'superluminal', 'aegis']);
+const RAINBOW_CAPSTONES = new Set(['superluminal', 'aegis']);
 
 // v1.8.0 PART A rebalance: returns rank 1 for any known tree node during
 // the rainbow run (was previously max rank, which made the run feel
@@ -12951,7 +13561,7 @@ const RAINBOW_CAPSTONES = new Set(['sunForge', 'superluminal', 'aegis']);
 //   - 'salvage'      → Bulwark Opportunism T1 (-0.1/-0.2/-0.3 % per kill during shield)
 //   - 'smoothEntry'  → Warp Drift T1 / "Momentum" (-0.1/-0.2/-0.3 % per kill during hyperspeed)
 //   - 'coronalHold'  → Inferno Corona T3 (-0.25/-0.5/-1.0 % per nova kill)
-const RAINBOW_PER_KILL_BURST_CD_KEYS = new Set(['salvage', 'smoothEntry', 'coronalHold']);
+const RAINBOW_PER_KILL_BURST_CD_KEYS = new Set(['salvage', 'smoothEntry', 'coronalHold', 'corona']);
 let _rainbowRankMap = null;
 function rainbowMaxRankFor(key) {
   if (RAINBOW_PER_KILL_BURST_CD_KEYS.has(key)) return 0;
@@ -12972,6 +13582,9 @@ function rainbowMaxRankFor(key) {
 let burnZones = [];
 const BURN_ZONE_LIFETIME_MS = 2000;
 const BURN_ZONE_RADIUS = 40;
+const BURN_ZONE_CAP = 12;          // perf guard on live burn zones
+let _solarCMBurnZonesPending = 0;  // Critical Mass: force the next N nova kills to drop zones
+let _solarCMKills = 0;             // Critical Mass cumulative nova-kill counter (paused during CD)
 // Second Flame (Inferno Pyre T3): setTimeouts for bonus waves — tracked so
 // we can clear on resetGame() to avoid a ghost wave firing after restart.
 let secondFlamePending = [];
@@ -13080,12 +13693,12 @@ function resetTreeNodeState() {
 // old radius-scaling was removed in v1.6.3 — it now reduces burst cooldown
 // per supernova kill instead.
 function novaScale(r) {
-  // v1.8.0: rainbow run picks up Solar Flare even though activeOrb is forced
-  // to 'asteroid' — Inferno tree effects all apply during rainbow runs.
   if (activeOrb !== 'solar' && !rainbowRunActive) return 1;
-  // v1.6.3: Solar Flare nerfed from +15%/rank to +10/20/30% (ranks 1-3).
-  const sfRank = rankOf('solarFlare');
-  return 1 + ([0.10, 0.20, 0.30][sfRank - 1] || 0);
+  // v1.9.0: Corona keystone +20% nova radius, Solar Flare +10% more (single-rank).
+  let mult = 1;
+  if (rankOf('corona') > 0) mult += 0.20;
+  if (rankOf('solarFlare') > 0) mult += 0.10;
+  return mult;
 }
 
 // Razor Veil rearm cooldown ms by rank.
@@ -13612,6 +14225,9 @@ const PGS = (() => {
       } else if (orb === 'cosmic') {
         if (_cosmicLooksLegacy(aOrb)) aOrb = null;
         if (_cosmicLooksLegacy(bOrb)) bOrb = null;
+      } else if (orb === 'solar') {
+        if (_solarLooksLegacy(aOrb)) aOrb = null;
+        if (_solarLooksLegacy(bOrb)) bOrb = null;
       }
       for (const pKey of Object.keys(def.paths)) {
         const nodes = def.paths[pKey].nodes;
@@ -19289,43 +19905,37 @@ function _activateCombo_default(key, x, y) {
     // v1.8.0: rainbow run takes the Inferno baseline (Inferno-tree effects
     // all apply during rainbow runs).
     const _solarLike = activeOrb === 'solar' || rainbowRunActive;
-    let supernovaWaves = _solarLike ? 4 : 3;
-    // Conflagration (Corona T2) v1.6.3 rework: 2 ranks, +1/+2 waves,
-    // 15s cooldown. Applies to ANY supernova source (this activateCombo
-    // path covers player burst, pair combo, SUN FORGE, CRITICAL MASS via
-    // historical wiring, and DEAD CENTER calculated-drift path).
-    if (_solarLike && rankOf('conflagration') > 0
-        && Date.now() >= conflagrationNextApplyTime) {
-      const cfRank = rankOf('conflagration');
-      const bonus = [1, 2][cfRank - 1] || 0;
-      supernovaWaves += bonus;
+    let supernovaWaves = 3; // v1.9.0: Inferno no longer gets a baseline wave advantage
+    if (_solarLike && rankOf('pyre') > 0) supernovaWaves += 2; // Pyre keystone: +2 to every nova
+    // Conflagration (Pyre support): +2 supernova waves, 15s cooldown.
+    if (_solarLike && rankOf('conflagration') > 0 && Date.now() >= conflagrationNextApplyTime) {
+      supernovaWaves += 2;
       conflagrationNextApplyTime = Date.now() + 15000;
-      treeLog('conflagration: +' + bonus + ' waves (next eligible in 15s)');
+      _solar_flash('conflagration', 'CONFLAGRATION', SOLAR_PATH_COLORS.pyre, 600);
+      treeLog('conflagration: +2 waves (next eligible in 15s)');
     }
-    // Combustion (Inferno T3) v1.6.3: per-cast accumulator (not per-kill).
-    // 1/2/3 bonus waves cap, 2s expiry window, 15s cooldown between
-    // consumptions. If on cooldown, the counter can still hold accumulated
-    // casts but consumption is gated.
+    // Combustion (Pyre support): banks up to +2 waves, consumed by the next
+    // nova within 5s; 15s cooldown between consumptions.
     if (_solarLike && rankOf('combustion') > 0 && Date.now() < combustionBonusExpiry
         && Date.now() >= combustionNextConsumeTime) {
-      const cap = [1, 2, 3][rankOf('combustion') - 1] || 0;
-      const add = Math.min(combustionBonus, cap);
+      const add = Math.min(combustionBonus, 2);
       supernovaWaves += add;
       if (add > 0) {
         treeLog('combustion: +' + add + ' supernova waves');
         combustionBonus = 0;
         combustionBonusExpiry = 0;
         combustionNextConsumeTime = Date.now() + 15000;
+        _solar_flash('combustion', 'COMBUSTION', SOLAR_PATH_COLORS.pyre, 600);
       }
     }
-    // Tally this supernova cast for Combustion's next consumption.
     if (_solarLike && rankOf('combustion') > 0) {
       combustionBonus++;
-      combustionBonusExpiry = Date.now() + 2000;
+      combustionBonusExpiry = Date.now() + 5000;
     }
-    // v1.6.3: step coefficient nerfed from 0.15 → 0.10 (per-wave +10%
-    // growth instead of +15%). Halo still adds +0.033/rank on top.
-    const stepCoef = 0.10 + (_solarLike ? 0.033 * rankOf('halo') : 0);
+    // Halo (Corona support): single-rank +0.10 step coefficient (rings grow faster).
+    const stepCoef = 0.10 + ((_solarLike && rankOf('halo') > 0) ? 0.10 : 0);
+    if (_solarLike) supernovaWaves = Math.min(supernovaWaves, 12); // hard wave cap (blow-up guard)
+    const _snStagger = (_solarLike && rankOf('solarWind') > 0) ? 280 : 400; // Solar Wind: tighter cadence
     // v1.7.0: punctuation shake at supernova start (one-shot, value 7).
     // The previous per-wave 10+i stacking dominated the screen for the
     // entire 1.6-2.4s wave sequence. The kill loops in update() now drive
@@ -19347,7 +19957,7 @@ function _activateCombo_default(key, x, y) {
         });
         emitNovaSpecks(player.x, player.y);
         SFX.pickup('nova');
-      }, i * 400));
+      }, i * _snStagger));
     }
     // v1.6.3 FIX I6: Second Flame rolls ONCE per nova cast via the shared
     // helper. Supernova path tags isSupernova=true so the bonus wave uses
@@ -19554,8 +20164,11 @@ function fireTripleNova(px, py, source, waveOverride) {
   if (typeof waveOverride === 'number' && waveOverride > 0) {
     waves = waveOverride;
   } else {
-    waves = _solarLike ? 4 : 2;
-    if (_solarLike) waves += rankOf('kindling');
+    waves = 2; // v1.9.0: no Inferno baseline advantage
+    if (_solarLike) {
+      if (rankOf('pyre') > 0) waves += 2;  // Pyre keystone: +2 to every nova
+      if (rankOf('kindling') > 0) waves += 1; // Kindling: +1 single-nova wave
+    }
   }
   // Combustion (Inferno T3) v1.6.3 rework: per-cast accumulator (not
   // per-kill). 1/2/3 cap, 2s expiry window, 15s CD. Single-nova path
@@ -19566,21 +20179,23 @@ function fireTripleNova(px, py, source, waveOverride) {
   const isCriticalMass = source === 'critical_mass';
   if (!isFirebrand && !isCriticalMass && _solarLike && rankOf('combustion') > 0 && Date.now() < combustionBonusExpiry
       && Date.now() >= combustionNextConsumeTime) {
-    const cap = [1, 2, 3][rankOf('combustion') - 1] || 0;
-    const add = Math.min(combustionBonus, cap);
+    const add = Math.min(combustionBonus, 2); // single-rank cap +2
     waves += add;
     if (add > 0) {
       treeLog('combustion: +' + add + ' single-nova waves');
       combustionBonus = 0;
       combustionBonusExpiry = 0;
       combustionNextConsumeTime = Date.now() + 15000;
+      _solar_flash('combustion', 'COMBUSTION', SOLAR_PATH_COLORS.pyre, 600);
     }
   }
-  // Tally this cast (per-cast accumulator, excludes Firebrand + CM).
+  // Tally this cast (per-cast accumulator, excludes Firebrand + CM). 5s window.
   if (!isFirebrand && !isCriticalMass && _solarLike && rankOf('combustion') > 0) {
     combustionBonus++;
-    combustionBonusExpiry = Date.now() + 2000;
+    combustionBonusExpiry = Date.now() + 5000;
   }
+  if (_solarLike) waves = Math.min(waves, 12); // hard wave cap (blow-up guard)
+  const _snStagger2 = (_solarLike && rankOf('solarWind') > 0) ? 280 : 400; // Solar Wind cadence
   for (let i = 1; i < waves; i++) {
     const life = Math.max(0.4, 1 - i * 0.1);
     pendingNovaTimeouts.push(setTimeout(() => {
@@ -19590,7 +20205,7 @@ function fireTripleNova(px, py, source, waveOverride) {
         // v1.7.0: per-wave shake removed; kill-driven shake replaces it.
         SFX.pickup('nova');
       }
-    }, i * 400));
+    }, i * _snStagger2));
   }
   // v1.6.3 FIX I6: Second Flame per-cast roll via the shared helper. Only
   // 'second_flame_proc' is excluded now — Firebrand-sourced novas ARE
@@ -21379,9 +21994,22 @@ function _updateCore() {
       // v1.6.3: burn zones now STATIC at kill position (no world scroll).
       // The old `z.y += spd * dtScale` shift made them drift with the
       // playfield; the zone is now a fixed ground hazard for its lifetime.
-      if (bzNow - z.startTime < BURN_ZONE_LIFETIME_MS) bzAlive.push(z);
+      if (bzNow - z.startTime < (z.lifeMs || BURN_ZONE_LIFETIME_MS)) bzAlive.push(z);
+      else if (z._backdraft && rankOf('backdraft') > 0) {
+        // Backdraft: a tagged zone detonates into a half-size nova on expiry.
+        pushNovaRingCapped({ x: z.x, y: z.y, radius: 0, life: 1, prevR: 0, startTime: bzNow, sizeMult: 0.5 });
+        emitNovaSpecks(z.x, z.y);
+      }
     }
     burnZones = bzAlive;
+    // Backdraft: when 5+ zones overlap in time, tag them all (10s re-arm CD);
+    // tagged zones detonate as they expire (above).
+    if (rankOf('backdraft') > 0 && burnZones.length >= 5 && bzNow >= _solarBackdraftArmCD) {
+      for (const z of burnZones) z._backdraft = true;
+      _solarBackdraftArmCD = bzNow + 10000;
+      _solar_flash('backdraft', 'BACKDRAFT', SOLAR_PATH_COLORS.inferno, 800);
+      triggerHitstop(60);
+    }
     if (burnZones.length) {
       const bzSurvivors = [];
       for (const b of bodies) {
@@ -21613,52 +22241,56 @@ function _updateCore() {
           // Math sanity at r3: supernova killing 15 bodies = 15% × 30000 ms
           // = 4500 ms reduction per supernova. Bounded only by per-kill
           // nature.
+          // Corona keystone + Coronal Hold: each nova kill shaves burst CD,
+          // floored so it can never push the live cooldown below 8s remaining
+          // (cooldown-collapse guard). Both single-rank; excluded in rainbow.
           if (activeOrb === 'solar' || rainbowRunActive) {
-            const chRank = rankOf('coronalHold');
-            if (chRank > 0 && burstCooldownEnd > Date.now()) {
-              const pct = [0.0025, 0.005, 0.01][chRank - 1] || 0;
+            let pct = 0;
+            if (rankOf('corona') > 0)      pct += 0.005; // 0.5% / kill
+            if (rankOf('coronalHold') > 0) pct += 0.005; // +0.5% / kill
+            const floorEnd = Date.now() + 8000;
+            if (pct > 0 && burstCooldownEnd > floorEnd) {
               const reduce = Math.floor(pct * BURST_COOLDOWN_MS);
-              if (reduce > 0) {
-                burstCooldownEnd = Math.max(Date.now(), burstCooldownEnd - reduce);
-              }
+              if (reduce > 0) burstCooldownEnd = Math.max(floorEnd, burstCooldownEnd - reduce);
             }
           }
-          // CRITICAL MASS (Inferno capstone) v1.6.3 rework:
-          //   - Free 6-wave NORMAL nova (not supernova) at player position.
-          //   - Kill counter paused DURING cooldown (doesn't accumulate;
-          //     only starts incrementing once CD expires).
-          //   - 15s cooldown unchanged.
-          // Deferred via setTimeout to avoid mutating novaRings mid-iter.
-          if (activeOrb === 'solar' && hasCapstone('criticalMass')) {
-            if (Date.now() >= criticalMassCooldownEnd) {
-              novaCastKillCount++;
-              if (novaCastKillCount >= 10) {
-                criticalMassCooldownEnd = Date.now() + 45000;
-                novaCastKillCount = 0;
-                const id = setTimeout(() => {
-                  if (state !== 'playing' && state !== 'devmode') return;
-                  fireTripleNova(player.x, player.y, 'critical_mass', 6);
-                  shakeCapstone('criticalMass');
-                  triggerHitstop(50);
-                  treeLog('criticalMass: free 6-wave nova triggered');
-                }, 100);
-                pendingNovaTimeouts.push(id);
-              }
+          // CRITICAL MASS (Inferno capstone): every 20 nova-related kills →
+          // a free, fully-loaded nova (inherits Pyre/Kindling bonuses) and the
+          // next 3 nova kills are forced to drop burn zones. 30s CD; the
+          // cumulative counter is paused during cooldown. Deferred via setTimeout.
+          if (activeOrb === 'solar' && rankOf('criticalMass') > 0) {
+            if (Date.now() >= criticalMassCooldownEnd && ++_solarCMKills >= 20) {
+              _solarCMKills = 0;
+              criticalMassCooldownEnd = Date.now() + 30000;
+              _solarCMBurnZonesPending = 3;
+              _solar_addFlash('CRITICAL MASS', SOLAR_PATH_COLORS.inferno);
+              const id = setTimeout(() => {
+                if (state !== 'playing' && state !== 'devmode') return;
+                fireTripleNova(player.x, player.y, 'critical_mass');
+                shakeCapstone('criticalMass');
+                triggerHitstop(140);
+                treeLog('criticalMass: free fully-loaded nova');
+              }, 100);
+              pendingNovaTimeouts.push(id);
             }
           }
-          // Cinder (Inferno T1): nova-killed bodies leave a burn zone that
-          // destroys anything entering it for its 1 s lifetime.
-          if ((activeOrb === 'solar' || rainbowRunActive) && rankOf('cinder') > 0) {
-            const chance = [0.10, 0.20, 0.30][rankOf('cinder') - 1] || 0;
-            if (Math.random() < chance) {
-              burnZones.push({
-                x: b.x, y: b.y,
-                radius: BURN_ZONE_RADIUS,
-                startTime: Date.now(),
-              });
+          // Wildfire (Inferno keystone): 30% of nova kills leave a burn zone;
+          // Cinder enhances it (3s / 55px). Critical Mass force-spawns the next 3.
+          if ((activeOrb === 'solar' || rainbowRunActive) && rankOf('wildfire') > 0) {
+            const forced = _solarCMBurnZonesPending > 0;
+            if (forced || Math.random() < 0.30) {
+              if (forced) _solarCMBurnZonesPending--;
+              const big = rankOf('cinder') > 0;
+              burnZones.push({ x: b.x, y: b.y, radius: big ? 55 : 40, startTime: Date.now(), lifeMs: big ? 3000 : 2000 });
+              if (burnZones.length > BURN_ZONE_CAP) burnZones.shift();
               emitDestroyBurst(b.x, b.y, '255,120,40');
-              treeLog('cinder: burn zone at ' + Math.round(b.x) + ',' + Math.round(b.y));
+              _solar_flash('wildfire', 'WILDFIRE', SOLAR_PATH_COLORS.inferno, 500);
             }
+          }
+          // Stellar Collapse (Pyre capstone): every 20 nova-related kills → fireball.
+          if (activeOrb === 'solar' && rankOf('stellarCollapse') > 0 && ++_solarStellarKills >= 20) {
+            _solarStellarKills = 0;
+            _solarSpawnFireball();
           }
           checkDestroyProc(b, 'nova');
           novaKillCount++;
@@ -26314,60 +26946,74 @@ function drawPlanetRipples() {
 function drawBurnZones() {
   if (!burnZones.length) return;
   const now = Date.now();
-  // Renders to #c (z-index 0) above the pixi stage. Canvas 2D only.
+  // v1.9.0 rewrite: render as actual fire — a charred ground glow, flickering
+  // layered flame tongues (additive), a bright core, and rising embers — rather
+  // than the old "orbiting dots in a halo" look. Canvas 2D, renders to #c.
+  const flame = (bx, baseY, w, h) => {
+    ctx.beginPath();
+    ctx.moveTo(bx - w / 2, baseY);
+    ctx.quadraticCurveTo(bx - w * 0.5, baseY - h * 0.55, bx, baseY - h);
+    ctx.quadraticCurveTo(bx + w * 0.5, baseY - h * 0.55, bx + w / 2, baseY);
+    ctx.quadraticCurveTo(bx, baseY + h * 0.12, bx - w / 2, baseY);
+    ctx.fill();
+  };
   for (const z of burnZones) {
+    const life = z.lifeMs || BURN_ZONE_LIFETIME_MS;
     const age = now - (z.startTime || now);
-    if (age < 0 || age > BURN_ZONE_LIFETIME_MS) continue;
-    const fade = (age > BURN_ZONE_LIFETIME_MS - 400)
-      ? Math.max(0, (BURN_ZONE_LIFETIME_MS - age) / 400)
-      : 1;
-    // Larger pulse amplitude for "alive" feel.
-    const pulse = 0.7 + 0.4 * Math.sin(age * 0.022);
-    ctx.save();
-    // v1.9.0 perf: translate to the zone center and build the halo/core gradients
-    // at the origin so they depend only on the (fixed) radius — cacheable across
-    // every zone and every frame instead of two createRadialGradient calls per
-    // zone per frame. Zone radius is constant (BURN_ZONE_RADIUS), so this collapses
-    // to a single cached halo + single cached core for the whole run.
-    ctx.translate(z.x, z.y);
+    if (age < 0 || age > life) continue;
+    const fade = (age > life - 400) ? Math.max(0, (life - age) / 400) : Math.min(1, age / 150);
     const R = z.radius;
-    // Outer halo — stronger opacity + more saturated red-orange.
-    ctx.globalAlpha = 0.45 * fade;
-    ctx.fillStyle = getCachedGradient('burnHalo_' + R, (c) => {
+    const seed = (z.startTime | 0);
+    ctx.save();
+    ctx.translate(z.x, z.y);
+    // Charred ground glow (sits under the flames).
+    ctx.globalAlpha = 0.4 * fade;
+    ctx.fillStyle = getCachedGradient('burnGround_' + R, (c) => {
       const g = c.createRadialGradient(0, 0, 0, 0, 0, R);
-      g.addColorStop(0,    'rgba(255,140,40,0.85)');
-      g.addColorStop(0.55, 'rgba(255,90,30,0.45)');
-      g.addColorStop(1,    'rgba(255,60,20,0)');
+      g.addColorStop(0, 'rgba(150,30,12,0.8)');
+      g.addColorStop(0.7, 'rgba(90,18,8,0.4)');
+      g.addColorStop(1, 'rgba(40,8,4,0)');
       return g;
     }, ctx);
     ctx.beginPath(); ctx.arc(0, 0, R, 0, 6.28); ctx.fill();
-    // Sharp edge ring — defines the hazard boundary.
-    ctx.globalAlpha = 0.55 * fade;
-    ctx.strokeStyle = 'rgba(255,160,60,0.95)';
-    ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.arc(0, 0, R * 0.94, 0, 6.28); ctx.stroke();
-    // Inner bright core — more saturated, brighter peak.
-    ctx.globalAlpha = 0.85 * fade * pulse;
-    ctx.fillStyle = getCachedGradient('burnCore_' + R, (c) => {
-      const g = c.createRadialGradient(0, 0, 0, 0, 0, R * 0.55);
-      g.addColorStop(0,   'rgba(255,235,160,1)');
-      g.addColorStop(0.45,'rgba(255,170,70,0.7)');
-      g.addColorStop(1,   'rgba(255,120,40,0)');
+    // Flame tongues — layered solid colours (red base → orange → yellow tip),
+    // each flickering on its own phase. Additive blend gives the glow.
+    ctx.globalCompositeOperation = 'lighter';
+    const N = 7;
+    for (let i = 0; i < N; i++) {
+      const s = seed + i * 53;
+      const a = (i / N) * 6.28 + (s % 100) / 160;
+      const d = R * (0.15 + 0.55 * (((s >> 3) % 100) / 100));
+      const bx = Math.cos(a) * d + Math.sin(now * 0.005 + i) * (R * 0.04); // gentle sway
+      const baseY = Math.sin(a) * d * 0.5; // squashed vertically (ground perspective)
+      const flick = 0.55 + 0.45 * Math.sin(now * 0.018 + i * 1.7 + seed);
+      const h = R * (0.45 + 0.65 * flick);
+      const w = R * 0.34;
+      ctx.globalAlpha = 0.5 * fade;       ctx.fillStyle = 'rgba(255,70,20,1)';   flame(bx, baseY, w, h * 0.6);
+      ctx.globalAlpha = 0.55 * fade;      ctx.fillStyle = 'rgba(255,150,45,1)';  flame(bx, baseY, w * 0.62, h * 0.85);
+      ctx.globalAlpha = 0.6 * fade * flick; ctx.fillStyle = 'rgba(255,235,150,1)'; flame(bx, baseY, w * 0.3, h);
+    }
+    // Bright flickering core.
+    ctx.globalAlpha = 0.6 * fade * (0.7 + 0.3 * Math.sin(now * 0.03 + seed));
+    ctx.fillStyle = getCachedGradient('burnCore2_' + R, (c) => {
+      const g = c.createRadialGradient(0, 0, 0, 0, 0, R * 0.5);
+      g.addColorStop(0, 'rgba(255,240,180,0.9)');
+      g.addColorStop(0.5, 'rgba(255,150,50,0.5)');
+      g.addColorStop(1, 'rgba(255,90,30,0)');
       return g;
     }, ctx);
-    ctx.beginPath(); ctx.arc(0, 0, R * 0.55, 0, 6.28); ctx.fill();
-    // Ember particles — 7 per zone, deterministic from startTime so cost
-    // stays bounded (no continuous spawn) but more visible than the prior 5.
-    ctx.globalAlpha = 0.85 * fade;
+    ctx.beginPath(); ctx.arc(0, 0, R * 0.5, 0, 6.28); ctx.fill();
+    // Rising embers.
     ctx.fillStyle = 'rgba(255,210,120,1)';
-    for (let i = 0; i < 7; i++) {
-      const seed = (z.startTime | 0) + i * 17;
-      const ang = ((seed % 628) / 100) + age * 0.003 * ((i % 2) ? 1 : -1);
-      const rr = z.radius * (0.5 + (((seed >> 3) % 45) / 100));
-      const ex = Math.cos(ang) * rr;
-      const ey = Math.sin(ang) * rr - age * 0.02;
-      ctx.fillRect(ex - 1.2, ey - 1.2, 2.4, 2.4);
+    for (let i = 0; i < 5; i++) {
+      const s = seed + i * 71;
+      const ex = Math.cos(s) * R * 0.5 + Math.sin(now * 0.004 + i) * 3;
+      const climb = (age * 0.05 + i * 14) % (R * 1.5);
+      ctx.globalAlpha = 0.85 * fade * Math.max(0, 1 - climb / (R * 1.5));
+      const sz = 1.4 + (s % 2);
+      ctx.fillRect(ex - sz / 2, -climb - sz / 2, sz, sz);
     }
+    ctx.globalCompositeOperation = 'source-over';
     ctx.restore();
   }
   ctx.globalAlpha = 1;
@@ -26585,7 +27231,7 @@ function updateCapstoneCountdowns() {
   }
   // SUN FORGE — Inferno. Cycle constant shared with tickCapstoneTimers.
   {
-    const owned = (activeOrb === 'solar' || rainbowRunActive) && hasCapstone('sunForge');
+    const owned = activeOrb === 'solar' && rankOf('sunForge') > 0;
     const fireTs = sunForgeNextFireTime || now;
     const elapsed = SUN_FORGE_CYCLE_MS - Math.max(0, fireTs - now);
     const progress = Math.max(0, Math.min(1, elapsed / SUN_FORGE_CYCLE_MS));
@@ -27586,6 +28232,7 @@ function applyPauseDeltaShift(pauseDelta) {
   if (sunForgeNextFireTime) sunForgeNextFireTime += pauseDelta;
   if (aegisNextFireTime) aegisNextFireTime += pauseDelta;
   if (criticalMassCooldownEnd) criticalMassCooldownEnd += pauseDelta;
+  if (_solarBackdraftArmCD) _solarBackdraftArmCD += pauseDelta;
   if (lingeringHorizonNextFireTime) lingeringHorizonNextFireTime += pauseDelta;
   if (lingeringHorizonLastFireTime) lingeringHorizonLastFireTime += pauseDelta;
   if (loadedDiceNextProcTime) loadedDiceNextProcTime += pauseDelta;

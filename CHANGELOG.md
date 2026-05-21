@@ -19,8 +19,10 @@ active-point budget — so build choice, not grind, defines a run.
   (ghost duration & uptime), **WRAITH** (offense during ghost), **VEIL**
   (phasing & safety) — **18 nodes, 69,000 💎 / 57 active points** to fully
   unlock. New branching activate/deactivate tree UI with horizontal scroll.
-- New/reworked mechanics: **Eternal Veil** keystone (+2s to every ghost
-  duration), **Endless Dusk** (auto-ghost on a cycle), **Nightfall**
+- New/reworked mechanics: **Eternal Veil** keystone (+1s to every ghost
+  duration — Phantom's no-upgrade ghost durations now match every other orb, so
+  its length comes from the tree, not a baked-in baseline), **Endless Dusk**
+  (auto-ghost on a cycle), **Nightfall**
   (gaining ghost shaves the burst cooldown), **Phantom Blade** reworked into
   a 2-second sweep, **Hollow Edge** homing blade, **Soul Reaver**, **Reaping
   Storm** capstone (a ghost-kill counter that unleashes chaining EMP bursts
@@ -29,6 +31,29 @@ active-point budget — so build choice, not grind, defines a run.
 - Ghost-duration cap pinned to 10s with every ghost-extension source clamped
   to it. One-time migration refunds legacy Phantom investments at the old
   rates (schema-versioned and safe across PGS cloud-merge).
+
+### Inferno (solar) — full rework
+- Rebuilt as a single-rank / active-budget tree (base 20 / cap 25): 3 paths —
+  **PYRE** (stack nova waves), **CORONA** (wider novas + cast cadence), **INFERNO**
+  (spreading firefield) — **18 nodes, 78,000 💎 / 57 active points** to fully
+  unlock, with the same branching activate/deactivate UI.
+- Inferno's baked-in nova advantage is **gone** — its novas now fire at the same
+  base wave count as any other orb; the wave/size edge comes entirely from the tree.
+- New/reworked mechanics: **Pyre** (+2 waves to every nova), **Corona** (+20%
+  nova radius + a per-kill burst-CD refund), **Solar Wind** (tighter wave cadence),
+  **Wildfire** (nova kills leave burn zones), **Ember Spread**, **Backdraft** (5+
+  overlapping burn zones detonate into half-novas as they expire), **Stellar
+  Collapse** capstone (every 20 nova kills → an orbiting fireball that incinerates
+  on contact, then launches at a planet and detonates a full nova), **Sun Forge**
+  (auto-supernova every 45s), and **Critical Mass** (every 20 nova kills → a free
+  fully-loaded nova + guaranteed burn zones). Bottom-left COLLAPSE / MASS counters
+  for the two kill-counter capstones.
+- **Burn zones redrawn as actual fire** — flickering flame tongues, glowing core,
+  and rising embers, replacing the old "orbiting dots" look.
+- Balance guards: per-cast **wave cap (12)**, **burn-zone cap (12)**, and an **8s
+  burst-CD floor** so per-kill cooldown refunds can't collapse the burst. One-time
+  schema-versioned migration refunds legacy Inferno investments at the old rates;
+  rainbow runs no longer auto-fire Sun Forge.
 
 ### Drifter (cyan)
 - Active-point budget tightened to **base 20 / cap 25** (was 25/30) — the
