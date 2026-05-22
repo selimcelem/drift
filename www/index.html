@@ -5590,8 +5590,8 @@ const TREE_DEFS = {
             desc: 'When hyperspeed ends, you launch 3 forward discs that fly out, expand, and destroy what they hit.',
             effect: r => r ? '3 discs on hyperspeed end' : 'Locked' },
           { key: 'lightspeed', name: 'Lightspeed', tier: 3, max: 1, costOverride: [8500], pointCost: 5,
-            desc: 'CAPSTONE. While at max stacks your top speed never decays — you hold peak velocity (and a lethal barrier) for the entire hyperspeed instead of slowing down. And every 90s your max stack cap rises by +1 (up to the cap ceiling). Light has no brakes.',
-            effect: r => r ? 'No decay at max · +1 cap / 90s' : 'Locked' },
+            desc: 'CAPSTONE. While at max stacks your top speed never decays — you hold peak velocity for the entire hyperspeed instead of slowing down. And every 60s your max stack cap rises by +1 (up to the cap ceiling). Light has no brakes.',
+            effect: r => r ? 'No decay at max · +1 cap / 60s' : 'Locked' },
         ],
       },
       duration: {
@@ -5613,8 +5613,8 @@ const TREE_DEFS = {
             desc: 'At max stacks, picking up another hyperspeed orb extends your warp timer +1.5s. 20s cooldown.',
             effect: r => r ? '+1.5s at max stacks (20s CD)' : 'Locked' },
           { key: 'eventHorizon', name: 'Lingering Horizon', tier: 3, max: 1, costOverride: [8500], pointCost: 5,
-            desc: 'CAPSTONE. Every 90s you automatically snap to full-stack hyperspeed, and your max stack cap rises by +1 (up to the cap ceiling). The horizon never quite arrives — you just keep falling toward it.',
-            effect: r => r ? 'Auto full-stack + +1 cap / 90s' : 'Locked' },
+            desc: 'CAPSTONE. Every 60s you automatically snap to full-stack hyperspeed, and your max stack cap rises by +1 (up to the cap ceiling). The horizon never quite arrives — you just keep falling toward it.',
+            effect: r => r ? 'Auto full-stack + +1 cap / 60s' : 'Locked' },
         ],
       },
       cap: {
@@ -5627,17 +5627,17 @@ const TREE_DEFS = {
             desc: 'Hyperspeed stack cap +1 (stacks with Overdrive).',
             effect: r => r ? 'Stack cap +1' : 'Locked' },
           { key: 'warpHarmonic', name: 'Warp Harmonic', tier: 1, max: 1, costOverride: [2500], pointCost: 2,
-            desc: 'When you land a hyperspeed combo, gain +3 free stacks instantly. 20s cooldown.',
-            effect: r => r ? '+3 stacks on hyperspeed combo (20s CD)' : 'Locked' },
+            desc: 'When you land a hyperspeed combo, gain +3 free stacks instantly. 15s cooldown.',
+            effect: r => r ? '+3 stacks on hyperspeed combo (15s CD)' : 'Locked' },
           { key: 'criticalVelocity', name: 'Critical Velocity', tier: 1, max: 1, costOverride: [2500], pointCost: 2,
-            desc: 'At max stacks, every planet you destroy has a 10% chance to detonate a nova blast at the kill. 15s cooldown.',
-            effect: r => r ? '10% kill → nova at max stacks (15s CD)' : 'Locked' },
+            desc: 'At max stacks, every planet you destroy has a 20% chance to detonate a nova blast at the kill. 10s cooldown.',
+            effect: r => r ? '20% kill → nova at max stacks (10s CD)' : 'Locked' },
           { key: 'resonantMass', name: 'Resonant Mass', tier: 2, max: 1, costOverride: [5000], pointCost: 3,
             desc: 'Every hyperspeed stack beyond the 2nd adds +8% peak speed — a raised cap turns straight into velocity, even without the Blueshift tree.',
             effect: r => r ? '+8% peak / stack over 2' : 'Locked' },
           { key: 'singularity', name: 'Singularity', tier: 3, max: 1, costOverride: [8500], pointCost: 5,
-            desc: 'CAPSTONE. On reaching max stacks, a 20% chance to tear open a RIFT in space at your position. It hangs for 2.5s, dragging in nearby planets and destroying them on contact. Fires once per hyperspeed, 20s cooldown. Hold enough mass and space simply gives way.',
-            effect: r => r ? '20% at max stacks → 2.5s rift (20s CD)' : 'Locked' },
+            desc: 'CAPSTONE. When hyperspeed ends, you tear open a RIFT in space where you exited — guaranteed. It hangs for 2.5s, dragging in nearby planets and destroying them on contact. 20s cooldown. Hold enough mass and space simply gives way.',
+            effect: r => r ? 'Hyperspeed ends → 2.5s rift (20s CD)' : 'Locked' },
         ],
       },
     },
@@ -7881,33 +7881,31 @@ function _nebula_criticalVelocityProc(bodyX, bodyY) {
   try { SFX.pickup('nova'); } catch {}
   recentNovaEndTime = now + 1500;
   recentNovaFrames = 1500;
-  nebulaCriticalVelocityNextProc = now + 15000;
+  nebulaCriticalVelocityNextProc = now + 10000;
   _nebula_flash('criticalVelocity', 'CRITICAL VELOCITY', NEBULA_PATH_COLORS.cap, 0);
-  treeLog('criticalVelocity: proc nova at ' + Math.round(px) + ',' + Math.round(py) + ' (15s CD)');
+  treeLog('criticalVelocity: proc nova at ' + Math.round(px) + ',' + Math.round(py) + ' (10s CD)');
 }
-// Singularity (Cap capstone): 20% on reaching max stacks to tear a RIFT.
-// Once per hyperspeed instance, 20s CD. Anchored to the player for its 2.5s life.
-function _nebula_maybeOpenRift(now) {
-  if (nebulaRiftFiredThisInstance) return;
+// Singularity (Cap capstone) v1.9.0: GUARANTEED rift when hyperspeed ENDS
+// (called from the hyperspeed-end block), 20s CD. The rift is LEFT BEHIND at
+// the player's exit position and persists 2.5s, pulling + destroying bodies.
+function _nebula_openRift(now, x, y) {
   if (now < nebulaRiftNextArm) return;
-  if (Math.random() >= 0.20) return;
-  nebulaRiftFiredThisInstance = true;
   nebulaRiftNextArm = now + 20000;
-  nebulaRift = { startTime: now, x: player.x, y: player.y };
+  nebulaRift = { startTime: now, x: (typeof x === 'number' ? x : player.x), y: (typeof y === 'number' ? y : player.y) };
   try { SFX.playSfxBuffer('rift', 0.3); } catch {}   // dedicated cue, kept low
   try { triggerHitstop(70); } catch {}
   try { shakeCapstone('singularity'); } catch {}
   _nebula_flash('singularity', 'SINGULARITY', NEBULA_PATH_COLORS.cap, 0);
-  treeLog('singularity: RIFT torn (2.5s, 20s CD)');
+  treeLog('singularity: RIFT left behind (2.5s, 20s CD)');
 }
 // Per-frame rift pull + destroy. Bounded radius, pause-delta safe (driven by a
 // wall-clock lifetime, not accumulated dt). Batches shake via shakeMassDestroy.
+// The rift stays FIXED where hyperspeed ended (left behind) — it does not track
+// the player; bodies that scroll near it get pulled in and destroyed.
 function _nebula_tickRift() {
   if (!nebulaRift) return;
   const now = Date.now();
   if (now - nebulaRift.startTime >= NEBULA_RIFT_LIFE_MS) { nebulaRift = null; return; }
-  // Anchor to the player (the rift rides with the warping ship).
-  nebulaRift.x = player.x; nebulaRift.y = player.y;
   const cx = nebulaRift.x, cy = nebulaRift.y;
   const pullR2 = NEBULA_RIFT_PULL_RADIUS * NEBULA_RIFT_PULL_RADIUS;
   let killCount = 0;
@@ -11701,7 +11699,7 @@ const PHANTOMV2_DEATH_BURST_LIFE_MS = 700;
 // v1.9.0 SFX: per-detonation cue. Lord-of-the-Dead cascade impacts cycle
 // through pitch-staggered ghost stings (+0/+5/+10/+15/+20%) so the sequential
 // cascade reads as a cinematic stinger train; Vengeance suicides instead get a
-// low spectral scream wail layered over the ghost-dust pickup.
+// low LOTD.mp3 wail layered over the ghost-dust pickup.
 let _phantomV2_lordImpactPitchIdx = 0;
 let _phantomV2_wraithSpawnSfxGate = 0; // throttle the spawn sting so rapid spawns don't stack
 function _phantomV2_wraithDetonationSfx(fromLord) {
@@ -11711,7 +11709,7 @@ function _phantomV2_wraithDetonationSfx(fromLord) {
     _phantomV2_lordImpactPitchIdx++;
     try { SFX.pickup('ghost', { pitch: p, gain: 0.9 }); } catch {}
   } else {
-    try { SFX.playSfxBuffer('scream', 0.13, 0.72); } catch {} // v1.9.0: deeper + quieter
+    try { SFX.playSfxBuffer('lotd', 0.13); } catch {} // v1.9.0: LOTD cue, kept low
     try { SFX.pickup('ghost'); } catch {}
   }
 }
@@ -13975,7 +13973,7 @@ const SHROUD_FLAG_ARM_MS         = 30000;
 const NIGHT_SHADE_CYCLE_MS       = 20000;
 const SUN_FORGE_CYCLE_MS         = 30000;
 const AEGIS_CYCLE_MS             = 60000;
-const LINGERING_HORIZON_CYCLE_MS = 90000;
+const LINGERING_HORIZON_CYCLE_MS = 60000;  // v1.9.0: 90s → 60s (auto full-stack + cap-grow cadence)
 
 // Per-frame capstone auto-fire tick. NIGHT SHADE / SUN FORGE / AEGIS each
 // have their own cadence; fires silently if conditions aren't met. Timers
@@ -14130,10 +14128,10 @@ function checkDestroyProc(body, source) {
       const reduce = Math.floor(0.003 * BURST_COOLDOWN_MS);
       if (reduce > 0) burstCooldownEnd = Math.max(Date.now(), burstCooldownEnd - reduce);
     }
-    // Critical Velocity (Warp Cap T1) v1.9.0 NEW: while AT max stacks, 10%
-    // chance on body destroyed to detonate a default nova at the kill. 15s CD.
+    // Critical Velocity (Warp Cap T1) v1.9.0: while AT max stacks, 20%
+    // chance on body destroyed to detonate a default nova at the kill. 10s CD.
     if (rankOf('criticalVelocity') > 0 && hyperSpeedStacks >= HYPERSPEED_MAX_STACKS()
-        && activeEffects.hyperspeed > 0 && Math.random() < 0.10) {
+        && activeEffects.hyperspeed > 0 && Math.random() < 0.20) {
       _nebula_criticalVelocityProc(body.x, body.y);
     }
   }
@@ -15680,7 +15678,7 @@ let _nebula_lightspeedEngagedThisInstance = false; // Lightspeed flash/feel: onc
 const NEBULA_RIFT_LIFE_MS = 2500;
 const NEBULA_RIFT_PULL_RADIUS = 150;
 const NEBULA_RIFT_KILL_RADIUS = 26;
-const NEBULA_LIGHTSPEED_CAP_CYCLE_MS = 90000;
+const NEBULA_LIGHTSPEED_CAP_CYCLE_MS = 60000;
 
 // Shield hitpoints (fortress shield = 2, asteroid orb up to 4). Baseline is 0
 // when no shield is active — pickups add via rawActivate's +1/+2 formula, so
@@ -20806,13 +20804,13 @@ function _activateCombo_default(key, x, y) {
     activeCombos[key] = { def, deps: ['shield'] };
   }
   // Warp Harmonic (Warp Cap T1) v1.9.0: single-rank +3 bonus stacks on a
-  // hyperspeed pair combo. 20s cooldown.
+  // hyperspeed pair combo. 15s cooldown.
   if ((activeOrb === 'nebula' || rainbowRunActive) && (key === 'nova_hyperspeed' || key === 'hyperspeed_ghost' || key === 'hyperspeed_shield')) {
     if (rankOf('warpHarmonic') > 0 && Date.now() >= warpHarmonicNextFireTime) {
       for (let i = 0; i < 3; i++) activateHyperspeed(undefined, undefined, 'warp_harmonic');
-      warpHarmonicNextFireTime = Date.now() + 20000;
+      warpHarmonicNextFireTime = Date.now() + 15000;
       if (activeOrb === 'nebula') _nebula_flash('warpHarmonic', 'WARP HARMONIC', NEBULA_PATH_COLORS.cap, 0);
-      treeLog('warpHarmonic: +3 bonus stacks on ' + key + ' (20s CD)');
+      treeLog('warpHarmonic: +3 bonus stacks on ' + key + ' (15s CD)');
     }
   }
   // Keystone (Drifter Convergence T3): any pair combo rolls for a bonus
@@ -20866,9 +20864,14 @@ function rawActivate(type, x, y) {
     }
   } else if (type === 'hyperspeed') {
     // Natural hyperspeed pickup — source tag enables Infinite Gate.
-    // v1.9.0 Warp rework: baseline double-stack-per-pickup REMOVED — nebula now
-    // grants +1 per pickup like every other orb (generic-orb baseline).
+    // v1.9.0 Warp identity ("better hyperspeeds"): nebula grabs are worth +2
+    // stacks (the double-activate). This is what makes a singular hyperspeed
+    // pickup +2 AND a hyperspeed-completed combo (Warp Time / Spectral Rush /
+    // Juggernaut) land at +3 for Warp (pickup +2, combo +1). Other orbs: +1.
+    // Clamps to HYPERSPEED_MAX_STACKS() (so it's +1 effective when cap is 2 and
+    // a stack is already held). Burst stays 2× via executeBurst.
     activateHyperspeed(undefined, undefined, 'natural');
+    if (activeOrb === 'nebula') activateHyperspeed(undefined, undefined, 'natural');
   } else if (type === 'ghost') {
     // Shadow Regen (Phantom Veil T1) v1.6.6 rework: take the larger of
     // {default reset, additive stack} so the node is strictly non-detrimental.
@@ -21234,11 +21237,8 @@ function activateHyperspeed(durationOverride, peakScale, source) {
       }
     }
   }
-  // Singularity capstone (Warp Cap): on REACHING max stacks, 20% chance to tear
-  // a rift. Once per hyperspeed instance, 20s CD (gates inside the helper).
-  if (activeOrb === 'nebula' && prevStacks < cap && hyperSpeedStacks >= cap && rankOf('singularity')) {
-    _nebula_maybeOpenRift(now);
-  }
+  // Singularity capstone (Warp Cap): the rift now opens GUARANTEED when
+  // hyperspeed ENDS (see the hyperspeed-end block), not on reaching max stacks.
   if (hyperSpeedStacks > peakHyperSpeedStacks) peakHyperSpeedStacks = hyperSpeedStacks;
 
   hyperspeedPeakMult = computeHyperspeedPeakMult(hyperSpeedStacks, peakScale);
@@ -22571,7 +22571,7 @@ function _updateCore() {
       const atMax = hyperSpeedStacks >= HYPERSPEED_MAX_STACKS();
       if (activeOrb === 'nebula' && atMax && rankOf('lightspeed')) {
         // Lightspeed capstone: at max stacks the peak NEVER decays — hold top
-        // speed (and a lethal barrier) for the whole instance.
+        // speed for the whole instance.
         hyperspeedCurrentMult = hyperspeedPeakMult;
         if (!_nebula_lightspeedEngagedThisInstance) {
           _nebula_lightspeedEngagedThisInstance = true;
@@ -22596,11 +22596,16 @@ function _updateCore() {
       peakHyperSpeedStacks = 0;
       hyperspeedEndTime = 0;
       // Warp rework: instance ended — clear per-instance gates so the next
-      // hyperspeed re-arms Singularity / Lightspeed / Continuum budget fresh.
+      // hyperspeed re-arms Lightspeed / Continuum budget fresh.
       hyperspeedInstanceStart = 0;
       hyperspeedExtendBudgetUsedMs = 0;
       nebulaRiftFiredThisInstance = false;
       _nebula_lightspeedEngagedThisInstance = false;
+      // Singularity capstone v1.9.0: GUARANTEED rift left behind at the exit
+      // position when hyperspeed ends (20s CD inside the helper).
+      if (activeOrb === 'nebula' && rankOf('singularity')) {
+        _nebula_openRift(Date.now(), player.x, player.y);
+      }
       if (hyperspeedWhooshNodes) { try { hyperspeedWhooshNodes.stop(0.5); } catch {} hyperspeedWhooshNodes = null; }
       // Afterburn (Warp Velocity support) v1.9.0: single-rank → launch 3 discs.
       let abRankLocal = 0;

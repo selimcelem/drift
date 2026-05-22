@@ -1,9 +1,24 @@
-# WARP REWORK — DESIGN PROPOSAL v3 (no implementation)
+# WARP REWORK — DESIGN SPEC v4 (IMPLEMENTED)
 
-> Status: **proposal only**, no code changed. Numbers are iterable. Grounded in the
-> current `www/index.html` as of this branch. Line numbers are approximate anchors.
+> Status: **IMPLEMENTED** in `www/index.html` (engine + UI + migration). This doc is now the
+> spec-of-record; numbers below match the shipped code. Line numbers are approximate anchors.
 >
-> **v3 changes (this pass):**
+> **v4 changes (post-implementation tuning pass):**
+> - **Hard cap ceiling raised 8 → 10** (`NEBULA_MAX_CAP_CEILING = 10`). Confirmed playable. All ceiling
+>   references and the both-capstones runaway calc updated accordingly. [§9](#9-balance-landmines), [§11](#11-defined-terms), [§16](#16-implementation-notes).
+> - **Warp hyperspeed IDENTITY restored ("better hyperspeeds"):** a natural hyperspeed pickup grants **+2**
+>   stacks for Warp (the double-activate), which also makes the three hyperspeed combos (**Warp Time /
+>   Spectral Rush / Juggernaut**) land at **+3** when completed by the hyperspeed pickup. Burst stays **2×**.
+>   This **partially reverses [§8](#8-baseline-advantage-removal)** — only the *cap* baseline (4→2) is removed; the +2/pickup is kept as identity.
+> - **Singularity rift reworked:** no longer 20%-on-reaching-max-stacks. Now **GUARANTEED when hyperspeed ENDS**,
+>   **left behind** at the exit position (no longer player-anchored), 2.5s, 20s CD. [§5](#5-cap-path--singularity), [§11](#11-defined-terms), [§17](#17-presentation-screenshake--hitstop--audio).
+> - **Cooldown / cadence tuning:** Critical Velocity **10%/15s → 20%/10s**; Warp Harmonic **20s → 15s**;
+>   Lightspeed cap-growth **90s → 60s**; Lingering Horizon (auto full-stack + cap-grow) **90s → 60s**.
+> - **Lightspeed wording:** removed "(and a lethal barrier)" — every hyperspeed already has a barrier.
+> - **Audio:** `RIFT.mp3` drives the Singularity rift; `LOTD.mp3` drives both the Phantasm Lord-of-the-Dead
+>   capstone arming **and** the Vengeance-suicide wail (replacing the old SCREAM cue there).
+>
+> **v3 changes (prior pass):**
 > - **Breakaway rebalanced down** from ×1.45 → **×1.11 (+11%)**, derived from the actual
 >   `computeHyperspeedPeakMult` formula so a fully-upgraded **Blueshift (Velocity)** tree only
 >   *matches* a fully-upgraded **Singularity (Cap)** tree at the **~3-minute** mark, not earlier
@@ -131,10 +146,10 @@ The existing tree already clusters cleanly into the user's three levers: VELOCIT
 |---|---|---|---|---|---|---|
 | **Blueshift** | Keystone | 5 | 6,500 | *KEYSTONE.* "Your hyperspeed tears **+40% faster** through space. Space doesn't get out of your way — you blueshift it." | Redesign of `thrust` | thrustMult `1.40`; scales the `3.5/6.0` peak terms. **Passive — no flash.** |
 | **Ramjet** | Support T1 | 2 | 2,500 | "Every planet you destroy *while in hyperspeed* shaves **0.3%** off your burst cooldown." | Reuse `smoothEntry` | Self-contained; rewards killing while fast. **Passive per-kill stat — no flash.** |
-| **Breakaway** | Support T1 | 2 | 2,500 | "**At max hyperspeed stacks**, your peak speed is boosted a further **+11%**." | Reuse `breakaway` | **v3:** coefficient cut ×1.45 → **×1.11**. **Multiplicative** with Blueshift: `basePeak × 1.40 (Blueshift) × 1.11 (Breakaway) = ×1.554` at max stacks. Tuned so Velocity only *matches* Cap at ~3 min — see the [Part-1 crossover math in §9](#9-balance-landmines). **Passive (conditional) — no flash.** |
-| **Bow Shock** | Support T2 | 3 | 5,000 | "Your hyperspeed barrier reaches **30px farther** (60 → 90px), shredding planets from a wider berth." | **New** | Modest, deliberately *not* full-screen (see [§9](#9-balance-landmines)). **Must not clip the barrier visual:** the PIXI barrier renders into a fixed **200×200** offscreen canvas (`PIXI_HYPER_BARRIER_SIZE`, line 3594) centered on the player; a 90px barrier + its `halfW×1.5` glow (135px) overflows that box. Bow Shock must drive a **shared `halfW`** read by both the kill loop (line ~22453) and `drawHyperspeedBarrier` (hardcoded `halfW=60`, line 27507) **and grow the offscreen canvas** to fit. See [§16](#16-implementation-notes)/[§17](#17-presentation-screenshake--hitstop--audio). **Passive width — no flash** (but its widened kills shake; see §17). |
+| **Breakaway** | Support T1 | 2 | 2,500 | "**At max hyperspeed stacks**, your peak speed is boosted a further **+11%**." | Reuse `breakaway` | **×1.11** (was ×1.45). **Multiplicative** with Blueshift: `basePeak × 1.40 (Blueshift) × 1.11 (Breakaway) = ×1.554` at max stacks. It keeps the Velocity↔Cap crossover landing at stack-4 (not stack-3); with Lightspeed now +1/60s (v4) that stack-4 point is reached at **~2 min** — see the [crossover math in §9](#9-balance-landmines). **Passive (conditional) — no flash.** |
+| **Bow Shock** | Support T2 | 3 | 5,000 | "Your hyperspeed barrier reaches **30px farther** (60 → 90px), shredding planets from a wider berth." | **New** | Modest, deliberately *not* full-screen (see [§9](#9-balance-landmines)). **No-clip solved (implemented):** a shared `hyperBarrierHalfW()` (= 60 + 30 with Bow Shock) is read by **both** the kill loop and `drawHyperspeedBarrier`, and the PIXI offscreen canvas `PIXI_HYPER_BARRIER_SIZE` was grown **200 → 320** so the 90px barrier + its `halfW×1.5` glow (135px) no longer clips at the box edge. **Passive width — no flash** (its widened kills shake via the existing batched sweep; see §17). |
 | **Afterburn** | Support T1 | 2 | 2,500 | "When hyperspeed ends, you launch **3 forward discs** that fly out, expand, and destroy what they hit." | Reuse `afterburn` | Exit payoff; already implemented + pause-safe. **Active trigger → flashes "AFTERBURN" (Blueshift color) on hyperspeed end.** |
-| **Lightspeed** | Capstone | 5 | 8,500 | *CAPSTONE.* "**While at max stacks your top speed never decays** — you hold peak velocity (and a lethal barrier) for the entire hyperspeed instead of slowing down. **And every 90s, your max stack cap rises by +1** (up to the cap ceiling). Light has no brakes." | **New** | Endgame-defining. **v3:** cap-growth slowed **+1/60s → +1/90s** (matches Lingering Horizon). Both effects gated (max-stacks / finite timer / cap ceiling). **Active triggers → flash "LIGHTSPEED" (engage) and "MAX CAP +1" (on each +1).** |
+| **Lightspeed** | Capstone | 5 | 8,500 | *CAPSTONE.* "**While at max stacks your top speed never decays** — you hold peak velocity for the entire hyperspeed instead of slowing down. **And every 60s, your max stack cap rises by +1** (up to the cap ceiling). Light has no brakes." | **New** | Endgame-defining. **v4:** cap-growth cadence **+1/60s** (matches Lingering Horizon); "lethal barrier" wording dropped (every hyperspeed has a barrier). Effects gated (max-stacks / finite timer / cap ceiling 10). **Active triggers → flash "LIGHTSPEED" (engage) and "MAX CAP +1" (on each +1).** |
 
 **Path totals:** 19 active points · 27,500 crystals · 6 nodes.
 **Keystone justification:** Blueshift is the single biggest lever on what hyperspeed *feels* like — raw speed — so it gates the path. **Capstone justification:** Lightspeed removes the decay that defines baseline hyperspeed, the dramatic "I am now a screen-clearing beam" moment, comparable to Stellar Collapse / Eclipse in scope.
@@ -150,7 +165,7 @@ The existing tree already clusters cleanly into the user's three levers: VELOCIT
 | **Drag Coefficient** | Support T1 | 2 | 2,500 | "Your hyperspeed speed bleeds off **30% slower**, so you stay fast deeper into each warp." | **New** | Pure duration-of-*speed* value. **Passive ramp modifier — no flash.** |
 | **Reentry** | Support T1 | 2 | 2,500 | "When hyperspeed ends, you **drop out with a fresh shield** to cover the vulnerable exit." | **Redesign (was: post-hyperspeed invuln grace)** | +1 shield hit, standard non-fortress duration. Changed because Warp is already invuln *during* hyperspeed. See [§16](#16-implementation-notes) for shield-system interaction. **Active trigger → flashes "REENTRY" on hyperspeed end.** |
 | **Infinite Gate** | Support T2 | 3 | 5,000 | "**At max stacks**, picking up another hyperspeed orb extends your warp timer **+1.5s**. **20s cooldown.**" | Reuse `infiniteGate` (**re-gated**) | Was gated at literal `>=5` stacks; now gates at **`== cap`** (max stacks), so it scales with the now-variable cap. Natural-pickup-only, 20s CD retained, counts against Continuum's +3s/instance ceiling. **Active trigger → flashes "INFINITE GATE" on proc (20s CD).** |
-| **Lingering Horizon** | Capstone | 5 | 8,500 | *CAPSTONE.* "**Every 90s** you automatically snap to **full-stack hyperspeed**, and **your max stack cap rises by +1** (up to the cap ceiling). The horizon never quite arrives — you just keep falling toward it." | Reuse `eventHorizon` | Endgame uptime engine; **keeps its existing HUD ring** ([§10](#10-auto-fire-hud-ring-preservation)). **v3:** its +1/90s cap growth and Lightspeed's (now also +1/90s) **stack freely** — running both = +2 cap / 90s, intended and ungated (only the ceiling bounds it; see [§9](#9-balance-landmines)). **Active trigger → flashes "LINGERING HORIZON" on fire + HUD ring.** |
+| **Lingering Horizon** | Capstone | 5 | 8,500 | *CAPSTONE.* "**Every 60s** you automatically snap to **full-stack hyperspeed**, and **your max stack cap rises by +1** (up to the cap ceiling). The horizon never quite arrives — you just keep falling toward it." | Reuse `eventHorizon` | Endgame uptime engine; **keeps its existing HUD ring** ([§10](#10-auto-fire-hud-ring-preservation)). **v4:** cadence **+1/60s**; its cap growth and Lightspeed's (also +1/60s) **stack freely** — running both = **+2 cap / 60s**, intended and ungated (only the ceiling-10 bounds it; see [§9](#9-balance-landmines)). **Active trigger → flashes "LINGERING HORIZON" on fire + HUD ring.** |
 
 **Path totals:** 19 active points · 27,500 crystals · 6 nodes.
 **Keystone justification:** Continuum changes the fundamental cadence (warp as a sustained state). **Capstone justification:** Lingering Horizon is a periodic free full-power hyperspeed — already the strongest uptime tool, fits the path perfectly, and is the only timed auto-fire (HUD ring).
@@ -163,10 +178,10 @@ The existing tree already clusters cleanly into the user's three levers: VELOCIT
 |---|---|---|---|---|---|---|
 | **Overdrive** | Keystone | 5 | 6,500 | *KEYSTONE.* "Your hyperspeed holds **+2 more stacks** (2 → 4). Every stack is mass — give yourself room to hold more of it." | Redesign of `overdrive` | Restores the *old* Warp baseline of 4 — but now a chosen keystone, not free. **Passive cap — no flash.** |
 | **Superluminal** | Support T1 | 2 | 2,500 | "Hyperspeed stack cap **+1** (→ 5)." | Demote `superluminal` (was capstone) | Stacks additively with Overdrive. **Passive cap — no flash.** |
-| **Warp Harmonic** | Support T1 | 2 | 2,500 | "When you land a **hyperspeed combo**, gain **+3 free stacks** instantly. **20s cooldown.**" | Reuse `warpHarmonic` | Fires on `nova_hyperspeed`/`hyperspeed_ghost`/`hyperspeed_shield`; helps you *reach* the higher cap. **Active trigger → flashes "WARP HARMONIC" on proc (20s CD).** |
-| **Critical Velocity** | Support T1 | 2 | 2,500 | "**At max stacks**, every planet you destroy has a **10% chance** to detonate a **nova blast** at the kill. **15s cooldown.**" | **Redesign (was: max-stack invuln)** | Old version was redundant — the player is *already* fully invuln during hyperspeed. New offense payoff for holding the cap; mirrors the Firebrand/Halo proc-nova pattern. **Active trigger → flashes "CRITICAL VELOCITY" on proc (15s CD).** |
+| **Warp Harmonic** | Support T1 | 2 | 2,500 | "When you land a **hyperspeed combo**, gain **+3 free stacks** instantly. **15s cooldown.**" | Reuse `warpHarmonic` | Fires on `nova_hyperspeed`/`hyperspeed_ghost`/`hyperspeed_shield`; helps you *reach* the higher cap. **v4:** 20s → **15s CD**. **Active trigger → flashes "WARP HARMONIC" on proc (15s CD).** |
+| **Critical Velocity** | Support T1 | 2 | 2,500 | "**At max stacks**, every planet you destroy has a **20% chance** to detonate a **nova blast** at the kill. **10s cooldown.**" | **Redesign (was: max-stack invuln)** | Old version was redundant — the player is *already* fully invuln during hyperspeed. New offense payoff for holding the cap; mirrors the Firebrand/Halo proc-nova pattern. **v4:** 10%/15s → **20%/10s**. **Active trigger → flashes "CRITICAL VELOCITY" on proc (10s CD).** |
 | **Resonant Mass** | Support T2 | 3 | 5,000 | "Every hyperspeed stack **beyond the 2nd** adds **+8% peak speed** — a raised cap turns straight into velocity, even without the Blueshift tree." | **New** | Self-contained reason to raise the cap. Multiplicative on `basePeak` (see [§9](#9-balance-landmines)). **Passive — no flash.** |
-| **Singularity** | Capstone | 5 | 8,500 | *CAPSTONE.* "**On reaching max stacks, a 20% chance to tear open a RIFT** in space at your position. It hangs for **2.5s**, dragging in nearby planets and destroying them on contact. Fires **once per hyperspeed**, **20s cooldown**. Hold enough mass and space simply gives way." | **Redesign (was: sustained gravity-well disc)** | Endgame-defining: a space-tearing event with a bespoke vertical-tear visual distinct from Bulwark's Black Hole. Probabilistic + per-instance + 20s CD gating. **Uses the new `RIFT.mp3`** ([§17](#17-presentation-screenshake--hitstop--audio)). **Active trigger → flashes "SINGULARITY" once per instance (20s CD).** |
+| **Singularity** | Capstone | 5 | 8,500 | *CAPSTONE.* "**When hyperspeed ends, you tear open a RIFT** in space where you exited — **guaranteed**. It hangs for **2.5s**, dragging in nearby planets and destroying them on contact. **20s cooldown**. Hold enough mass and space simply gives way." | **Redesign (was: sustained gravity-well disc)** | **v4:** trigger moved from *20%-on-reaching-max-stacks* → **guaranteed on hyperspeed END**, and the rift is **left behind** at the exit position (no longer player-anchored). Bespoke vertical-tear visual distinct from Bulwark's Black Hole. Gating is now just the **20s CD**. **Uses `RIFT.mp3`** ([§17](#17-presentation-screenshake--hitstop--audio)). **Active trigger → flashes "SINGULARITY" on rift open (20s CD).** |
 
 **Path totals:** 19 active points · 27,500 crystals · 6 nodes.
 **Keystone justification:** Overdrive is literally the cap lever; nothing else in the path matters without it. **Capstone justification:** Singularity gives the cap a *reason to exist beyond speed* — a gravity-well kill burst gated to max-stack moments, distinct from Bulwark's shield-bound Gravity Well/Black Hole.
@@ -187,7 +202,7 @@ The existing tree already clusters cleanly into the user's three levers: VELOCIT
 | `superluminal` (capstone) | +2 cap | → **Cap T1 support** (+1) | Capstone slot freed; demote to a +1 support so caps don't balloon (see [§9](#9-balance-landmines)). |
 | `warpHarmonic` (T3×3) | +3 free stacks (20s CD) | → **Cap T1 support** (+3) | Stack generation = reach the cap. |
 | `smoothEntry`/Momentum (T1×3) | −0.3% burst CD/kill | → **Velocity T1 (Ramjet)** (−0.3%) | Speed-build burst loop. |
-| `eventHorizon`/Lingering Horizon (capstone) | 90s auto full-stack | → **Duration capstone** (+ **+1 max cap / 90s**, v2) | Uptime engine; keeps HUD ring; now also grows the cap (ceiling-clamped). Stacks freely with Lightspeed's +1/90s (v3). |
+| `eventHorizon`/Lingering Horizon (capstone) | 90s auto full-stack | → **Duration capstone** (auto full-stack + **+1 max cap, every 60s** v4) | Uptime engine; keeps HUD ring; also grows the cap (ceiling-clamped). Stacks freely with Lightspeed's +1/60s. |
 | **DRIFT path** | — | **Dissolved** | Its 3 nodes redistribute to Velocity/Duration/Cap. |
 
 **New nodes (7):** Bow Shock (V), Lightspeed (V cap), Drag Coefficient (D), Reentry (D — shield-on-end, v2), Critical Velocity (C — proc-nova, v2), Resonant Mass (C), Singularity (C cap — RIFT, v2). All defined above.
@@ -208,30 +223,43 @@ The existing tree already clusters cleanly into the user's three levers: VELOCIT
 
 ---
 
-## 8. Baseline Advantage Removal
+## 8. Baseline Advantage Removal — and the retained Warp identity (v4)
 
-Warp's unupgraded state must equal a generic orb. Remove **both** built-in advantages:
+**Only the cap baseline was removed. The +2/pickup is KEPT as Warp's identity ("better hyperspeeds").**
 
-1. **Stack cap 4 → 2.** In `_HYPERSPEED_MAX_STACKS_default()` (line 14945): drop the nebula base-of-4 special case so nebula uses `HYPERSPEED_MAX_STACKS_DEFAULT = 2`. The `+rankOf('overdrive')` / `+superluminal` additions then build *up from 2* via the tree (Overdrive +2 → 4, +Superluminal +1 → 5; +Resonant Mass is speed, not cap). **Decision:** keep `HYPERSPEED_MAX_STACKS_NEBULA` constant deleted or set = 2.
-2. **+2 stacks per pickup → +1.** In `rawActivate` (line 20150): delete the nebula/rainbow second `activateHyperspeed('natural')` so a natural pickup grants **+1 stack**, like every other orb.
+1. **REMOVED — Stack cap 4 → 2.** In `_HYPERSPEED_MAX_STACKS_default()`: nebula now starts at `HYPERSPEED_MAX_STACKS_DEFAULT = 2` and builds up via the tree (Overdrive +2 → 4, Superluminal +1 → 5; Resonant Mass is speed, not cap). An unupgraded Warp caps at 2, like a generic orb.
+2. **KEPT (v4 reversal) — +2 stacks per natural pickup.** `rawActivate('hyperspeed')` fires the second `activateHyperspeed('natural')` **for nebula** (nebula-only, not rainbow). This is Warp's signature: **a hyperspeed orb is worth 2 stacks.** It also makes a hyperspeed-completed combo land at **+3** (pickup +2 + combo +1). Clamps to `HYPERSPEED_MAX_STACKS()`, so it's effectively +1 when the cap is 2 and a stack is already held.
 
-**Retained baseline (confirmed):** the nebula burst's **two** `activateHyperspeed()` calls (line 21278–21282) stay — "burst = 2× hyperspeed."
+**Resulting hyperspeed-grant table (Warp vs other orbs):**
 
-**Spawn bias `'hyperspeed'`:** **recommend KEEP.** It's the universal per-orb identity weighting (Inferno kept `'nova'`, etc.), not a Warp-specific power advantage. Flagged in [§15](#15-open-design-questions-for-user) in case you want Warp fully bias-neutral.
+| Event | Warp | Other orbs |
+|---|---|---|
+| Single hyperspeed pickup | **+2** | +1 |
+| Grab hyperspeed to complete Warp Time / Spectral Rush / Juggernaut | **+3** (pickup +2 + combo +1) | +2 |
+| Burst button (`executeBurst`) | **+2** (signature, unchanged) | n/a |
+| Warp Harmonic (if owned) | +3 more, 15s CD | — |
 
-**Reservoir/HYPERSPEED_DURATION:** baseline duration stays 3s; the `+500ms × reservoir` becomes the Continuum keystone's +1.5s (single-rank). No baseline duration advantage exists to remove.
+> **Edge cases (universal, unchanged):** completing a combo by grabbing the *non-hyperspeed* half, or collecting both halves in the **same frame** (the `activatePair` path bypasses `rawActivate`), grant +1 — same as every orb. Forcing those to +3 would need path-detection to avoid overshooting the normal case to +4; left as-is.
 
-**Net unupgraded Warp = generic orb:** cap 2, +1/pickup, 3s duration, 60px barrier only while hyperspeeding, burst = 2 stacks.
+**Retained baseline (confirmed):** the nebula **burst** branch in `_executeBurst_default` fires **two** `activateHyperspeed()` calls — "burst = 2× hyperspeed."
+
+**Spawn bias `'hyperspeed'`:** **KEEP** — universal per-orb identity weighting (Inferno kept `'nova'`, etc.), not a power advantage.
+
+**Reservoir/HYPERSPEED_DURATION:** baseline duration stays 3s; the `+500ms × reservoir` became the Continuum keystone's +1.5s (single-rank).
+
+**Net unupgraded Warp:** cap 2, **+2/pickup (identity)**, 3s duration, 60px barrier while hyperspeeding, burst = 2 stacks.
 
 ---
 
 ## 9. Balance Landmines
 
-**Cap is the dominant velocity lever (Part-1 finding).** `basePeak` scales **linearly with stack count** (`3.5·thrustMult·s`), so raising the cap (and filling it) is mathematically the strongest way to increase scroll velocity: cap 2 → 5 is `×2.5` peak (+150%), beating the **rebalanced** Blueshift×Breakaway combined (`×1.554`, +55%; was `×2.03` at the old ×1.45 Breakaway). This makes the **two cap-growth capstones a real runaway risk**: Lightspeed (now **+1 cap / 90s**, v3) and Lingering Horizon (+1 cap / 90s) both push the *strongest* stat, and `hyperspeedCurrentMult` has **no upper clamp in code** — so unbounded cap growth = unbounded scroll-speed spike.
+**Cap is the dominant velocity lever (Part-1 finding).** `basePeak` scales **linearly with stack count** (`3.5·thrustMult·s`), so raising the cap (and filling it) is mathematically the strongest way to increase scroll velocity: cap 2 → 5 is `×2.5` peak (+150%), beating the **rebalanced** Blueshift×Breakaway combined (`×1.554`, +55%; was `×2.03` at the old ×1.45 Breakaway). This makes the **two cap-growth capstones a real runaway risk**: Lightspeed (**+1 cap / 60s**, v4) and Lingering Horizon (**+1 cap / 60s**) both push the *strongest* stat, and `hyperspeedCurrentMult` has **no upper clamp in code** — so unbounded cap growth = unbounded scroll-speed spike (bounded only by `NEBULA_MAX_CAP_CEILING = 10`).
 
-### Part-1: Breakaway crossover derivation (the ~3-minute design target)
+### Part-1: Breakaway crossover derivation (Velocity catches Cap at stack-4)
 
-**Goal:** a fully-upgraded **Blueshift (Velocity)** tree should only *match* the scroll speed of a fully-upgraded **Singularity (Cap)** tree **after ~3 minutes** — the Cap tree is faster early, the Velocity tree catches up as Lightspeed's cap bonuses accrue.
+**Goal:** the Cap tree should be faster early; the Velocity tree catches up and *matches* it only once Lightspeed has grown the Velocity cap to **4 stacks**. Breakaway's job is to make the match land at **stack-4, not stack-3**. The *clock time* of that crossover is then set by the Lightspeed cadence:
+- v3 design (Lightspeed +1/90s): stack-4 reached at **~3 min**.
+- **v4 shipped (Lightspeed +1/60s): stack-4 reached at ~2 min.** Breakaway is unchanged (×1.11); the faster cadence simply pulls the crossover earlier. (If you want it back at ~3 min, slow the cadence — Breakaway doesn't control the *time*, only *which stack* the match lands on.)
 
 **The formula (verbatim from `computeHyperspeedPeakMult`, line ~20440):**
 ```
@@ -247,19 +275,19 @@ Because `C` factors out of *both* trees identically (same `normSpd`, same term-s
 - **Cap peak = C · 1.0 · 5 · 1.24 = 6.20·C.**
 
 **Velocity (Blueshift) tree, time-dependent:**
-- `thrustMult = 1.40` (Blueshift). No Cap-path nodes, so its cap starts at **base 2** and grows only via **Lightspeed (+1 / 90s)**.
+- `thrustMult = 1.40` (Blueshift). No Cap-path nodes, so its cap starts at **base 2** and grows only via **Lightspeed (+1 / 60s, v4)**.
 - Breakaway factor at max stacks = `(1 + B)`, solving for `B`. (Resonant Mass is Cap-path; the pure Velocity build has none.)
 - **Velocity peak = C · 1.40 · sᵥ · (1 + B)**, where `sᵥ` = current cap (= filled stacks at max).
 
-**Lightspeed cap timeline (v3, +1/90s from base 2):**
+**Lightspeed cap timeline (v4, +1/60s from base 2):**
 | Time | sᵥ (Velocity cap) |
 |---|---|
-| 0–90s | 2 |
-| 90–180s | 3 |
-| **180s (3 min)** | **4** |
-| 270s | 5 (then strictly exceeds Cap) |
+| 0–60s | 2 |
+| 60–120s | 3 |
+| **120s (2 min)** | **4** |
+| 180s | 5 (then strictly exceeds Cap) |
 
-**Set the crossover at the 3-minute mark (sᵥ = 4):**
+**Set the crossover at stack-4:**
 ```
 Velocity peak (sᵥ=4) = Cap peak
 C · 1.40 · 4 · (1 + B) = 6.20·C
@@ -267,71 +295,71 @@ C · 1.40 · 4 · (1 + B) = 6.20·C
 (1 + B)               = 1.107
 B                     = 0.107  ≈ +11%
 ```
-→ **Breakaway = ×1.11 (+11%)**, down from the old ×1.45. `5.60 × 1.11 = 6.216 ≈ 6.20` → Velocity hits **100.3%** of Cap exactly at the 3-minute mark, then pulls ahead at sᵥ=5 (270s).
+→ **Breakaway = ×1.11 (+11%)**, down from the old ×1.45. `5.60 × 1.11 = 6.216 ≈ 6.20` → Velocity hits **100.3%** of Cap exactly when it reaches stack-4 (**~2 min** at the v4 cadence), then pulls ahead at sᵥ=5.
 
-**Crossover band check (discrete stacks).** The match must land at sᵥ=4 (3 min), *not* sᵥ=3 (90s):
-- **at sᵥ=3 (90s):** `1.40·3·(1+B) < 6.20` ⟹ `(1+B) < 1.476` ⟹ `B < 0.476` ✓ (0.11 ≪ 0.476 → still behind at 90s)
-- **at sᵥ=4 (180s):** `1.40·4·(1+B) ≥ 6.20` ⟹ `(1+B) ≥ 1.107` ⟹ `B ≥ 0.107` ✓ (0.11 ≥ 0.107 → matches at 180s)
+**Crossover band check (discrete stacks).** The match must land at sᵥ=4, *not* sᵥ=3:
+- **at sᵥ=3:** `1.40·3·(1+B) < 6.20` ⟹ `(1+B) < 1.476` ⟹ `B < 0.476` ✓ (0.11 ≪ 0.476 → still behind at stack-3)
+- **at sᵥ=4:** `1.40·4·(1+B) ≥ 6.20` ⟹ `(1+B) ≥ 1.107` ⟹ `B ≥ 0.107` ✓ (0.11 ≥ 0.107 → matches at stack-4)
 
-Any `B ∈ [0.107, 0.476)` lands the discrete crossover at exactly 3 min; **0.11** sits at the bottom of that band so the match is a near-exact tie rather than an early overshoot. **The old ×1.45 (B=0.45) matched Cap at sᵥ=3 ≈ 90s** (`1.40·3·1.45 = 6.09 ≈ 6.20`) — i.e. ~2 minutes too early, confirming the prior coefficient was too strong.
+Any `B ∈ [0.107, 0.476)` lands the discrete crossover at stack-4; **0.11** sits at the bottom of that band so the match is a near-exact tie rather than an early overshoot. **The old ×1.45 (B=0.45) matched Cap at sᵥ=3** (`1.40·3·1.45 = 6.09 ≈ 6.20`) — one stack-step too early, confirming the prior coefficient was too strong.
 
-**Sanity table (× C, the common factor):**
+**Sanity table (× C, the common factor; times at v4 +1/60s cadence):**
 | Time | Velocity cap sᵥ | Velocity peak (×1.40×1.11) | Cap peak (fixed) | Faster |
 |---|---|---|---|---|
-| 0–90s | 2 | 3.11·C | 6.20·C | **Cap** |
-| 90–180s | 3 | 4.66·C | 6.20·C | **Cap** |
-| **180s** | **4** | **6.22·C** | **6.20·C** | **≈ tie (match)** |
-| 270s+ | 5 | 7.77·C | 6.20·C | **Velocity** |
+| 0–60s | 2 | 3.11·C | 6.20·C | **Cap** |
+| 60–120s | 3 | 4.66·C | 6.20·C | **Cap** |
+| **120s** | **4** | **6.22·C** | **6.20·C** | **≈ tie (match)** |
+| 180s+ | 5 | 7.77·C | 6.20·C | **Velocity** |
 
-→ **Recommended Breakaway coefficient: `0.11` (×1.11), single-rank.** (The exact solve is 0.107; round to 0.11 for a clean near-exact 3-min tie.)
+→ **Breakaway coefficient (shipped): `0.11` (×1.11), single-rank.** Match lands at stack-4 (~2 min at the v4 cadence).
 
-**The known risk: permanent / runaway max-speed hyperspeed.** At full cross-path investment the danger sources are: Continuum (extend-on-stack) + Infinite Gate (+1.5s) + Slipstream/Warp Harmonic (stacks on kill/combo → each refreshes timer) + Lingering Horizon (auto full-stack every 90s) + Lightspeed (no decay at max stacks) + **the two capstones now raising the cap over time**. Stacked, these could sustain max-stack, no-decay hyperspeed at an ever-growing cap — a performance and difficulty problem (very high scroll × many bodies).
+**The known risk: permanent / runaway max-speed hyperspeed.** At full cross-path investment the danger sources are: Continuum (extend-on-stack) + Infinite Gate (+1.5s) + Slipstream/Warp Harmonic (stacks on kill/combo → each refreshes timer) + Lingering Horizon (auto full-stack every 60s) + Lightspeed (no decay at max stacks) + **the two capstones now raising the cap over time (+2/60s combined)**. Stacked, these could sustain max-stack, no-decay hyperspeed at an ever-growing cap — a performance and difficulty problem (very high scroll × many bodies).
 
 **Gates proposed (all explicit, all in this design):**
 1. **Per-instance duration ceiling.** Continuum's extend-on-stack caps at **+3s per hyperspeed instance** (tracked from the instance's start). Infinite Gate's +1.5s and Slipstream/Harmonic refreshes count against the same ceiling. Once the instance hits `start + base + 3s`, further stacks raise *peak/cap* but cannot push the timer. → hyperspeed always ends; the player must re-trigger.
 2. **Lightspeed is not "no timer," it's "no decay."** It freezes `hyperspeedCurrentMult` at peak *until the (finite, ceiling-capped) shared timer expires*. It cannot extend the timer.
-3. **Stack-generation cooldowns retained:** Slipstream 15s CD, Warp Harmonic 20s CD, Infinite Gate 20s CD, Lingering Horizon 90s CD — already in code; keep.
-4. **Hard cap ceiling (NEW — required by the cap-growth capstones):** introduce a `NEBULA_MAX_CAP_CEILING` (recommend **8**, the historical pre-rework Warp max). **Every** cap source clamps to it: tree (base 2 + Overdrive 2 + Superluminal 1 = 5) + Lightspeed/Lingering-Horizon time increments. Mirrors Roamer's `DRIFTERV2_BREAKING_POINT_MAX_TOTAL_STACKS` clamp. Without this, time-based +1s are unbounded (see realistic ceiling below).
-5. **Cap-increment scope decision (see [§15](#15-open-design-questions-for-user)):** both +1/90s increments (Lightspeed and Lingering Horizon) accrue **only while the owning capstone is active**, clamp to the ceiling, and reset on run start. Recommend they are **per-run** (not persisted) so each run re-climbs. **They stack with each other (Part-2): if both capstones are owned, +2 cap / 90s — intended, ungated, ceiling-bounded.**
-6. **Singularity re-arm gate:** RIFT is 20% on reaching max stacks, **once per hyperspeed instance, 20s CD** — three independent gates; cannot chain every frame at max stacks.
-7. **Critical Velocity is gated:** 10% per kill, **15s CD**, and only while at max stacks — same envelope as Firebrand/Halo proc-novas; not a per-kill nova spam.
-8. **Bow Shock kept modest (60→90px), not full-screen.** History (code comment, line ~22447): an earlier "Smooth Entry barrier expansion (80/140/200px)" let Warp sweep the whole screen and was reverted. We do **not** reintroduce large barrier scaling; 90px is a deliberate cap.
-9. **Performance:** Afterburn discs and barrier already use survivor-pattern body loops; the Singularity RIFT should reuse the existing per-frame body loop with a hard pull-radius and the standard `shakeMassDestroy` batching (no per-body shake). Scroll-speed itself is unchanged math; new per-frame costs are the RIFT loop (gated ≤2.5s, once per instance, 20s CD) and Critical Velocity's proc-nova (10%/kill, 15s CD).
+3. **Stack-generation cooldowns retained:** Slipstream 15s CD, Warp Harmonic **15s CD** (v4), Infinite Gate 20s CD, Lingering Horizon **60s CD** (v4) — in code.
+4. **Hard cap ceiling:** `NEBULA_MAX_CAP_CEILING = 10` (v4, raised from 8; confirmed playable). **Every** cap source clamps to it: tree (base 2 + Overdrive 2 + Superluminal 1 = 5) + Lightspeed/Lingering-Horizon time increments. Mirrors Roamer's `DRIFTERV2_BREAKING_POINT_MAX_TOTAL_STACKS` clamp. Without this, time-based +1s are unbounded (see realistic ceiling below).
+5. **Cap-increment scope:** both +1/60s increments (Lightspeed and Lingering Horizon) accrue **only while the owning capstone is active**, clamp to the ceiling, and reset on run start (**per-run**, not persisted). **They stack with each other (Part-2): if both capstones are owned, +2 cap / 60s — intended, ungated, ceiling-bounded.**
+6. **Singularity gate (v4):** the RIFT is **guaranteed when hyperspeed ENDS**, gated by a single **20s CD**. It is left behind for 2.5s and cannot re-fire until the CD clears — so at most one rift per 20s regardless of how often hyperspeed cycles.
+7. **Critical Velocity is gated:** **20% per kill, 10s CD** (v4), and only while at max stacks during hyperspeed — same envelope family as Firebrand/Halo proc-novas; not a per-kill nova spam.
+8. **Bow Shock kept modest (60→90px), not full-screen.** An earlier "Smooth Entry barrier expansion (80/140/200px)" let Warp sweep the whole screen and was reverted. We do **not** reintroduce large barrier scaling; 90px is a deliberate cap (offscreen canvas grown to 320 so it doesn't clip).
+9. **Performance:** Afterburn discs and barrier use survivor-pattern body loops; the Singularity RIFT reuses a per-frame body loop with a hard pull-radius and the standard `shakeMassDestroy` batching (no per-body shake). Scroll-speed math is unchanged; new per-frame costs are the RIFT loop (≤2.5s, ≤1 active, 20s CD) and Critical Velocity's proc-nova (20%/kill, 10s CD).
 
-**Realistic ceiling if a player runs BOTH cap-growth capstones (the VERIFY check — v3, stacking is ALLOWED, not gated):**
+**Realistic ceiling if a player runs BOTH cap-growth capstones (the VERIFY check — v4, stacking is ALLOWED, not gated):**
 
-Running Lightspeed (Velocity capstone) **+** Lingering Horizon (Duration capstone) is **intended and permitted**. Both now grow the cap at **+1 / 90s**, so together they add **+2 cap / 90s**. The *only* bound is the shared `NEBULA_MAX_CAP_CEILING` — the two are **not** gated against each other.
+Running Lightspeed (Velocity capstone) **+** Lingering Horizon (Duration capstone) is **intended and permitted**. Both grow the cap at **+1 / 60s** (v4), so together they add **+2 cap / 60s**. The *only* bound is the shared `NEBULA_MAX_CAP_CEILING = 10` — the two are **not** gated against each other.
 
-- **Without a ceiling (why one is mandatory):** base 2 + (if also Cap path) Overdrive 2 + Superluminal 1 = 5; then **+2/90s** accrues. Over a 10-min run that's `+2 × (600/90) ≈ +13 → cap ~18` (or ~15 from a base-2 no-Cap-path build). Peak at 18 stacks ≈ `3.5×18 = 63×` scroll (more with Blueshift/Breakaway/Resonant Mass) — unplayable and a perf hazard. A player reaches this **without even taking the Cap path** (just the two capstones, 10 pts), so the growth is not confined to the Cap build.
-- **With `NEBULA_MAX_CAP_CEILING = 8`:**
-  - **No Cap path** (just both capstones, base 2): cap climbs `2 → 8` at +2/90s = **+6 in ~4.5 min**, then **clamps at 8**.
-  - **With Cap path too** (base 5): cap climbs `5 → 8` at +2/90s = **+3 in ~135s (~2.25 min)**, then **clamps at 8**.
-  - Peak at the clamped 8 stacks ≈ `3.5×8 = 28×` base, **×1.554** (Blueshift 1.40 × Breakaway 1.11, the rebalanced coefficient) ≈ **~43×** worst case, held flat by Lightspeed for the (≤ base+3s) timer. High and build-defining, but **bounded, always terminating, and re-climbed each run**.
+- **Without a ceiling (why one is mandatory):** base 2 + (if also Cap path) Overdrive 2 + Superluminal 1 = 5; then **+2/60s** accrues. Over a 10-min run that's `+2 × (600/60) = +20 → cap ~22–25`. Peak at ~24 stacks ≈ `3.5×24 = 84×` scroll (more with Blueshift/Breakaway/Resonant Mass) — unplayable and a perf hazard. A player reaches this **without even taking the Cap path** (just the two capstones, 10 pts).
+- **With `NEBULA_MAX_CAP_CEILING = 10`:**
+  - **No Cap path** (just both capstones, base 2): cap climbs `2 → 10` at +2/60s = **+8 in ~4 min**, then **clamps at 10**.
+  - **With Cap path too** (base 5): cap climbs `5 → 10` at +2/60s = **+5 in ~3 min** (7→9→clamp 10), then **clamps at 10**.
+  - Peak at the clamped 10 stacks ≈ `3.5×10 = 35×` base, **×1.554** (Blueshift 1.40 × Breakaway 1.11) ≈ **~54×** (no-Cap-path build); with the Cap path's Resonant Mass at 10 stacks (`1 + 0.08·8 = ×1.64`) ≈ **~89×** worst case (all three paths), held flat by Lightspeed for the (≤ base+3s) timer. High and build-defining, but **bounded, always terminating, and re-climbed each run**.
 
-> **Design note (Part-2):** the two cap-growth capstones stacking to +2 cap/90s is **explicitly intended and allowed** — we do **not** add a "only one cap-grower active" gate. The ceiling (8) is the sole bound, so the realistic worst case is the clamped ~43× above, *not* the unbounded ~63×. This is the ceiling the eventual implementation must hold.
+> **Design note (Part-2):** the two cap-growth capstones stacking to +2 cap/60s is **explicitly intended and allowed** — we do **not** add a "only one cap-grower active" gate. The ceiling (10) is the sole bound, so the realistic worst case is the clamped ~54–89× above, *not* the unbounded ~84×+. This is the ceiling the implementation holds.
 
-**Interaction at full investment (intended ceiling):** cap **≤ 8** (ceiling-clamped), peak ≈ `3.5×1.40 (Blueshift) ×1.11 (Breakaway, multiplicative) ×(1 + 6×0.08 Resonant Mass at 8 stacks if Cap path) ≈ 3.5×8×1.554×1.48 ≈ ~64×` for the all-three-paths case, or **~43×** for the two-capstones-only case — held flat by Lightspeed for up to base+3s, re-entered every 90s by Lingering Horizon. Strong, build-defining, but **always terminating** and **ceiling-bounded**.
+**Interaction at full investment (intended ceiling):** cap **≤ 10** (ceiling-clamped), peak ≈ `3.5×1.40 (Blueshift) ×1.11 (Breakaway, multiplicative) ×(1 + 8×0.08 Resonant Mass at 10 stacks if Cap path) ≈ 3.5×10×1.554×1.64 ≈ ~89×` for the all-three-paths case, or **~54×** for the two-capstones-only case — held flat by Lightspeed for up to base+3s, re-entered every 60s by Lingering Horizon. Strong, build-defining, but **always terminating** and **ceiling-bounded**.
 
 ---
 
 ## 10. Auto-Fire HUD Ring Preservation
 
-- **Only one timed auto-fire** in the new tree: **Lingering Horizon** (Duration capstone, 90s). Its HUD ring already exists: `#capCdEventHorizon` (label "HORIZON", line 3099), driven by `lingeringHorizonNextFireTime` / `lingeringHorizonLastFireTime` in the cap-cd updater (line ~27366) and `capCdLastFired.eventHorizon` (line 27298).
-- **Action:** if the capstone key is renamed `eventHorizon → lingeringHorizon`, update the HUD `id`, `data-cap`, `capCdLastFired` key, and the updater's `hasCapstone('…')` check together. **Simplest path: keep the key `eventHorizon`** and only change the *display name/tree position* — zero HUD wiring churn. (Recommended; noted in [§7](#7-renamed--repositioned-nodes).)
-- **Lightspeed, Singularity (RIFT), Critical Velocity** are **state-triggered** (max stacks), not timed auto-fires → **no HUD rings**; they use flash text ([§14](#14-flash-text-feedback-plan)).
-- **Lightspeed's +1-cap-per-90s** (v3, was 60s) is an internal timer but a minor stat tick, not an ability fire → **flash only ("MAX CAP +1"), no ring.** Lingering Horizon's +1-cap rides on its existing 90s auto-fire (and ring). The two timers run independently (no shared/gated timer) — both fire on their own 90s cadence.
+- **Only one timed auto-fire** in the new tree: **Lingering Horizon** (Duration capstone, **60s** v4). Its HUD ring is preserved: `#capCdEventHorizon` (label "HORIZON"), driven by `lingeringHorizonNextFireTime` / `lingeringHorizonLastFireTime` in the cap-cd updater and `capCdLastFired.eventHorizon`.
+- **Implemented:** the capstone key stays `eventHorizon` (display "Lingering Horizon"), so the HUD ring needed **zero rewiring**; the updater gate became `activeOrb === 'nebula' && rankOf('eventHorizon')` (nebula-only — capstones no longer fire during rainbow).
+- **Lightspeed, Critical Velocity** are state-triggered; **Singularity** now fires on **hyperspeed END** (guaranteed, 20s CD). None are timed auto-fires → **no HUD rings**; they use flash text ([§14](#14-flash-text-feedback-plan)).
+- **Lightspeed's +1-cap-per-60s** (v4) is an internal timer but a minor stat tick, not an ability fire → **flash only ("MAX CAP +1"), no ring.** Lingering Horizon's +1-cap rides on its 60s auto-fire (and ring). The two timers run independently — both on their own 60s cadence.
 - No HUD rings are cut.
 
 ---
 
 ## 11. Defined Terms
 
-- **Hyperspeed stack** — one increment of `hyperSpeedStacks`, capped at `HYPERSPEED_MAX_STACKS()`. **Sources:** natural pickup (`rawActivate`, +1 after rework), Warp burst (×2), `nova_hyperspeed`/`hyperspeed_ghost`/`hyperspeed_shield` combos (each calls `activateHyperspeed` via their combo path), Slipstream (on kill), Warp Harmonic (on combo), Lingering Horizon (jump to cap-1 then +1), Siphon (cyan, cross-orb), DEAD CENTER pick (cyan), rainbow-run equivalents. **"At max stacks"** ⇒ `hyperSpeedStacks >= HYPERSPEED_MAX_STACKS()`.
+- **Hyperspeed stack** — one increment of `hyperSpeedStacks`, capped at `HYPERSPEED_MAX_STACKS()`. **Sources:** natural pickup (`rawActivate`, **+2 for nebula** / +1 others — Warp identity), Warp burst (×2), `nova_hyperspeed`/`hyperspeed_ghost`/`hyperspeed_shield` combos (combo path +1; so a hyperspeed-completed combo is +3 for Warp), Slipstream (on kill), Warp Harmonic (+3 on combo), Lingering Horizon (jump to cap-1 then +1), Siphon (cyan, cross-orb), DEAD CENTER pick (cyan), rainbow-run equivalents. **"At max stacks"** ⇒ `hyperSpeedStacks >= HYPERSPEED_MAX_STACKS()`.
 - **Peak velocity multiplier** — `hyperspeedPeakMult` from `computeHyperspeedPeakMult(stacks, peakScale)`. Scroll speed during hyperspeed = `normalScrollSpeed() × hyperspeedCurrentMult`, which **decays** peak→1× over the timer (unless Lightspeed holds it).
 - **Hyperspeed duration / shared timer** — `hyperspeedEndTime`; `activeEffects.hyperspeed = hyperspeedEndTime - now`. All stacks clear together at expiry.
-- **Barrier** — the 360° kill field active only while `hyperspeed > 0 && hyperspeedCurrentMult > 1.05`; 60px half-width baseline (Bow Shock → 90px). The **visual** is `drawHyperspeedBarrier` (hardcoded `halfW=60`, glow to `halfW×1.5`), composited in PIXI into the fixed 200×200 `PIXI_HYPER_BARRIER_SIZE` canvas. Distinct from the player **invuln** flag (`hyperInvuln`).
-- **Max stacks / cap** — `HYPERSPEED_MAX_STACKS()`. After rework this is **variable** (tree + time-growth capstones) and clamped to **`NEBULA_MAX_CAP_CEILING`** (recommend 8). "At max stacks" ⇒ `hyperSpeedStacks >= HYPERSPEED_MAX_STACKS()`.
-- **RIFT (Singularity)** — a NEW vertical "tear in space" visual (jagged crack/opening, *not* a disc) spawned at the player on reaching max stacks; persists 2.5s, pulls bodies in, destroys on contact. Gated 20% / once-per-instance / 20s CD.
+- **Barrier** — the 360° kill field active only while `hyperspeed > 0 && hyperspeedCurrentMult > 1.05`; 60px half-width baseline (Bow Shock → 90px). Both the kill loop and the **visual** (`drawHyperspeedBarrier`, glow to `halfW×1.5`) read the shared `hyperBarrierHalfW()`; composited in PIXI into the `PIXI_HYPER_BARRIER_SIZE = 320` canvas (grown from 200 so 90px doesn't clip). Distinct from the player **invuln** flag (`hyperInvuln`).
+- **Max stacks / cap** — `HYPERSPEED_MAX_STACKS()`. Variable (tree + time-growth capstones) and clamped to **`NEBULA_MAX_CAP_CEILING = 10`** (v4). "At max stacks" ⇒ `hyperSpeedStacks >= HYPERSPEED_MAX_STACKS()`.
+- **RIFT (Singularity)** — a vertical "tear in space" visual (jagged crack/opening, *not* a disc). **v4:** spawned **guaranteed when hyperspeed ENDS**, at the exit position, and **left behind** there (not player-anchored); persists 2.5s, pulls bodies in, destroys on contact. Gated by a **20s CD** only.
 
 ---
 
@@ -379,7 +407,7 @@ New `_nebula_addFlash(text,color,ms)` / `_nebula_flash(key,text,color,minMs)` / 
 | Trigger | Flash | Path color | Throttle |
 |---|---|---|---|
 | Lightspeed engages (enter max-stack no-decay) | "LIGHTSPEED" | Blueshift `74,150,255` | once per hyperspeed instance |
-| Lightspeed cap-up (+1 / 90s, v3) | "MAX CAP +1" | Blueshift | on increment (≤1/90s) |
+| Lightspeed cap-up (+1 / 60s, v4) | "MAX CAP +1" | Blueshift | on increment (≤1/60s) |
 | Afterburn discs launch | "AFTERBURN" | Blueshift | on hyperspeed end |
 | Ramjet | — | — | **no flash** (passive per-kill stat) |
 | Continuum timer extended (stack while warping) | "CONTINUUM" | `150,205,255` | min 400ms |
@@ -387,9 +415,9 @@ New `_nebula_addFlash(text,color,ms)` / `_nebula_flash(key,text,color,minMs)` / 
 | Slipstream grants a stack / refresh | "SLIPSTREAM" | `150,205,255` | on proc (15s CD) |
 | Reentry shield on hyperspeed end | "REENTRY" | `150,205,255` | on hyperspeed end |
 | Lingering Horizon auto-fire (+ cap-up) | "LINGERING HORIZON" | `150,205,255` | on fire (+ HUD ring) |
-| Warp Harmonic free stacks | "WARP HARMONIC" | Singularity `120,90,225` | on proc (20s CD) |
-| Critical Velocity proc-nova | "CRITICAL VELOCITY" | `120,90,225` | on proc (15s CD) |
-| Singularity RIFT tears open | "SINGULARITY" | `120,90,225` | once per instance (20s CD) |
+| Warp Harmonic free stacks | "WARP HARMONIC" | Singularity `120,90,225` | on proc (15s CD) |
+| Critical Velocity proc-nova | "CRITICAL VELOCITY" | `120,90,225` | on proc (10s CD) |
+| Singularity RIFT left behind | "SINGULARITY" | `120,90,225` | on hyperspeed end (20s CD) |
 
 Passive stat nodes (Blueshift, Breakaway, Bow Shock, Drag Coefficient, Overdrive, Superluminal, Resonant Mass) get **no** flash (always-on modifiers, not discrete events). Reentry now flashes since it's a discrete on-end event.
 
@@ -397,40 +425,37 @@ Passive stat nodes (Blueshift, Breakaway, Bow Shock, Drag Coefficient, Overdrive
 
 ## 15. Open Design Questions for User
 
-_Resolved by the v2 changes:_ ~~Singularity gravity-well vs implosion~~ (now the RIFT), ~~Critical Velocity invuln redundancy~~ (now a proc-nova), ~~Lightspeed direction~~ (no-decay confirmed + cap growth added), ~~Reentry keep/cut~~ (changed to a shield grant).
+_Resolved & shipped:_ ~~Singularity gravity-well vs implosion~~ (RIFT), ~~Critical Velocity invuln redundancy~~ (proc-nova, 20%/10s), ~~Lightspeed direction~~ (no-decay + cap growth), ~~Reentry keep/cut~~ (shield grant), ~~hard cap ceiling~~ (**10**), ~~cap-growth cadence~~ (**both +1/60s**, +2/60s stacking, ungated), ~~RIFT trigger/anchor~~ (**guaranteed on hyperspeed END, left behind**), ~~rainbow cap~~ (**fixed `RAINBOW_HYPERSPEED_CAP = 5`**, `superluminal` removed from `RAINBOW_CAPSTONES`), ~~Bow Shock no-clip~~ (canvas 200→320, shared `hyperBarrierHalfW()`), ~~Warp identity~~ (**+2/pickup, +3 hyperspeed-completed combo, burst 2×**).
 
-**Still open / newly raised:**
+**Still open / worth play-testing:**
 
-1. **Hard cap ceiling value.** Recommend **`NEBULA_MAX_CAP_CEILING = 8`** (historical Warp max). Confirm 8, or pick another (7? 6?). This is now load-bearing because two capstones grow the cap over time ([§9](#9-balance-landmines)).
-2. **Cap-increment scope.** Should Lightspeed's and Lingering Horizon's +1/90s be **per-run** (reset each run, recommended) or **persisted**? And accrue **only while the capstone is active** (recommended)? Persisted growth would be a permanent power creep across runs.
-3. **Cap-growth cadence.** ~~+1/60s (Lightspeed) and +1/90s (Lingering Horizon)~~ **Resolved (v3/Part-2):** Lightspeed slowed to **+1/90s** (matches Lingering Horizon); both now +1/90s. Stacking the two = +2/90s, **intended and ungated** (ceiling-bounded only). Still open *only* if play-testing shows the ceiling is reached too fast.
-4. **RIFT art direction.** Confirm the vertical "tear in space" visual (jagged crack) over a disc/portal — and width/height + whether it scrolls with the world or stays anchored to the player for its 2.5s.
-5. **Reentry shield tier.** +1 **non-fortress** shield hit + standard duration (recommended, doesn't stomp asteroid/fortress) — or a full fresh shield? Should it stack if a shield is already up?
-6. **Critical Velocity nova size.** "default nova blast" = a single standard nova ring (`pushNovaRingCapped`, no supernova)? Confirm size/`sizeMult`.
-7. **Palette collision risk.** Triad (azure / ice-blue / cobalt-violet) is all blue-family; cobalt-violet leans toward Phantom's indigo. Acceptable, or push the Cap path to a non-blue (e.g., emerald `60,220,150`)?
-8. **Spawn bias `'hyperspeed'`:** keep (orb identity, recommended) or strip for a fully neutral baseline?
-9. **Rainbow run cap:** fix at 4 or 5 independent of the nebula tree, and remove `superluminal` from `RAINBOW_CAPSTONES` (or swap to the new keystone)?
-10. **Continuum extend-on-stack ceiling:** +3s/instance — right, higher, or lower?
-11. **Bow Shock barrier 90px + canvas resize:** comfortable, or keep barrier fixed at 60px and replace Bow Shock with another velocity effect?
+1. **Crossover timing.** With Lightspeed at +1/60s the Velocity↔Cap match lands at **~2 min** (was the ~3-min v3 target). Keep, or push back toward 3 min by slowing the cadence (Breakaway already ensures the match lands at stack-4, not earlier).
+2. **Cap-growth at +2/60s** reaches the ceiling (10) in ~3–4 min with both capstones. Acceptable, or slow one cadence?
+3. **Reentry shield tier.** Currently +1 non-fortress hit, won't stomp fortress/asteroid. Fine?
+4. **Critical Velocity nova size** = single standard ring (`sizeMult 0.9`). Confirm.
+5. **Palette collision risk.** Cap path cobalt-violet leans toward Phantom's indigo. Acceptable?
+6. **Spawn bias `'hyperspeed'`:** kept (orb identity).
+7. **Continuum extend-on-stack ceiling:** +3s/instance — right level?
+8. **Combo edge cases:** the non-hyperspeed-completion and same-frame-pair paths give +1 (not +3). Force them to +3 (needs path-detection), or leave as the canonical +2/+3-on-hyperspeed-pickup behavior?
 
 ---
 
 ## 16. Implementation Notes (for the eventual coding prompt)
 
 **Constants / baseline removal:**
-- `HYPERSPEED_MAX_STACKS_NEBULA` → delete or set 2; rewrite `_HYPERSPEED_MAX_STACKS_default()` so nebula = `min(NEBULA_MAX_CAP_CEILING, 2 + rankOf('overdrive')×2 + rankOf('superluminal')×1 + lightspeedCapBonus + lingeringHorizonCapBonus)` (single-rank values + the new time-growth bonuses). Add `const NEBULA_MAX_CAP_CEILING = 8` (recommend). Decide rainbow's fixed cap separately.
-- **Cap-growth state (NEW):** `lightspeedCapBonus` / `lingeringHorizonCapBonus` counters incremented on their timers (**both now 90s** — v3 slowed Lightspeed 60s → 90s) while the owning capstone is active. **They are independent and STACK** (Part-2): when both capstones are owned the combined cap grows +2/90s — **do NOT add a gate that limits the two together**; the *only* bound is `min(…, NEBULA_MAX_CAP_CEILING)` applied to the *summed* total. Each clamped so the total never exceeds the ceiling; **reset to 0 in `resetGame`** (per-run). Pause-delta-shift their next-increment timestamps. Lightspeed's increment flashes "MAX CAP +1"; Lingering Horizon's rides its 90s auto-fire (+ HUD ring).
-- `rawActivate` (line ~20150): remove the nebula/rainbow second `activateHyperspeed('natural')`.
+- `_HYPERSPEED_MAX_STACKS_default()` (shipped): nebula = `min(NEBULA_MAX_CAP_CEILING, 2 + rankOf('overdrive')×2 + rankOf('superluminal') + nebulaLightspeedCapBonus + nebulaLingeringCapBonus)`; rainbow = `RAINBOW_HYPERSPEED_CAP (5)`; else `HYPERSPEED_MAX_STACKS_DEFAULT (2)`. `const NEBULA_MAX_CAP_CEILING = 10` (v4).
+- **Cap-growth state:** `nebulaLightspeedCapBonus` / `nebulaLingeringCapBonus` incremented on their timers (**both 60s** — `NEBULA_LIGHTSPEED_CAP_CYCLE_MS = 60000`, `LINGERING_HORIZON_CYCLE_MS = 60000`) while the owning capstone is active. **Independent and STACK** (Part-2): both owned → +2/60s combined — **no gate limits the two together**; the *only* bound is `min(…, NEBULA_MAX_CAP_CEILING)` on the *summed* total. Each clamped; **reset to 0 in `resetTreeNodeState`/`resetGame`** (per-run). Pause-delta-shifted. Lightspeed's increment flashes "MAX CAP +1"; Lingering Horizon's rides its 60s auto-fire (+ HUD ring).
+- `rawActivate('hyperspeed')` (shipped, v4): **KEEP** the second `activateHyperspeed('natural')` **for nebula** (Warp identity, +2/pickup → +3 on hyperspeed-completed combos). Burst (`_executeBurst_default` nebula branch) keeps its two `activateHyperspeed()` calls.
 - `HYPERSPEED_DURATION()`: replace `+500×rankOf('reservoir')` with Continuum keystone's `+1500` (single-rank) + the extend-on-stack logic + per-instance ceiling tracking (new state: `hyperspeedInstanceStart`, `hyperspeedExtendBudgetMs`).
 - `computeHyperspeedPeakMult`: Blueshift = `thrustMult 1.40`; **Breakaway `×1.11` at max stacks (v3 — rebalanced from ×1.45; single-rank coefficient `0.11`, derived in [§9](#9-balance-landmines)/Part-1)**; add Resonant Mass `×(1 + 0.08×max(0, stacks-2))`. Replace the code's multi-rank `[0.15,0.30,0.45]` Breakaway table with the single-rank `0.11`.
-- Deceleration (line ~21818): Drag Coefficient slows the ramp; **Lightspeed** freezes `hyperspeedCurrentMult = hyperspeedPeakMult` while `stacks >= cap`, AND owns the **+1/90s** (v3, was 60s) `lightspeedCapBonus` increment.
+- Deceleration: Drag Coefficient slows the ramp (`t_hs_raw ×= 0.70`); **Lightspeed** freezes `hyperspeedCurrentMult = hyperspeedPeakMult` while `stacks >= cap` (+ engage hitstop/shake/flash, once per instance), AND owns the **+1/60s** (v4) `nebulaLightspeedCapBonus` increment.
 - **Barrier width + no-clip (Bow Shock):** introduce a shared `hyperBarrierHalfW()` = `60 + (rankOf('bowShock') ? 30 : 0)` and have **both** the kill loop (line ~22453, currently `barrierHalfW = 60`) and `drawHyperspeedBarrier` (line 27507, hardcoded `const halfW = 60`) read it. **Grow the PIXI offscreen canvas** `PIXI_HYPER_BARRIER_SIZE` (line 3594, currently 200) to fit the widest case: 90px barrier + `halfW×1.5` glow (135px radius) + the 30px `barrierY` bias + margin → **bump to ~320** (or size dynamically from `hyperBarrierHalfW()`). Without this the widened barrier clips at the 200px box edge — the exact "invisible bounding box" cut-off seen before. Re-center math at line ~18554 (`translate(cx - player.x, cy - player.y + 30)`) still holds; just the canvas dimensions change.
 
 **Tree + budget:**
 - Replace `TREE_DEFS.nebula` with single-rank schema (3 paths × {keystone, 4 supports, capstone}, capstones folded into `paths`, `costOverride`/`pointCost` per node), mirroring `TREE_DEFS.solar`.
 - `ActiveBudget.register('nebula', { base:20, expandMax:5, expandCost:2000, bonusKey:'drift_nebula_budget_bonus', keystones: NEBULA_KEYSTONES, prereqs: NEBULA_PREREQS })`.
 - Add `ORB_BEHAVIOR.nebula.{rankOf,pathPrereqMet,respecNode,respecTree,fullTreeRespecCost}` (copy solar pattern); `OrbHooks.on('afterLoadTreeState', () => { maybeMigrateNebula(); ActiveBudget.restoreActivePoints('nebula'); })`.
-- Add `NEBULA_KEYSTONES` (`blueshift→blueshift`, `continuum→reservoir`-or-`continuum`, `singularity→overdrive`), `NEBULA_PREREQS` (each support `{prereq:[keystone]}`, capstone too), `NEBULA_PATH_COLORS` (the triad), `NEBULA_TREE_LAYOUTS` (keystone y50, supports y140/225, capstone y320 capstone:true).
+- `NEBULA_KEYSTONES` (shipped) = `{ velocity:'thrust', duration:'reservoir', cap:'overdrive' }` (legacy node keys kept to minimize churn; display names are Blueshift / Continuum / Overdrive). `NEBULA_PREREQS` (each support + capstone `{prereq:[keystone]}`), `NEBULA_PATH_COLORS` (the triad), `NEBULA_TREE_LAYOUTS` (keystone y50, supports y140/225, capstone y320 capstone:true).
 
 **Migration / merge:**
 - `NEBULA_SCHEMA_VERSION = 2`, `_nebulaLooksLegacy(raw)` (detect old shape: `Array.isArray(raw.velocity) && length 3`, or `raw.capstones.superluminal/eventHorizon` present), `maybeMigrateNebula()` refunding old multi-rank investments at flat per-tier rates (mirror `maybeMigrateSolar`), then `orbTrees.nebula = freshOrbTreeState('nebula')`, set `localStorage drift_nebula_schema_version`.
@@ -441,10 +466,10 @@ _Resolved by the v2 changes:_ ~~Singularity gravity-well vs implosion~~ (now the
 - Preserve `#capCdEventHorizon` ring (keep capstone key `eventHorizon` to avoid HUD rewiring; display "LINGERING HORIZON").
 
 **New entities/systems:**
-- **Singularity RIFT** — new visual + system: a vertical "tear in space" (jagged crack/opening) spawned at the player on reaching max stacks (20% / once-per-instance / 20s CD). New render (not a disc — a vertical rift) + a per-frame pull-and-destroy loop within a bounded radius for 2.5s, pause-delta safe, reuse `shakeMassDestroy` batching. New state: `nebulaRift = { startTime, x, y }`, `nebulaRiftNextArm`. **Audio: wire the new `RIFT.mp3`** — register it in `SFX_BUFFER_URLS`/`sfxBuffers`/`sfxLoading` as `rift: './assets/SFX/RIFT.mp3'` (same pattern as the v3 `lotd` entry already added for the Phantasm capstone) and play it on rift open via `SFX.playSfxBuffer('rift', <vol>)`. **Screenshake/hitstop:** see [§17](#17-presentation-screenshake--hitstop--audio). (Wiring happens at Warp-implementation time, not now — the file already exists at `www/assets/SFX/RIFT.mp3`.)
-- **Critical Velocity proc-nova** — at max stacks, 10%/kill (15s CD) fire a **default nova** at the kill site. Mirror the Firebrand/Halo pattern (`pushNovaRingCapped` + flash + `lastCriticalVelocityProc` cooldown). Gate on `activeOrb==='nebula'||rainbow` + `stacks>=cap`.
-- **Reentry shield grant** — on hyperspeed end (the `hyperSpeedStacks→0` block, line ~21824), grant **+1 shield hit** + a standard (non-fortress) shield duration, like a `rawActivate('shield')` of +1 (respect the `shieldHits = min(2, +1)` non-asteroid rule; reset `bastion2BonusMs`). **Interaction check:** ensure it doesn't stomp an active fortress/asteroid shield — only top up to the non-fortress cap, don't downgrade `fortressShield`.
-- **Infinite Gate re-gate** — change the gate from `hyperSpeedStacks >= 5` (line ~20477) to `hyperSpeedStacks >= HYPERSPEED_MAX_STACKS()` (max stacks), keeping natural-only + 20s CD + the per-instance duration ceiling from Continuum.
+- **Singularity RIFT (v4 shipped)** — vertical "tear in space" (jagged crack) opened **guaranteed when hyperspeed ENDS** (`_nebula_openRift(now, x, y)` called from the hyperspeed-end block), **20s CD only**. The rift is **left behind** at the exit `(x,y)` — `_nebula_tickRift` no longer re-anchors to the player — and runs a per-frame pull-and-destroy loop (bounded radius, ≤2.5s, `shakeMassDestroy` batched). State: `nebulaRift = { startTime, x, y }`, `nebulaRiftNextArm`. **Audio:** `RIFT.mp3` registered in `SFX_BUFFER_URLS`/`sfxBuffers`/`sfxLoading` as `rift:`, played on open via `SFX.playSfxBuffer('rift', 0.3)`.
+- **Critical Velocity proc-nova (v4)** — at max stacks during hyperspeed, **20%/kill (10s CD)** fire a **default nova** (`sizeMult 0.9`) at the kill site (`_nebula_criticalVelocityProc`). Mirrors the Firebrand/Halo pattern; gated `activeOrb==='nebula'||rainbow` + `stacks>=cap`.
+- **Reentry shield grant** — on hyperspeed end, grant **+1 shield hit** + a standard (non-fortress) shield duration; tops up to the non-fortress cap (`min(2, …)`), resets `bastion2BonusMs`, does **not** stomp `fortressShield`.
+- **Infinite Gate re-gate** — gate is `hyperSpeedStacks >= HYPERSPEED_MAX_STACKS()` (max stacks), natural-only, 20s CD, drawing from the same per-instance extend ceiling as Continuum.
 
 **Cross-orb verification points:** `drifterV2.hyperspeedMaxStacks` untouched; rainbow cap decoupled from nebula tree; `RAINBOW_CAPSTONES` superluminal handling; `checkDestroyProc` nebula gates still `activeOrb==='nebula'||rainbowRunActive`.
 
@@ -456,17 +481,17 @@ _Resolved by the v2 changes:_ ~~Singularity gravity-well vs implosion~~ (now the
 
 | Trigger | Hitstop | Shake | Notes |
 |---|---|---|---|
-| **Singularity RIFT opens** (capstone, 20%/instance) | `triggerHitstop(70)` on tear-open | `addShake(12)` via `shakeCapstone('singularity')` (add a case) | Biggest moment in the Cap path — space-tearing. Pulls + kills over 2.5s use **`shakeMassDestroy(killCount)` batched** (no per-body shake). Plays `RIFT.mp3`. |
-| **Critical Velocity nova proc** (10%/kill at max, 15s CD) | none (or `triggerHitstop(20)` only on a multi-kill ring) | `shakeMassDestroy(killCount)` from the nova-ring sweep | Mirror the Firebrand/Halo proc-nova feel — the standard nova ring already shakes via its sweep; don't add a second source. |
+| **Singularity RIFT opens** (capstone, guaranteed on hyperspeed END, 20s CD) | `triggerHitstop(70)` on tear-open | `shakeCapstone('singularity')` | Biggest moment in the Cap path — space-tearing. Pulls + kills over 2.5s use **`shakeMassDestroy(killCount)` batched** (no per-body shake). Plays `RIFT.mp3` (vol 0.3). |
+| **Critical Velocity nova proc** (20%/kill at max, 10s CD) | none (the nova ring's own sweep handles weight) | `shakeMassDestroy(killCount)` from the nova-ring sweep | Mirror the Firebrand/Halo proc-nova feel — the standard nova ring already shakes via its sweep; no second source. |
 | **Lightspeed engages** (enter max-stack no-decay) | `triggerHitstop(40)` once per instance | `addShake(8)` once per instance | The "I am now a beam" moment — punchy but not capstone-huge; gate to once per hyperspeed instance so it doesn't re-fire each frame at max stacks. |
 | **Lightspeed / Lingering Horizon auto-hyperspeed trigger** | Lingering Horizon keeps existing feel (`shakeCapstone('eventHorizon'/'lingeringHorizon')` = `addShake(7)`) | as left column | Lightspeed's +1-cap tick is a minor stat event → **no shake**, flash only. |
 | **Bow Shock widened barrier kills** | (none new) | `shakeMassDestroy(killCount)` — already how barrier kills shake | Widening the barrier just feeds more kills into the existing batched shake; **no per-kill shake added**. The visual must not clip (canvas resize, see [§16](#16-implementation-notes)). |
 | **Afterburn discs land** (hyperspeed end) | existing | existing disc-kill shake | Already implemented; unchanged. Flash "AFTERBURN". |
 | **Continuum / Infinite Gate / Slipstream / Warp Harmonic procs** | none | none | Stack/timer events — feedback is **flash text only** (their cooldowns already throttle); no shake to avoid a jittery warp loop. |
 
-**Audio (Part-3):**
-- **`RIFT.mp3`** (`www/assets/SFX/RIFT.mp3`, already present) → the **Singularity** rift open. Register `rift: './assets/SFX/RIFT.mp3'` in `SFX_BUFFER_URLS`/`sfxBuffers`/`sfxLoading` (same 3-spot pattern), play via `SFX.playSfxBuffer('rift', <vol>)` on tear-open. **Wiring deferred to Warp-implementation time** — noted here so it isn't missed.
-- **`LOTD.mp3`** — **already wired (Part-0, this branch)**: it replaced the Phantasm *Lord of the Dead* capstone arming cue (was `SCREAM.mp3`), played at low volume `0.18`. Not part of Warp; listed here only for cross-reference of the loader pattern the RIFT wiring should copy.
+**Audio (shipped):**
+- **`RIFT.mp3`** → the **Singularity** rift open. Registered as `rift:` in `SFX_BUFFER_URLS`/`sfxBuffers`/`sfxLoading`, played via `SFX.playSfxBuffer('rift', 0.3)` when hyperspeed ends and the rift opens.
+- **`LOTD.mp3`** — Phantasm: drives **both** the *Lord of the Dead* capstone arming cue (vol `0.18`, replaced `SCREAM.mp3`) **and** the *Vengeance*-suicide wail (vol `0.13`, also replaced the old `scream` cue there). Low-volume throughout.
 
 **Flash text** — see [§14](#14-flash-text-feedback-plan): every active-trigger skill flashes its name in its path color; passive stat nodes never flash; high-frequency procs throttled.
 
