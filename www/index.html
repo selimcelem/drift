@@ -3591,7 +3591,9 @@ let pixiHyperStackCtx = null;
 let pixiApocalypseSunSprite = null;
 let pixiApocalypseSunCanvas = null;
 let pixiApocalypseSunCtx = null;
-const PIXI_HYPER_BARRIER_SIZE = 200;
+// v1.9.0 Warp (Bow Shock): grown 200 → 320 so the widened 90px barrier + its
+// halfW×1.5 glow (135px) fits the offscreen box without clipping at the edge.
+const PIXI_HYPER_BARRIER_SIZE = 320;
 const PIXI_HYPER_STACK_W = 320;
 const PIXI_HYPER_STACK_H = 60;
 
@@ -4987,7 +4989,7 @@ const ORB_DEFS = {
     color: '251,146,60', cost: 3000, streakCap: 8, trail: 'solar', bias: 'nova',
   },
   nebula: {
-    name: 'Warp', desc: 'Hyperspeed stacks faster. Higher cap.',
+    name: 'Warp', desc: 'Bend space with hyperspeed: go faster, stay longer, or hold more.',
     color: '96,165,250', cost: 4000, streakCap: 8, trail: 'nebula', bias: 'hyperspeed',
   },
   asteroid: {
@@ -5476,8 +5478,8 @@ const TREE_DEFS = {
             desc: 'Entering ghost leaves a clone that drags nearby bodies toward it for 2s — pull them in for the kill.',
             effect: r => r ? 'Clone pulls bodies (2s)' : 'Locked' },
           { key: 'umbralStep', name: 'Umbral Step', tier: 1, max: 1, costOverride: [2000], pointCost: 2,
-            desc: 'A hit that should kill you while you are NOT phasing instead drops you into a 1s emergency ghost. 40s cooldown — your one free escape.',
-            effect: r => r ? 'Cheat death → 1s ghost (40s CD)' : 'Locked' },
+            desc: 'A hit that should kill you while you are NOT phasing instead drops you into a 1s emergency ghost. 90s cooldown — your one free escape.',
+            effect: r => r ? 'Cheat death → 1s ghost (90s CD)' : 'Locked' },
           { key: 'eclipse', name: 'Eclipse', tier: 3, max: 1, costOverride: [7500], pointCost: 5,
             desc: 'CAPSTONE. Every ghost blooms into an eclipse — 4 clones snap into place around you (N/S/E/W) for the whole ghost, each detonating a 120px EMP-lite burst on contact. Phase, and the field collapses around you.',
             effect: r => r ? '4 detonating clones every ghost' : 'Locked' },
@@ -5570,34 +5572,76 @@ const TREE_DEFS = {
     color: '96,165,250',
     paths: {
       velocity: {
-        name: 'VELOCITY',
+        name: 'BLUESHIFT',
         nodes: [
-          { key: 'thrust',    name: 'Thrust',    tier: 1, max: 3, desc: 'Hyperspeed peak multiplier coefficient buff per rank.', effect: r => `+${[20,30,40][r-1]||0}% peak coefficient` },
-          { key: 'afterburn', name: 'Afterburn', tier: 2, max: 3, desc: 'Launch forward barrier discs when hyperspeed ends. Discs travel, expand, and destroy bodies they pass through.', effect: r => `${r} disc${r===1?'':'s'} at landing` },
-          { key: 'breakaway', name: 'Breakaway', tier: 3, max: 3, desc: 'At max stacks, peak multiplier +15/30/45% per rank.', effect: r => `+${[15,30,45][r-1]||0}% at max stacks` },
+          { key: 'thrust', name: 'Blueshift', tier: 3, max: 1, costOverride: [6500], pointCost: 5,
+            desc: 'KEYSTONE. Your hyperspeed tears +40% faster through space. Space doesn’t get out of your way — you blueshift it.',
+            effect: r => r ? '+40% peak velocity' : 'Locked' },
+          { key: 'smoothEntry', name: 'Ramjet', tier: 1, max: 1, costOverride: [2500], pointCost: 2,
+            desc: 'Every planet you destroy while in hyperspeed shaves 0.3% off your burst cooldown.',
+            effect: r => r ? '−0.3% burst CD / hyperspeed kill' : 'Locked' },
+          { key: 'breakaway', name: 'Breakaway', tier: 1, max: 1, costOverride: [2500], pointCost: 2,
+            desc: 'At max hyperspeed stacks, your peak speed is boosted a further +11%.',
+            effect: r => r ? '+11% peak at max stacks' : 'Locked' },
+          { key: 'bowShock', name: 'Bow Shock', tier: 2, max: 1, costOverride: [5000], pointCost: 3,
+            desc: 'Your hyperspeed barrier reaches 30px farther (60 → 90px), shredding planets from a wider berth.',
+            effect: r => r ? 'Barrier +30px (90px)' : 'Locked' },
+          { key: 'afterburn', name: 'Afterburn', tier: 1, max: 1, costOverride: [2500], pointCost: 2,
+            desc: 'When hyperspeed ends, you launch 3 forward discs that fly out, expand, and destroy what they hit.',
+            effect: r => r ? '3 discs on hyperspeed end' : 'Locked' },
+          { key: 'lightspeed', name: 'Lightspeed', tier: 3, max: 1, costOverride: [8500], pointCost: 5,
+            desc: 'CAPSTONE. While at max stacks your top speed never decays — you hold peak velocity (and a lethal barrier) for the entire hyperspeed instead of slowing down. And every 90s your max stack cap rises by +1 (up to the cap ceiling). Light has no brakes.',
+            effect: r => r ? 'No decay at max · +1 cap / 90s' : 'Locked' },
         ],
       },
-      endurance: {
-        name: 'ENDURANCE',
+      duration: {
+        name: 'CONTINUUM',
         nodes: [
-          { key: 'reservoir',    name: 'Reservoir',    tier: 1, max: 3, desc: 'Hyperspeed duration +0.5s per rank (3s baseline, shared timer).', effect: r => `+${0.5*r}s total (${3 + 0.5*r}s)` },
-          { key: 'overdrive',    name: 'Overdrive',    tier: 2, max: 2, desc: 'Hyperspeed stack cap +1/+2 at ranks 1/2 (Warp baseline 4).', effect: r => `Cap ${4+r} stacks`, costOverride: [21000, 42000] },
-          { key: 'infiniteGate', name: 'Infinite Gate', tier: 3, max: 3, desc: 'At 5+ hyperspeed stacks, natural pickup extends shared timer +0.5/1/1.5s at ranks 1/2/3. 20s cooldown between triggers.', effect: r => `+${[0.5,1,1.5][r-1]||0}s at 5+ (20s CD)` },
+          { key: 'reservoir', name: 'Continuum', tier: 3, max: 1, costOverride: [6500], pointCost: 5,
+            desc: 'KEYSTONE. Hyperspeed lasts +1.5s longer, and every stack you gain while already in warp extends it another +0.5s (up to +3s per warp). Once you’re in the continuum, you stay there.',
+            effect: r => r ? '+1.5s · +0.5s/stack (max +3s)' : 'Locked' },
+          { key: 'slipstream', name: 'Slipstream', tier: 1, max: 1, costOverride: [2500], pointCost: 2,
+            desc: '6% chance whenever you destroy a planet to gain a hyperspeed stack (or refresh your warp timer if already maxed). 15s cooldown.',
+            effect: r => r ? '6% on destroy → stack (15s CD)' : 'Locked' },
+          { key: 'dragCoefficient', name: 'Drag Coefficient', tier: 1, max: 1, costOverride: [2500], pointCost: 2,
+            desc: 'Your hyperspeed speed bleeds off 30% slower, so you stay fast deeper into each warp.',
+            effect: r => r ? 'Hyperspeed decays 30% slower' : 'Locked' },
+          { key: 'reentry', name: 'Reentry', tier: 1, max: 1, costOverride: [2500], pointCost: 2,
+            desc: 'When hyperspeed ends, you drop out with a fresh shield to cover the vulnerable exit.',
+            effect: r => r ? '+1 shield on hyperspeed end' : 'Locked' },
+          { key: 'infiniteGate', name: 'Infinite Gate', tier: 2, max: 1, costOverride: [5000], pointCost: 3,
+            desc: 'At max stacks, picking up another hyperspeed orb extends your warp timer +1.5s. 20s cooldown.',
+            effect: r => r ? '+1.5s at max stacks (20s CD)' : 'Locked' },
+          { key: 'eventHorizon', name: 'Lingering Horizon', tier: 3, max: 1, costOverride: [8500], pointCost: 5,
+            desc: 'CAPSTONE. Every 90s you automatically snap to full-stack hyperspeed, and your max stack cap rises by +1 (up to the cap ceiling). The horizon never quite arrives — you just keep falling toward it.',
+            effect: r => r ? 'Auto full-stack + +1 cap / 90s' : 'Locked' },
         ],
       },
-      drift: {
-        name: 'DRIFT',
+      cap: {
+        name: 'SINGULARITY',
         nodes: [
-          { key: 'smoothEntry',  name: 'Momentum',      tier: 1, max: 3, desc: 'Kills during hyperspeed reduce burst cooldown.', effect: r => `-${[0.1,0.2,0.3][r-1]||0}% burst CD per hyperspeed kill` },
-          { key: 'slipstream',   name: 'Slipstream',    tier: 2, max: 5, desc: 'On body destroyed, chance to grant a hyperspeed stack. (20s cooldown)', effect: r => `${[1,2,3,4,6][r-1]||0}% per destroy` },
-          { key: 'warpHarmonic', name: 'Warp Harmonic', tier: 3, max: 3, desc: 'Hyperspeed pair combos grant bonus free stacks. 20s cooldown.', effect: r => `+${r} free stacks` },
+          { key: 'overdrive', name: 'Overdrive', tier: 3, max: 1, costOverride: [6500], pointCost: 5,
+            desc: 'KEYSTONE. Your hyperspeed holds +2 more stacks (2 → 4). Every stack is mass — give yourself room to hold more of it.',
+            effect: r => r ? 'Stack cap +2 (→4)' : 'Locked' },
+          { key: 'superluminal', name: 'Superluminal', tier: 1, max: 1, costOverride: [2500], pointCost: 2,
+            desc: 'Hyperspeed stack cap +1 (stacks with Overdrive).',
+            effect: r => r ? 'Stack cap +1' : 'Locked' },
+          { key: 'warpHarmonic', name: 'Warp Harmonic', tier: 1, max: 1, costOverride: [2500], pointCost: 2,
+            desc: 'When you land a hyperspeed combo, gain +3 free stacks instantly. 20s cooldown.',
+            effect: r => r ? '+3 stacks on hyperspeed combo (20s CD)' : 'Locked' },
+          { key: 'criticalVelocity', name: 'Critical Velocity', tier: 1, max: 1, costOverride: [2500], pointCost: 2,
+            desc: 'At max stacks, every planet you destroy has a 10% chance to detonate a nova blast at the kill. 15s cooldown.',
+            effect: r => r ? '10% kill → nova at max stacks (15s CD)' : 'Locked' },
+          { key: 'resonantMass', name: 'Resonant Mass', tier: 2, max: 1, costOverride: [5000], pointCost: 3,
+            desc: 'Every hyperspeed stack beyond the 2nd adds +8% peak speed — a raised cap turns straight into velocity, even without the Blueshift tree.',
+            effect: r => r ? '+8% peak / stack over 2' : 'Locked' },
+          { key: 'singularity', name: 'Singularity', tier: 3, max: 1, costOverride: [8500], pointCost: 5,
+            desc: 'CAPSTONE. On reaching max stacks, a 20% chance to tear open a RIFT in space at your position. It hangs for 2.5s, dragging in nearby planets and destroying them on contact. Fires once per hyperspeed, 20s cooldown. Hold enough mass and space simply gives way.',
+            effect: r => r ? '20% at max stacks → 2.5s rift (20s CD)' : 'Locked' },
         ],
       },
     },
-    capstones: [
-      { key: 'superluminal', name: 'SUPERLUMINAL',  desc: 'Hyperspeed stack cap +2 (stacks with Overdrive).' },
-      { key: 'eventHorizon', name: 'LINGERING HORIZON', desc: 'Every 90s, gain full-stacked hyperspeed automatically.' },
-    ],
+    capstones: [],
   },
   asteroid: {
     name: 'BULWARK',
@@ -5864,7 +5908,7 @@ const ORB_COST_SCALE = {
   cyan:     1.0,   // Drifter v1.9.0 rework: raw costOverride values (active-budget tree)
   cosmic:   1.0,   // Phantom v1.9.0 rework: raw costOverride values (active-budget tree)
   solar:    1.0,   // Inferno v1.9.0 rework: raw costOverride values (active-budget tree)
-  nebula:   0.325, // Warp    −67.5% (prior 0.50 × 0.65)
+  nebula:   1.0,   // Warp    v1.9.0 rework: raw costOverride values (active-budget tree)
   asteroid: 0.385, // Bulwark −61.5% (prior 0.55 × 0.70)
 };
 // Capstones use a separate, less-aggressive scale so they remain
@@ -5887,7 +5931,7 @@ function orbCostScale(orbKey) {
 // v1.9.0: cyan (Drifter) left this set when it migrated to the costOverride +
 // active-budget model — its nodes price from costOverride at scale 1.0, like
 // drifterV2/phantomV2. The remaining four still use flat tier pricing.
-const ORIGINAL_5_ORBS = new Set(['nebula', 'asteroid']);
+const ORIGINAL_5_ORBS = new Set(['asteroid']);  // v1.9.0: nebula (Warp) migrated to costOverride + active-budget
 const ORIGINAL_5_FLAT_CAPSTONE = 5000;
 function roundCrystals500(n) {
   return Math.round(n / 500) * 500;
@@ -6069,12 +6113,9 @@ function capstonePrereqMet(orbKey, capKey) {
   // the active-budget tree now — gated by ActiveBudget prereqs, not this pool.
   // solar capstones (Stellar Collapse / Sun Forge / Critical Mass) are path
   // nodes in the active-budget tree now — gated by ActiveBudget prereqs.
-  if (orbKey === 'nebula') {
-    // v1.7.0: SUPERLUMINAL now gated by ANY single Warp path fully maxed
-    // (was Overdrive rank ≥ 2). Reduces lock-in to a specific node.
-    if (capKey === 'superluminal') return anyPathMaxed('nebula');
-    if (capKey === 'eventHorizon') return anyT3('nebula');
-  }
+  // nebula capstones (Lightspeed / Lingering Horizon / Singularity) are path
+  // nodes in the active-budget tree now (v1.9.0 Warp rework) — gated by
+  // ActiveBudget prereqs, not this pool.
   if (orbKey === 'asteroid') {
     if (capKey === 'phalanx')   return (s.devastation[1] | 0) >= 3 && anyT3('asteroid');
     if (capKey === 'aegis')     return (s.fortification[2] | 0) >= 1 && (s.fortification[1] | 0) >= 1;
@@ -6274,7 +6315,7 @@ TREE_DEFS.drifterV2 = {
       name: 'PRESSURE',
       nodes: [
         { key: 'drifterV2_pressure', name: 'Pressure', tier: 3, max: 1, costOverride: [6500], pointCost: 5,
-          desc: 'KEYSTONE (5 pts). Per-destroy counter +1 per destroy (cap 100). 2s grace, then rapid falloff (full to zero in 6s). Scroll speed +0.2%/pt (Pressure 50 → 1.1×, 100 → 1.2× cap; eases back as Pressure falls). Score per kill +1%/pt (no cap). Keep it climbing — pressure was never meant to settle.',
+          desc: 'KEYSTONE (5 pts). Each destroy adds +1 to a Pressure counter (cap 100); 2s grace, then it falls full-to-zero in 6s. The higher the counter, the faster the scroll (up to 1.3×) and the more points each kill earns — both rise and ease back smoothly as Pressure climbs and falls. Keep it climbing — pressure was never meant to settle.',
           effect: r => r ? '+1/destroy · scaling' : 'Locked' },
         { key: 'drifterV2_patience', name: 'Patience', tier: 1, max: 1, costOverride: [3000], pointCost: 2,
           desc: 'Grace period extends 2s → 4s before decay starts.',
@@ -7604,6 +7645,371 @@ function _solar_drawFlashes() {
 }
 OrbHooks.on('onRender', () => { if (activeOrb === 'solar') _solar_drawFlashes(); });
 OrbHooks.on('onResetGame', () => { _solar_flashes = []; _solar_flashGates = {}; _solarCMKills = 0; _solarCMBurnZonesPending = 0; });
+
+// ===========================================================================
+// === NEBULA / WARP rework (v1.9.0): active-budget tree, cloned from solar ===
+// ===========================================================================
+const NEBULA_SCHEMA_VERSION = 2;
+// Hard ceiling on the hyperspeed stack cap. The two cap-growth capstones
+// (Lightspeed +1/90s, Lingering Horizon +1/90s) stack freely to +2/90s; this
+// is the ONLY bound on that growth. (v1.9.0: raised from the proposal's 8 → 10,
+// confirmed playable.)
+const NEBULA_MAX_CAP_CEILING = 10;
+const NEBULA_KEYSTONES = {
+  velocity: 'thrust',      // Blueshift
+  duration: 'reservoir',   // Continuum
+  cap:      'overdrive',   // Overdrive
+};
+const NEBULA_PREREQS = {
+  // BLUESHIFT (velocity)
+  smoothEntry: { prereq: ['thrust'] },
+  breakaway:   { prereq: ['thrust'] },
+  bowShock:    { prereq: ['thrust'] },
+  afterburn:   { prereq: ['thrust'] },
+  lightspeed:  { prereq: ['thrust'] },
+  // CONTINUUM (duration)
+  slipstream:      { prereq: ['reservoir'] },
+  dragCoefficient: { prereq: ['reservoir'] },
+  reentry:         { prereq: ['reservoir'] },
+  infiniteGate:    { prereq: ['reservoir'] },
+  eventHorizon:    { prereq: ['reservoir'] },
+  // SINGULARITY (cap)
+  superluminal:     { prereq: ['overdrive'] },
+  warpHarmonic:     { prereq: ['overdrive'] },
+  criticalVelocity: { prereq: ['overdrive'] },
+  resonantMass:     { prereq: ['overdrive'] },
+  singularity:      { prereq: ['overdrive'] },
+};
+// Blue-family triad separated by saturation/lightness: saturated azure /
+// pale ice-blue / cobalt-violet.
+const NEBULA_PATH_COLORS = {
+  velocity: '74,150,255',
+  duration: '150,205,255',
+  cap:      '120,90,225',
+};
+const NEBULA_TREE_LAYOUTS = {
+  velocity: { name: 'BLUESHIFT', color: NEBULA_PATH_COLORS.velocity, nodes: {
+    thrust:      { x: 100, y: 50, keystone: true },
+    smoothEntry: { x: 40,  y: 140 },
+    breakaway:   { x: 160, y: 140 },
+    bowShock:    { x: 40,  y: 225 },
+    afterburn:   { x: 160, y: 225 },
+    lightspeed:  { x: 100, y: 320, capstone: true },
+  } },
+  duration: { name: 'CONTINUUM', color: NEBULA_PATH_COLORS.duration, nodes: {
+    reservoir:       { x: 100, y: 50, keystone: true },
+    slipstream:      { x: 40,  y: 140 },
+    dragCoefficient: { x: 160, y: 140 },
+    reentry:         { x: 40,  y: 225 },
+    infiniteGate:    { x: 160, y: 225 },
+    eventHorizon:    { x: 100, y: 320, capstone: true },
+  } },
+  cap: { name: 'SINGULARITY', color: NEBULA_PATH_COLORS.cap, nodes: {
+    overdrive:        { x: 100, y: 50, keystone: true },
+    superluminal:     { x: 40,  y: 140 },
+    warpHarmonic:     { x: 160, y: 140 },
+    criticalVelocity: { x: 40,  y: 225 },
+    resonantMass:     { x: 160, y: 225 },
+    singularity:      { x: 100, y: 320, capstone: true },
+  } },
+};
+ActiveBudget.register('nebula', {
+  base: 20, expandMax: 5, expandCost: 2000,
+  bonusKey: 'drift_nebula_budget_bonus',
+  keystones: NEBULA_KEYSTONES,
+  prereqs: NEBULA_PREREQS,
+});
+function getNebulaBudgetCap()         { return ActiveBudget.budgetCap('nebula'); }
+function getNebulaBudgetBonus()       { return ActiveBudget.budgetBonus('nebula'); }
+function purchaseNebulaBudgetExpand() { return ActiveBudget.purchaseExpand('nebula'); }
+function isNebulaActive()             { return activeOrb === 'nebula'; }
+
+ORB_BEHAVIOR.nebula = ORB_BEHAVIOR.nebula || {};
+ORB_BEHAVIOR.nebula.rankOf = function(nodeKey) {
+  if (typeof nodeKey === 'string' && ActiveBudget.resolveNode('nebula', nodeKey)) {
+    return ActiveBudget.isActive('nebula', nodeKey) ? 1 : 0;
+  }
+  return _rankOf_default(nodeKey);
+};
+ORB_BEHAVIOR.nebula.pathPrereqMet = function(state, pathKey, nodeIdx) {
+  if (state !== orbTrees.nebula) return _pathPrereqMet_default(state, pathKey, nodeIdx);
+  return ActiveBudget.pathPrereqMet('nebula', pathKey, nodeIdx);
+};
+ORB_BEHAVIOR.nebula.respecNode = function(orbKey, pathKey, nodeIdx) {
+  const def = TREE_DEFS.nebula; const state = orbTrees.nebula;
+  if (!def || !state) return false;
+  const node = def.paths[pathKey] && def.paths[pathKey].nodes[nodeIdx];
+  if (!node) return false;
+  const current = state[pathKey][nodeIdx] | 0;
+  if (current <= 0) return false;
+  const invested = nodeCrystalsInvested(orbKey, node, current);
+  const fee = refundFee(invested);
+  if (totalCrystals < fee) return false;
+  totalCrystals = Math.max(0, totalCrystals - fee);
+  totalCrystals += invested;
+  state[pathKey][nodeIdx] = 0;
+  ActiveBudget.deactivate('nebula', node.key);
+  saveCrystals(); saveTreeState();
+  if (orbKey === activeOrb) refreshActiveTreeCache();
+  return true;
+};
+ORB_BEHAVIOR.nebula.fullTreeRespecCost = function(orbKey) { return refundFee(treeCrystalsInvested(orbKey)); };
+ORB_BEHAVIOR.nebula.respecTree = function(orbKey) {
+  const def = TREE_DEFS.nebula; const state = orbTrees.nebula;
+  if (!def || !state) return false;
+  if (totalRanksInvested(orbKey) <= 0) return false;
+  const invested = treeCrystalsInvested(orbKey);
+  const fee = refundFee(invested);
+  if (totalCrystals < fee) return false;
+  totalCrystals = Math.max(0, totalCrystals - fee);
+  for (const pKey of Object.keys(def.paths)) {
+    const nodes = def.paths[pKey].nodes; const arr = state[pKey];
+    for (let i = 0; i < nodes.length; i++) {
+      totalCrystals += nodeCrystalsInvested(orbKey, nodes[i], arr[i] | 0);
+      arr[i] = 0;
+    }
+  }
+  state.activePoints = {};
+  saveCrystals(); saveTreeState();
+  if (orbKey === activeOrb) refreshActiveTreeCache();
+  return true;
+};
+OrbHooks.on('afterLoadTreeState', () => { maybeMigrateNebula(); ActiveBudget.restoreActivePoints('nebula'); });
+
+// === NEBULA flash feedback (path-coloured, throttled) ======================
+let _nebula_flashes = [];
+let _nebula_flashGates = {};
+function _nebula_addFlash(text, color, durationMs) {
+  if (activeOrb !== 'nebula') return;
+  _nebula_flashes.push({ text: String(text || ''), color: color || NEBULA_PATH_COLORS.velocity, startTime: Date.now(), durationMs: durationMs || 700 });
+  if (_nebula_flashes.length > 6) _nebula_flashes.shift();
+}
+function _nebula_flash(key, text, color, minMs) {
+  const now = Date.now();
+  if (now - (_nebula_flashGates[key] || 0) < (minMs || 0)) return;
+  _nebula_flashGates[key] = now;
+  _nebula_addFlash(text, color);
+}
+function _nebula_drawFlashes() {
+  if (state !== 'playing' && state !== 'paused' && state !== 'apocalypse') return;
+  if (!_nebula_flashes.length) return;
+  if (!player || isNaN(player.x) || isNaN(player.y)) return;
+  const now = Date.now();
+  const visible = [];
+  ctx.save();
+  ctx.font = 'bold 11px Orbitron, monospace';
+  ctx.textAlign = 'center';
+  ctx.shadowBlur = 8;
+  let i = 0;
+  for (const f of _nebula_flashes) {
+    const age = now - f.startTime;
+    if (age >= f.durationMs) continue;
+    visible.push(f);
+    const fade = 1 - age / f.durationMs;
+    const y = player.y - 28 - (i * 13) - (age / f.durationMs) * 16;
+    ctx.fillStyle = `rgba(${f.color},${(0.95 * fade).toFixed(2)})`;
+    ctx.shadowColor = `rgba(${f.color},${(0.85 * fade).toFixed(2)})`;
+    ctx.fillText(f.text, player.x, y);
+    i++;
+  }
+  _nebula_flashes = visible;
+  ctx.restore();
+}
+OrbHooks.on('onRender', () => { if (activeOrb === 'nebula') _nebula_drawFlashes(); });
+OrbHooks.on('onResetGame', () => { _nebula_flashes = []; _nebula_flashGates = {}; });
+
+// === NEBULA schema migration (v1 multi-rank → v2 active-budget) ============
+function _nebulaLooksLegacy(rawNebula) {
+  if (!rawNebula) return false;
+  // Pre-rework nebula had multi-rank capstones (superluminal / eventHorizon as bools)
+  if (rawNebula.capstones && (Object.prototype.hasOwnProperty.call(rawNebula.capstones, 'superluminal') ||
+                              Object.prototype.hasOwnProperty.call(rawNebula.capstones, 'eventHorizon'))) return true;
+  // Pre-rework nebula had legacy path keys (velocity/endurance/drift) as 3-rank arrays
+  if (Array.isArray(rawNebula.endurance)) return true;
+  if (Array.isArray(rawNebula.drift)) return true;
+  if (Array.isArray(rawNebula.velocity) && rawNebula.velocity.length === 3) return true;
+  return false;
+}
+function maybeMigrateNebula() {
+  let stored = 0;
+  try { const v = localStorage.getItem('drift_nebula_schema_version'); if (v != null) stored = parseInt(v, 10) | 0; } catch {}
+  if (stored >= NEBULA_SCHEMA_VERSION) return;
+  let rawNebula = null;
+  try { const r = localStorage.getItem('drift_orb_trees'); if (r) { const p = JSON.parse(r); rawNebula = p && p.nebula; } } catch {}
+  if (_nebulaLooksLegacy(rawNebula)) {
+    // OLD nebula used the original-5 flat tier pricing (T1 1000 / T2 2000 / T3 3000 per
+    // rank) × the nebula cost scale (0.325), rounded to 500. Refund those flat per-rank
+    // costs. Legacy paths: velocity[thrust(T1),afterburn(T2),breakaway(T3)],
+    // endurance[reservoir(T1),overdrive(T2 costOverride 21000/42000),infiniteGate(T3)],
+    // drift[smoothEntry(T1),slipstream(T2),warpHarmonic(T3)].
+    const SCALE = 0.325;
+    const flat = (tier) => Math.round(([0, 1000, 2000, 3000][tier] || 0) * SCALE / 500) * 500;
+    const sumPath = (arr, tiers) => {
+      if (!Array.isArray(arr)) return 0;
+      let s = 0; for (let i = 0; i < arr.length && i < tiers.length; i++) s += (arr[i] | 0) * flat(tiers[i]);
+      return s;
+    };
+    let refund = 0;
+    refund += sumPath(rawNebula.velocity,  [1, 2, 3]); // thrust · afterburn · breakaway
+    refund += sumPath(rawNebula.endurance, [1, 0, 3]); // reservoir · (overdrive handled below) · infiniteGate
+    refund += sumPath(rawNebula.drift,     [1, 2, 3]); // smoothEntry · slipstream · warpHarmonic
+    // overdrive used costOverride [21000, 42000] (cumulative); refund per-rank owned.
+    if (Array.isArray(rawNebula.endurance)) {
+      const odRank = rawNebula.endurance[1] | 0;
+      const OD = [21000, 42000];
+      for (let i = 0; i < odRank && i < OD.length; i++) refund += OD[i];
+    }
+    if (rawNebula.capstones) for (const k of ['superluminal', 'eventHorizon']) if (rawNebula.capstones[k]) refund += Math.round(5000 * SCALE / 500) * 500;
+    orbTrees.nebula = freshOrbTreeState('nebula');
+    if (refund > 0) { totalCrystals += refund; saveCrystals(); }
+    treeLog('nebula schema migrate v' + stored + '→v' + NEBULA_SCHEMA_VERSION + ': refunded ' + refund + ' crystals; tree reset');
+  }
+  try { localStorage.setItem('drift_nebula_schema_version', String(NEBULA_SCHEMA_VERSION)); } catch {}
+  saveTreeState();
+}
+
+// === NEBULA new-systems: Critical Velocity proc-nova + Singularity RIFT =====
+// Critical Velocity (Cap T1): a default nova at the kill site, 15s CD. Mirrors
+// the Halo/Firebrand proc-nova pattern.
+function _nebula_criticalVelocityProc(bodyX, bodyY) {
+  const now = Date.now();
+  if (now < nebulaCriticalVelocityNextProc) return;
+  const px = (typeof bodyX === 'number') ? bodyX : player.x;
+  const py = (typeof bodyY === 'number') ? bodyY : player.y;
+  pushNovaRingCapped({ x: px, y: py, radius: 0, life: 1, prevR: 0, startTime: now, sizeMult: 0.9 });
+  try { emitNovaSpecks(px, py); } catch {}
+  try { SFX.pickup('nova'); } catch {}
+  recentNovaEndTime = now + 1500;
+  recentNovaFrames = 1500;
+  nebulaCriticalVelocityNextProc = now + 15000;
+  _nebula_flash('criticalVelocity', 'CRITICAL VELOCITY', NEBULA_PATH_COLORS.cap, 0);
+  treeLog('criticalVelocity: proc nova at ' + Math.round(px) + ',' + Math.round(py) + ' (15s CD)');
+}
+// Singularity (Cap capstone): 20% on reaching max stacks to tear a RIFT.
+// Once per hyperspeed instance, 20s CD. Anchored to the player for its 2.5s life.
+function _nebula_maybeOpenRift(now) {
+  if (nebulaRiftFiredThisInstance) return;
+  if (now < nebulaRiftNextArm) return;
+  if (Math.random() >= 0.20) return;
+  nebulaRiftFiredThisInstance = true;
+  nebulaRiftNextArm = now + 20000;
+  nebulaRift = { startTime: now, x: player.x, y: player.y };
+  try { SFX.playSfxBuffer('rift', 0.3); } catch {}   // dedicated cue, kept low
+  try { triggerHitstop(70); } catch {}
+  try { shakeCapstone('singularity'); } catch {}
+  _nebula_flash('singularity', 'SINGULARITY', NEBULA_PATH_COLORS.cap, 0);
+  treeLog('singularity: RIFT torn (2.5s, 20s CD)');
+}
+// Per-frame rift pull + destroy. Bounded radius, pause-delta safe (driven by a
+// wall-clock lifetime, not accumulated dt). Batches shake via shakeMassDestroy.
+function _nebula_tickRift() {
+  if (!nebulaRift) return;
+  const now = Date.now();
+  if (now - nebulaRift.startTime >= NEBULA_RIFT_LIFE_MS) { nebulaRift = null; return; }
+  // Anchor to the player (the rift rides with the warping ship).
+  nebulaRift.x = player.x; nebulaRift.y = player.y;
+  const cx = nebulaRift.x, cy = nebulaRift.y;
+  const pullR2 = NEBULA_RIFT_PULL_RADIUS * NEBULA_RIFT_PULL_RADIUS;
+  let killCount = 0;
+  for (let i = bodies.length - 1; i >= 0; i--) {
+    const b = bodies[i];
+    if (!b || isNaN(b.x) || isNaN(b.y)) continue;
+    const dx = cx - b.x, dy = cy - b.y;
+    const d2 = dx * dx + dy * dy;
+    if (d2 > pullR2) continue;
+    const dist = Math.sqrt(d2) || 1;
+    if (dist <= NEBULA_RIFT_KILL_RADIUS + b.radius) {
+      try { emitDestroyBurst(b.x, b.y, NEBULA_PATH_COLORS.cap); } catch {}
+      try { emitDestroyEffects(b, 'nova'); } catch {}
+      addDestroyPoints();
+      try { releaseBodyCanvases(b); } catch {}
+      bodies.splice(i, 1);
+      checkDestroyProc(b, 'nova');
+      killCount++;
+    } else {
+      // Pull inward — a fraction of the remaining distance per frame.
+      b.x += (dx / dist) * Math.min(dist, 6.5);
+      b.y += (dy / dist) * Math.min(dist, 6.5);
+    }
+  }
+  if (killCount > 0) shakeMassDestroy(killCount);
+}
+// Vertical "tear in space" visual — a jagged crack, distinct from any disc.
+// Drawn in the same player-space context the flash system uses.
+function _nebula_drawRift() {
+  if (!nebulaRift) return;
+  if (!player || isNaN(player.x) || isNaN(player.y)) return;
+  const now = Date.now();
+  const age = now - nebulaRift.startTime;
+  if (age >= NEBULA_RIFT_LIFE_MS) return;
+  const t = age / NEBULA_RIFT_LIFE_MS;            // 0..1
+  // Fade in fast, hold, fade out.
+  const alpha = t < 0.15 ? (t / 0.15) : t > 0.8 ? (1 - (t - 0.8) / 0.2) : 1;
+  const cx = nebulaRift.x, cy = nebulaRift.y;
+  const half = NEBULA_RIFT_PULL_RADIUS * 0.92;    // vertical reach
+  const wob = 1 + 0.04 * Math.sin(now / 45);
+  ctx.save();
+  ctx.translate(cx, cy);
+  // Pull-in haze.
+  const g = ctx.createRadialGradient(0, 0, 4, 0, 0, NEBULA_RIFT_PULL_RADIUS);
+  g.addColorStop(0, `rgba(${NEBULA_PATH_COLORS.cap},${(0.45 * alpha).toFixed(3)})`);
+  g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.arc(0, 0, NEBULA_RIFT_PULL_RADIUS, 0, Math.PI * 2); ctx.fill();
+  // The tear: a jagged vertical lens. Right edge then left edge, mirrored with jitter.
+  const segs = 9;
+  const maxW = 14 * wob;
+  ctx.beginPath();
+  ctx.moveTo(0, -half);
+  for (let i = 1; i < segs; i++) {
+    const fy = i / segs;
+    const y = -half + fy * half * 2;
+    const taper = Math.sin(fy * Math.PI);          // 0 at tips, 1 at middle
+    const jag = (i % 2 === 0 ? 1 : 0.45) * maxW * taper + (Math.sin(now / 60 + i) * 2);
+    ctx.lineTo(jag, y);
+  }
+  ctx.lineTo(0, half);
+  for (let i = segs - 1; i >= 1; i--) {
+    const fy = i / segs;
+    const y = -half + fy * half * 2;
+    const taper = Math.sin(fy * Math.PI);
+    const jag = (i % 2 === 0 ? 1 : 0.45) * maxW * taper + (Math.sin(now / 60 + i) * 2);
+    ctx.lineTo(-jag, y);
+  }
+  ctx.closePath();
+  // Black core with a violet rim glow.
+  ctx.fillStyle = `rgba(8,4,18,${(0.92 * alpha).toFixed(3)})`;
+  ctx.shadowBlur = 22; ctx.shadowColor = `rgba(${NEBULA_PATH_COLORS.cap},${(0.9 * alpha).toFixed(3)})`;
+  ctx.fill();
+  // Bright seam down the center.
+  ctx.shadowBlur = 12;
+  ctx.strokeStyle = `rgba(200,180,255,${(0.85 * alpha).toFixed(3)})`;
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(0, -half * 0.96); ctx.lineTo(0, half * 0.96); ctx.stroke();
+  ctx.restore();
+}
+// Lightspeed cap-growth: +1 cap every 90s while the capstone is active. Per-run.
+function _nebula_tickLightspeedCap(now) {
+  if (activeOrb !== 'nebula' || !rankOf('lightspeed')) { nebulaLightspeedNextCapTime = 0; return; }
+  if (nebulaLightspeedNextCapTime === 0) { nebulaLightspeedNextCapTime = now + NEBULA_LIGHTSPEED_CAP_CYCLE_MS; return; }
+  if (now >= nebulaLightspeedNextCapTime) {
+    nebulaLightspeedNextCapTime = now + NEBULA_LIGHTSPEED_CAP_CYCLE_MS;
+    // Only grow while the (summed) cap is still below the ceiling.
+    const cur = 2 + rankOf('overdrive') * 2 + rankOf('superluminal') + (nebulaLightspeedCapBonus | 0) + (nebulaLingeringCapBonus | 0);
+    if (cur < NEBULA_MAX_CAP_CEILING) {
+      nebulaLightspeedCapBonus++;
+      _nebula_flash('lightspeedCap', 'MAX CAP +1', NEBULA_PATH_COLORS.velocity, 0);
+      treeLog('lightspeed: max cap +1 (bonus ' + nebulaLightspeedCapBonus + ')');
+    }
+  }
+}
+// Aggregate per-frame nebula tick (called from update()).
+function _nebula_tick(now) {
+  if (activeOrb !== 'nebula') { if (nebulaRift) nebulaRift = null; return; }
+  _nebula_tickLightspeedCap(now);
+  _nebula_tickRift();
+}
+OrbHooks.on('onRender', () => { if (activeOrb === 'nebula') _nebula_drawRift(); });
 
 // === SOLAR new-systems: Stellar Collapse fireballs + Backdraft + HUD =======
 let _solarFireballs = [];          // {angle,orbitR,born,lifeMs,phase,x,y,target}
@@ -9043,6 +9449,260 @@ ORB_BEHAVIOR.solar.renderTreeDetail = function() {
   }
 };
 
+// === NEBULA / WARP custom tree UI (cloned from solar) ======================
+function _nebula_nodeState(nodeKey) {
+  const r = ActiveBudget.resolveNode('nebula', nodeKey);
+  if (!r) return 'locked';
+  const state = orbTrees.nebula;
+  const current = state[r.pathKey][r.nodeIdx] | 0;
+  const prereqOk = pathPrereqMet(state, r.pathKey, r.nodeIdx);
+  if (current > 0 && ActiveBudget.isActive('nebula', nodeKey)) return 'active';
+  if (current > 0) return 'owned';
+  if (prereqOk) return 'available';
+  return 'locked';
+}
+function _nebula_buildTreeColumn(pathKey) {
+  const layout = NEBULA_TREE_LAYOUTS[pathKey];
+  const col = document.createElement('div');
+  col.className = 'dv2-tree-col';
+  col.style.cssText = 'position:relative; width:200px; height:430px; flex-shrink:0;';
+  const svgNS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(svgNS, 'svg');
+  svg.setAttribute('viewBox', '0 0 200 430');
+  svg.setAttribute('width', '200');
+  svg.setAttribute('height', '430');
+  svg.style.cssText = 'position:absolute; top:0; left:0; pointer-events:none;';
+  for (const nKey of Object.keys(layout.nodes)) {
+    const spec = NEBULA_PREREQS[nKey];
+    if (!spec || !Array.isArray(spec.prereq)) continue;
+    const me = layout.nodes[nKey];
+    for (const parentKey of spec.prereq) {
+      const parent = layout.nodes[parentKey];
+      if (!parent) continue;
+      const bothActive = _nebula_nodeState(nKey) === 'active' && _nebula_nodeState(parentKey) === 'active';
+      const line = document.createElementNS(svgNS, 'line');
+      line.setAttribute('x1', parent.x); line.setAttribute('y1', parent.y);
+      line.setAttribute('x2', me.x); line.setAttribute('y2', me.y);
+      line.setAttribute('stroke', bothActive ? `rgba(${layout.color},0.9)` : 'rgba(120,120,140,0.35)');
+      line.setAttribute('stroke-width', bothActive ? '3' : '2');
+      if (bothActive) line.setAttribute('filter', 'drop-shadow(0 0 4px rgba(' + layout.color + ',0.6))');
+      svg.appendChild(line);
+    }
+  }
+  col.appendChild(svg);
+  const label = document.createElement('div');
+  label.style.cssText = `position:absolute; bottom:8px; left:0; right:0; text-align:center; font-family:Orbitron,monospace; font-size:11px; letter-spacing:3px; color:rgba(${layout.color},0.85);`;
+  label.textContent = layout.name;
+  col.appendChild(label);
+  for (const nKey of Object.keys(layout.nodes)) {
+    const pos = layout.nodes[nKey];
+    const r = ActiveBudget.resolveNode('nebula', nKey);
+    if (!r) continue;
+    const nodeDef = r.node;
+    const nState = _nebula_nodeState(nKey);
+    const isCapstone = !!pos.capstone;
+    const isKeystone = !!pos.keystone;
+    const size = isCapstone ? 38 : isKeystone ? 34 : 28;
+    const btn = document.createElement('button');
+    btn.dataset.nodeKey = nKey;
+    btn.style.cssText = `
+      position:absolute; left:${pos.x - size/2}px; top:${pos.y - size/2}px;
+      width:${size}px; height:${size}px;
+      border-radius:${isCapstone ? '8px' : '50%'};
+      border:2px solid rgba(${layout.color},${nState === 'locked' ? 0.18 : nState === 'available' ? 0.45 : 0.9});
+      background:${nState === 'active' ? `rgba(${layout.color},0.85)` : 'rgba(8,12,24,0.85)'};
+      box-shadow:${nState === 'active' ? `0 0 14px rgba(${layout.color},0.7)` : 'none'};
+      color:${nState === 'active' ? 'rgba(0,0,0,0.9)' : `rgba(${layout.color},${nState === 'locked' ? 0.3 : 0.95})`};
+      font-family:Orbitron,monospace; font-size:${isCapstone ? 12 : 10}px; font-weight:bold;
+      cursor:pointer; padding:0; transition: all 0.15s;
+      ${nState === 'locked' ? 'opacity:0.45;' : ''}
+    `;
+    btn.textContent = (nodeDef.pointCost | 0) || 1;
+    const _unitCost = nodeCost(nodeDef.tier, 1, 'nebula', nodeDef);
+    btn.title = `${nodeDef.name} — ${(nodeDef.pointCost | 0) || 1} pt · ${formatCrystals(_unitCost)} 💎 (${nState})`;
+    btn.addEventListener('click', () => {
+      SFX.clickSecondary();
+      treeDetailCurrent = { kind: 'node', orbKey: 'nebula', pathKey: r.pathKey, nodeIdx: r.nodeIdx };
+      renderTreeDetail();
+      document.getElementById('treeNodeDetail').classList.add('visible');
+    });
+    col.appendChild(btn);
+    if (nState === 'available' || nState === 'locked') {
+      const costLbl = document.createElement('div');
+      const lblW = 56;
+      costLbl.style.cssText = `position:absolute; left:${pos.x - lblW / 2}px; top:${pos.y + size / 2 + 2}px; width:${lblW}px; text-align:center; font-family:Orbitron,monospace; font-size:9px; letter-spacing:0.5px; color:rgba(${layout.color},${nState === 'locked' ? 0.35 : 0.85}); pointer-events:none; line-height:1;`;
+      costLbl.textContent = `${formatCrystals(_unitCost)} 💎`;
+      col.appendChild(costLbl);
+    }
+  }
+  return col;
+}
+function _nebula_renderCustomTreeOverlay() {
+  const def = TREE_DEFS.nebula;
+  const state = orbTrees.nebula;
+  if (!def || !state) return;
+  document.getElementById('treeTitle').textContent = 'WARP';
+  document.getElementById('treeTitle').style.color = 'rgba(96,165,250,1)';
+  document.getElementById('treeCrystals').textContent = '💎 ' + formatCrystals(totalCrystals);
+  const pathsEl = document.getElementById('treePaths');
+  pathsEl.innerHTML = '';
+  pathsEl.style.display = 'flex';
+  pathsEl.style.gap = '14px';
+  pathsEl.style.flexWrap = 'nowrap';
+  pathsEl.style.overflowX = 'auto';
+  pathsEl.style.overflowY = 'hidden';
+  pathsEl.style.webkitOverflowScrolling = 'touch';
+  pathsEl.style.padding = '6px 8px 12px';
+  pathsEl.style.maxHeight = '450px';
+  pathsEl.style.justifyContent = 'flex-start';
+  for (const pKey of ['velocity', 'duration', 'cap']) {
+    pathsEl.appendChild(_nebula_buildTreeColumn(pKey));
+  }
+  const capsEl = document.getElementById('treeCapstones');
+  capsEl.innerHTML = '';
+  capsEl.style.display = 'flex';
+  capsEl.style.flexDirection = 'column';
+  capsEl.style.alignItems = 'center';
+  capsEl.style.gap = '6px';
+  const total = ActiveBudget.activePointsTotal('nebula');
+  const cap = getNebulaBudgetCap();
+  const bonus = getNebulaBudgetBonus();
+  const overBudget = total > cap;
+  const budget = document.createElement('div');
+  budget.style.cssText = `display:flex; align-items:center; gap:10px; padding:10px 8px; font-family:Orbitron,monospace; font-size:13px; letter-spacing:3px; color:rgba(96,165,250,0.85);`;
+  const totalColor = overBudget ? 'rgba(255,90,90,1)' : 'rgba(120,180,255,1)';
+  const label = document.createElement('span');
+  label.innerHTML = `ACTIVE POINTS: <span style="color:${totalColor}; font-weight:bold; font-size:16px;">${total}</span> <span style="opacity:0.6;">/ ${cap}</span>`;
+  budget.appendChild(label);
+  const expandMax = ActiveBudget.expandMaxFor('nebula');
+  const expandCost = ActiveBudget.expandCostFor('nebula');
+  const expandBtn = document.createElement('button');
+  expandBtn.style.cssText = `background:transparent; border:1px solid rgba(120,180,255,0.55); color:rgba(120,180,255,0.95); font-family:Orbitron,monospace; font-size:12px; letter-spacing:1px; padding:4px 10px; cursor:pointer; border-radius:3px; transition:all 0.18s; min-height:26px; text-transform:uppercase;`;
+  if (bonus >= expandMax) {
+    expandBtn.textContent = 'MAXED';
+    expandBtn.disabled = true;
+    expandBtn.style.opacity = '0.45';
+    expandBtn.style.cursor = 'not-allowed';
+  } else {
+    expandBtn.textContent = '＋';
+    expandBtn.title = `Expand active points capacity by +1 — ${formatCrystals(expandCost)} 💎`;
+    expandBtn.addEventListener('click', () => {
+      SFX.clickSecondary();
+      const remaining = expandMax - bonus;
+      confirmTreeAction(
+        `Expand active points capacity by +1? Cost: ${formatCrystals(expandCost)} 💎. (${remaining} expansion${remaining === 1 ? '' : 's'} remaining)`,
+        () => { if (purchaseNebulaBudgetExpand()) { SFX.clickPrimary(); renderTreeOverlay(); } }
+      );
+    });
+  }
+  budget.appendChild(expandBtn);
+  capsEl.appendChild(budget);
+  const ranks = totalRanksInvested('nebula');
+  const full = document.getElementById('treeRespecFullBtn');
+  const _fullFee = fullTreeRespecCost('nebula');
+  full.textContent = ranks > 0 ? `REFUND ALL (${formatCrystals(_fullFee)} 💎)` : 'REFUND ALL';
+  full.disabled = ranks === 0 || totalCrystals < _fullFee;
+}
+ORB_BEHAVIOR.nebula.renderTreeOverlay = function() { _nebula_renderCustomTreeOverlay(); };
+ORB_BEHAVIOR.nebula.renderTreeDetail = function() {
+  if (!treeDetailCurrent || treeDetailCurrent.kind !== 'node') return _renderTreeDetail_default();
+  _renderTreeDetail_default();
+  const t = treeDetailCurrent;
+  const def = TREE_DEFS.nebula;
+  const state = orbTrees.nebula;
+  const node = def.paths[t.pathKey].nodes[t.nodeIdx];
+  const current = state[t.pathKey][t.nodeIdx] | 0;
+  const prereqOk = pathPrereqMet(state, t.pathKey, t.nodeIdx);
+  const upBtn = document.getElementById('treeDetailUpgradeBtn');
+  const respecBtn = document.getElementById('treeDetailRespecBtn');
+  if (!upBtn || !respecBtn) return;
+  const isActive = ActiveBudget.isActive('nebula', node.key);
+  const pointCost = (node.pointCost | 0) || 1;
+  const total = ActiveBudget.activePointsTotal('nebula');
+  if (current <= 0) {
+    upBtn.style.visibility = '';
+    if (!prereqOk) {
+      upBtn.textContent = 'PREREQ MISSING';
+      upBtn.disabled = true;
+    } else {
+      const nextCost = nodeCost(node.tier, 1, t.orbKey, node);
+      upBtn.textContent = `UNLOCK — ${formatCrystals(nextCost)} 💎`;
+      upBtn.disabled = totalCrystals < nextCost;
+      upBtn.onclick = () => {
+        if (purchaseNodeRank(t.orbKey, t.pathKey, t.nodeIdx)) {
+          treeLog('nebula unlocked: ' + node.key);
+          SFX.clickPrimary(); renderTreeOverlay(); renderTreeDetail();
+        }
+      };
+    }
+    respecBtn.style.visibility = 'hidden';
+    respecBtn.disabled = true;
+  } else if (!isActive) {
+    upBtn.style.visibility = '';
+    const requiredKs = ActiveBudget.keystoneRequiredFor('nebula', node.key);
+    const ksMissing = !!requiredKs && !ActiveBudget.isActive('nebula', requiredKs);
+    let intraReqMissingKey = null;
+    const spec = NEBULA_PREREQS[node.key];
+    if (spec && Array.isArray(spec.requiresActive)) {
+      for (const rq of spec.requiresActive) { if (!ActiveBudget.isActive('nebula', rq)) { intraReqMissingKey = rq; break; } }
+    }
+    const fits = total + pointCost <= getNebulaBudgetCap();
+    if (ksMissing) {
+      const ksResolved = ActiveBudget.resolveNode('nebula', requiredKs);
+      const ksName = (ksResolved && ksResolved.node && ksResolved.node.name) || 'keystone';
+      upBtn.textContent = `ACTIVATE ${ksName.toUpperCase()} FIRST`;
+      upBtn.disabled = true;
+    } else if (intraReqMissingKey) {
+      const r2 = ActiveBudget.resolveNode('nebula', intraReqMissingKey);
+      const reqName = (r2 && r2.node && r2.node.name) || 'parent';
+      upBtn.textContent = `ACTIVATE ${reqName.toUpperCase()} FIRST`;
+      upBtn.disabled = true;
+    } else if (!fits) {
+      upBtn.textContent = 'BUDGET FULL';
+      upBtn.disabled = true;
+    } else {
+      upBtn.textContent = `ACTIVATE (${pointCost} PT${pointCost > 1 ? 'S' : ''})`;
+      upBtn.disabled = false;
+    }
+    upBtn.onclick = () => {
+      if (ActiveBudget.activate('nebula', node.key)) {
+        treeLog('nebula activated: ' + node.key);
+        SFX.clickPrimary(); renderTreeOverlay(); renderTreeDetail();
+      }
+    };
+    respecBtn.style.visibility = '';
+    {
+      const _fee = respecNodeCost(t.orbKey, t.pathKey, t.nodeIdx);
+      respecBtn.disabled = totalCrystals < _fee;
+      respecBtn.textContent = `REFUND (${formatCrystals(_fee)} 💎)`;
+      respecBtn.onclick = () => {
+        confirmTreeAction(`Refund ${node.name}? Costs ${formatCrystals(_fee)} 💎 and returns all spent crystals.`, () => {
+          if (respecNode(t.orbKey, t.pathKey, t.nodeIdx)) { SFX.clickSecondary(); renderTreeOverlay(); closeTreeDetail(); }
+        });
+      };
+    }
+  } else {
+    upBtn.style.visibility = '';
+    upBtn.textContent = `DEACTIVATE (FREES ${pointCost} PT${pointCost > 1 ? 'S' : ''})`;
+    upBtn.disabled = false;
+    upBtn.onclick = () => {
+      ActiveBudget.deactivate('nebula', node.key);
+      SFX.clickPrimary(); renderTreeOverlay(); renderTreeDetail();
+    };
+    respecBtn.style.visibility = '';
+    {
+      const _fee = respecNodeCost(t.orbKey, t.pathKey, t.nodeIdx);
+      respecBtn.disabled = totalCrystals < _fee;
+      respecBtn.textContent = `REFUND (${formatCrystals(_fee)} 💎)`;
+      respecBtn.onclick = () => {
+        confirmTreeAction(`Refund ${node.name}? Costs ${formatCrystals(_fee)} 💎, frees ${pointCost} budget point${pointCost > 1 ? 's' : ''} and returns all spent crystals.`, () => {
+          if (respecNode(t.orbKey, t.pathKey, t.nodeIdx)) { SFX.clickSecondary(); renderTreeOverlay(); closeTreeDetail(); }
+        });
+      };
+    }
+  }
+};
+
 // ---------------------------------------------------------------------
 // refreshOrbBrowser: NO wrap. The old visibility-gate skip became a permanent
 // no-op once Roamer was made a first-class browser orb (always reachable), so
@@ -9823,10 +10483,11 @@ function _drifterV2_pressureDecayPerMs() {
   return 100 / totalMs;
 }
 function _drifterV2_pressureScrollMult() {
-  // Linear ramp keyed to the live (decaying) Pressure counter: +0.2%/pt, so
-  // Pressure 50 → 1.1×, Pressure 100 → 1.2× (hard cap). As Pressure decays the
-  // multiplier falls back toward 1.0× automatically.
-  return Math.min(1.2, 1 + _drifterV2_pressureCount * 0.002);
+  // Linear ramp keyed to the live (decaying) Pressure counter: +0.3%/pt, so
+  // Pressure 50 → 1.15×, Pressure 100 → 1.3× (hard cap), and 0 → 1.0× (the
+  // difficulty's normal speed). As Pressure decays the multiplier falls back
+  // toward 1.0× automatically.
+  return Math.min(1.3, 1 + _drifterV2_pressureCount * 0.003);
 }
 // Threshold 75: at Pressure ≥ 75 fires a Firebrand-style half-size nova at
 // the kill site, 3s per-proc cooldown. No % chance — every eligible destroy
@@ -10221,8 +10882,8 @@ TREE_DEFS.phantomV2 = {
           desc: 'Kills outside ghost also have a 25% chance to spawn a wraith.',
           effect: r => r ? '25% off-ghost wraith' : 'Locked' },
         { key: 'phantomV2_packHunters', name: 'Pack Hunters', tier: 2, max: 1, costOverride: [5500], pointCost: 3,
-          desc: 'When 3 or more wraiths are alive, they grow 30% larger and spin 30% faster.',
-          effect: r => r ? '+30% size & spin at 3+' : 'Locked' },
+          desc: 'When 3 or more wraiths are alive, they grow 40% larger and spin 40% faster.',
+          effect: r => r ? '+40% size & spin at 3+' : 'Locked' },
         { key: 'phantomV2_vengeance', name: 'Vengeance', tier: 1, max: 1, costOverride: [4000], pointCost: 2,
           desc: 'A wraith that expires without a kill dashes at the closest planet and detonates on impact in a 150px ghostly burst. Each Vengeance explosion has a 40% chance to spawn a fresh wraith.',
           effect: r => r ? 'Dash + 150px burst · 40% respawn' : 'Locked' },
@@ -11236,14 +11897,14 @@ function _phantomV2_wraithLifeMs() {
 function _phantomV2_wraithOrbitR() {
   return rankOf('phantomV2_tether') >= 1 ? 80 : 60;
 }
-// Pack Hunters: at 3+ wraiths alive, each wraith grows 30% larger AND spins
-// 30% faster. _phantomV2_packBuffsActive() is the single source of truth;
+// Pack Hunters: at 3+ wraiths alive, each wraith grows 40% larger AND spins
+// 40% faster. _phantomV2_packBuffsActive() is the single source of truth;
 // sizeMul/spinMul both read from it so the flash gate only fires once.
 function _phantomV2_packBuffsActive() {
   return rankOf('phantomV2_packHunters') >= 1 && _phantomV2_wraiths.length >= 3;
 }
 function _phantomV2_wraithSpinMul() {
-  return _phantomV2_packBuffsActive() ? 1.3 : 1.0;
+  return _phantomV2_packBuffsActive() ? 1.4 : 1.0;
 }
 function _phantomV2_wraithSizeMul() {
   if (_phantomV2_packBuffsActive()) {
@@ -11251,7 +11912,7 @@ function _phantomV2_wraithSizeMul() {
       _phantomV2_packHuntersFlashGate = Date.now();
       _phantomV2_addFlash('PACK HUNTERS', '210,150,255');
     }
-    return 1.3;
+    return 1.4;
   }
   return 1.0;
 }
@@ -11678,11 +12339,12 @@ function _phantomV2_capstoneLordOfTheDeadOnBurst() {
   _phantomV2_capstoneLockoutUntil = now + Math.max(4000, cascadeMs);
   triggerHitstop(80);
   addShake(18);
-  // v1.9.0 SFX: the capstone arming gets a spectral scream wail over the
-  // existing hyperspeed + ghost layers; the per-wraith impacts that follow add
-  // the pitch-staggered cascade via _phantomV2_wraithDetonationSfx.
+  // v1.9.0 SFX: the capstone arming plays the dedicated LOTD.mp3 cue (kept
+  // intentionally LOW) over the existing hyperspeed + ghost layers; the
+  // per-wraith impacts that follow add the pitch-staggered cascade via
+  // _phantomV2_wraithDetonationSfx.
   _phantomV2_lordImpactPitchIdx = 0; // restart the cascade pitch sweep
-  try { SFX.playSfxBuffer('scream', 0.22, 0.72); } catch {} // v1.9.0: deeper + quieter
+  try { SFX.playSfxBuffer('lotd', 0.18); } catch {} // v1.9.0: dedicated capstone cue, low volume
   try { SFX.pickup('hyperspeed', { stacks: hyperSpeedStacks }); } catch {}
   try { SFX.pickup('ghost'); } catch {}
   _phantomV2_addFlash('LORD OF THE DEAD', '210,150,255', 1200);
@@ -13262,12 +13924,13 @@ function slipstreamProc() {
   // 1-6% rank rates at FIX W8, Slipstream is now a rare spike, not a loop.
   if (now < slipstreamNextProcTime) { treeLog('slipstream: cooldown-blocked'); return; }
   // Slipstream-sourced hyperspeed is NOT a natural pickup — Infinite Gate
-  // won't trigger from it (source='slipstream').
+  // won't trigger from it (source='slipstream'). v1.9.0 rework: single stack
+  // (below cap → +1 stack & timer refresh; at max → pure timer refresh).
   activateHyperspeed(undefined, undefined, 'slipstream');
-  if (activeOrb === 'nebula' || rainbowRunActive) activateHyperspeed(undefined, undefined, 'slipstream');
   spawnDestroyProcFlash('hyperspeed');
+  if (activeOrb === 'nebula') _nebula_flash('slipstream', 'SLIPSTREAM', NEBULA_PATH_COLORS.duration, 0);
   slipstreamNextProcTime = now + 15000;
-  treeLog('slipstream: +' + ((activeOrb === 'nebula' || rainbowRunActive) ? 2 : 1) + ' stack (15s CD)');
+  treeLog('slipstream: +1 stack / refresh (15s CD)');
 }
 
 // v1.8.0 rework: Bastion II is now a duration-extension proc — on body
@@ -13382,15 +14045,20 @@ function tickCapstoneTimers() {
   // (both gate on source === 'natural'). Stacks are jumped straight to cap-1
   // so the single activateHyperspeed call lands at max stacks (one whoosh
   // restart + one Sentry breadcrumb instead of N).
-  if (activeOrb === 'nebula' && hasCapstone('eventHorizon')) {
+  if (activeOrb === 'nebula' && rankOf('eventHorizon')) {
     if (now >= lingeringHorizonNextFireTime) {
+      // v1.9.0 rework: also grow the max stack cap +1/90s (stacks freely with
+      // Lightspeed's +1/90s; the SUM is clamped to NEBULA_MAX_CAP_CEILING).
+      const curCap = 2 + rankOf('overdrive') * 2 + rankOf('superluminal') + (nebulaLightspeedCapBonus | 0) + (nebulaLingeringCapBonus | 0);
+      if (curCap < NEBULA_MAX_CAP_CEILING) nebulaLingeringCapBonus++;
       const cap = HYPERSPEED_MAX_STACKS();
       hyperSpeedStacks = Math.max(hyperSpeedStacks, cap - 1);
       activateHyperspeed(undefined, undefined, 'lingeringHorizon');
       shakeCapstone('lingeringHorizon');
       lingeringHorizonLastFireTime = now;
       lingeringHorizonNextFireTime = now + LINGERING_HORIZON_CYCLE_MS;
-      treeLog('lingeringHorizon: auto full-stack hyperspeed (stacks ' + hyperSpeedStacks + ')');
+      _nebula_flash('lingeringHorizon', 'LINGERING HORIZON', NEBULA_PATH_COLORS.duration, 0);
+      treeLog('lingeringHorizon: auto full-stack hyperspeed + cap-grow (stacks ' + hyperSpeedStacks + ', cap ' + cap + ')');
     }
   }
 }
@@ -13453,30 +14121,20 @@ function checkDestroyProc(body, source) {
     if (rankOf('halo') > 0 && source === 'nova' && Math.random() < 0.10) haloNovaProc(body.x, body.y);
   }
   if (activeOrb === 'nebula' || rainbowRunActive) {
-    const r = rankOf('slipstream');
-    // v1.6.3 FIX W8: Slipstream nerfed to 1/2/3/4/6% (was 2/4/6/8/10%).
-    const slipChances = [0.01, 0.02, 0.03, 0.04, 0.06];
-    if (r > 0 && Math.random() < slipChances[r - 1]) slipstreamProc();
-    // v1.6.4 Momentum (Warp Drift T1, key 'smoothEntry' for save-compat):
-    // every body destroyed during ACTIVE hyperspeed shaves a % of the
-    // Warp burst base off the live cooldown. Source-agnostic — barrier
-    // kills, ghost-combo kills, EMP, nova, manual contact during a
-    // ghost combo all count, as long as activeEffects.hyperspeed > 0.
-    // Lingering Horizon (the v1.6.3 90 s auto full-stack) sets
-    // activeEffects.hyperspeed normally so its kills also count, which
-    // matches the prompt's "active hyperspeed" gate (the v1.6.3 rework
-    // removed the post-hyperspeed echo phase; only active hyperspeed
-    // remains as a state).
-    // v1.6.6: Momentum reverted to -0.1/-0.2/-0.3 % per kill (was -0.05/
-    // -0.1/-0.2 % from the v1.7.0 nerf).
-    const momRank = rankOf('smoothEntry');
-    if (momRank > 0 && activeEffects.hyperspeed > 0
-        && burstCooldownEnd > Date.now()) {
-      const pct = [0.001, 0.002, 0.003][momRank - 1] || 0;
-      const reduce = Math.floor(pct * BURST_COOLDOWN_MS);
-      if (reduce > 0) {
-        burstCooldownEnd = Math.max(Date.now(), burstCooldownEnd - reduce);
-      }
+    // Slipstream (Warp Duration T1) v1.9.0 rework: single-rank 6% per destroy.
+    if (rankOf('slipstream') > 0 && Math.random() < 0.06) slipstreamProc();
+    // Ramjet (Warp Velocity T1, key 'smoothEntry' for save-compat) v1.9.0:
+    // single-rank −0.3% of the Warp burst base off the live cooldown per body
+    // destroyed during ACTIVE hyperspeed. Passive per-kill stat → no flash.
+    if (rankOf('smoothEntry') > 0 && activeEffects.hyperspeed > 0 && burstCooldownEnd > Date.now()) {
+      const reduce = Math.floor(0.003 * BURST_COOLDOWN_MS);
+      if (reduce > 0) burstCooldownEnd = Math.max(Date.now(), burstCooldownEnd - reduce);
+    }
+    // Critical Velocity (Warp Cap T1) v1.9.0 NEW: while AT max stacks, 10%
+    // chance on body destroyed to detonate a default nova at the kill. 15s CD.
+    if (rankOf('criticalVelocity') > 0 && hyperSpeedStacks >= HYPERSPEED_MAX_STACKS()
+        && activeEffects.hyperspeed > 0 && Math.random() < 0.10) {
+      _nebula_criticalVelocityProc(body.x, body.y);
     }
   }
   if (activeOrb === 'asteroid' || rainbowRunActive) {
@@ -13584,7 +14242,10 @@ let rainbowRunActive = false;
 let rainbowOutcome = null; // 'died' | 'reachedEnd' | null
 
 // Set of capstones unlocked during a Rainbow Orb run.
-const RAINBOW_CAPSTONES = new Set(['superluminal', 'aegis']);
+// v1.9.0 Warp rework: 'superluminal' removed — it is no longer a capstone (it's
+// now a Cap-path support node in the active-budget tree, and rainbow's hyperspeed
+// cap is decoupled to a fixed RAINBOW_HYPERSPEED_CAP independent of the nebula tree).
+const RAINBOW_CAPSTONES = new Set(['aegis']);
 
 // v1.8.0 PART A rebalance: returns rank 1 for any known tree node during
 // the rainbow run (was previously max rank, which made the run feel
@@ -13709,6 +14370,18 @@ function resetTreeNodeState() {
   infiniteGateNextFireTime = 0;
   warpHarmonicNextFireTime = 0;
   afterburnDiscs = [];
+  // v1.9.0 Warp rework: cap-growth bonuses (per-run), instance/rift/critical
+  // velocity state. nebulaLightspeedNextCapTime arms lazily on the first tick.
+  nebulaLightspeedCapBonus = 0;
+  nebulaLingeringCapBonus = 0;
+  nebulaLightspeedNextCapTime = 0;
+  hyperspeedInstanceStart = 0;
+  hyperspeedExtendBudgetUsedMs = 0;
+  nebulaCriticalVelocityNextProc = 0;
+  nebulaRift = null;
+  nebulaRiftNextArm = 0;
+  nebulaRiftFiredThisInstance = false;
+  _nebula_lightspeedEngagedThisInstance = false;
   // Capstone state.
   novaCastKillCount = 0;
   criticalMassCooldownEnd = 0;
@@ -14272,6 +14945,9 @@ const PGS = (() => {
       } else if (orb === 'solar') {
         if (_solarLooksLegacy(aOrb)) aOrb = null;
         if (_solarLooksLegacy(bOrb)) bOrb = null;
+      } else if (orb === 'nebula') {
+        if (_nebulaLooksLegacy(aOrb)) aOrb = null;
+        if (_nebulaLooksLegacy(bOrb)) bOrb = null;
       }
       for (const pKey of Object.keys(def.paths)) {
         const nodes = def.paths[pKey].nodes;
@@ -14940,20 +15616,37 @@ let hyperspeedWhooshNodes = null; // audio nodes for sustained whoosh
 //   SUPERLUMINAL alone     = 6 (4 + 2)
 //   SUPERLUMINAL + OD 1/2  = 7/8 (max possible)
 const HYPERSPEED_MAX_STACKS_DEFAULT = 2;
-const HYPERSPEED_MAX_STACKS_NEBULA = 4;
+const HYPERSPEED_MAX_STACKS_NEBULA = 4;   // legacy constant (no longer the live nebula base after v1.9.0 rework)
+const RAINBOW_HYPERSPEED_CAP = 5;          // rainbow cap decoupled from the (now player-chosen) nebula tree
 function _HYPERSPEED_MAX_STACKS_default() {
-  let base = (activeOrb === 'nebula' || rainbowRunActive) ? HYPERSPEED_MAX_STACKS_NEBULA : HYPERSPEED_MAX_STACKS_DEFAULT;
-  if (activeOrb === 'nebula' || rainbowRunActive) {
-    base += rankOf('overdrive');
-    if (hasCapstone('superluminal')) base += 2;
+  // v1.9.0 Warp rework: baseline advantage removed — unupgraded nebula = generic
+  // orb (cap 2). The Cap (Singularity) tree builds up from 2: Overdrive keystone
+  // +2, Superluminal support +1. Lightspeed / Lingering Horizon grow the cap over
+  // time (+1/90s each, stacking), all clamped to NEBULA_MAX_CAP_CEILING (10).
+  if (activeOrb === 'nebula') {
+    let base = HYPERSPEED_MAX_STACKS_DEFAULT;       // 2
+    base += rankOf('overdrive') * 2;                // Overdrive keystone +2
+    base += rankOf('superluminal');                 // Superluminal support +1
+    base += (nebulaLightspeedCapBonus | 0) + (nebulaLingeringCapBonus | 0);
+    return Math.min(NEBULA_MAX_CAP_CEILING, base);
   }
-  return base;
+  if (rainbowRunActive) return RAINBOW_HYPERSPEED_CAP;
+  return HYPERSPEED_MAX_STACKS_DEFAULT;
 }
 function HYPERSPEED_DURATION() {
-  // Skill tree: Reservoir (+0.5s/rank), Warp-only.
+  // Skill tree: Continuum keystone (Warp Duration path) adds +1.5s (single-rank).
+  // The per-stack extend-on-stack and its +3s/instance ceiling live in
+  // activateHyperspeed (extend budget tracking), not here.
   let base = HYPERSPEED_DURATION_MS;
-  if (activeOrb === 'nebula' || rainbowRunActive) base += 500 * rankOf('reservoir');
+  if (activeOrb === 'nebula') base += 1500 * rankOf('reservoir');
   return base;
+}
+// Hyperspeed barrier half-width — shared by the kill loop and the visual
+// (drawHyperspeedBarrier) so they never disagree. Bow Shock (Warp Velocity T2)
+// adds +30px (60 → 90). The PIXI offscreen canvas (PIXI_HYPER_BARRIER_SIZE) is
+// sized to fit the widest case so the visual never clips at the box edge.
+function hyperBarrierHalfW() {
+  return 60 + ((activeOrb === 'nebula' && rankOf('bowShock')) ? 30 : 0);
 }
 let hyperSpeedStacks = 0;
 // v1.6.3 architectural change: single shared hyperspeed duration timer
@@ -14962,6 +15655,32 @@ let hyperSpeedStacks = 0;
 // and Afterburn discs + Lingering Horizon echo both trigger.
 let hyperspeedEndTime = 0;
 let peakHyperSpeedStacks = 0;
+
+// === NEBULA / WARP rework (v1.9.0) gameplay state ==========================
+// Cap-growth bonuses from the two cap-growth capstones. Both accrue +1 every
+// 90s while their capstone is active and STACK freely (Part-2: intended,
+// ungated); _HYPERSPEED_MAX_STACKS_default clamps the SUM to NEBULA_MAX_CAP_CEILING.
+// Per-run (reset in resetGame). Pause-delta-shifted with the other timers.
+let nebulaLightspeedCapBonus = 0;
+let nebulaLingeringCapBonus = 0;
+let nebulaLightspeedNextCapTime = 0;     // next +1 from Lightspeed (90s cadence)
+// Continuum extend-on-stack: per-hyperspeed-instance budget tracking. Each stack
+// gained while already warping extends the shared timer +0.5s up to +3s/instance.
+let hyperspeedInstanceStart = 0;         // timestamp the current instance began (0 = not active)
+let hyperspeedExtendBudgetUsedMs = 0;    // ms of extend-on-stack spent this instance
+const CONTINUUM_EXTEND_PER_STACK_MS = 500;
+const CONTINUUM_EXTEND_CEILING_MS = 3000;
+// Critical Velocity proc-nova cooldown (Cap T1, 15s).
+let nebulaCriticalVelocityNextProc = 0;
+// Singularity RIFT (Cap capstone): one trigger per hyperspeed instance, 20s CD.
+let nebulaRift = null;                   // { startTime, x, y } while open, else null
+let nebulaRiftNextArm = 0;               // 20s cooldown gate
+let nebulaRiftFiredThisInstance = false; // one-per-instance gate
+let _nebula_lightspeedEngagedThisInstance = false; // Lightspeed flash/feel: once per instance
+const NEBULA_RIFT_LIFE_MS = 2500;
+const NEBULA_RIFT_PULL_RADIUS = 150;
+const NEBULA_RIFT_KILL_RADIUS = 26;
+const NEBULA_LIGHTSPEED_CAP_CYCLE_MS = 90000;
 
 // Shield hitpoints (fortress shield = 2, asteroid orb up to 4). Baseline is 0
 // when no shield is active — pickups add via rawActivate's +1/+2 formula, so
@@ -15076,9 +15795,11 @@ const SFX = (function() {
     tentacle:          './assets/SFX/TENTACLE.mp3',
     heartbeat:         './assets/SFX/HEARTBEAT.mp3',
     mirror:            './assets/SFX/MIRROR.mp3',
+    lotd:              './assets/SFX/LOTD.mp3',
+    rift:              './assets/SFX/RIFT.mp3',
   };
-  const sfxBuffers = { shieldDestroy: null, novaDestroy: null, hyperspeedBarrier: null, scream: null, toothed: null, eruption: null, tentacle: null, heartbeat: null, mirror: null };
-  const sfxLoading = { shieldDestroy: null, novaDestroy: null, hyperspeedBarrier: null, scream: null, toothed: null, eruption: null, tentacle: null, heartbeat: null, mirror: null };
+  const sfxBuffers = { shieldDestroy: null, novaDestroy: null, hyperspeedBarrier: null, scream: null, toothed: null, eruption: null, tentacle: null, heartbeat: null, mirror: null, lotd: null, rift: null };
+  const sfxLoading = { shieldDestroy: null, novaDestroy: null, hyperspeedBarrier: null, scream: null, toothed: null, eruption: null, tentacle: null, heartbeat: null, mirror: null, lotd: null, rift: null };
   let currentTrackName = null;       // null = no track playing
   let currentMusicSource = null;     // active AudioBufferSourceNode
   let currentMusicSourceGain = null; // per-source gain (used for crossfades)
@@ -20084,14 +20805,14 @@ function _activateCombo_default(key, x, y) {
     fortressShield = true;
     activeCombos[key] = { def, deps: ['shield'] };
   }
-  // Warp Harmonic (Warp Drift T3): +N bonus stacks on hyperspeed pair combos.
-  // v1.7.0 rebalance: 20 s → 30 s cooldown between applications.
+  // Warp Harmonic (Warp Cap T1) v1.9.0: single-rank +3 bonus stacks on a
+  // hyperspeed pair combo. 20s cooldown.
   if ((activeOrb === 'nebula' || rainbowRunActive) && (key === 'nova_hyperspeed' || key === 'hyperspeed_ghost' || key === 'hyperspeed_shield')) {
-    const whRank = rankOf('warpHarmonic');
-    if (whRank > 0 && Date.now() >= warpHarmonicNextFireTime) {
-      for (let i = 0; i < whRank; i++) activateHyperspeed(undefined, undefined, 'warp_harmonic');
+    if (rankOf('warpHarmonic') > 0 && Date.now() >= warpHarmonicNextFireTime) {
+      for (let i = 0; i < 3; i++) activateHyperspeed(undefined, undefined, 'warp_harmonic');
       warpHarmonicNextFireTime = Date.now() + 20000;
-      treeLog('warpHarmonic: +' + whRank + ' bonus stacks on ' + key + ' (20s CD)');
+      if (activeOrb === 'nebula') _nebula_flash('warpHarmonic', 'WARP HARMONIC', NEBULA_PATH_COLORS.cap, 0);
+      treeLog('warpHarmonic: +3 bonus stacks on ' + key + ' (20s CD)');
     }
   }
   // Keystone (Drifter Convergence T3): any pair combo rolls for a bonus
@@ -20145,8 +20866,9 @@ function rawActivate(type, x, y) {
     }
   } else if (type === 'hyperspeed') {
     // Natural hyperspeed pickup — source tag enables Infinite Gate.
+    // v1.9.0 Warp rework: baseline double-stack-per-pickup REMOVED — nebula now
+    // grants +1 per pickup like every other orb (generic-orb baseline).
     activateHyperspeed(undefined, undefined, 'natural');
-    if (activeOrb === 'nebula' || rainbowRunActive) activateHyperspeed(undefined, undefined, 'natural');
   } else if (type === 'ghost') {
     // Shadow Regen (Phantom Veil T1) v1.6.6 rework: take the larger of
     // {default reset, additive stack} so the node is strictly non-detrimental.
@@ -20437,17 +21159,22 @@ function spawnEmpRing(x, y, isChain, depth) {
 function computeHyperspeedPeakMult(stacks, peakScale) {
   const normSpd = normalScrollSpeed();
   const s = Math.max(1, stacks || 1);
-  // Skill tree: Thrust scales the two coefficients (3.5 and 6.0) by a
-  // rank-table bonus (Warp-only). v1.6.6: +10/20/30 % → +20/30/40 %.
+  // Blueshift keystone (Warp Velocity): single-rank +40% to the two peak
+  // coefficients (3.5 and 6.0). v1.9.0 rework: was multi-rank Thrust.
   let thrustMult = 1;
-  if (activeOrb === 'nebula' || rainbowRunActive) {
-    thrustMult += ([0.20, 0.30, 0.40][rankOf('thrust') - 1] || 0);
+  if (activeOrb === 'nebula') {
+    thrustMult += 0.40 * rankOf('thrust');
   }
   let basePeak = Math.max(3.5 * thrustMult * s, (6.0 * thrustMult * s) / Math.max(normSpd, 0.01));
-  // Breakaway: at-max-stacks bonus. v1.7.0 rebalance: +25/50/75 % → +15/30/45 %.
-  if (activeOrb === 'nebula' || rainbowRunActive) {
+  if (activeOrb === 'nebula') {
     const cap = HYPERSPEED_MAX_STACKS();
-    if (s >= cap) basePeak *= (1 + ([0.15, 0.30, 0.45][rankOf('breakaway') - 1] || 0));
+    // Breakaway support: at max stacks, ×1.11. v1.9.0 rebalance (was ×1.45) —
+    // derived so a fully-upgraded Blueshift tree only MATCHES a fully-upgraded
+    // Singularity (Cap) tree at the ~3-minute mark. See warp-rework-proposal §9.
+    if (s >= cap && rankOf('breakaway')) basePeak *= 1.11;
+    // Resonant Mass support: each stack beyond the 2nd adds +8% peak velocity —
+    // converts a raised cap directly into speed.
+    if (rankOf('resonantMass')) basePeak *= (1 + 0.08 * Math.max(0, s - 2));
   }
   return basePeak * (peakScale || 1);
 }
@@ -20463,24 +21190,54 @@ function activateHyperspeed(durationOverride, peakScale, source) {
   const durationMs = durationOverride || HYPERSPEED_DURATION();
   const now = Date.now();
   const newEnd = now + durationMs;
-  if (hyperSpeedStacks < HYPERSPEED_MAX_STACKS()) {
+  const cap = HYPERSPEED_MAX_STACKS();
+  // Instance tracking (Warp rework): a "fresh" instance is one where we weren't
+  // already warping. Resets the Continuum extend budget + Singularity per-instance gate.
+  const wasWarping = now < hyperspeedEndTime && hyperSpeedStacks > 0;
+  if (!wasWarping) {
+    hyperspeedInstanceStart = now;
+    hyperspeedExtendBudgetUsedMs = 0;
+    nebulaRiftFiredThisInstance = false;
+    _nebula_lightspeedEngagedThisInstance = false;
+  }
+  const prevStacks = hyperSpeedStacks;
+  if (hyperSpeedStacks < cap) {
     hyperSpeedStacks++;
     if (typeof Sentry !== 'undefined') Sentry.addBreadcrumb({ category: 'hyperspeed', message: 'stacks: ' + hyperSpeedStacks, level: 'info' });
   }
   // Shared-timer reset: always push to newEnd, never shrinks.
   if (newEnd > hyperspeedEndTime) hyperspeedEndTime = newEnd;
-  // Infinite Gate (Warp Endurance T3) v1.6.3 rework: only natural
-  // hyperspeed pickups qualify (not combo-fired, Slipstream, Warp Harmonic,
-  // or DEAD CENTER picks). Gates at 7+ stacks with a 10s cooldown. Adds
-  // +0.5/1/1.5 s at ranks 1-3 to the shared timer.
-  if ((activeOrb === 'nebula' || rainbowRunActive) && source === 'natural' && hyperSpeedStacks >= 5) {
-    const igRank = rankOf('infiniteGate');
-    if (igRank > 0 && now >= infiniteGateNextFireTime) {
-      const bonusMs = [500, 1000, 1500][igRank - 1] || 0;
-      hyperspeedEndTime += bonusMs;
-      infiniteGateNextFireTime = now + 20000;
-      treeLog('infiniteGate: +' + bonusMs + 'ms shared timer (stacks ' + hyperSpeedStacks + ', 20s CD)');
+  // Continuum keystone (Warp Duration): each stack GAINED while already warping
+  // extends the shared timer +0.5s, up to a +3s ceiling per hyperspeed instance.
+  if (activeOrb === 'nebula' && wasWarping && hyperSpeedStacks > prevStacks && rankOf('reservoir')) {
+    const room = CONTINUUM_EXTEND_CEILING_MS - hyperspeedExtendBudgetUsedMs;
+    if (room > 0) {
+      const add = Math.min(CONTINUUM_EXTEND_PER_STACK_MS, room);
+      hyperspeedEndTime += add;
+      hyperspeedExtendBudgetUsedMs += add;
+      _nebula_flash('continuum', 'CONTINUUM', NEBULA_PATH_COLORS.duration, 400);
     }
+  }
+  // Infinite Gate (Warp Duration T2) v1.9.0 re-gate: now fires at MAX stacks
+  // (was literal >=5). Natural pickups only, 20s CD, +1.5s to the shared timer —
+  // and counts against the same per-instance extend ceiling as Continuum.
+  if (activeOrb === 'nebula' && source === 'natural' && hyperSpeedStacks >= cap && rankOf('infiniteGate')) {
+    if (now >= infiniteGateNextFireTime) {
+      const room = CONTINUUM_EXTEND_CEILING_MS - hyperspeedExtendBudgetUsedMs;
+      const bonusMs = Math.min(1500, Math.max(0, room));
+      if (bonusMs > 0) {
+        hyperspeedEndTime += bonusMs;
+        hyperspeedExtendBudgetUsedMs += bonusMs;
+        infiniteGateNextFireTime = now + 20000;
+        _nebula_flash('infiniteGate', 'INFINITE GATE', NEBULA_PATH_COLORS.duration, 0);
+        treeLog('infiniteGate: +' + bonusMs + 'ms shared timer (max stacks ' + hyperSpeedStacks + ', 20s CD)');
+      }
+    }
+  }
+  // Singularity capstone (Warp Cap): on REACHING max stacks, 20% chance to tear
+  // a rift. Once per hyperspeed instance, 20s CD (gates inside the helper).
+  if (activeOrb === 'nebula' && prevStacks < cap && hyperSpeedStacks >= cap && rankOf('singularity')) {
+    _nebula_maybeOpenRift(now);
   }
   if (hyperSpeedStacks > peakHyperSpeedStacks) peakHyperSpeedStacks = hyperSpeedStacks;
 
@@ -21180,13 +21937,13 @@ function checkCollisions() {
   }
   if (_lethal) {
     // Umbral Step (Phantom VEIL): a lethal hit while NOT phasing drops you into
-    // a 1s emergency ghost instead of dying. 30s internal cooldown.
+    // a 1s emergency ghost instead of dying. 90s internal cooldown.
     if ((activeOrb === 'cosmic' || rainbowRunActive) && rankOf('umbralStep') > 0 &&
         activeEffects.ghost <= 0 && Date.now() >= _cosmicUmbralNextTime) {
       const nowU = Date.now();
       ghostEndTime = nowU + 1000;
       activeEffects.ghost = 1000;
-      _cosmicUmbralNextTime = nowU + 40000;
+      _cosmicUmbralNextTime = nowU + 90000;
       _cosmic_addFlash('UMBRAL STEP', COSMIC_PATH_COLORS.veil);
       triggerHitstop(120); addShake(10);
       return false; // cheat death
@@ -21811,12 +22568,25 @@ function _updateCore() {
     activeEffects.hyperspeed = Math.max(0, hyperspeedEndTime - nowMs);
     if (activeEffects.hyperspeed > 0) {
       // Decelerate from peakMult toward 1x over the shared-timer duration.
-      // Afterburn (Warp Velocity T2) was the old decel-slowdown node; per
-      // FIX W2 it has been reworked into landing discs, so the decel curve
-      // no longer consults rankOf('afterburn'). Use the baseline curve.
-      const t_hs_raw = 1 - (activeEffects.hyperspeed / hyperspeedActiveDuration);
-      hyperspeedCurrentMult = hyperspeedPeakMult - (hyperspeedPeakMult - 1) * t_hs_raw;
-      if (hyperspeedCurrentMult < 1.05) hyperspeedCurrentMult = 1;
+      const atMax = hyperSpeedStacks >= HYPERSPEED_MAX_STACKS();
+      if (activeOrb === 'nebula' && atMax && rankOf('lightspeed')) {
+        // Lightspeed capstone: at max stacks the peak NEVER decays — hold top
+        // speed (and a lethal barrier) for the whole instance.
+        hyperspeedCurrentMult = hyperspeedPeakMult;
+        if (!_nebula_lightspeedEngagedThisInstance) {
+          _nebula_lightspeedEngagedThisInstance = true;
+          try { triggerHitstop(40); } catch {}
+          try { addShake(8); } catch {}
+          _nebula_flash('lightspeed', 'LIGHTSPEED', NEBULA_PATH_COLORS.velocity, 0);
+        }
+      } else {
+        // Drag Coefficient (Warp Duration T1): decay 30% slower, so the speed
+        // bleeds off later in the timer.
+        let t_hs_raw = 1 - (activeEffects.hyperspeed / hyperspeedActiveDuration);
+        if (activeOrb === 'nebula' && rankOf('dragCoefficient')) t_hs_raw *= 0.70;
+        hyperspeedCurrentMult = hyperspeedPeakMult - (hyperspeedPeakMult - 1) * t_hs_raw;
+        if (hyperspeedCurrentMult < 1.05) hyperspeedCurrentMult = 1;
+      }
     } else {
       // Shared timer expired → all stacks clear simultaneously.
       hyperspeedCurrentMult = 1;
@@ -21825,13 +22595,34 @@ function _updateCore() {
       hyperSpeedStacks = 0;
       peakHyperSpeedStacks = 0;
       hyperspeedEndTime = 0;
+      // Warp rework: instance ended — clear per-instance gates so the next
+      // hyperspeed re-arms Singularity / Lightspeed / Continuum budget fresh.
+      hyperspeedInstanceStart = 0;
+      hyperspeedExtendBudgetUsedMs = 0;
+      nebulaRiftFiredThisInstance = false;
+      _nebula_lightspeedEngagedThisInstance = false;
       if (hyperspeedWhooshNodes) { try { hyperspeedWhooshNodes.stop(0.5); } catch {} hyperspeedWhooshNodes = null; }
-      // Afterburn (Warp Velocity T2) v1.6.3 rework: launch landing discs.
+      // Afterburn (Warp Velocity support) v1.9.0: single-rank → launch 3 discs.
       let abRankLocal = 0;
       if (activeOrb === 'nebula' || rainbowRunActive) {
         abRankLocal = rankOf('afterburn');
         if (abRankLocal > 0) {
-          scheduleAfterburnDiscs(abRankLocal);
+          scheduleAfterburnDiscs(3);
+          if (activeOrb === 'nebula') _nebula_flash('afterburn', 'AFTERBURN', NEBULA_PATH_COLORS.velocity, 0);
+        }
+        // Reentry (Warp Duration T1) v1.9.0 NEW: drop out of hyperspeed with a
+        // fresh shield to cover the vulnerable exit. Tops up to the non-fortress
+        // cap (2) without stomping an active fortress/asteroid shield.
+        if (activeOrb === 'nebula' && rankOf('reentry')) {
+          if (!fortressShield && shieldHits < 2) {
+            shieldHits = Math.min(2, shieldHits + 1);
+            const reentryMs = SHIELD_DURATION();
+            shieldEndTime = Math.max(shieldEndTime, Date.now() + reentryMs);
+            activeEffects.shield = Math.max(activeEffects.shield, reentryMs);
+            shieldBroken = false;
+            bastion2BonusMs = 0;
+            _nebula_flash('reentry', 'REENTRY', NEBULA_PATH_COLORS.duration, 0);
+          }
         }
       }
       // v1.6.3 Lingering Horizon rework: the 2 s post-hyperspeed forward
@@ -21851,6 +22642,8 @@ function _updateCore() {
   recentNovaFrames = Math.max(0, recentNovaEndTime - Date.now());
   // v1.6.3 capstone auto-fire timers (NIGHT SHADE / SUN FORGE / AEGIS).
   tickCapstoneTimers();
+  // v1.9.0 Warp: Lightspeed cap-growth + Singularity rift pull/destroy.
+  _nebula_tick(Date.now());
   // PHANTOM BLAST aura ends when its end-time passes, even if ghost was extended
   if (activeCombos.nova_ghost && Date.now() >= phantomBlastEndTime) {
     delete activeCombos.nova_ghost;
@@ -22480,13 +23273,10 @@ function _updateCore() {
   // auto-fires a full-stacked hyperspeed every 90 s instead).
   const hyperBarrierActive = (activeEffects.hyperspeed > 0 && hyperspeedCurrentMult > 1.05);
   if (hyperBarrierActive) {
-    // v1.6.4 Momentum rework: barrier reach is fixed at 60 px regardless
-    // of skill ranks. The previous Smooth Entry expansion (80/140/200 px)
-    // let Warp sweep the entire screen during hyperspeed and rack up
-    // disproportionate scores. Momentum (was Smooth Entry, same node key)
-    // now contributes via burst-cooldown reduction in checkDestroyProc
-    // instead of barrier expansion.
-    const barrierHalfW = 60;
+    // Barrier reach: 60px baseline, +30px with Bow Shock (Warp Velocity T2).
+    // (The old Smooth Entry full-screen expansion stays retired; Bow Shock is a
+    // deliberate, modest +30px — see hyperBarrierHalfW.)
+    const barrierHalfW = hyperBarrierHalfW();
     const bSurvivors = [];
     let barrierKillCount = 0;
     for (const b of bodies) {
@@ -26008,6 +26798,61 @@ function emitOrbTrailUnlocked(orb, intensity, sizeMul, alphaMul, px, py, bx, by,
         }, ORB_TRAIL_CAP);
       }
     }
+  } else if (orb === 'phantomV2') {
+    // PHANTASM — improved Spectral Wisps. Builds on Phantom's SPECTER'S VEIL
+    // (cosmic) but denser, longer-lived, and layered: each emit drops a couple
+    // of soft base wisps PLUS an occasional bright "spark" highlight, and a
+    // faint orb-shaped afterimage trails behind even outside Eternal Phantom
+    // (more frequent + brighter during it). Ghost thickens the ink; Eternal
+    // Phantom (ghost_ghost) makes it billow.
+    const eternal = !!activeCombos.ghost_ghost;
+    const dense = ghostOn;
+    const lifeMs = eternal ? 2800 : (dense ? 1800 : 1400);
+    // Base wisp hue tracks the orb colour (violet); darkens to ink under ghost.
+    const baseHue  = dense ? '110,55,170' : (orbColorRgb || '150,90,230');
+    const sparkHue = dense ? '205,160,255' : '210,170,255';
+    const emitCount = dense ? 3 : 2;
+    for (let i = 0; i < emitCount; i++) {
+      pushCapped(orbTrailParticles, {
+        kind: 'wisp',
+        x: px + (Math.random() - 0.5) * 10,
+        y: py + (Math.random() - 0.5) * 10,
+        vx: bx * (0.22 + Math.random() * 0.5) + (Math.random() - 0.5) * 1.1,
+        vy: by * (0.22 + Math.random() * 0.5) + (Math.random() - 0.5) * 0.55,
+        drift: (Math.random() - 0.5) * 0.24,
+        hue: baseHue,
+        life: 1, size: ((dense ? 5.0 : 3.6) + Math.random() * 3.2) * sizeMul,
+        alphaMul, startTime: nowOt, maxLifeMs: lifeMs,
+      }, ORB_TRAIL_CAP);
+    }
+    // Bright spark wisp — small, brighter, shorter-lived highlight that makes
+    // the trail shimmer (the "improved" read over Phantom's flatter smoke).
+    if (Math.random() < (dense ? 0.6 : 0.4)) {
+      pushCapped(orbTrailParticles, {
+        kind: 'wisp',
+        x: px + (Math.random() - 0.5) * 6,
+        y: py + (Math.random() - 0.5) * 6,
+        vx: bx * 0.3 + (Math.random() - 0.5) * 0.8,
+        vy: by * 0.3 + (Math.random() - 0.5) * 0.5,
+        drift: (Math.random() - 0.5) * 0.16,
+        hue: sparkHue,
+        life: 1, size: (1.6 + Math.random() * 1.6) * sizeMul,
+        alphaMul: Math.min(1, alphaMul * 1.25), startTime: nowOt, maxLifeMs: 520,
+      }, ORB_TRAIL_CAP);
+    }
+    // Afterimage orb copies — faint when drifting, frequent + more solid during
+    // Eternal Phantom (mirrors cosmic, but always-on at a lower rate here).
+    const aiEvery = eternal ? 4 : 10;
+    if ((frame % aiEvery) === 0) {
+      pushCapped(orbTrailParticles, {
+        kind: 'afterimage',
+        x: player.x, y: player.y,
+        vx: 0, vy: 0,
+        hue: eternal ? '190,150,255' : '160,110,235',
+        life: 1, size: (PLAYER_R + 2) * sizeMul,
+        alphaMul: alphaMul * (eternal ? 0.7 : 0.45), startTime: nowOt, maxLifeMs: eternal ? 800 : 600,
+      }, ORB_TRAIL_CAP);
+    }
   }
 }
 
@@ -26289,19 +27134,22 @@ function drawOrbTrailParticles(tctx = ctx) {
       const r = p.size * (0.6 + 0.4 * p.life);
       // v1.9.0 polish — pulsating halo for drifterV2 (PRISMATIC PULSE).
       // Draw before the core fill so the bright disc lands on top.
+      // v1.9.0 tuning: glow pulled tighter + dimmer so the orbiting trail
+      // particles stay visually distinct from the player orb (the wide bright
+      // halo blended into the orb and made the two hard to tell apart).
       if (p.pulse) {
         const tNow = Date.now() * 0.004 + (p.pulsePhase || 0);
         const pulseAmt = 0.55 + 0.45 * (0.5 + 0.5 * Math.sin(tNow));
         const prevOp = ctx.globalCompositeOperation;
         ctx.globalCompositeOperation = 'lighter';
-        ctx.globalAlpha = Math.min(1, a * pulseAmt * 0.9);
+        ctx.globalAlpha = Math.min(1, a * pulseAmt * 0.5);
         ctx.fillStyle = `rgba(${p.hue || orbRgb},1)`;
         ctx.beginPath();
-        ctx.arc(p.x, p.y, r * (1.7 + 0.5 * pulseAmt), 0, 6.28);
+        ctx.arc(p.x, p.y, r * (1.3 + 0.35 * pulseAmt), 0, 6.28);
         ctx.fill();
-        ctx.globalAlpha = Math.min(1, a * pulseAmt * 0.45);
+        ctx.globalAlpha = Math.min(1, a * pulseAmt * 0.22);
         ctx.beginPath();
-        ctx.arc(p.x, p.y, r * (2.6 + 0.6 * pulseAmt), 0, 6.28);
+        ctx.arc(p.x, p.y, r * (1.9 + 0.45 * pulseAmt), 0, 6.28);
         ctx.fill();
         ctx.globalAlpha = a;
         ctx.globalCompositeOperation = prevOp;
@@ -27304,7 +28152,9 @@ function updateCapstoneCountdowns() {
   // refactor keeps this ring in sync with the auto-fire cadence — the prior
   // hardcode here desynced the ring from the actual fire time.
   {
-    const owned = (activeOrb === 'nebula' || rainbowRunActive) && hasCapstone('eventHorizon');
+    // v1.9.0 Warp rework: Lingering Horizon is now an active-budget node
+    // (rankOf, nebula-only — capstones no longer fire during rainbow).
+    const owned = activeOrb === 'nebula' && rankOf('eventHorizon') > 0;
     const fireTs = lingeringHorizonNextFireTime || now;
     const elapsed = LINGERING_HORIZON_CYCLE_MS - Math.max(0, fireTs - now);
     const progress = Math.max(0, Math.min(1, elapsed / LINGERING_HORIZON_CYCLE_MS));
@@ -27445,7 +28295,7 @@ function drawHyperspeedBarrier(tctx = ctx) {
   if (activeEffects.hyperspeed <= 0 || hyperspeedCurrentMult <= 1.05) return;
   const intensity = (hyperspeedCurrentMult - 1) / 2; // 0..1
   const barrierY = player.y - 60;
-  const halfW = 60;
+  const halfW = hyperBarrierHalfW();   // Bow Shock widens 60 → 90 (Warp Velocity T2)
 
   const tint = hyperStackTint(hyperSpeedStacks);
   let r = tint.r, g = tint.g, b = tint.b;
@@ -27571,11 +28421,10 @@ function drawHyperStackText(tctx = ctx) {
 
   // v1.6.4 stack-count escalation:
   //   7+ stacks: emphasis tier (brighter color + thicker outline).
-  //   At cap with SUPERLUMINAL owned: replace numeric counter with
-  //     "WARP CORE" label + pulsing glow animation. v1.7.0: gates on
-  //     player's personal cap instead of literal 10 (cap is now additive
-  //     +2 on top of Overdrive, max 8).
-  const hasSuperluminal = activeOrb === 'nebula' && hasCapstone('superluminal');
+  //   At cap with SUPERLUMINAL active: replace numeric counter with
+  //     "WARP CORE" label + pulsing glow animation. v1.9.0: Superluminal is now
+  //     an active-budget Cap-path node (rankOf), cap ceiling raised to 10.
+  const hasSuperluminal = activeOrb === 'nebula' && rankOf('superluminal') > 0;
   const coreLabel = hasSuperluminal && hyperSpeedStacks >= HYPERSPEED_MAX_STACKS();
   const emphasized = hyperSpeedStacks >= 7;
   const label = coreLabel ? 'WARP CORE' : (hyperSpeedStacks + '× HYPERSPEED');
@@ -28270,6 +29119,12 @@ function applyPauseDeltaShift(pauseDelta) {
   if (infiniteGateNextFireTime) infiniteGateNextFireTime += pauseDelta;
   if (warpHarmonicNextFireTime) warpHarmonicNextFireTime += pauseDelta;
   if (hyperspeedEndTime) hyperspeedEndTime += pauseDelta;
+  // v1.9.0 Warp rework timers.
+  if (nebulaLightspeedNextCapTime) nebulaLightspeedNextCapTime += pauseDelta;
+  if (nebulaCriticalVelocityNextProc) nebulaCriticalVelocityNextProc += pauseDelta;
+  if (nebulaRiftNextArm) nebulaRiftNextArm += pauseDelta;
+  if (nebulaRift && nebulaRift.startTime) nebulaRift.startTime += pauseDelta;
+  if (hyperspeedInstanceStart) hyperspeedInstanceStart += pauseDelta;
   for (const d of afterburnDiscs) {
     if (d.launchTime) d.launchTime += pauseDelta;
   }
@@ -30207,6 +31062,29 @@ function drawOrbPreviewUnlocked(particles, orbKey, color, cx, cy, t) {
         pulse: true, pulsePhase: Math.random() * Math.PI * 2,
       });
     }
+  } else if (orbKey === 'phantomV2') {
+    // PHANTASM Spectral Wisps preview — denser, brighter wisps than Phantom's,
+    // with an occasional bright spark highlight drifting up off the orb.
+    if (Math.random() < 0.7) {
+      particles.push({
+        kind: 'wisp', x: cx + (Math.random() - 0.5) * 40,
+        y: cy + 14 + Math.random() * 18,
+        vx: (Math.random() - 0.5) * 0.7, vy: -1.2 - Math.random() * 0.9,
+        drift: (Math.random() - 0.5) * 0.34,
+        life: 1, size: 5.5 + Math.random() * 4.5,
+        hue: color,
+      });
+    }
+    if (Math.random() < 0.4) {
+      particles.push({
+        kind: 'wisp', x: cx + (Math.random() - 0.5) * 22,
+        y: cy + 10 + Math.random() * 14,
+        vx: (Math.random() - 0.5) * 0.5, vy: -1.4 - Math.random() * 0.8,
+        drift: (Math.random() - 0.5) * 0.2,
+        life: 1, size: 2.2 + Math.random() * 1.8,
+        hue: '210,170,255',
+      });
+    }
   }
 
   // Tick + draw the preview pool. Orbit/fragment particles update by angle
@@ -30252,11 +31130,11 @@ function drawOrbPreviewUnlocked(particles, orbKey, color, cx, cy, t) {
         const pulseAmt = 0.55 + 0.45 * (0.5 + 0.5 * Math.sin(tNow));
         const prevOp = ctx.globalCompositeOperation;
         ctx.globalCompositeOperation = 'lighter';
-        ctx.globalAlpha = Math.min(1, baseAlpha * pulseAmt * 0.9);
+        ctx.globalAlpha = Math.min(1, baseAlpha * pulseAmt * 0.5);
         ctx.fillStyle = `rgba(${p.hue || color},1)`;
-        ctx.beginPath(); ctx.arc(p.x, p.y, r * (1.7 + 0.5 * pulseAmt), 0, 6.28); ctx.fill();
-        ctx.globalAlpha = Math.min(1, baseAlpha * pulseAmt * 0.45);
-        ctx.beginPath(); ctx.arc(p.x, p.y, r * (2.6 + 0.6 * pulseAmt), 0, 6.28); ctx.fill();
+        ctx.beginPath(); ctx.arc(p.x, p.y, r * (1.3 + 0.35 * pulseAmt), 0, 6.28); ctx.fill();
+        ctx.globalAlpha = Math.min(1, baseAlpha * pulseAmt * 0.22);
+        ctx.beginPath(); ctx.arc(p.x, p.y, r * (1.9 + 0.45 * pulseAmt), 0, 6.28); ctx.fill();
         ctx.globalAlpha = baseAlpha;
         ctx.globalCompositeOperation = prevOp;
       }

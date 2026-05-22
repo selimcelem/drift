@@ -82,10 +82,11 @@ active-point budget — so build choice, not grind, defines a run.
   effects now trigger at the lower Pressure levels), and **Crescendo** now
   fires at **Pressure ≥ 70** (was > 80). Names, descriptions, on-screen flash
   cues, and the ascending pressure tones updated to match.
-- **Pressure scroll-speed cap lowered to 1.2×** (was 1.3×) and re-tuned to a
-  gentle **+0.2%/pt ramp** — Pressure 50 → 1.1×, Pressure 100 → 1.2× — so the
-  speed eases back toward normal as the counter decays. (Score-per-kill was
-  already +1%/pt no-cap, scaling with the live counter; left unchanged.)
+- **Pressure scroll-speed re-tuned to a smooth +0.3%/pt ramp** (was +0.5%/pt):
+  the multiplier now scales linearly with the live counter — 1.0× at 0, ~1.15×
+  at 50, **1.3× cap at 100** — and eases back toward normal as Pressure decays
+  instead of pinning to the cap by counter 60. (Score-per-kill was already
+  +1%/pt no-cap, scaling with the live counter; left unchanged.)
 
 ### Roamer (drifterV2) — Heartbeat reworked
 - **Heartbeat** no longer tracks no-pickup *time* / auto-fires Fortress. It now
@@ -96,7 +97,16 @@ active-point budget — so build choice, not grind, defines a run.
   flash + heartbeat thump, pulsing cyan rings on the pulled powerups). HUD shows
   `♥ MAGNET` while the window is open.
 
-### Under the hood
+### Trails
+- **Phantasm's unlocked "Spectral Wisps" trail now actually renders** — it was
+  missing an emission branch entirely (equipping it showed no trail). Added an
+  improved take on Phantom's SPECTER'S VEIL: denser, longer-lived violet wisps,
+  an occasional bright spark highlight, and faint orb-shaped afterimages that
+  trail behind (more frequent + brighter during Eternal Phantom). Picker preview
+  added too.
+- **Roamer's Prismatic Pulse trail glow dialled back** — the wide additive halo
+  on the orbiting particles was blending into the player orb, making it hard to
+  tell trail from orb. Pulled the glow tighter and dimmer (in-game + preview).
 - Generalized the active-budget engine into a reusable orb-keyed module
   (`ActiveBudget`) so each future orb rework registers a config instead of
   copy-pasting the system.
