@@ -32,6 +32,20 @@ active-point budget — so build choice, not grind, defines a run.
   to it. One-time migration refunds legacy Phantom investments at the old
   rates (schema-versioned and safe across PGS cloud-merge).
 
+### Inferno (solar) — Halo / Firebrand / burn-zone tuning
+- **Halo** now also has a **10% chance on any nova-related kill to fire a
+  half-size nova at the body** (6s cooldown) — it inherits the old
+  "Firebrand-on-any-destroy" proc, on top of its faster Supernova rings.
+- **Firebrand** reworked: instead of 10% on *any* destroy, it's now **20% on a
+  burn-zone kill**, and **each burn zone can proc it at most once**. Its global
+  6s cooldown is gone (the per-zone cap is the limiter).
+- **Ember Spread**'s spread zones are now flagged so they **can't re-trigger
+  Firebrand**, closing the burn-kill → Firebrand → spread-zone → burn-kill loop.
+- **Burn-zone visuals now match the hitbox** — the flame is drawn at the true
+  kill radius (**55px with Cinder, 40px without**) instead of overshooting it by
+  ~1.7×, so what you see is what kills. Wildfire's description names the 40px
+  default size.
+
 ### Inferno (solar) — full rework
 - Rebuilt as a single-rank / active-budget tree (base 20 / cap 25): 3 paths —
   **PYRE** (stack nova waves), **CORONA** (wider novas + cast cadence), **INFERNO**
@@ -68,6 +82,19 @@ active-point budget — so build choice, not grind, defines a run.
   effects now trigger at the lower Pressure levels), and **Crescendo** now
   fires at **Pressure ≥ 70** (was > 80). Names, descriptions, on-screen flash
   cues, and the ascending pressure tones updated to match.
+- **Pressure scroll-speed cap lowered to 1.2×** (was 1.3×) and re-tuned to a
+  gentle **+0.2%/pt ramp** — Pressure 50 → 1.1×, Pressure 100 → 1.2× — so the
+  speed eases back toward normal as the counter decays. (Score-per-kill was
+  already +1%/pt no-cap, scaling with the live counter; left unchanged.)
+
+### Roamer (drifterV2) — Heartbeat reworked
+- **Heartbeat** no longer tracks no-pickup *time* / auto-fires Fortress. It now
+  counts powerups that **scroll off-screen uncollected** (a "skip"): each skip
+  adds a stack (cap 3) and grabbing any powerup resets the streak. At **3 skips
+  in a row** it opens a **5s window where every powerup — single or pair — is
+  pulled strongly toward you**, mirroring the Drifter's Butterfly Effect (proc
+  flash + heartbeat thump, pulsing cyan rings on the pulled powerups). HUD shows
+  `♥ MAGNET` while the window is open.
 
 ### Under the hood
 - Generalized the active-budget engine into a reusable orb-keyed module

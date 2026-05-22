@@ -213,15 +213,15 @@ scoring meta, and combo rewrites. Three capstones.
 | Tier | Node | Effect |
 |---|---|---|
 | T1 | Solar Flare | Nova ring lethal radius +**10 / 20 / 30 %** (360 px baseline) |
-| T2 | Halo | Supernova radiusMult step coefficient 0.10 → 0.133 / 0.167 / 0.20 |
+| T2 | Halo | Supernova radiusMult step coefficient +0.10 (single-rank). **v1.9.0:** also a 10% chance on any nova-related kill (`source === 'nova'`) to fire a single half-size nova ring at the body, on a 6 s global cooldown — the old Firebrand-on-any-destroy proc, relocated here |
 | T3 | Coronal Hold | Each nova kill reduces burst cooldown by **0.25 / 0.50 / 1 %** of base (v1.6.4 buff: 0.05 / 0.10 / 0.50 % → 0.25 / 0.50 / 1 %). At rank 3 with the 30 s burst base, that's 300 ms shaved per nova kill |
 
 ### Inferno
 
 | Tier | Node | Effect |
 |---|---|---|
-| T1 | Cinder | Nova-killed bodies leave a 3 s, 60 px burn zone at the kill position (world-static, no scroll; v1.6.4: 2 s → 3 s, brighter visuals). **10 / 20 / 30 %** proc |
-| T2 ⚡ | Firebrand | On body destroyed, chance to fire a single half-size nova ring at the body position (3 s cooldown). **2 / 4 / 6 / 8 / 10 %** |
+| T1 | Cinder | Burn zones (spawned by Wildfire on 30% of nova kills) last 3 s and burn 55 px wide, up from the 40 px / 2 s default. World-static, no scroll. **v1.9.0:** the flame is now drawn at the true hitbox radius (55 px with Cinder, 40 px without) instead of overshooting it ~1.7× — what you see is what kills |
+| T2 ⚡ | Firebrand | **v1.9.0:** 20% chance on a *burn-zone kill* (no longer on any destroy) to fire a single half-size nova ring at the body; each burn zone can proc this at most once (per-zone cap replaces the old global cooldown). Ember Spread's spread zones are flagged `_noFirebrand` so they can't re-trigger Firebrand (closes the burn → nova → burn loop) |
 | T3 | Combustion | Each nova cast adds +1 to a bonus-wave counter; counter consumed by the next nova within 2 s. 15 s cooldown. Cap **+1 / +2 / +3** waves |
 
 ### Capstones
@@ -327,7 +327,7 @@ loops.
 |---|---|
 | Siphon (Drifter) | 1.5 s global cooldown |
 | Soulbound (Phantom) | 5 s cooldown; +1 s extension capped at 2× base ghost duration |
-| Firebrand (Inferno) | 3 s cooldown; respects nova-overload guard so it can't fire while a nova-flavored combo is live (SUN FORGE bypasses; Firebrand does not) |
+| Firebrand (Inferno) | **v1.9.0:** fires only on burn-zone kills, capped at one proc per burn zone (global cooldown removed). Ember Spread's spread zones flagged `_noFirebrand` to break the burn → nova → burn loop. The relocated nova-on-kill proc now lives on **Halo** with a 6 s global cooldown |
 | Slipstream (Warp) | 20 s cooldown (v1.6.4: 15 s → 20 s) |
 | Bastion II (Bulwark) | EMP-chain-source destroys flagged `source: 'emp'` and excluded from the proc roll (breaks the PHALANX + Bastion II infinite loop). Overflow at shield cap converts proc to +0.5 s duration |
 

@@ -5526,8 +5526,8 @@ const TREE_DEFS = {
             desc: 'Your novas burn +10% wider still (stacks with Corona).',
             effect: r => r ? '+10% nova radius' : 'Locked' },
           { key: 'halo', name: 'Halo', tier: 2, max: 1, costOverride: [4500], pointCost: 3,
-            desc: 'Your Supernova waves grow faster — each ring sweeps wider than the last.',
-            effect: r => r ? 'Supernova rings grow faster' : 'Locked' },
+            desc: 'Your Supernova waves grow faster — each ring sweeps wider than the last. Also a 10% chance on any nova-related kill to fire a half-size nova at the body (6s cooldown).',
+            effect: r => r ? 'Faster Supernova rings · 10% kill → proc nova' : 'Locked' },
           { key: 'coronalHold', name: 'Coronal Hold', tier: 1, max: 1, costOverride: [2500], pointCost: 2,
             desc: 'Every nova kill shaves an extra 0.5% (~0.15s) off your burst cooldown, stacking with Corona (1% / ~0.30s per kill together).',
             effect: r => r ? '−0.5% burst CD / nova kill' : 'Locked' },
@@ -5543,16 +5543,16 @@ const TREE_DEFS = {
         name: 'INFERNO',
         nodes: [
           { key: 'wildfire', name: 'Wildfire', tier: 3, max: 1, costOverride: [6000], pointCost: 5,
-            desc: 'KEYSTONE. 30% of your nova kills leave a burning zone on the ground that destroys anything that touches it. Light it, then let it spread.',
-            effect: r => r ? '30% kills → burn zone' : 'Locked' },
+            desc: 'KEYSTONE. 30% of your nova kills leave a 40px burning zone on the ground that destroys anything that touches it. Light it, then let it spread.',
+            effect: r => r ? '30% kills → 40px burn zone' : 'Locked' },
           { key: 'cinder', name: 'Cinder', tier: 1, max: 1, costOverride: [2500], pointCost: 2,
             desc: 'Your burn zones last longer (3s) and burn wider (55px).',
             effect: r => r ? 'Burn zones 3s · 55px' : 'Locked' },
           { key: 'firebrand', name: 'Firebrand', tier: 2, max: 1, costOverride: [4500], pointCost: 3,
-            desc: '10% chance on any destroy to fire a half-size nova at the body. 6s cooldown.',
-            effect: r => r ? '10% / destroy → proc nova' : 'Locked' },
+            desc: '20% chance for a burn-zone kill to fire a half-size nova at the body. Each burn zone can proc this at most once.',
+            effect: r => r ? '20% burn-zone kill → proc nova' : 'Locked' },
           { key: 'emberSpread', name: 'Ember Spread', tier: 1, max: 1, costOverride: [2500], pointCost: 2,
-            desc: 'Firebrand’s proc-novas also leave a burn zone where they strike.',
+            desc: 'Firebrand’s proc-novas also leave a burn zone where they strike (that zone can’t re-trigger Firebrand).',
             effect: r => r ? 'Firebrand procs drop burn zones' : 'Locked' },
           { key: 'backdraft', name: 'Backdraft', tier: 1, max: 1, costOverride: [2500], pointCost: 2,
             desc: 'When 5+ burn zones overlap in time, they detonate into half-size novas as they expire instead of just fading out. 10s cooldown.',
@@ -6237,8 +6237,8 @@ TREE_DEFS.drifterV2 = {
           desc: '30% chance per burst to fully reset its own cooldown — burst is immediately ready again.',
           effect: r => r ? '30% full CD reset' : 'Locked' },
         { key: 'drifterV2_heartbeat', name: 'Heartbeat', tier: 1, max: 1, costOverride: [3000], pointCost: 2,
-          desc: '1 stack per 3s of no powerup pickups (cap 3). At max stacks, Fortress Shield fires automatically and stacks reset.',
-          effect: r => r ? 'Auto-Fortress at 3 stacks' : 'Locked' },
+          desc: 'Each powerup that scrolls off uncollected adds 1 stack (cap 3); grabbing any powerup resets stacks. At 3 stacks, every powerup — single or pair — is pulled strongly toward you for 5s.',
+          effect: r => r ? '3 skips → 5s powerup magnet' : 'Locked' },
         { key: 'drifterV2_drumroll', name: 'Drumroll', tier: 3, max: 1, costOverride: [9000], pointCost: 5,
           desc: 'CAPSTONE (5 pts). Every 4th burst automatically fires ALL FOUR pair combos in rapid succession. No gesture, no lockout — pure automatic.',
           effect: r => r ? 'Every 4th burst → all combos' : 'Locked' },
@@ -6274,7 +6274,7 @@ TREE_DEFS.drifterV2 = {
       name: 'PRESSURE',
       nodes: [
         { key: 'drifterV2_pressure', name: 'Pressure', tier: 3, max: 1, costOverride: [6500], pointCost: 5,
-          desc: 'KEYSTONE (5 pts). Per-destroy counter +1 per destroy (cap 100). 2s grace, then rapid falloff (full to zero in 6s). Scroll speed +0.5%/pt (cap 1.3×). Score per kill +1%/pt (no cap). Keep it climbing — pressure was never meant to settle.',
+          desc: 'KEYSTONE (5 pts). Per-destroy counter +1 per destroy (cap 100). 2s grace, then rapid falloff (full to zero in 6s). Scroll speed +0.2%/pt (Pressure 50 → 1.1×, 100 → 1.2× cap; eases back as Pressure falls). Score per kill +1%/pt (no cap). Keep it climbing — pressure was never meant to settle.',
           effect: r => r ? '+1/destroy · scaling' : 'Locked' },
         { key: 'drifterV2_patience', name: 'Patience', tier: 1, max: 1, costOverride: [3000], pointCost: 2,
           desc: 'Grace period extends 2s → 4s before decay starts.',
@@ -9067,9 +9067,15 @@ function _drifterV2_hasPressure() { return isDrifterV2Active() && rankOf('drifte
 
 // === Run state — zeroed by resetGame wrap below ===
 let _drifterV2_lastPickupType = null;
+// v1.9.0 Heartbeat rework: stacks now count powerups that scroll off-screen
+// UNCOLLECTED (a "skip"), not no-pickup time. 3 skips in a row open a 5s window
+// during which every powerup (single or pair) is pulled strongly toward the
+// player — same feel as the cyan Butterfly Effect. Grabbing any powerup resets
+// the skip streak.
 let _drifterV2_heartbeatStacks = 0;
-let _drifterV2_heartbeatPrevStacks = 0; // v1.9.0 SFX: detect stack increments for the pulse tick
-let _drifterV2_lastHeartbeatTick = 0;
+let _drifterV2_heartbeatMagnetUntil = 0;
+const HEARTBEAT_MAGNET_MS = 5000;
+const HEARTBEAT_MAGNET_PULL = 1.6;
 let _drifterV2_lastBurstFireTime = 0;
 let _drifterV2_postBurstHoldStart = 0;
 let _drifterV2_drumrollLockoutUntil = 0;
@@ -9104,8 +9110,7 @@ function _drifterV2_resetRunState() {
   _drifterV2_lastPickupType = null;
   _drifterV2_lastPickupTime = Date.now();
   _drifterV2_heartbeatStacks = 0;
-  _drifterV2_heartbeatPrevStacks = 0;
-  _drifterV2_lastHeartbeatTick = Date.now();
+  _drifterV2_heartbeatMagnetUntil = 0;
   _drifterV2_lastBurstFireTime = 0;
   _drifterV2_postBurstHoldStart = 0;
   _drifterV2_drumrollLockoutUntil = 0;
@@ -9142,29 +9147,30 @@ let _drifterV2_threads = [];
 // Both hooks reset the pickup-gap timer used by Heartbeat, and fire Crescendo's
 // extra pair combo when Pressure > 80.
 const _drifterV2_ALL_PAIR_KEYS = ['shield_shield','nova_nova','ghost_ghost','nova_hyperspeed','nova_ghost','nova_shield','hyperspeed_ghost','hyperspeed_shield','ghost_shield'];
-function _drifterV2_computeHeartbeatStacks() {
-  // Stacks accrue at 1 per 3s of no-pickup activity, cap 3.
-  if (!_drifterV2_lastPickupTime) return 3;
-  const delta = Date.now() - _drifterV2_lastPickupTime;
-  return Math.max(0, Math.min(3, Math.floor(delta / 3000)));
+// v1.9.0 Heartbeat: called when a powerup scrolls off-screen uncollected. Each
+// skip adds a stack; the 3rd skip opens the 5s magnet window and resets stacks.
+// Pairs are counted once (the caller flags the sibling via _skipCounted).
+function _drifterV2_onPowerupSkipped() {
+  if (!(_drifterV2_hasPulse() && rankOf('drifterV2_heartbeat') >= 1)) return;
+  _drifterV2_heartbeatStacks = Math.min(3, _drifterV2_heartbeatStacks + 1);
+  if (_drifterV2_heartbeatStacks < 3) {
+    // Quiet per-stack tick, a building pulse (matches the old stack-tick SFX).
+    try { SFX.playSfxBuffer('heartbeat', 0.15); } catch {}
+  } else {
+    _drifterV2_fireHeartbeatMagnet();
+    _drifterV2_heartbeatStacks = 0;
+  }
 }
-function _drifterV2_fireHeartbeatFortress() {
-  // Treat the consumed pickup as a Fortress Shield grant regardless of original type.
-  shieldEndTime = Date.now() + FORTRESS_SHIELD_DURATION_MS;
-  activeEffects.shield = FORTRESS_SHIELD_DURATION_MS;
-  shieldHits = shieldHitsCap();
-  fortressShield = true;
-  activeCombos.shield_shield = { def: COMBO_DEFS.shield_shield, deps: ['shield'] };
-  // v1.9.0 SFX: the auto-fire at max stacks gets the full heartbeat thump
-  // (the per-stack ticks play it quietly) layered with the shield jingle.
+function _drifterV2_fireHeartbeatMagnet() {
+  // Open a 5s window during which every powerup (single or pair) is pulled
+  // strongly toward the player — same feel as the cyan Butterfly Effect.
+  _drifterV2_heartbeatMagnetUntil = Date.now() + HEARTBEAT_MAGNET_MS;
+  // Full heartbeat thump on proc (the per-stack ticks play it quietly).
   try { SFX.playSfxBuffer('heartbeat', 0.6); } catch {}
-  try { SFX.pickup('shield'); } catch {}
-  // v5: suppress the standard ptCombo banner — Heartbeat doesn't go through
-  // activateCombo (it sets activeCombos directly), but the fallback path in
-  // updatePowerupTimer would still surface "FORTRESS SHIELD" on the bottom
-  // banner. Hide it so the player only sees the HEARTBEAT flash.
-  _drifterV2_suppressBannerBriefly(900);
-  treeLog('heartbeat: pickup converted to Fortress Shield');
+  _drifterV2_addFlash('HEARTBEAT', '125,232,255', 900);
+  // Butterfly-style proc burst centered on the player.
+  try { if (player) emitPickupParticles(player.x, player.y, 'shield'); } catch {}
+  treeLog('heartbeat: 3 skips → 5s powerup magnet');
 }
 // v1.9.0 perf: per-proc cooldown gate. Without it, pair pickups at Pressure
 // >80 fire Crescendo twice each, and rapid sequential pickups could trigger
@@ -9193,17 +9199,17 @@ function _drifterV2_onSinglePickup(type) {
   }
   _drifterV2_lastPickupType = type;
   _drifterV2_lastPickupTime = Date.now();
-  // v4: Heartbeat no longer consumes pickups. It auto-fires Fortress when
-  // stacks reach 3 (driven from the update wrap). Pickups just reset the
-  // no-pickup timer (above) which keeps stacks from incrementing.
-  _drifterV2_heartbeatStacks = _drifterV2_computeHeartbeatStacks();
+  // v1.9.0 Heartbeat: grabbing any powerup resets the skip streak. An open
+  // magnet window keeps running for its full 5s regardless.
+  _drifterV2_heartbeatStacks = 0;
   _drifterV2_maybeFireCrescendo();
   return false;
 }
 function _drifterV2_onPairPickup() {
   if (!isDrifterV2Active()) return;
   _drifterV2_lastPickupTime = Date.now();
-  _drifterV2_heartbeatStacks = _drifterV2_computeHeartbeatStacks();
+  // v1.9.0 Heartbeat: any pickup (incl. pairs) resets the skip streak.
+  _drifterV2_heartbeatStacks = 0;
   // Pair pickups fire TWO extra random pair combos at >80 pressure.
   _drifterV2_maybeFireCrescendo();
   _drifterV2_maybeFireCrescendo();
@@ -9817,7 +9823,10 @@ function _drifterV2_pressureDecayPerMs() {
   return 100 / totalMs;
 }
 function _drifterV2_pressureScrollMult() {
-  return Math.min(1.3, 1 + _drifterV2_pressureCount * 0.005);
+  // Linear ramp keyed to the live (decaying) Pressure counter: +0.2%/pt, so
+  // Pressure 50 → 1.1×, Pressure 100 → 1.2× (hard cap). As Pressure decays the
+  // multiplier falls back toward 1.0× automatically.
+  return Math.min(1.2, 1 + _drifterV2_pressureCount * 0.002);
 }
 // Threshold 75: at Pressure ≥ 75 fires a Firebrand-style half-size nova at
 // the kill site, 3s per-proc cooldown. No % chance — every eligible destroy
@@ -10046,7 +10055,8 @@ function _drifterV2_updateHud() {
   if (_drifterV2_hudHeartbeatEl) {
     const show = _drifterV2_hasPulse() && rankOf('drifterV2_heartbeat') >= 1;
     _drifterV2_hudHeartbeatEl.style.display = show ? 'block' : 'none';
-    _drifterV2_hudHeartbeatEl.textContent = '♥ ' + _drifterV2_heartbeatStacks + '/3';
+    const _hbMag = Date.now() < _drifterV2_heartbeatMagnetUntil;
+    _drifterV2_hudHeartbeatEl.textContent = _hbMag ? '♥ MAGNET' : ('♥ ' + _drifterV2_heartbeatStacks + '/3');
   }
 }
 
@@ -10116,9 +10126,31 @@ OrbHooks.on('onPickup', (type, isPair) => {
   else _drifterV2_onSinglePickup(type);
 });
 
+// v1.9.0 Heartbeat: pulsing cyan rings around every powerup being pulled during
+// the magnet window — mirrors the cyan Butterfly Effect indicator.
+function _drifterV2_drawHeartbeatMagnetRings() {
+  if (state !== 'playing' && state !== 'apocalypse') return;
+  if (Date.now() >= _drifterV2_heartbeatMagnetUntil) return;
+  if (!powerups.length) return;
+  const t = Date.now() * 0.006;
+  ctx.save();
+  ctx.lineWidth = 2;
+  ctx.shadowColor = 'rgba(125,232,255,0.7)';
+  ctx.shadowBlur = 8;
+  for (const p of powerups) {
+    if (p.collected) continue;
+    const ph = p.pulse || 0;
+    const rr = (p.radius || 13) * 1.7 + 3 + Math.sin(t + ph) * 2;
+    ctx.strokeStyle = `rgba(125,232,255,${(0.55 + 0.25 * Math.sin(t + ph)).toFixed(2)})`;
+    ctx.beginPath(); ctx.arc(p.x, p.y, rr, 0, 6.28); ctx.stroke();
+  }
+  ctx.restore();
+}
+
 let _drifterV2_renderHudThrottle = 0;
 OrbHooks.on('onRender', () => {
   _drifterV2_drawThread();
+  _drifterV2_drawHeartbeatMagnetRings();
   // Active-skill flashes — independent of any single tree.
   _drifterV2_drawFlashes();
   // Refresh HUD visibility from render() (which runs every frame regardless of
@@ -10131,28 +10163,12 @@ OrbHooks.on('onRender', () => {
 
 OrbHooks.on('onUpdate', () => {
   if (state !== 'playing' && state !== 'devmode') return;
-  // v4 Heartbeat: stacks computed from no-pickup time. At 3 stacks, auto-fire
-  // Fortress Shield, reset the pickup-time timer so stacks recompute to 0,
-  // and flash "HEARTBEAT" mid-screen.
-  if (_drifterV2_hasPulse() && rankOf('drifterV2_heartbeat') >= 1) {
-    _drifterV2_heartbeatStacks = _drifterV2_computeHeartbeatStacks();
-    // v1.9.0 SFX: each new stack (1, 2) ticks the heartbeat MP3 quietly like a
-    // pulse. The 3rd stack is the auto-Fortress fire, which plays the full
-    // heartbeat thump in _drifterV2_fireHeartbeatFortress instead.
-    if (_drifterV2_heartbeatStacks > _drifterV2_heartbeatPrevStacks && _drifterV2_heartbeatStacks < 3) {
-      try { SFX.playSfxBuffer('heartbeat', 0.15); } catch {}
-    }
-    _drifterV2_heartbeatPrevStacks = _drifterV2_heartbeatStacks;
-    if (_drifterV2_heartbeatStacks >= 3) {
-      _drifterV2_fireHeartbeatFortress();
-      _drifterV2_addFlash('HEARTBEAT', '125,232,255');
-      _drifterV2_lastPickupTime = Date.now(); // reset stack accumulator
-      _drifterV2_heartbeatStacks = 0;
-      _drifterV2_heartbeatPrevStacks = 0;
-    }
-  } else {
+  // v1.9.0 Heartbeat: stacks are driven by powerups scrolling off uncollected
+  // (see the powerup scroll loop) and reset on pickup; the magnet window
+  // expires on its own timestamp. Nothing to tick here beyond zeroing stacks
+  // when the node isn't equipped (e.g. after a respec).
+  if (!(_drifterV2_hasPulse() && rankOf('drifterV2_heartbeat') >= 1)) {
     _drifterV2_heartbeatStacks = 0;
-    _drifterV2_heartbeatPrevStacks = 0;
   }
   // Pressure decay (after grace).
   _drifterV2_tickPressureDecay();
@@ -13045,7 +13061,10 @@ loadTreeState();
 // scheduled for a dedicated pass; the particle burst is the minimum cue.
 const TREE_PROC_CHANCES = [0.02, 0.04, 0.06, 0.08, 0.10];
 let lastSiphonProc = 0;
-let lastFirebrandProc = 0;
+// v1.9.0: Halo inherited the old Firebrand "proc a half-nova on a kill" mechanic
+// (now gated to nova-related kills, 6s cooldown). Firebrand moved to burn-zone
+// kills and is limited per-zone, so it no longer needs a global cooldown var.
+let lastHaloProc = 0;
 // Second Flame (Inferno Pyre T3) v1.6.3: internal 3 s cooldown between
 // bonus-wave triggers — prevents nova→Second Flame→Firebrand-style chains.
 let secondFlameNextFireTime = 0;
@@ -13179,16 +13198,12 @@ function secondFlameRollForCast(source, px, py, waveCount, isSupernova) {
   secondFlamePending.push(id);
 }
 
+// v1.9.0 rework: Firebrand now fires ONLY from burn-zone kills (the burn-zone
+// sweep gates it at 20% per kill, at most once per zone), so the old global 6s
+// cooldown is gone — the per-zone cap is the limiter. Fires a single half-size
+// nova ring at the destroyed body's position; never a supernova ring.
 function firebrandProc(bodyX, bodyY) {
   const now = Date.now();
-  // 6 s per-proc cooldown (Inferno nerf).
-  if (now - lastFirebrandProc < 6000) { treeLog('firebrand: cooldown-blocked'); return; }
-  // v1.6.3 rework: fires a single half-size nova ring at the destroyed
-  // body's position (not a full fireTripleNova at player). Always a
-  // non-supernova ring regardless of current combo state; no wave cascade.
-  // Second Flame roll still runs (source='firebrand_proc', eligible — the
-  // earlier exclusion reverted in this pass). If SF rolls, its bonus wave
-  // also fires at the body position.
   const px = (typeof bodyX === 'number') ? bodyX : player.x;
   const py = (typeof bodyY === 'number') ? bodyY : player.y;
   pushNovaRingCapped({
@@ -13204,16 +13219,41 @@ function firebrandProc(bodyX, bodyY) {
   secondFlameRollForCast('firebrand_proc', px, py);
   recentNovaEndTime = now + 1500;
   recentNovaFrames = 1500;
-  lastFirebrandProc = now;
   spawnDestroyProcFlash('nova');
-  // Ember Spread (Inferno support): Firebrand's proc-novas also drop a burn zone.
+  // Ember Spread (Inferno support): Firebrand's proc-novas also drop a burn
+  // zone. Flag it _noFirebrand so this spread zone can't itself proc Firebrand
+  // — otherwise burn-kill → Firebrand → spread zone → burn-kill loops forever.
   if (rankOf('emberSpread') > 0 && rankOf('wildfire') > 0) {
     const big = rankOf('cinder') > 0;
-    burnZones.push({ x: px, y: py, radius: big ? 55 : 40, startTime: now, lifeMs: big ? 3000 : 2000 });
+    burnZones.push({ x: px, y: py, radius: big ? 55 : 40, startTime: now, lifeMs: big ? 3000 : 2000, _noFirebrand: true });
     if (burnZones.length > BURN_ZONE_CAP) burnZones.shift();
   }
   _solar_flash('firebrand', 'FIREBRAND', SOLAR_PATH_COLORS.inferno, 600);
-  treeLog('firebrand: single half-ring at ' + Math.round(px) + ',' + Math.round(py));
+  treeLog('firebrand: burn-zone proc half-ring at ' + Math.round(px) + ',' + Math.round(py));
+}
+
+// v1.9.0: Halo (Corona T2) inherits the old Firebrand-on-any-destroy mechanic,
+// now restricted to nova-related kills. 10% per eligible kill, 6s global
+// cooldown to keep dense supernova barrages from flooding proc novas. Fires a
+// single half-size nova ring at the body. Does NOT drop burn zones (Ember
+// Spread is Firebrand-only), so there is no burn-loop concern here.
+function haloNovaProc(bodyX, bodyY) {
+  const now = Date.now();
+  if (now - lastHaloProc < 6000) { treeLog('halo: cooldown-blocked'); return; }
+  const px = (typeof bodyX === 'number') ? bodyX : player.x;
+  const py = (typeof bodyY === 'number') ? bodyY : player.y;
+  pushNovaRingCapped({
+    x: px, y: py, radius: 0, life: 1, prevR: 0,
+    startTime: now, sizeMult: 0.5,
+  });
+  emitNovaSpecks(px, py);
+  SFX.pickup('nova');
+  recentNovaEndTime = now + 1500;
+  recentNovaFrames = 1500;
+  lastHaloProc = now;
+  spawnDestroyProcFlash('nova');
+  _solar_flash('halo', 'HALO', SOLAR_PATH_COLORS.corona, 600);
+  treeLog('halo: half-ring at ' + Math.round(px) + ',' + Math.round(py));
 }
 
 function slipstreamProc() {
@@ -13406,7 +13446,11 @@ function checkDestroyProc(body, source) {
     if (r > 0 && Math.random() < 0.10) { soulboundProc(); _cosmic_flash('soulbound', 'SOULBOUND', COSMIC_PATH_COLORS.veil, 800); } // single-rank 10%
   }
   if (activeOrb === 'solar' || rainbowRunActive) {
-    if (rankOf('firebrand') > 0 && Math.random() < 0.10) firebrandProc(body.x, body.y); // single-rank 10%
+    // Halo: 10% chance on a nova-related kill to fire a half-size proc nova
+    // (ported from the old Firebrand-on-any-destroy mechanic). Firebrand itself
+    // now procs only on burn-zone kills (handled in the burn-zone sweep), so
+    // it's no longer rolled from the generic destroy path.
+    if (rankOf('halo') > 0 && source === 'nova' && Math.random() < 0.10) haloNovaProc(body.x, body.y);
   }
   if (activeOrb === 'nebula' || rainbowRunActive) {
     const r = rankOf('slipstream');
@@ -13658,7 +13702,7 @@ function resetTreeNodeState() {
   for (const id of secondFlamePending) clearTimeout(id);
   secondFlamePending = [];
   secondFlameNextFireTime = 0;
-  lastFirebrandProc = 0;
+  lastHaloProc = 0;
   soulboundNextProcTime = 0;
   slipstreamNextProcTime = 0;
   phantomBladeNextTickTime = 0;
@@ -22023,6 +22067,14 @@ function _updateCore() {
             addDestroyPoints();
             SFX.planetDestroyed('nova');
             checkDestroyProc(b, 'nova');
+            // Firebrand (Inferno T2): a burn-zone kill has a 20% chance to fire
+            // a half-size nova at the body, at most ONCE per burn zone. Ember
+            // Spread zones (_noFirebrand) are excluded to avoid an endless loop.
+            if (!z._noFirebrand && !z._firebrandProced && rankOf('firebrand') > 0 &&
+                (activeOrb === 'solar' || rainbowRunActive) && Math.random() < 0.20) {
+              z._firebrandProced = true;
+              firebrandProc(b.x, b.y);
+            }
             releaseBodyCanvases(b);
             break;
           }
@@ -22111,6 +22163,9 @@ function _updateCore() {
   // a touch more time to grab them, regardless of game speed.
   const powerupScrollSpeed = spd * 0.65 * dtScale;
   const _cyanButterfly = (activeOrb === 'cyan' && rankOf('butterfly') > 0);
+  // Roamer Heartbeat magnet: while the 5s window is open, every powerup is
+  // pulled strongly toward the player (single & pairs), like Butterfly Effect.
+  const _hbMagnet = (Date.now() < _drifterV2_heartbeatMagnetUntil);
   for (const p of powerups) {
     p.y += powerupScrollSpeed;
     p.pulse += 0.11;
@@ -22120,10 +22175,13 @@ function _updateCore() {
       p.bf = _cyanButterfly && Math.random() < 0.30;
       if (p.bf) { emitPickupParticles(p.x, p.y, p.type); _cyan_flash('butterfly', 'BUTTERFLY', CYAN_PATH_COLORS.convergence, 600); }
     }
-    if (p.bf && !p.collected) {
+    // Pull powerups toward the player when butterflied (cyan capstone) OR while
+    // the Roamer's Heartbeat magnet window is open. The magnet pulls every
+    // powerup, a touch stronger than Butterfly.
+    if (!p.collected && (p.bf || _hbMagnet)) {
       const _bdx = player.x - p.x, _bdy = player.y - p.y;
       const _bd = Math.max(10, Math.sqrt(_bdx * _bdx + _bdy * _bdy));
-      const _bpull = 1.0 * dtScale;
+      const _bpull = (_hbMagnet ? HEARTBEAT_MAGNET_PULL : 1.0) * dtScale;
       p.x += (_bdx / _bd) * _bpull;
       p.y += (_bdy / _bd) * _bpull;
     }
@@ -22160,6 +22218,16 @@ function _updateCore() {
       p.collected = true;
       q.collected = true;
       activatePair(p, q);
+    }
+  }
+  // Heartbeat (Roamer): a powerup that scrolls off the bottom uncollected is a
+  // "skip". Count each one (a pair counts once — flag its sibling so it isn't
+  // double-counted) so 3 skips in a row arm the magnet window.
+  if (_drifterV2_hasPulse() && rankOf('drifterV2_heartbeat') >= 1) {
+    for (const p of powerups) {
+      if (p.collected || p.y < H + 30 || p._skipCounted) continue;
+      if (p.pairSibling) p.pairSibling._skipCounted = true;
+      _drifterV2_onPowerupSkipped();
     }
   }
   powerups = powerups.filter(p => !p.collected && p.y < H + 30);
@@ -26958,21 +27026,26 @@ function drawBurnZones() {
     const fade = (age > life - 400) ? Math.max(0, (life - age) / 400) : Math.min(1, age / 150);
     const R = z.radius;
     const seed = (z.startTime | 0);
-    // Main fireball glow — pulsing radius.
-    const pulse = 1 + 0.14 * Math.sin(now * 0.013 + seed);
-    const rr = R * 1.5 * pulse;
+    // v1.9.0: the visible flame now matches the actual hitbox (z.radius — 55px
+    // with Cinder, 40px without) instead of overshooting it by ~1.7×. The
+    // outermost transparent gradient stop sits at R, with only a tiny radius
+    // pulse, so what you see is what kills.
+    const pulse = 1 + 0.05 * Math.sin(now * 0.013 + seed);
+    const rr = R * pulse;
     const mg = ctx.createRadialGradient(z.x, z.y, 0, z.x, z.y, rr);
-    mg.addColorStop(0,    `rgba(255,245,200,${(0.85 * fade).toFixed(2)})`);
-    mg.addColorStop(0.35, `rgba(255,160,50,${(0.7 * fade).toFixed(2)})`);
-    mg.addColorStop(0.7,  `rgba(255,90,25,${(0.4 * fade).toFixed(2)})`);
+    mg.addColorStop(0,    `rgba(255,245,200,${(0.9 * fade).toFixed(2)})`);
+    mg.addColorStop(0.45, `rgba(255,160,50,${(0.75 * fade).toFixed(2)})`);
+    mg.addColorStop(0.8,  `rgba(255,90,25,${(0.45 * fade).toFixed(2)})`);
     mg.addColorStop(1,    'rgba(255,60,20,0)');
     ctx.fillStyle = mg;
     ctx.beginPath(); ctx.arc(z.x, z.y, rr, 0, 6.28); ctx.fill();
-    // Churning sub-globs — orbit/wobble for an animated, alive flame.
+    // Churning sub-globs — orbit/wobble for an animated, alive flame. Kept well
+    // inside R (max reach ≈ 0.3R offset + 0.55R radius ≈ 0.85R) so they don't
+    // push the apparent footprint past the hitbox.
     for (let i = 0; i < 3; i++) {
       const a = now * 0.004 * (i + 1) + i * 2.1 + seed;
-      const ox = Math.cos(a) * R * 0.4, oy = Math.sin(a * 1.3) * R * 0.4;
-      const sr = R * (0.55 + 0.2 * Math.sin(now * 0.02 + i + seed));
+      const ox = Math.cos(a) * R * 0.3, oy = Math.sin(a * 1.3) * R * 0.3;
+      const sr = R * (0.4 + 0.15 * Math.sin(now * 0.02 + i + seed));
       const sg = ctx.createRadialGradient(z.x + ox, z.y + oy, 0, z.x + ox, z.y + oy, sr);
       sg.addColorStop(0,   `rgba(255,225,150,${(0.5 * fade).toFixed(2)})`);
       sg.addColorStop(0.6, `rgba(255,140,40,${(0.25 * fade).toFixed(2)})`);
@@ -26980,13 +27053,13 @@ function drawBurnZones() {
       ctx.fillStyle = sg;
       ctx.beginPath(); ctx.arc(z.x + ox, z.y + oy, sr, 0, 6.28); ctx.fill();
     }
-    // Rising embers.
+    // Rising embers — kept within the zone footprint (climb capped at ~R).
     ctx.fillStyle = 'rgba(255,210,120,1)';
     for (let i = 0; i < 5; i++) {
       const s = seed + i * 71;
-      const ex = z.x + Math.cos(s) * R * 0.5 + Math.sin(now * 0.004 + i) * 3;
-      const climb = (age * 0.05 + i * 14) % (R * 1.6);
-      ctx.globalAlpha = 0.85 * fade * Math.max(0, 1 - climb / (R * 1.6));
+      const ex = z.x + Math.cos(s) * R * 0.45 + Math.sin(now * 0.004 + i) * 3;
+      const climb = (age * 0.05 + i * 14) % R;
+      ctx.globalAlpha = 0.85 * fade * Math.max(0, 1 - climb / R);
       const sz = 1.4 + (s % 2);
       ctx.fillRect(ex - sz / 2, z.y - climb - sz / 2, sz, sz);
       ctx.globalAlpha = 1;
@@ -28187,7 +28260,7 @@ function applyPauseDeltaShift(pauseDelta) {
   if (combustionNextConsumeTime) combustionNextConsumeTime += pauseDelta;
   if (conflagrationNextApplyTime) conflagrationNextApplyTime += pauseDelta;
   if (secondFlameNextFireTime) secondFlameNextFireTime += pauseDelta;
-  if (lastFirebrandProc) lastFirebrandProc += pauseDelta;
+  if (lastHaloProc) lastHaloProc += pauseDelta;
   if (soulboundNextProcTime) soulboundNextProcTime += pauseDelta;
   if (slipstreamNextProcTime) slipstreamNextProcTime += pauseDelta;
   if (phantomBladeNextTickTime) phantomBladeNextTickTime += pauseDelta;
@@ -28217,6 +28290,7 @@ function applyPauseDeltaShift(pauseDelta) {
   if (_cyanLastDiceReset) _cyanLastDiceReset += pauseDelta;
   if (fortuneFavorsNextProcTime) fortuneFavorsNextProcTime += pauseDelta;
   if (butterflyEffectNextProcTime) butterflyEffectNextProcTime += pauseDelta;
+  if (_drifterV2_heartbeatMagnetUntil) _drifterV2_heartbeatMagnetUntil += pauseDelta;
   for (const v of butterflyEffectVisuals) {
     if (v.startTime !== undefined) v.startTime += pauseDelta;
   }
