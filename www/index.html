@@ -7880,6 +7880,12 @@ function isAsteroidActive()             { return activeOrb === 'asteroid'; }
 ORB_BEHAVIOR.asteroid = ORB_BEHAVIOR.asteroid || {};
 ORB_BEHAVIOR.asteroid.rankOf = function(nodeKey) {
   if (typeof nodeKey === 'string' && ActiveBudget.resolveNode('asteroid', nodeKey)) {
+    // ASCENSION run (v1.9.0): every Bulwark node counts as owned+active (rank 1),
+    // ignoring the active-point budget / ownership, save untouched. See
+    // ascensionBeginRun. resolveNode is a structure-only memo (independent of the
+    // ascension flag), so we gate on the flag AFTER confirming it's a real node —
+    // no memo invalidation needed.
+    if (ascensionRunActive) return 1;
     return ActiveBudget.isActive('asteroid', nodeKey) ? 1 : 0;
   }
   return _rankOf_default(nodeKey);
@@ -11856,9 +11862,8 @@ function _phantomV2_ensureActiveMap() {
 }
 _phantomV2_ensureActiveMap();
 function _phantomV2_isActive(nodeKey) {
-  // ASCENSION run: every Phantasm node is active for the run (budget ignored,
-  // save untouched). See ascensionBeginRun.
-  if (ascensionRunActive) return true;
+  // v1.9.0: Ascension is now a BULWARK run (see ascensionBeginRun / asteroid.rankOf);
+  // Phantasm no longer all-actives during Ascension. Pure budget-membership check.
   const m = orbTrees.phantomV2 && orbTrees.phantomV2.activePoints;
   return !!(m && m[nodeKey]);
 }
@@ -11939,9 +11944,8 @@ function _phantomV2_deactivate(nodeKey) {
 // when activeOrb === 'phantomV2'.
 ORB_BEHAVIOR.phantomV2.rankOf = function(nodeKey) {
   if (typeof nodeKey === 'string' && nodeKey.indexOf('phantomV2_') === 0) {
-    // ASCENSION run: all Phantasm nodes count as owned+active (rank 1),
-    // regardless of the budget or whether Phantasm is unlocked. Save untouched.
-    if (ascensionRunActive) return 1;
+    // v1.9.0: Ascension moved to Bulwark (asteroid.rankOf) — no Phantasm
+    // all-active short-circuit here anymore. Pure budget-membership gate.
     if (!_phantomV2_isActive(nodeKey)) return 0;
   }
   return _rankOf_default(nodeKey);
@@ -15024,9 +15028,9 @@ let burstCooldownStart = 0;              // when the live burst cooldown began (
 
 // ASCENSION run state (v1.9.0 — replaces the old Rainbow Orb run).
 // `ascensionCutsceneActive` covers the first-death intro cutscene; once it
-// completes, `ascensionRunActive` is true for the one-shot Phantasm power-
-// fantasy run (all 3 Phantasm trees active, budget ignored; see
-// ascensionBeginRun + _phantomV2_isActive). The run continues the same run
+// completes, `ascensionRunActive` is true for the one-shot BULWARK power-
+// fantasy run (all 3 Bulwark trees active, budget ignored; see
+// ascensionBeginRun + asteroid.rankOf). The run continues the same run
 // state at normal difficulty/speed — no overrides, no frame-skip. Leaderboard
 // + career stats are skipped; fixed crystals are awarded at run end.
 let ascensionCutsceneActive = false;
@@ -23068,8 +23072,8 @@ function maybeSaveResumeState() {
       difficulty,
       orb: activeOrb,
       // ASCENSION resume fix: persist the run-type flag so resuming a mid-
-      // Ascension run restores the full-Phantasm state (not plain phantomV2),
-      // plus the pre-Ascension orb so it's restored when the run ends.
+      // Ascension run restores the full all-trees BULWARK state (not plain
+      // asteroid), plus the pre-Ascension orb so it's restored when the run ends.
       ascension: ascensionRunActive,
       prevOrb: ascensionRunActive ? _ascensionPrevOrb : null,
       timesurvived: Math.floor(s),
@@ -24721,7 +24725,9 @@ function triggerDeath() {
       const nowDpSpawn = Date.now();
       for (let i = 0; i < deathCount; i++) {
         const a = Math.random() * Math.PI * 2, s = Math.random() * 3.5 + 0.8;
-        const rgb = hslToRgbStr(272 + (Math.random() - 0.5) * 34, 88, 52 + Math.random() * 20);
+        // v1.9.0: Ascension is now a BULWARK run — debris reads GREY (silvery
+        // stone), not Phantasm purple. Low-saturation cool grey with lightness jitter.
+        const rgb = hslToRgbStr(210, 10, 58 + Math.random() * 20);
         pushCapped(deathParticles, {
           x: player.x, y: player.y,
           vx: Math.cos(a) * s, vy: Math.sin(a) * s,
@@ -24889,8 +24895,8 @@ function triggerDeath() {
     const deathRgb = activeOrbColor();
     for (let i = 0; i < deathCount; i++) {
       const a = Math.random()*Math.PI*2, s = Math.random()*3.5+0.8;
-      // Ascension death tints debris Phantasm-purple; normal runs use the orb color.
-      const rgb = _wasAscension ? hslToRgbStr(272 + (Math.random() - 0.5) * 34, 88, 52 + Math.random() * 20) : deathRgb;
+      // Ascension death tints debris GREY (Bulwark stone); normal runs use the orb color.
+      const rgb = _wasAscension ? hslToRgbStr(210, 10, 58 + Math.random() * 20) : deathRgb;
       pushCapped(deathParticles, { x: player.x, y: player.y, vx: Math.cos(a)*s, vy: Math.sin(a)*s, life: 1, startTime: nowDpSpawn, maxLifeMs: DEATH_PART_LIFE_MS, size: Math.random()*2.5+0.8, rgb }, DEATH_PART_CAP);
     }
   }, 1200);
@@ -29809,9 +29815,10 @@ function beginResumedRun(snap) {
   if (snap.difficulty && DIFFICULTIES[snap.difficulty]) difficulty = snap.difficulty;
   if (snap.orb && ORB_DEFS && ORB_DEFS[snap.orb]) activeOrb = snap.orb;
   // ASCENSION resume fix: restore the run-type flag BEFORE the cache refresh
-  // so phantomV2.rankOf returns all-active for the full-Phantasm power run
+  // so asteroid.rankOf returns all-active for the full all-trees Bulwark run
   // (the bug this fixes: resuming a special run used to drop back to a plain
-  // orb). resetGame(true) cleared it above, so re-set it from the snapshot.
+  // orb — and Bulwark was the OLD rainbow orb, so this is exactly where that
+  // regression would hide). resetGame(true) cleared it above, so re-set it here.
   ascensionRunActive = !!snap.ascension;
   // Recover the pre-Ascension orb so it's restored when this resumed run ends
   // (goToMainMenu may have nulled the live _ascensionPrevOrb before resume).
@@ -30502,9 +30509,9 @@ function tutorialFinish() {
 
 // --- v1.9.0 ASCENSION intro cutscene (replaces the old Rainbow Orb run) ---
 // Fires exactly once per install: on the player's very first death after
-// completing the tutorial. Plays a dialogue sequence followed by a purple
+// completing the tutorial. Plays a dialogue sequence followed by a grey
 // convergence particle effect, then drops the player into the Ascension run —
-// full-Phantasm (all 3 trees active). Persistence flag is `ascensionUsed`
+// full all-trees BULWARK (v1.9.0; was Phantasm). Persistence flag is `ascensionUsed`
 // (localStorage key 'drift_rainbow_orb_used' + PGS field, OR-merged; key kept
 // for backward-compatible one-time persistence across reinstall).
 const ASCENSION_DIALOGUE_PRE = [
@@ -30672,9 +30679,9 @@ function ascensionPlayConverge() {
     // frame — gives the convergence a natural "stragglers" feel and lets
     // the burst flash land cleanly when the LAST particle arrives.
     const dur = ASCENSION_CONVERGE_DURATION_MS * (0.85 + Math.random() * 0.3);
-    // Phantasm PURPLE: a tight violet band with per-particle lightness jitter
-    // so the convergence reads as spectral/ghostly rather than rainbow.
-    const hue = 272 + (Math.random() - 0.5) * 34;   // ~255-289 (violet→purple)
+    // Bulwark GREY: a low-saturation cool-grey band with per-particle lightness
+    // jitter so the convergence reads as silvery stone reforming (v1.9.0:
+    // Ascension is now Bulwark, not Phantasm — was a violet band).
     ascensionParticles.push({
       sx, sy,             // spawn position (frozen)
       tx: px, ty: py,     // target position (death point)
@@ -30682,7 +30689,7 @@ function ascensionPlayConverge() {
       startTime: now,
       duration: dur,
       size: 2.0 + Math.random() * 2.2,
-      rgb: hslToRgbStr(hue, 88, 52 + Math.random() * 20),
+      rgb: hslToRgbStr(210, 10, 58 + Math.random() * 20),
     });
   }
   // Audio: reversed swoosh sustains across the full convergence window.
@@ -30761,8 +30768,8 @@ function drawAscensionParticles() {
     ctx.restore();
     ascensionParticles = survivors;
   }
-  // Post-convergence "spirit reformed" burst flash. Expanding violet rings,
-  // additive, fade over 380 ms — Phantasm purple, not rainbow.
+  // Post-convergence "orb reformed" burst flash. Expanding GREY rings, additive,
+  // fade over 380 ms (v1.9.0: Ascension is Bulwark — grey, not Phantasm purple).
   if (ascensionFlashUntil && now < ascensionFlashUntil) {
     const remain = ascensionFlashUntil - now;
     const total = 380;
@@ -30771,13 +30778,12 @@ function drawAscensionParticles() {
     ctx.save();
     const prevComp = ctx.globalCompositeOperation;
     ctx.globalCompositeOperation = 'lighter';
-    // Five concentric expanding rings across a tight violet band.
+    // Five concentric expanding rings across a cool-grey band (silver → light grey).
     for (let i = 0; i < 5; i++) {
       const ringT = t + i * 0.05;
       if (ringT > 1) continue;
       const r = 6 + ringT * 90;
-      const hue = 272 + i * 6;   // 272-296: violet → magenta-purple
-      const rgb = hslToRgbStr(hue, 90, 62);
+      const rgb = hslToRgbStr(210, 10, 64 + i * 4);   // grey, brightening outward
       ctx.globalAlpha = alpha * (1 - i * 0.15);
       ctx.strokeStyle = `rgba(${rgb},1)`;
       ctx.lineWidth = 3.5 - i * 0.4;
@@ -30785,7 +30791,7 @@ function drawAscensionParticles() {
     }
     // Bright inner core that fades fast.
     if (t < 0.5) {
-      const coreRgb = hslToRgbStr(276, 85, 82);
+      const coreRgb = hslToRgbStr(210, 8, 88);   // near-white cool grey
       ctx.globalAlpha = (1 - t * 2) * 0.9;
       ctx.fillStyle = `rgba(${coreRgb},1)`;
       ctx.beginPath(); ctx.arc(ascensionFlashX, ascensionFlashY, 18 * (1 - t * 2) + 6, 0, 6.28); ctx.fill();
@@ -30890,22 +30896,24 @@ let ascensionFlashUntil = 0;
 let ascensionFlashX = 0;
 let ascensionFlashY = 0;
 
-// Begin the ASCENSION run: the player becomes PHANTASM with all 3 Phantasm
-// trees fully active (budget ignored — see _phantomV2_isActive / phantomV2.rankOf
-// short-circuits). The run CONTINUES from the death frame at normal difficulty,
-// scroll speed, and body progression — no overrides, no frame-skip, no infinite
-// kills. The save is untouched: this is a one-time taste, and Phantasm stays
-// locked afterward.
+// Begin the ASCENSION run: the player becomes BULWARK with all 3 Bulwark trees
+// fully active (budget ignored — see asteroid.rankOf's ascensionRunActive
+// short-circuit). The tank/shield/EMP fantasy reads instantly for a first-time
+// player (vs. the prior Phantasm sensory overload). The run CONTINUES from the
+// death frame at normal difficulty, scroll speed, and body progression — no
+// overrides, no frame-skip, no infinite kills. The save is untouched: this is a
+// one-time taste, and Bulwark stays locked afterward (Ascension does NOT unlock it).
 function ascensionBeginRun() {
   // Mark the one-time flag immediately so an interrupted run still locks
   // out the cutscene on next launch.
   saveAscensionUsed(true);
   ascensionRunActive = true;
   ascensionOutcome = null;
-  // Become Phantasm for the run. Save is not modified — the rankOf/isActive
-  // short-circuits make every phantomV2 node read as active while the flag is on.
+  // Become Bulwark for the run. Save is not modified — asteroid.rankOf's
+  // ascensionRunActive short-circuit makes every asteroid node read as active
+  // (rank 1) while the flag is on, ignoring the budget.
   _ascensionPrevOrb = activeOrb;
-  activeOrb = 'phantomV2';
+  activeOrb = 'asteroid';
   refreshActiveTreeCache();
   // Do NOT resetGame(): the run resumes from the death frame — player position,
   // body positions, score, planetsPassed, frame counter all preserved. Restore
