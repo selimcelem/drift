@@ -5700,8 +5700,8 @@ const TREE_DEFS = {
             desc: 'On a kill while shielded, 20% chance to add +1s of shield duration. 2s cooldown. Caps at 2× base duration.',
             effect: r => r ? '20% kill → +1s shield (2s CD)' : 'Locked' },
           { key: 'accretion', name: 'Accretion', tier: 1, max: 1, costOverride: [5500], pointCost: 3,
-            desc: 'While shielded, every 4s a 2-second window opens — bodies pulled into contact are crushed into shield stacks (+1 hit, up to your cap, and count as kills), and the window extends your shield +0.5s.',
-            effect: r => r ? 'Absorb pulled bodies → shield hits · +0.5s/window' : 'Locked' },
+            desc: 'While shielded, every 4s a 2-second window opens — bodies pulled into contact are crushed into shield stacks (+1 hit, up to your cap, count as kills, and each extends your shield +0.5s).',
+            effect: r => r ? 'Absorb pulled bodies → shield hits · +0.5s each' : 'Locked' },
           { key: 'tidalForce', name: 'Tidal Force', tier: 2, max: 1, costOverride: [3000], pointCost: 2,
             desc: 'Your gravity pull is +50% stronger, and pulls harder the closer a body gets.',
             effect: r => r ? '+50% pull · ramps with closeness' : 'Locked' },
@@ -8171,19 +8171,14 @@ function _bulwark_tick(now) {
 
   // Accretion (Collapse T1) v1.9.0: every 4s, open a 2s absorb window. Pulled-
   // contact bodies become shield stacks (applied in the shield body-contact loop
-  // while now < accretionWindowEnd). Opening a window also extends the active
-  // shield +0.5s (once per window). The golden shield is hit-based (no timer), so
-  // the +0.5s only applies to a normal timed shield. The shield aura pulses while
-  // the window is open (now < accretionWindowEnd) as the visual cue.
+  // while now < accretionWindowEnd) — and EACH absorb extends the active shield
+  // +0.5s (applied per-absorb at the contact site below, not per window). The
+  // shield aura pulses while the window is open as the visual cue.
   if (rankOf('accretion') && shielded) {
     if (accretionNextWindow === 0) accretionNextWindow = now + 4000;
     else if (now >= accretionNextWindow) {
       accretionNextWindow = now + 4000;
       accretionWindowEnd = now + 2000;
-      if (!goldenShieldActive && shieldEndTime > now) {
-        shieldEndTime += 500;
-        activeEffects.shield = Math.max(activeEffects.shield, shieldEndTime - now);
-      }
       _asteroid_flash('accretion', 'ACCRETION', ASTEROID_PATH_COLORS.opportunism, 600);
     }
   } else { accretionNextWindow = 0; accretionWindowEnd = 0; }
@@ -22683,17 +22678,26 @@ function checkCollisions() {
     for (let i = 0; i < bodies.length; i++) {
       if (bodyHits(bodies[i], 0)) {
         // Accretion (Collapse T1): during a 2s absorb window, a pulled-in body
-        // is crushed into a shield stack (+1 hit, up to cap).
+        // is crushed into the shield — +1 stack (capped) AND +0.5s shield duration
+        // AND counts as a kill. The +0.5s + crush apply on EVERY absorb regardless
+        // of the hit cap (the +1 stack is what's capped, via Math.min); a body at
+        // cap is still absorbed (no EMP, no hit consumed) and still extends + scores.
         // v1.9.0 fix: does NOT run while the Dead Star golden shield is up — the
         // golden shield is a fixed 10-hit consumable, and Accretion was refilling
-        // it (via the shieldHits→goldenShieldHits sync) to the normal cap every
-        // window, making it effectively permanent. While golden, bodies fall
-        // through to the normal shield-break path and consume a golden hit.
-        // v1.9.0 balance: the absorb now COUNTS AS A KILL (score + destroy-procs)
-        // so it no longer anti-synergizes with Bastion II / Salvage.
-        if (activeOrb === 'asteroid' && !goldenShieldActive && Date.now() < accretionWindowEnd && shieldHits < shieldHitsCap()) {
+        // it (via the shieldHits→goldenShieldHits sync), making it effectively
+        // permanent. While golden, bodies fall through to the normal shield-break
+        // path and consume a golden hit.
+        if (activeOrb === 'asteroid' && !goldenShieldActive && Date.now() < accretionWindowEnd) {
           const _absorbVictim = bodies[i];
           shieldHits = Math.min(shieldHitsCap(), shieldHits + 1);
+          // v1.9.0: EACH absorb extends the timed shield +0.5s (5 absorbs in a
+          // window → +2.5s), NOT limited by the hit cap. Normal shield only
+          // (branch is gated !goldenShieldActive).
+          const _nowAbs = Date.now();
+          if (shieldEndTime > _nowAbs) {
+            shieldEndTime += 500;
+            activeEffects.shield = Math.max(activeEffects.shield, shieldEndTime - _nowAbs);
+          }
           emitDestroyBurst(bodies[i].x, bodies[i].y, ASTEROID_PATH_COLORS.opportunism);
           try { SFX.shieldAbsorb(); } catch {}
           addDestroyPoints();
