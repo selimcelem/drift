@@ -3097,6 +3097,7 @@
       <div class="cap-cd" id="capCdSunForge"  data-cap="sunForge"><div class="cap-cd-ring"></div><div class="cap-cd-lbl">FORGE</div></div>
       <div class="cap-cd" id="capCdAegis"     data-cap="aegis"><div class="cap-cd-ring"></div><div class="cap-cd-lbl">AEGIS</div></div>
       <div class="cap-cd" id="capCdEventHorizon" data-cap="eventHorizon"><div class="cap-cd-ring"></div><div class="cap-cd-lbl">HORIZON</div></div>
+      <div class="cap-cd" id="capCdSingularity" data-cap="singularity"><div class="cap-cd-ring"></div><div class="cap-cd-lbl">RIFT</div></div>
     </div>
     <!-- v1.7.0: burst replaced with a circular indicator at bottom-right,
          same size/style as a capstone cooldown circle. Fills clockwise as
@@ -5571,8 +5572,8 @@ const TREE_DEFS = {
             desc: 'KEYSTONE. Your hyperspeed tears +40% faster through space. Space doesn’t get out of your way — you blueshift it.',
             effect: r => r ? '+40% peak velocity' : 'Locked' },
           { key: 'smoothEntry', name: 'Ramjet', tier: 1, max: 1, costOverride: [2500], pointCost: 2,
-            desc: 'Every planet you destroy while in hyperspeed shaves 0.3% off your burst cooldown.',
-            effect: r => r ? '−0.3% burst CD / hyperspeed kill' : 'Locked' },
+            desc: 'Every planet you destroy while in hyperspeed shaves 0.5% off your burst cooldown.',
+            effect: r => r ? '−0.5% burst CD / hyperspeed kill' : 'Locked' },
           { key: 'breakaway', name: 'Breakaway', tier: 1, max: 1, costOverride: [2500], pointCost: 2,
             desc: 'At max hyperspeed stacks, your peak speed is boosted a further +11%.',
             effect: r => r ? '+11% peak at max stacks' : 'Locked' },
@@ -5594,8 +5595,8 @@ const TREE_DEFS = {
             desc: 'KEYSTONE. Hyperspeed lasts +1.5s longer, and every stack you gain while already in warp extends it another +0.5s (up to +3s per warp). Once you’re in the continuum, you stay there.',
             effect: r => r ? '+1.5s · +0.5s/stack (max +3s)' : 'Locked' },
           { key: 'slipstream', name: 'Slipstream', tier: 1, max: 1, costOverride: [2500], pointCost: 2,
-            desc: '6% chance whenever you destroy a planet to gain a hyperspeed stack (or refresh your warp timer if already maxed). 15s cooldown.',
-            effect: r => r ? '6% on destroy → stack (15s CD)' : 'Locked' },
+            desc: '6% chance whenever you destroy a planet to gain 2 hyperspeed stacks (or refresh your warp timer if already maxed). 10s cooldown.',
+            effect: r => r ? '6% on destroy → +2 stacks (10s CD)' : 'Locked' },
           { key: 'dragCoefficient', name: 'Drag Coefficient', tier: 1, max: 1, costOverride: [2500], pointCost: 2,
             desc: 'Your hyperspeed speed bleeds off 30% slower, so you stay fast deeper into each warp.',
             effect: r => r ? 'Hyperspeed decays 30% slower' : 'Locked' },
@@ -5620,8 +5621,8 @@ const TREE_DEFS = {
             desc: 'Hyperspeed stack cap +1 (stacks with Overdrive).',
             effect: r => r ? 'Stack cap +1' : 'Locked' },
           { key: 'warpHarmonic', name: 'Warp Harmonic', tier: 1, max: 1, costOverride: [2500], pointCost: 2,
-            desc: 'When you land a hyperspeed combo, gain +3 free stacks instantly. 15s cooldown.',
-            effect: r => r ? '+3 stacks on hyperspeed combo (15s CD)' : 'Locked' },
+            desc: 'When you land a hyperspeed combo, gain +3 free stacks instantly. 10s cooldown.',
+            effect: r => r ? '+3 stacks on hyperspeed combo (10s CD)' : 'Locked' },
           { key: 'criticalVelocity', name: 'Critical Velocity', tier: 1, max: 1, costOverride: [2500], pointCost: 2,
             desc: 'At max stacks, every planet you destroy has a 20% chance to detonate a nova blast at the kill. 10s cooldown.',
             effect: r => r ? '20% kill → nova at max stacks (10s CD)' : 'Locked' },
@@ -5629,8 +5630,8 @@ const TREE_DEFS = {
             desc: 'Every hyperspeed stack beyond the 2nd adds +8% peak speed — a raised cap turns straight into velocity, even without the Blueshift tree.',
             effect: r => r ? '+8% peak / stack over 2' : 'Locked' },
           { key: 'singularity', name: 'Singularity', tier: 3, max: 1, costOverride: [8500], pointCost: 5,
-            desc: 'CAPSTONE. When hyperspeed ends, a RIFT tears open at the top of the screen — guaranteed. It hangs for 3s, dragging in nearby planets and destroying them on contact. 20s cooldown. Hold enough mass and space simply gives way.',
-            effect: r => r ? 'Hyperspeed ends → 3s rift (20s CD)' : 'Locked' },
+            desc: 'CAPSTONE. 20s cooldown. While charged, the NEXT hyperspeed you gain — from any source — snaps straight to MAX stacks, and when it ends a RIFT tears open at the top of the screen for 3s, dragging in nearby planets and destroying them on contact. Hold enough mass and space simply gives way.',
+            effect: r => r ? 'Next warp → max stacks + 3s rift (20s CD)' : 'Locked' },
         ],
       },
     },
@@ -5656,11 +5657,11 @@ const TREE_DEFS = {
             desc: 'When your shield takes a hit, 20% chance to NOT lose a stack (the EMP blast still fires as normal).',
             effect: r => r ? '20% to keep a stack on hit' : 'Locked' },
           { key: 'secondWall', name: 'Second Wall', tier: 2, max: 1, costOverride: [5500], pointCost: 3,
-            desc: 'When you have had no shield for 1.5s, instantly gain a fresh 2-hit shield. 20s cooldown.',
-            effect: r => r ? 'Auto 2-hit shield (20s CD)' : 'Locked' },
+            desc: 'When you have had no shield for 1.5s, instantly gain a fresh shield at FULL hit cap. 20s cooldown.',
+            effect: r => r ? 'Auto full-cap shield (20s CD)' : 'Locked' },
           { key: 'aegis', name: 'Aegis', tier: 3, max: 1, costOverride: [9000], pointCost: 5,
-            desc: 'CAPSTONE. Every 60s your shield discharges a screen-clearing EMP. The wall answers.',
-            effect: r => r ? 'Screen-clearing EMP / 60s' : 'Locked' },
+            desc: 'CAPSTONE. Every 30s your shield discharges a screen-clearing EMP. The wall answers.',
+            effect: r => r ? 'Screen-clearing EMP / 30s' : 'Locked' },
         ],
       },
       devastation: {
@@ -5696,10 +5697,10 @@ const TREE_DEFS = {
             desc: 'Each kill while shielded shaves 0.5% off your burst cooldown — EMP kills count too. Caps at 50% off at any moment.',
             effect: r => r ? '−0.5% burst CD / shield kill (max 50%)' : 'Locked' },
           { key: 'bastion2', name: 'Bastion II', tier: 1, max: 1, costOverride: [3000], pointCost: 2,
-            desc: 'On a kill while shielded, 20% chance to add +1s of shield duration. 3s cooldown. Caps at 2× base duration.',
-            effect: r => r ? '20% kill → +1s shield (3s CD)' : 'Locked' },
+            desc: 'On a kill while shielded, 20% chance to add +1s of shield duration. 2s cooldown. Caps at 2× base duration.',
+            effect: r => r ? '20% kill → +1s shield (2s CD)' : 'Locked' },
           { key: 'accretion', name: 'Accretion', tier: 1, max: 1, costOverride: [3000], pointCost: 2,
-            desc: 'While shielded, every 3s a 3-second window opens — bodies pulled into contact are absorbed as shield stacks (+1 hit, up to your cap) instead of destroyed.',
+            desc: 'While shielded, every 3s a 2-second window opens — bodies pulled into contact are absorbed as shield stacks (+1 hit, up to your cap) instead of destroyed.',
             effect: r => r ? 'Absorb pulled bodies → shield hits' : 'Locked' },
           { key: 'tidalForce', name: 'Tidal Force', tier: 2, max: 1, costOverride: [5500], pointCost: 3,
             desc: 'Your gravity pull is +50% stronger, and pulls harder the closer a body gets.',
@@ -8109,6 +8110,33 @@ function _bulwark_triggerImplode() {
 // Per-frame Bulwark systems tick (called from update()).
 function _bulwark_tick(now) {
   if (activeOrb !== 'asteroid') { deadStarImplode = null; return; }
+
+  // === Dead Star golden-shield invariant (v1.9.0 bug fix) ===================
+  // The golden shield is AUTHORITATIVE while up: it must protect for its full 10
+  // hits regardless of regular shield pickups/expiry. Its protection piggybacks
+  // on shieldHits + activeEffects.shield, but its VISUAL (goldenShieldHits) is
+  // independent — so a regular shield pickup (which overwrites shieldHits to the
+  // smaller normal cap and shortens shieldEndTime) used to desync the two: the
+  // gold rim kept drawing while the regular timer expired and dropped real
+  // protection → a hit then KILLED the player through a visible golden shield.
+  // We reconcile every frame: keep shieldHits at/above the golden pool, keep the
+  // shield "active" (long proxy timer, so the golden shield ends ONLY when its
+  // hits run out — never on a clock), and clear fully when the pool is gone.
+  if (goldenShieldActive) {
+    if (goldenShieldHits > 0) {
+      if (shieldHits < goldenShieldHits) shieldHits = goldenShieldHits; // pickups may add, never reduce below gold
+      goldenShieldHits = Math.min(goldenShieldHits, shieldHits);        // (a normal hit lowers both in lockstep)
+      fortressShield = true;
+      shieldBroken = false;
+      // Keep the proxy timer well ahead so the gold shield never times out.
+      if (shieldEndTime < now + 2000) shieldEndTime = now + 60000;
+      if (activeEffects.shield < shieldEndTime - now) activeEffects.shield = shieldEndTime - now;
+    } else {
+      // Pool drained but flag somehow left set — clear the visual + state together.
+      goldenShieldActive = false;
+    }
+  }
+
   const shielded = activeEffects.shield > 0 || shieldHits > 0;
 
   // Capacitor (Overload T1): auto-EMP pulse every 5s while shielded.
@@ -8121,7 +8149,7 @@ function _bulwark_tick(now) {
     }
   } else { asteroidCapacitorNextPulse = 0; }
 
-  // Second Wall (Rampart T2): after 1.5s with no shield, auto 2-hit shield (20s CD).
+  // Second Wall (Rampart T2): after 1.5s with no shield, auto FULL-cap shield (20s CD).
   if (rankOf('secondWall')) {
     if (shielded) { secondWallShieldlessSince = 0; }
     else {
@@ -8131,21 +8159,21 @@ function _bulwark_tick(now) {
         secondWallShieldlessSince = 0;
         shieldEndTime = now + SHIELD_DURATION();
         activeEffects.shield = SHIELD_DURATION();
-        shieldHits = Math.min(shieldHitsCap(), 2);
+        shieldHits = shieldHitsCap();   // v1.9.0: 2-hit → full hit cap
         shieldBroken = false; bastion2BonusMs = 0;
         _asteroid_flash('secondWall', 'SECOND WALL', ASTEROID_PATH_COLORS.fortification, 0);
       }
     }
   } else { secondWallShieldlessSince = 0; }
 
-  // Accretion (Collapse T1): every 3s, open a 3s absorb window. The actual
+  // Accretion (Collapse T1): every 3s, open a 2s absorb window. The actual
   // absorb (pulled-contact body → +1 shield hit) is applied in the shield
   // body-contact loop while now < accretionWindowEnd.
   if (rankOf('accretion') && shielded) {
     if (accretionNextWindow === 0) accretionNextWindow = now + 3000;
     else if (now >= accretionNextWindow) {
       accretionNextWindow = now + 3000;
-      accretionWindowEnd = now + 3000;
+      accretionWindowEnd = now + 2000;
       _asteroid_flash('accretion', 'ACCRETION', ASTEROID_PATH_COLORS.opportunism, 600);
     }
   } else { accretionNextWindow = 0; accretionWindowEnd = 0; }
@@ -8340,15 +8368,16 @@ function _nebula_criticalVelocityProc(bodyX, bodyY) {
 // (called from the hyperspeed-end block), 20s CD. The rift tears open at the
 // TOP CENTER of the screen — roughly where hyperspeed launches the player —
 // and persists NEBULA_RIFT_LIFE_MS, pulling + destroying bodies that scroll in.
+// v1.9.0 rework: the rift opens when an ARMED hyperspeed instance ends. The 20s
+// cooldown is consumed at ARM time (in activateHyperspeed), so no CD gate here —
+// this just tears the rift open.
 function _nebula_openRift(now) {
-  if (now < nebulaRiftNextArm) return;
-  nebulaRiftNextArm = now + 20000;
   nebulaRift = { startTime: now, x: W / 2, y: H * 0.2 };
   try { SFX.playSfxBuffer('rift', 0.3); } catch {}   // dedicated cue, kept low
   try { triggerHitstop(70); } catch {}
   try { shakeCapstone('singularity'); } catch {}
   _nebula_flash('singularity', 'SINGULARITY', NEBULA_PATH_COLORS.cap, 0);
-  treeLog('singularity: RIFT torn at top-center (3s, 20s CD)');
+  treeLog('singularity: RIFT torn at top-center (3s)');
 }
 // Per-frame rift pull + destroy. Bounded radius, pause-delta safe (driven by a
 // wall-clock lifetime, not accumulated dt). Batches shake via shakeMassDestroy.
@@ -14515,13 +14544,17 @@ function spawnDestroyProcFlash(powerupType) {
 function _siphonApply(pick) {
   const now = Date.now();
   if (pick === 'shield') {
-    shieldEndTime = now + SHIELD_DURATION();
-    activeEffects.shield = SHIELD_DURATION();
-    shieldBroken = false;
-    bastion2BonusMs = 0; // fresh shield → reset duration-bonus accumulator
-    // Bastion keystone (Rampart): pickups REFILL to full cap; else +2 capped.
-    if (activeOrb === 'asteroid') shieldHits = rankOf('bastion') ? shieldHitsCap() : Math.min(shieldHitsCap(), shieldHits + 2);
-    else shieldHits = Math.min(2, shieldHits + 1);
+    // Dead Star golden shield (v1.9.0 bug fix): don't let a Siphon'd shield stomp
+    // an active golden shield (see rawActivate for the full rationale).
+    if (!goldenShieldActive) {
+      shieldEndTime = now + SHIELD_DURATION();
+      activeEffects.shield = SHIELD_DURATION();
+      shieldBroken = false;
+      bastion2BonusMs = 0; // fresh shield → reset duration-bonus accumulator
+      // Bastion keystone (Rampart): pickups REFILL to full cap; else +2 capped.
+      if (activeOrb === 'asteroid') shieldHits = rankOf('bastion') ? shieldHitsCap() : Math.min(shieldHitsCap(), shieldHits + 2);
+      else shieldHits = Math.min(2, shieldHits + 1);
+    }
   } else if (pick === 'nova') {
     fireTripleNova(player.x, player.y);
     recentNovaEndTime = now + 1500;
@@ -14681,13 +14714,14 @@ function slipstreamProc() {
   // 1-6% rank rates at FIX W8, Slipstream is now a rare spike, not a loop.
   if (now < slipstreamNextProcTime) { treeLog('slipstream: cooldown-blocked'); return; }
   // Slipstream-sourced hyperspeed is NOT a natural pickup — Infinite Gate
-  // won't trigger from it (source='slipstream'). v1.9.0 rework: single stack
-  // (below cap → +1 stack & timer refresh; at max → pure timer refresh).
+  // won't trigger from it (source='slipstream'). v1.9.0 rework: 2 stacks
+  // (below cap → +2 stacks & timer refresh; at max → pure timer refresh).
+  activateHyperspeed(undefined, undefined, 'slipstream');
   activateHyperspeed(undefined, undefined, 'slipstream');
   spawnDestroyProcFlash('hyperspeed');
   if (activeOrb === 'nebula') _nebula_flash('slipstream', 'SLIPSTREAM', NEBULA_PATH_COLORS.duration, 0);
-  slipstreamNextProcTime = now + 15000;
-  treeLog('slipstream: +1 stack / refresh (15s CD)');
+  slipstreamNextProcTime = now + 10000;
+  treeLog('slipstream: +2 stacks / refresh (10s CD)');
 }
 
 // v1.8.0 rework: Bastion II is now a duration-extension proc — on body
@@ -14717,7 +14751,7 @@ function bastion2Proc() {
   shieldEndTime += 1000;
   activeEffects.shield += 1000;
   bastion2BonusMs += 1000;
-  bastion2NextProcTime = now + 3000;   // v1.9.0: 5s → 3s CD
+  bastion2NextProcTime = now + 2000;   // v1.9.0: 5s → 3s → 2s CD
   spawnDestroyProcFlash('shield');
   _asteroid_flash('bastion2', 'BASTION II', ASTEROID_PATH_COLORS.opportunism, 0);
   treeLog('bastion2: +1s shield duration (bonus ' + bastion2BonusMs + '/' + baseDur + ')');
@@ -14732,7 +14766,7 @@ function bastion2Proc() {
 const SHROUD_FLAG_ARM_MS         = 30000;
 const NIGHT_SHADE_CYCLE_MS       = 20000;
 const SUN_FORGE_CYCLE_MS         = 30000;
-const AEGIS_CYCLE_MS             = 60000;
+const AEGIS_CYCLE_MS             = 30000;  // v1.9.0: 60s → 30s
 const LINGERING_HORIZON_CYCLE_MS = 60000;  // v1.9.0: 90s → 60s (auto full-stack + cap-grow cadence)
 
 // Per-frame capstone auto-fire tick. NIGHT SHADE / SUN FORGE / AEGIS each
@@ -14876,10 +14910,10 @@ function checkDestroyProc(body, source) {
     // Slipstream (Warp Duration T1) v1.9.0 rework: single-rank 6% per destroy.
     if (rankOf('slipstream') > 0 && Math.random() < 0.06) slipstreamProc();
     // Ramjet (Warp Velocity T1, key 'smoothEntry' for save-compat) v1.9.0:
-    // single-rank −0.3% of the Warp burst base off the live cooldown per body
+    // single-rank −0.5% of the Warp burst base off the live cooldown per body
     // destroyed during ACTIVE hyperspeed. Passive per-kill stat → no flash.
     if (rankOf('smoothEntry') > 0 && activeEffects.hyperspeed > 0 && burstCooldownEnd > Date.now()) {
-      const reduce = Math.floor(0.003 * BURST_COOLDOWN_MS);
+      const reduce = Math.floor(0.005 * BURST_COOLDOWN_MS);
       if (reduce > 0) burstCooldownEnd = Math.max(Date.now(), burstCooldownEnd - reduce);
     }
     // Critical Velocity (Warp Cap T1) v1.9.0: while AT max stacks, 20%
@@ -15102,6 +15136,7 @@ function resetTreeNodeState() {
   nebulaCriticalVelocityNextProc = 0;
   nebulaRift = null;
   nebulaRiftNextArm = 0;
+  nebulaSingularityArmedInstance = false;
   nebulaRiftFiredThisInstance = false;
   _nebula_lightspeedEngagedThisInstance = false;
   // Capstone state.
@@ -16394,11 +16429,16 @@ const CONTINUUM_EXTEND_PER_STACK_MS = 500;
 const CONTINUUM_EXTEND_CEILING_MS = 3000;
 // Critical Velocity proc-nova cooldown (Cap T1, 15s).
 let nebulaCriticalVelocityNextProc = 0;
-// Singularity RIFT (Cap capstone): one trigger per hyperspeed instance, 20s CD.
+// Singularity (Cap capstone) v1.9.0 rework: a 20s-cooldown CHARGE. While charged,
+// the next hyperspeed gained (any source) snaps to max stacks and arms a rift for
+// when THAT instance ends. nebulaRiftNextArm is the ready-time (charged when
+// now >= it); nebulaSingularityArmedInstance marks the current warp as rift-bound.
 let nebulaRift = null;                   // { startTime, x, y } while open, else null
-let nebulaRiftNextArm = 0;               // 20s cooldown gate
-let nebulaRiftFiredThisInstance = false; // one-per-instance gate
+let nebulaRiftNextArm = 0;               // 20s cooldown ready-time (charged when now >= this)
+let nebulaSingularityArmedInstance = false; // current hyperspeed instance fires a rift on end
+let nebulaRiftFiredThisInstance = false; // (legacy) one-per-instance gate, retained for save/pause shape
 let _nebula_lightspeedEngagedThisInstance = false; // Lightspeed flash/feel: once per instance
+const SINGULARITY_CD_MS = 20000;
 const NEBULA_RIFT_LIFE_MS = 3000;
 const NEBULA_RIFT_PULL_RADIUS = 150;
 const NEBULA_RIFT_KILL_RADIUS = 26;
@@ -16941,6 +16981,19 @@ const SFX = (function() {
         chipSweep('sine', 2000, 800, t, 0.08, 0.15 * ds);
       });
     }
+  }
+
+  // Accretion (Bulwark Collapse T1): a body pulled into contact is crushed into
+  // a shield stack. Short rising "intake" blip — kept well below the destroy
+  // cues, and routed through the same destroy-density gain ceiling so a burst of
+  // absorbs in one window can't pile into a wall (absorbs come in clusters when
+  // Gravity Well drags several bodies in at once).
+  function shieldAbsorb() {
+    const ds = destroySfxGainScale();
+    safeSfx(t => {
+      chipSweep('sine', 340, 760, t, 0.11, 0.10 * ds);
+      chipSweep('triangle', 170, 380, t, 0.09, 0.06 * ds);
+    });
   }
 
   // Combo activate — every combo distinct, all at vol ~0.4.
@@ -17932,7 +17985,7 @@ const SFX = (function() {
   }
 
   return {
-    init, attract, repel, pickup, planetDestroyed, death,
+    init, attract, repel, pickup, planetDestroyed, shieldAbsorb, death,
     comboActivate, comboDestroySound, startHyperspeedWhoosh,
     startApocalypseRumble, playApocalypseImpact, screamShriek, startVoidHum,
     playSfxBuffer,
@@ -19928,14 +19981,14 @@ function updatePixiOverlayLayer() {
       const fade = (1 - life) * (r.opacity != null ? r.opacity : 1);
       const ringMax = r.maxRadius != null ? r.maxRadius : EMP_MAX_RADIUS;
       const outerR = 20 + life * (ringMax - 20);
-      eg.lineStyle({ width: 2, color: 0x64DCFF, alpha: fade * 0.9 });
+      eg.lineStyle({ width: 2, color: r.golden ? 0xFFC850 : 0x64DCFF, alpha: fade * 0.9 });
       eg.drawCircle(r.x, r.y, outerR);
       const boltT = Math.min(1, age / 300);
       const boltFade = 1 - boltT;
       if (boltFade > 0 && r.bolts) {
         const flickerTick = Math.floor(frame / 3);
         const rng = mulberry32((r.startTime & 0xffff) ^ flickerTick);
-        eg.lineStyle({ width: 1.6, color: 0xFFFFFF, alpha: boltFade * (0.9 * boltFade + 0.1) });
+        eg.lineStyle({ width: 1.6, color: r.golden ? 0xFFE6A0 : 0xFFFFFF, alpha: boltFade * (0.9 * boltFade + 0.1) });
         for (const b of r.bolts) {
           const tipR = outerR - 4;
           const dx = Math.cos(b.angle);
@@ -21509,13 +21562,13 @@ function _activateCombo_default(key, x, y) {
     activeCombos[key] = { def, deps: ['shield'] };
   }
   // Warp Harmonic (Warp Cap T1) v1.9.0: single-rank +3 bonus stacks on a
-  // hyperspeed pair combo. 15s cooldown.
+  // hyperspeed pair combo. 10s cooldown.
   if ((activeOrb === 'nebula') && (key === 'nova_hyperspeed' || key === 'hyperspeed_ghost' || key === 'hyperspeed_shield')) {
     if (rankOf('warpHarmonic') > 0 && Date.now() >= warpHarmonicNextFireTime) {
       for (let i = 0; i < 3; i++) activateHyperspeed(undefined, undefined, 'warp_harmonic');
-      warpHarmonicNextFireTime = Date.now() + 15000;
+      warpHarmonicNextFireTime = Date.now() + 10000;
       if (activeOrb === 'nebula') _nebula_flash('warpHarmonic', 'WARP HARMONIC', NEBULA_PATH_COLORS.cap, 0);
-      treeLog('warpHarmonic: +3 bonus stacks on ' + key + ' (15s CD)');
+      treeLog('warpHarmonic: +3 bonus stacks on ' + key + ' (10s CD)');
     }
   }
   // Keystone (Drifter Convergence T3): any pair combo rolls for a bonus
@@ -21552,21 +21605,27 @@ function activatePair(a, b) {
 
 function rawActivate(type, x, y) {
   if (type === 'shield') {
-    shieldEndTime = Date.now() + SHIELD_DURATION();
-    activeEffects.shield = SHIELD_DURATION();
-    shieldBroken = false;
-    bastion2BonusMs = 0; // fresh pickup → reset duration-bonus accumulator
-    // Shield pickup rules:
-    //   - Asteroid orb: +2 hits per pickup, cap 4.
-    //   - Other orbs:   +1 hit  per pickup, cap 2.
-    // Related paths (elsewhere in this file) for the Asteroid fortress stack:
-    //   - Burst           -> shieldHits = 4 (direct set, instant full stack).
-    //   - Fortress pair   -> shieldHits = 4 (direct set, instant full stack).
-    if (activeOrb === 'asteroid') {
-      // Bastion keystone (Rampart): pickups REFILL to full cap; else +2 capped.
-      shieldHits = rankOf('bastion') ? shieldHitsCap() : Math.min(shieldHitsCap(), shieldHits + 2);
-    } else {
-      shieldHits = Math.min(2, shieldHits + 1);
+    // Dead Star golden shield (v1.9.0 bug fix): a regular shield pickup must NOT
+    // stomp an active golden shield — its 10-hit pool + long timer outrank any
+    // normal shield, and overwriting them was the desync that left the gold
+    // visual up over zero protection. Absorb the pickup harmlessly while golden.
+    if (!goldenShieldActive) {
+      shieldEndTime = Date.now() + SHIELD_DURATION();
+      activeEffects.shield = SHIELD_DURATION();
+      shieldBroken = false;
+      bastion2BonusMs = 0; // fresh pickup → reset duration-bonus accumulator
+      // Shield pickup rules:
+      //   - Asteroid orb: +2 hits per pickup, cap 4.
+      //   - Other orbs:   +1 hit  per pickup, cap 2.
+      // Related paths (elsewhere in this file) for the Asteroid fortress stack:
+      //   - Burst           -> shieldHits = 4 (direct set, instant full stack).
+      //   - Fortress pair   -> shieldHits = 4 (direct set, instant full stack).
+      if (activeOrb === 'asteroid') {
+        // Bastion keystone (Rampart): pickups REFILL to full cap; else +2 capped.
+        shieldHits = rankOf('bastion') ? shieldHitsCap() : Math.min(shieldHitsCap(), shieldHits + 2);
+      } else {
+        shieldHits = Math.min(2, shieldHits + 1);
+      }
     }
   } else if (type === 'hyperspeed') {
     // Natural hyperspeed pickup — source tag enables Infinite Gate.
@@ -21838,6 +21897,20 @@ function spawnEmpRing(x, y, isChain, depth, opts) {
       phase: Math.random() * 6.28,
     });
   }
+  // Dead Star golden shield (v1.9.0): while the gold shield is up, its EMP bursts
+  // read GOLDEN and discharge 50% larger than normal.
+  const golden = (activeOrb === 'asteroid' && goldenShieldActive && goldenShieldHits > 0);
+  let _maxR = (opts && opts.radiusOverride) ? opts.radiusOverride : (isChain
+    ? (
+        // Secondary radius: 120px base × Detonation (+60% single-rank).
+        120 * (activeOrb === 'asteroid' ? (1 + 0.60 * rankOf('detonation')) : 1)
+        // PHALANX radius decay: 20 %/hop beyond the first secondary (depth 2).
+        * ((activeOrb === 'asteroid' && rankOf('phalanx') && (depth || 1) > 2)
+            ? Math.pow(0.8, (depth || 1) - 2) : 1)
+      )
+    // Primary radius: 180px × Overload (+30%) + Conduction (+20%).
+    : EMP_MAX_RADIUS * (activeOrb === 'asteroid' ? (1 + 0.30 * rankOf('chainReaction') + 0.20 * rankOf('conduction')) : 1));
+  if (golden) _maxR *= 1.5;
   pushCapped(empRings, {
     x, y,
     radius: 0, prevR: 0,
@@ -21854,16 +21927,8 @@ function spawnEmpRing(x, y, isChain, depth, opts) {
     clearAll: !!(opts && opts.clearAll),
     expandSpeed: (opts && opts.expandSpeed) || EMP_EXPAND_PX_PER_SEC,
     life: (opts && opts.life) || 420,
-    maxRadius: (opts && opts.radiusOverride) ? opts.radiusOverride : (isChain
-      ? (
-          // Secondary radius: 120px base × Detonation (+60% single-rank).
-          120 * (activeOrb === 'asteroid' ? (1 + 0.60 * rankOf('detonation')) : 1)
-          // PHALANX radius decay: 20 %/hop beyond the first secondary (depth 2).
-          * ((activeOrb === 'asteroid' && rankOf('phalanx') && (depth || 1) > 2)
-              ? Math.pow(0.8, (depth || 1) - 2) : 1)
-        )
-      // Primary radius: 180px × Overload (+30%) + Conduction (+20%).
-      : EMP_MAX_RADIUS * (activeOrb === 'asteroid' ? (1 + 0.30 * rankOf('chainReaction') + 0.20 * rankOf('conduction')) : 1)),
+    maxRadius: _maxR,
+    golden,   // gold-tinted draw (Dead Star golden shield EMP)
     opacity: isChain ? 0.6 : 1,
     bolts, sparks,
   }, EMP_RINGS_CAP);
@@ -21915,6 +21980,7 @@ function activateHyperspeed(durationOverride, peakScale, source) {
     hyperspeedInstanceStart = now;
     hyperspeedExtendBudgetUsedMs = 0;
     nebulaRiftFiredThisInstance = false;
+    nebulaSingularityArmedInstance = false;
     _nebula_lightspeedEngagedThisInstance = false;
   }
   const prevStacks = hyperSpeedStacks;
@@ -21951,8 +22017,19 @@ function activateHyperspeed(durationOverride, peakScale, source) {
       }
     }
   }
-  // Singularity capstone (Warp Cap): the rift now opens GUARANTEED when
-  // hyperspeed ENDS (see the hyperspeed-end block), not on reaching max stacks.
+  // Singularity capstone (Warp Cap) v1.9.0 rework: while CHARGED (20s CD), the
+  // next hyperspeed gained from ANY source snaps straight to MAX stacks and arms
+  // a guaranteed rift for when THIS instance ends. Consumes the cooldown here, at
+  // arm time — the rift open (hyperspeed-end block) no longer self-gates.
+  if (activeOrb === 'nebula' && rankOf('singularity') && !nebulaSingularityArmedInstance && now >= nebulaRiftNextArm) {
+    nebulaSingularityArmedInstance = true;
+    nebulaRiftNextArm = now + SINGULARITY_CD_MS;
+    hyperSpeedStacks = cap;                       // snap to max cap
+    try { triggerHitstop(40); } catch {}
+    try { shakeCapstone('singularity'); } catch {}
+    _nebula_flash('singularity', 'SINGULARITY', NEBULA_PATH_COLORS.cap, 0);
+    treeLog('singularity: CHARGED → max-cap warp armed, rift on end (20s CD)');
+  }
   if (hyperSpeedStacks > peakHyperSpeedStacks) peakHyperSpeedStacks = hyperSpeedStacks;
 
   hyperspeedPeakMult = computeHyperspeedPeakMult(hyperSpeedStacks, peakScale);
@@ -22038,8 +22115,17 @@ function elapsedRunSeconds() {
 // body type unlocks, the run-timer display, powerup-spawn escalation, and
 // the apocalypse trigger. Physics (scroll speed), animation, analytics, and
 // real-time cadence checks keep using elapsedRunSeconds() directly.
+//
+// ASCENSION run (v1.9.0): the clock — and everything it drives (timer display,
+// phases, body unlocks, powerup escalation, apocalypse trigger) — advances at
+// 2× from the moment the ascension run begins. Physics/scroll stay NORMAL
+// because they read elapsedRunSeconds() directly. We double only the portion
+// elapsed since the ascension started (no sudden jump on the pre-death
+// baseline); derived from elapsedRunSeconds() so it inherits pause-shifting.
 function elapsedProgressionSeconds() {
-  return elapsedRunSeconds() * TIME_DILATION;
+  let e = elapsedRunSeconds();
+  if (ascensionRunActive) e += Math.max(0, e - _ascensionElapsedAtStartSec);
+  return e * TIME_DILATION;
 }
 function formatRunTime(seconds) {
   const mm = Math.floor(seconds / 60);
@@ -22115,6 +22201,7 @@ function resetGame(isResume) {
   // would make statsOnKill() early-return for the whole run — freezing the
   // per-orb kill counter on the stats screen while the run still played out.
   ascensionRunActive = false;
+  _ascensionElapsedAtStartSec = 0;
   player = { x: W/2, y: H*0.72, vx: 0, vy: 0, angle: 0 };
   trail = []; deathParticles = [];
   lastSpawnZone = -1;
@@ -22462,6 +22549,11 @@ function checkCollisions() {
   // hyperspeed stack, player is immune to body contact. Applies to ALL
   // orbs (not just Warp/nebula). Borders are still lethal (handled below).
   const hyperInvuln = activeEffects.hyperspeed > 0 && hyperSpeedStacks >= 1;
+  // Dead Star golden shield (v1.9.0 bug fix): authoritative protection while up,
+  // independent of the regular shield timer. _bulwark_tick keeps activeEffects.shield
+  // alive too, but this guards the 1-frame window where a regular pickup just
+  // stomped the timer before the next tick reconciles it.
+  const goldenUp = activeOrb === 'asteroid' && goldenShieldActive && goldenShieldHits > 0;
   // Wall hits — v1.7.0 defensive layer:
   //   SHIELD active: absorb 1 charge, fire EMP at player, bounce + clamp.
   //   GHOST  active: bounce + clamp, no consumption.
@@ -22473,7 +22565,7 @@ function checkCollisions() {
   const hitTop    = player.y < -50;
   const hitBottom = player.y > H + 50;
   if (hitLeft || hitRight || hitTop || hitBottom) {
-    if (activeEffects.shield > 0) {
+    if (activeEffects.shield > 0 || goldenUp) {
       spawnEmpRing(player.x, player.y);
       shakeKill({ radius: 22 });
       triggerHitstop(40);
@@ -22556,16 +22648,17 @@ function checkCollisions() {
   }
 
   // SHIELD: absorb hit(s). FORTRESS SHIELD has 2 hit points.
-  if (activeEffects.shield > 0) {
+  if (activeEffects.shield > 0 || goldenUp) {
     for (let i = 0; i < bodies.length; i++) {
       if (bodyHits(bodies[i], 0)) {
-        // Accretion (Collapse T1): during a 3s absorb window, a pulled-in body
+        // Accretion (Collapse T1): during a 2s absorb window, a pulled-in body
         // is consumed into a shield stack (+1 hit, up to cap) instead of
         // destroyed — no EMP, no score (defensive conversion).
         if (activeOrb === 'asteroid' && Date.now() < accretionWindowEnd && shieldHits < shieldHitsCap()) {
           shieldHits = Math.min(shieldHitsCap(), shieldHits + 1);
           if (goldenShieldActive) goldenShieldHits = shieldHits;
           emitDestroyBurst(bodies[i].x, bodies[i].y, ASTEROID_PATH_COLORS.opportunism);
+          try { SFX.shieldAbsorb(); } catch {}
           releaseBodyCanvases(bodies[i]);
           bodies.splice(i, 1);
           lastBulwarkEmpFlashTime = Date.now();
@@ -22593,7 +22686,7 @@ function checkCollisions() {
     }
     // Shield also absorbs crack fragments — each fragment costs 1 hit, no
     // points, no streak, no combo contribution.
-    if (activeEffects.shield > 0) {
+    if (activeEffects.shield > 0 || goldenUp) {
       const shieldR = PLAYER_R * 3.6; // matches the visible shield aura radius
       for (let i = crackFragments.length - 1; i >= 0; i--) {
         const f = crackFragments[i];
@@ -23268,11 +23361,13 @@ function _updateCore() {
       hyperspeedExtendBudgetUsedMs = 0;
       nebulaRiftFiredThisInstance = false;
       _nebula_lightspeedEngagedThisInstance = false;
-      // Singularity capstone v1.9.0: GUARANTEED rift at top-center when
-      // hyperspeed ends (20s CD inside the helper).
-      if (activeOrb === 'nebula' && rankOf('singularity')) {
+      // Singularity capstone v1.9.0 rework: the rift opens only if THIS instance
+      // was armed (a charged Singularity snapped it to max stacks). The 20s CD
+      // was already consumed at arm time.
+      if (activeOrb === 'nebula' && rankOf('singularity') && nebulaSingularityArmedInstance) {
         _nebula_openRift(Date.now());
       }
+      nebulaSingularityArmedInstance = false;
       if (hyperspeedWhooshNodes) { try { hyperspeedWhooshNodes.stop(0.5); } catch {} hyperspeedWhooshNodes = null; }
       // Afterburn (Warp Velocity support) v1.9.0: single-rank → launch 3 discs.
       let abRankLocal = 0;
@@ -24225,6 +24320,27 @@ function startApocalypse() {
   }
   bodies = [];
   powerups = [];
+  // v1.9.0: wipe active skill-spawned on-screen visuals so the screen reads
+  // clean going into the apocalypse. Bodies/powerups are already gone; this
+  // clears the transient effect/hazard collections, the per-orb floating-text
+  // flash queues, and the standalone capstone overlays (Singularity rift,
+  // Dead Star golden shield + implode). All are purely transient and would
+  // otherwise re-render over the apocalypse curtain. (Mirrors the empty-array
+  // clears the per-orb reset paths use, so no audio/cleanup is bypassed.)
+  empRings = []; novaRings = []; burnZones = []; afterburnDiscs = [];
+  planetRipples = []; crackFragments = [];
+  nebulaRift = null; deadStarImplode = null;
+  goldenShieldActive = false; goldenShieldHits = 0;
+  _solarFireballs = [];
+  _cosmicClones = []; _cosmicArcs = [];
+  _drifterV2_threads = []; _drifterV2_threadProjectiles = [];
+  _phantomV2_deathBursts = []; _phantomV2_wraiths = []; _phantomV2_chainArcs = [];
+  _phantomV2_echoes = []; _phantomV2_severSnaps = []; _phantomV2_lingerZones = [];
+  _phantomV2_reverbDropPositions = [];
+  _cyan_flashes = []; _cosmic_flashes = []; _solar_flashes = [];
+  _nebula_flashes = []; _asteroid_flashes = []; _drifterV2_flashes = [];
+  _phantomV2_flashes = [];
+  try { clearPendingNovaTimeouts(); } catch {}
   // Fade gameplay music to silence over ~3s.
   SFX.playTrack(null, 3);
   leftDown = false;
@@ -28522,7 +28638,7 @@ function drawEmpRings() {
     // ring-fill band, and individual sparks have been dropped in the Android
     // GPU-crash mitigation pass.
     ctx.globalAlpha = fade;
-    ctx.strokeStyle = 'rgba(100,220,255,0.9)';
+    ctx.strokeStyle = r.golden ? 'rgba(255,200,80,0.9)' : 'rgba(100,220,255,0.9)';
     ctx.lineWidth = 2;
     ctx.beginPath(); ctx.arc(0, 0, outerR, 0, 6.28); ctx.stroke();
 
@@ -28551,7 +28667,7 @@ function drawEmpRings() {
       }
       ctx.globalAlpha = boltFade;
       ctx.lineWidth = 1.6;
-      ctx.strokeStyle = `rgba(255,255,255,${0.9 * boltFade + 0.1})`;
+      ctx.strokeStyle = r.golden ? `rgba(255,230,160,${0.9 * boltFade + 0.1})` : `rgba(255,255,255,${0.9 * boltFade + 0.1})`;
       ctx.stroke(bolts);
     }
 
@@ -28748,6 +28864,18 @@ function updateCapstoneCountdowns() {
       && (now - lingeringHorizonLastFireTime < 300);
     if (owned && firing) capCdLastFired.eventHorizon = lingeringHorizonLastFireTime;
     set('capCdEventHorizon', owned, progress, 'rgba(255,200,80,0.95)', false, firing);
+  }
+  // SINGULARITY — Warp Cap capstone. v1.9.0 rework: a 20s charge. PRIMED (glowing)
+  // when charged/ready or while the current warp is armed for a rift; otherwise
+  // fills toward the next charge. Sits in the bottom-left ring stack (flex-gapped,
+  // no overlap with the HORIZON ring or any other HUD element).
+  {
+    const owned = activeOrb === 'nebula' && rankOf('singularity') > 0;
+    const charged = now >= nebulaRiftNextArm;
+    const primed = owned && (charged || nebulaSingularityArmedInstance);
+    const progress = primed ? 1 : Math.max(0, Math.min(1, (SINGULARITY_CD_MS - (nebulaRiftNextArm - now)) / SINGULARITY_CD_MS));
+    const firing = owned && !!nebulaRift && (now - nebulaRift.startTime < 300);
+    set('capCdSingularity', owned, progress, 'rgba(150,120,255,0.95)', primed, firing);
   }
 }
 
@@ -30704,6 +30832,9 @@ let _ascensionPrevOrb = null;
 // cutscene. Used in ascensionBeginRun to restore runStartTime so the timer
 // resumes from that point (cutscene time doesn't count).
 let _ascensionDeathElapsedMs = 0;
+// Run-seconds baseline captured when the ascension run begins. The progression
+// clock advances at 2× past this point (see elapsedProgressionSeconds).
+let _ascensionElapsedAtStartSec = 0;
 
 // v1.8.0 PART D: reverse-death convergence particles. Self-contained
 // system separate from deathParticles so we can run physics + render
@@ -30737,10 +30868,13 @@ function ascensionBeginRun() {
   // Do NOT resetGame(): the run resumes from the death frame — player position,
   // body positions, score, planetsPassed, frame counter all preserved. Restore
   // the run timer to the death-time elapsed (cutscene wall-time doesn't count)
-  // so difficulty/scroll/progression pick up exactly where the player died — at
-  // NORMAL pace (no 2× multiplier).
+  // so difficulty/scroll pick up exactly where the player died. The PROGRESSION
+  // clock (timer display + phase/apocalypse progression) now advances at 2× from
+  // this point — physics/scroll stay normal. We snapshot the run-seconds baseline
+  // here so elapsedProgressionSeconds() only doubles time elapsed past it.
   const now = Date.now();
   runStartTime = now - Math.max(0, _ascensionDeathElapsedMs);
+  _ascensionElapsedAtStartSec = elapsedRunSeconds();
   // Bring the player back to "alive": zero momentum, no death-flash residue.
   // Player position is left untouched (death position).
   player.vx = 0; player.vy = 0;
