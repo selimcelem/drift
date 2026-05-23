@@ -5700,7 +5700,7 @@ const TREE_DEFS = {
             desc: 'On a kill while shielded, 20% chance to add +1s of shield duration. 2s cooldown. Caps at 2× base duration.',
             effect: r => r ? '20% kill → +1s shield (2s CD)' : 'Locked' },
           { key: 'accretion', name: 'Accretion', tier: 1, max: 1, costOverride: [5500], pointCost: 3,
-            desc: 'While shielded, every 6s a 2-second window opens — bodies pulled into contact are crushed into shield stacks (+1 hit, up to your cap, and count as kills), and the window extends your shield +0.5s.',
+            desc: 'While shielded, every 4s a 2-second window opens — bodies pulled into contact are crushed into shield stacks (+1 hit, up to your cap, and count as kills), and the window extends your shield +0.5s.',
             effect: r => r ? 'Absorb pulled bodies → shield hits · +0.5s/window' : 'Locked' },
           { key: 'tidalForce', name: 'Tidal Force', tier: 2, max: 1, costOverride: [3000], pointCost: 2,
             desc: 'Your gravity pull is +50% stronger, and pulls harder the closer a body gets.',
@@ -8169,16 +8169,16 @@ function _bulwark_tick(now) {
     }
   } else { secondWallShieldlessSince = 0; }
 
-  // Accretion (Collapse T1) v1.9.0: every 6s, open a 2s absorb window. Pulled-
+  // Accretion (Collapse T1) v1.9.0: every 4s, open a 2s absorb window. Pulled-
   // contact bodies become shield stacks (applied in the shield body-contact loop
   // while now < accretionWindowEnd). Opening a window also extends the active
   // shield +0.5s (once per window). The golden shield is hit-based (no timer), so
   // the +0.5s only applies to a normal timed shield. The shield aura pulses while
   // the window is open (now < accretionWindowEnd) as the visual cue.
   if (rankOf('accretion') && shielded) {
-    if (accretionNextWindow === 0) accretionNextWindow = now + 6000;
+    if (accretionNextWindow === 0) accretionNextWindow = now + 4000;
     else if (now >= accretionNextWindow) {
-      accretionNextWindow = now + 6000;
+      accretionNextWindow = now + 4000;
       accretionWindowEnd = now + 2000;
       if (!goldenShieldActive && shieldEndTime > now) {
         shieldEndTime += 500;
