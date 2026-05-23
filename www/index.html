@@ -5700,7 +5700,7 @@ const TREE_DEFS = {
             desc: 'On a kill while shielded, 20% chance to add +1s of shield duration. 2s cooldown. Caps at 2× base duration.',
             effect: r => r ? '20% kill → +1s shield (2s CD)' : 'Locked' },
           { key: 'accretion', name: 'Accretion', tier: 1, max: 1, costOverride: [3000], pointCost: 2,
-            desc: 'While shielded, every 3s a 2-second window opens — bodies pulled into contact are absorbed as shield stacks (+1 hit, up to your cap) instead of destroyed.',
+            desc: 'While shielded, every 3s a 2-second window opens — bodies pulled into contact are crushed into shield stacks (+1 hit, up to your cap) and still count as kills.',
             effect: r => r ? 'Absorb pulled bodies → shield hits' : 'Locked' },
           { key: 'tidalForce', name: 'Tidal Force', tier: 2, max: 1, costOverride: [5500], pointCost: 3,
             desc: 'Your gravity pull is +50% stronger, and pulls harder the closer a body gets.',
@@ -8081,7 +8081,10 @@ function _bulwark_shieldStackHit() {
     goldenShieldActive = false; goldenShieldHits = 0;
     return true;
   }
-  if (goldenShieldActive) goldenShieldHits = shieldHits;
+  // Golden shield is a fixed 10-hit CONSUMABLE: its pool only ever decreases.
+  // Use min (never raise it to a transiently-higher shieldHits, e.g. after a
+  // fortress burst) so nothing can refill it past what's left. v1.9.0 fix.
+  if (goldenShieldActive) goldenShieldHits = Math.min(goldenShieldHits, shieldHits);
   return false;
 }
 
@@ -8400,6 +8403,10 @@ function _nebula_tickRift() {
     if (dist <= NEBULA_RIFT_KILL_RADIUS + b.radius) {
       try { emitDestroyBurst(b.x, b.y, NEBULA_PATH_COLORS.cap); } catch {}
       try { emitDestroyEffects(b, 'nova'); } catch {}
+      // Singularity rift kill SFX: nova destroy cue (matches the nova-tagged
+      // rift effects). planetDestroyed self-throttles via destroySfxGainScale,
+      // so several bodies crushed in one frame don't pile into a wall.
+      try { SFX.planetDestroyed('nova'); } catch {}
       addDestroyPoints();
       try { releaseBodyCanvases(b); } catch {}
       bodies.splice(i, 1);
@@ -21898,9 +21905,14 @@ function spawnEmpRing(x, y, isChain, depth, opts) {
     });
   }
   // Dead Star golden shield (v1.9.0): while the gold shield is up, its EMP bursts
-  // read GOLDEN and discharge 50% larger than normal.
-  const golden = (activeOrb === 'asteroid' && goldenShieldActive && goldenShieldHits > 0);
-  let _maxR = (opts && opts.radiusOverride) ? opts.radiusOverride : (isChain
+  // read GOLDEN and discharge 50% larger than normal. opts.golden lets the
+  // golden chain (below) keep tinting hops gold even after the shield depletes
+  // mid-cascade.
+  const golden = (opts && opts.golden != null)
+    ? !!opts.golden
+    : (activeOrb === 'asteroid' && goldenShieldActive && goldenShieldHits > 0);
+  const hasOverride = !!(opts && opts.radiusOverride);
+  let _maxR = hasOverride ? opts.radiusOverride : (isChain
     ? (
         // Secondary radius: 120px base × Detonation (+60% single-rank).
         120 * (activeOrb === 'asteroid' ? (1 + 0.60 * rankOf('detonation')) : 1)
@@ -21910,7 +21922,9 @@ function spawnEmpRing(x, y, isChain, depth, opts) {
       )
     // Primary radius: 180px × Overload (+30%) + Conduction (+20%).
     : EMP_MAX_RADIUS * (activeOrb === 'asteroid' ? (1 + 0.30 * rankOf('chainReaction') + 0.20 * rankOf('conduction')) : 1));
-  if (golden) _maxR *= 1.5;
+  // Primary golden ring is +50%; rings with an EXPLICIT radius (golden chain hops,
+  // Aegis screen-wipe) already carry their final size — don't re-scale them.
+  if (golden && !hasOverride) _maxR *= 1.5;
   pushCapped(empRings, {
     x, y,
     radius: 0, prevR: 0,
@@ -22652,15 +22666,23 @@ function checkCollisions() {
     for (let i = 0; i < bodies.length; i++) {
       if (bodyHits(bodies[i], 0)) {
         // Accretion (Collapse T1): during a 2s absorb window, a pulled-in body
-        // is consumed into a shield stack (+1 hit, up to cap) instead of
-        // destroyed — no EMP, no score (defensive conversion).
-        if (activeOrb === 'asteroid' && Date.now() < accretionWindowEnd && shieldHits < shieldHitsCap()) {
+        // is crushed into a shield stack (+1 hit, up to cap).
+        // v1.9.0 fix: does NOT run while the Dead Star golden shield is up — the
+        // golden shield is a fixed 10-hit consumable, and Accretion was refilling
+        // it (via the shieldHits→goldenShieldHits sync) to the normal cap every
+        // window, making it effectively permanent. While golden, bodies fall
+        // through to the normal shield-break path and consume a golden hit.
+        // v1.9.0 balance: the absorb now COUNTS AS A KILL (score + destroy-procs)
+        // so it no longer anti-synergizes with Bastion II / Salvage.
+        if (activeOrb === 'asteroid' && !goldenShieldActive && Date.now() < accretionWindowEnd && shieldHits < shieldHitsCap()) {
+          const _absorbVictim = bodies[i];
           shieldHits = Math.min(shieldHitsCap(), shieldHits + 1);
-          if (goldenShieldActive) goldenShieldHits = shieldHits;
           emitDestroyBurst(bodies[i].x, bodies[i].y, ASTEROID_PATH_COLORS.opportunism);
           try { SFX.shieldAbsorb(); } catch {}
+          addDestroyPoints();
           releaseBodyCanvases(bodies[i]);
           bodies.splice(i, 1);
+          checkDestroyProc(_absorbVictim, 'shield');   // feed Bastion II / Salvage / streak
           lastBulwarkEmpFlashTime = Date.now();
           break;
         }
@@ -24000,7 +24022,16 @@ function _updateCore() {
             const maxDepth = isA
               ? (1 + rankOf('chainReaction') + rankOf('chainReaction2') + 2 * rankOf('conduction') + 3 * rankOf('phalanx'))
               : 1;
-            if ((r.depth || 1) < maxDepth) {
+            // Dead Star golden EMP (v1.9.0): the gold burst chains INDEFINITELY —
+            // each hop is 20% smaller than its parent, so it self-terminates once
+            // it shrinks below a usable radius (~15 hops from a 270px primary) or
+            // runs out of bodies in range. Bounded by EMP_RINGS_CAP regardless.
+            // This is the Dead Star payoff for the shield now being a 10-hit
+            // consumable rather than permanently upkept.
+            if (r.golden) {
+              const nextR = (r.maxRadius || EMP_MAX_RADIUS) * 0.8;
+              if (nextR >= 8) secondarySpawns.push({ x: b.x, y: b.y, depth: (r.depth || 1) + 1, golden: true, goldenR: nextR });
+            } else if ((r.depth || 1) < maxDepth) {
               secondarySpawns.push({ x: b.x, y: b.y, depth: (r.depth || 1) + 1 });
               if (isA && rankOf('phalanx') && Math.random() < 0.25) {
                 secondarySpawns.push({ x: b.x + (Math.random() - 0.5) * 40, y: b.y + (Math.random() - 0.5) * 40, depth: (r.depth || 1) + 1, fork: true });
@@ -24016,7 +24047,10 @@ function _updateCore() {
       // v1.7.0: ONE shake per frame for the entire EMP cascade kill set.
       if (empKillCount > 0) shakeMassDestroy(empKillCount);
       if (_asteroidPhalanxForkPending) { _asteroidPhalanxForkPending = false; if (activeOrb === 'asteroid') _asteroid_flash('phalanx', 'PHALANX', ASTEROID_PATH_COLORS.devastation, 800); }
-      for (const s of secondarySpawns) spawnEmpRing(s.x, s.y, true, s.depth);
+      for (const s of secondarySpawns) {
+        if (s.golden) spawnEmpRing(s.x, s.y, true, s.depth, { golden: true, radiusOverride: s.goldenR });
+        else spawnEmpRing(s.x, s.y, true, s.depth);
+      }
       // EMP rings also wipe out crack fragments they sweep over. No chain
       // EMP, no points, no streak — just clear the hazard.
       for (let i = crackFragments.length - 1; i >= 0; i--) {
