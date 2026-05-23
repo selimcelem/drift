@@ -5305,8 +5305,6 @@ const TREE_NODE_COSTS = {
   3: [21000, 32000, 42000, 53000],
 };
 const TREE_CAPSTONE_COST = 28000;
-const TREE_RESPEC_SINGLE = 4000;
-const TREE_RESPEC_PER_RANK = 1400;
 
 // Capstones that are purchasable in the UI data model but NOT yet wired to
 // gameplay effects. Remove entries from this set as each capstone's effect
@@ -5958,25 +5956,14 @@ const ORB_CAPSTONE_COST_SCALE = {
 function orbCostScale(orbKey) {
   return ORB_COST_SCALE[orbKey] || 1;
 }
-// v1.9.0 economy: the original 5 orbs use a flat, non-escalating tier price —
-// T1=1000, T2=2000, T3=3000 per rank, capstone=5000 — independent of the shared
-// TREE_NODE_COSTS table, ORB_COST_SCALE, and any per-node costOverride. The v2
-// orbs (Roamer/Phantasm) keep their existing costOverride-driven prices, so the
-// table/scales below are intentionally left unchanged.
-// v1.9.0: cyan (Drifter) left this set when it migrated to the costOverride +
-// active-budget model — its nodes price from costOverride at scale 1.0, like
-// drifterV2/phantomV2. The remaining four still use flat tier pricing.
-const ORIGINAL_5_ORBS = new Set([]);  // v1.9.0: all 5 original orbs migrated to costOverride + active-budget
-const ORIGINAL_5_FLAT_CAPSTONE = 5000;
+// v1.9.0 economy: all 5 original orbs migrated to costOverride + active-budget
+// pricing (scale 1.0), like the v2 orbs (Roamer/Phantasm). The old flat tier
+// pricing (T1=1000/T2=2000/T3=3000, capstone=5000) for the "ORIGINAL_5" set was
+// removed once that set emptied — every node now prices from costOverride.
 function roundCrystals500(n) {
   return Math.round(n / 500) * 500;
 }
 function nodeCost(tier, nextRank, orbKey, node) {
-  // v1.9.0 economy: original 5 orbs price flat by tier (1k/2k/3k), every rank
-  // the same, ignoring costOverride and scale. Returns per-rank cost.
-  if (ORIGINAL_5_ORBS.has(orbKey)) {
-    return (tier | 0) * 1000;
-  }
   // v1.7.0: per-node costOverride lets specific nodes price independently of
   // the tier table — needed when a node's max-ranks differs from its peers
   // (e.g. Overdrive at 2 ranks needs to price the path closer to the
@@ -5992,14 +5979,7 @@ function nodeCost(tier, nextRank, orbKey, node) {
   if (!base) return 0;
   return roundCrystals500(base * orbCostScale(orbKey));
 }
-function nodeTotalCost(tier, maxRank, orbKey) {
-  let sum = 0;
-  for (let r = 1; r <= maxRank; r++) sum += nodeCost(tier, r, orbKey);
-  return sum;
-}
 function capstoneCost(orbKey) {
-  // v1.9.0 economy: original 5 orbs flat 5000 per capstone.
-  if (ORIGINAL_5_ORBS.has(orbKey)) return ORIGINAL_5_FLAT_CAPSTONE;
   const scale = ORB_CAPSTONE_COST_SCALE[orbKey] || 1;
   return roundCrystals500(TREE_CAPSTONE_COST * scale);
 }
@@ -6097,7 +6077,9 @@ function purchaseCapstone(orbKey, capKey) {
   const cap = def.capstones.find(c => c.key === capKey);
   if (!cap) return false;
   if (state.capstones[capKey]) return false;
-  if (!capstonePrereqMet(orbKey, capKey)) return false;
+  // (Capstone prereq check removed in v1.9.0 — capstones became path nodes; the
+  // def.capstones pool is empty so the `!cap` guard above already returns false
+  // here for every orb. No prereq gate needed.)
   const _capCost = capstoneCost(orbKey);
   if (totalCrystals < _capCost) return false;
   totalCrystals = Math.max(0, totalCrystals - _capCost);
@@ -6108,54 +6090,10 @@ function purchaseCapstone(orbKey, capKey) {
   return true;
 }
 
-// Capstone prereqs per design doc. Hand-coded because each capstone has its
-// own rule; keeping them close to the call site makes the logic auditable.
-function capstonePrereqMet(orbKey, capKey) {
-  const s = orbTrees[orbKey];
-  if (!s) return false;
-  const anyAtRank = (pKey, idx, r) => (s[pKey] && (s[pKey][idx] | 0) >= r);
-  const anyT3 = (o) => {
-    const def = TREE_DEFS[o];
-    for (const pKey of Object.keys(def.paths)) {
-      if ((s[pKey][2] | 0) >= 1) return true;
-    }
-    return false;
-  };
-  const countT2Invested = () => {
-    const def = TREE_DEFS[orbKey];
-    let c = 0;
-    for (const pKey of Object.keys(def.paths)) {
-      if ((s[pKey][1] | 0) >= 1) c++;
-    }
-    return c;
-  };
-  // v1.7.0: any single path (all of T1/T2/T3) maxed — used for SUPERLUMINAL.
-  const anyPathMaxed = (o) => {
-    const def = TREE_DEFS[o];
-    for (const pKey of Object.keys(def.paths)) {
-      const nodes = def.paths[pKey].nodes;
-      let allMaxed = true;
-      for (let i = 0; i < nodes.length; i++) {
-        if ((s[pKey][i] | 0) < nodes[i].max) { allMaxed = false; break; }
-      }
-      if (allMaxed) return true;
-    }
-    return false;
-  };
-  // cyan capstones (Dead Center / Cadenza / Butterfly) are path nodes in the
-  // active-budget tree now — gated by ActiveBudget prereqs, not this pool.
-  // cosmic capstones (Endless Dusk / Reaping Storm / Eclipse) are path nodes in
-  // the active-budget tree now — gated by ActiveBudget prereqs, not this pool.
-  // solar capstones (Stellar Collapse / Sun Forge / Critical Mass) are path
-  // nodes in the active-budget tree now — gated by ActiveBudget prereqs.
-  // nebula capstones (Lightspeed / Lingering Horizon / Singularity) are path
-  // nodes in the active-budget tree now (v1.9.0 Warp rework) — gated by
-  // ActiveBudget prereqs, not this pool.
-  // asteroid capstones (Aegis / Phalanx / Dead Star) are path nodes in the
-  // active-budget tree now (v1.9.0 Bulwark rework) — gated by ActiveBudget
-  // prereqs, not this pool.
-  return false;
-}
+// (capstonePrereqMet removed in v1.9.0 — all capstones became path nodes in the
+// active-budget trees, gated by ActiveBudget prereqs. The legacy def.capstones
+// pool is empty for every orb, so the old hand-coded prereq gate + its helpers
+// anyAtRank/anyT3/countT2Invested/anyPathMaxed were dead and have been deleted.)
 
 // Single-node respec (universal, v1.9.0 economy): fee = 20% of crystals invested
 // in this node; player gets 100% of the investment back. Works for every orb,
@@ -6183,7 +6121,9 @@ function _respecNode_default(orbKey, pathKey, nodeIdx) {
   const _capRefund = capstoneCost(orbKey);
   if (def.capstones && state.capstones) {
     for (const cap of def.capstones) {
-      if (state.capstones[cap.key] && !capstonePrereqMet(orbKey, cap.key)) {
+      // capstonePrereqMet was always false (pool empty) → !it === true; preserved
+      // as a literal. This loop is a no-op anyway (def.capstones is empty).
+      if (state.capstones[cap.key] && true) {
         state.capstones[cap.key] = false;
         totalCrystals += _capRefund;
         // (cyan's CALCULATED DRIFT was removed in v1.9.0 — no cascade needed.)
@@ -6676,6 +6616,12 @@ function _drifterV2_clearActiveMap() {
 const ActiveBudget = (() => {
   const configs = {};   // orbKey -> normalized config
   const bonus = {};     // orbKey -> purchased +budget points (persisted)
+  // v1.9.0 perf: memoized node lookup. resolveNode is a pure function of the
+  // STATIC TREE_DEFS structure (node definitions + their path/index) — it does
+  // NOT read activePoints, so activate/deactivate/respec/migrate (which only
+  // change which nodes are ACTIVE, never the node definitions) cannot stale it.
+  // Hence no invalidation is needed; the per-orb map is built once on first use.
+  const _resolveCache = {};   // orbKey -> { nodeKey -> {pathKey,nodeIdx,node} }
 
   function register(orbKey, cfg) {
     configs[orbKey] = {
@@ -6712,12 +6658,20 @@ const ActiveBudget = (() => {
     return st.activePoints;
   }
   function resolveNode(orbKey, nodeKey) {
-    const def = TREE_DEFS[orbKey]; if (!def) return null;
-    for (const pKey of Object.keys(def.paths)) {
-      const nodes = def.paths[pKey].nodes;
-      for (let i = 0; i < nodes.length; i++) if (nodes[i].key === nodeKey) return { pathKey: pKey, nodeIdx: i, node: nodes[i] };
+    let oc = _resolveCache[orbKey];
+    if (!oc) {
+      oc = Object.create(null);
+      const def = TREE_DEFS[orbKey];
+      if (def) {
+        for (const pKey of Object.keys(def.paths)) {
+          const nodes = def.paths[pKey].nodes;
+          for (let i = 0; i < nodes.length; i++) oc[nodes[i].key] = { pathKey: pKey, nodeIdx: i, node: nodes[i] };
+        }
+      }
+      _resolveCache[orbKey] = oc;
     }
-    return null;
+    const hit = oc[nodeKey];
+    return hit !== undefined ? hit : null;   // unknown key → null (same as the old scan)
   }
   function rankByKey(orbKey, nodeKey) {
     const def = TREE_DEFS[orbKey], st = orbTrees[orbKey]; if (!def || !st) return 0;
@@ -7443,10 +7397,13 @@ function _cosmicDrawEntities() {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
   }
   const arcsAlive = [];
+  // v1.9.0 perf: shadowColor/shadowBlur are constant for every arc — set once
+  // (was per-arc; up to ~N GPU state changes/frame). ctx.restore() below clears them.
+  ctx.shadowColor = `rgba(${COSMIC_PATH_COLORS.wraith},0.8)`; ctx.shadowBlur = 8;
   for (const a of _cosmicArcs) {
     const t = (now - a.born) / a.lifeMs; if (t >= 1) continue; arcsAlive.push(a);
     ctx.globalAlpha = (1 - t) * 0.9; ctx.strokeStyle = `rgba(${COSMIC_PATH_COLORS.wraith},1)`;
-    ctx.lineWidth = 2 + 2 * (1 - t); ctx.shadowColor = `rgba(${COSMIC_PATH_COLORS.wraith},0.8)`; ctx.shadowBlur = 8;
+    ctx.lineWidth = 2 + 2 * (1 - t);
     ctx.beginPath(); ctx.moveTo(a.x1, a.y1);
     for (let s = 1; s < 4; s++) { const u = s / 4; ctx.lineTo(a.x1 + (a.x2 - a.x1) * u + (Math.random() - 0.5) * 14, a.y1 + (a.y2 - a.y1) * u + (Math.random() - 0.5) * 14); }
     ctx.lineTo(a.x2, a.y2); ctx.stroke();
@@ -8294,12 +8251,40 @@ function _bulwark_drawGoldenShield() {
   }
   ctx.restore();
 }
-OrbHooks.on('onRender', () => { if (activeOrb === 'asteroid') { _bulwark_drawGoldenShield(); _bulwark_drawImplode(); } });
+// Dead Star bottom-left counter (mirrors Inferno's COLLAPSE / Phantasm's MARKS HUD).
+// Shows progress toward the DEAD_STAR_TRIGGER (30) shield-stacks-lost implode. Sits
+// in the counter column (safe-bottom +100px), 64px ABOVE the AEGIS ring row
+// (+36px) — no overlap. Bulwark has no other counter, so this column is its own.
+let _bulwark_hudEl = null, _bulwark_hudDeadStarEl = null;
+function _bulwark_ensureHud() {
+  if (_bulwark_hudEl) return _bulwark_hudEl;
+  const el = document.createElement('div'); el.id = 'asteroidHud';
+  el.style.cssText = 'position:absolute; bottom:calc(var(--safe-bottom) + 100px); left:calc(var(--safe-left) + 8px); pointer-events:none; z-index:6; font-family:Orbitron,monospace; font-size:10px; letter-spacing:2px; display:none; flex-direction:column; gap:4px;';
+  const ds = document.createElement('div'); ds.style.cssText = 'color:rgba(230,190,90,0.95); text-shadow:0 0 6px rgba(230,190,90,0.6);'; ds.textContent = 'DEAD STAR 0/' + DEAD_STAR_TRIGGER; el.appendChild(ds);
+  (document.getElementById('gameWrapper') || document.body).appendChild(el);
+  _bulwark_hudEl = el; _bulwark_hudDeadStarEl = ds;
+  return el;
+}
+function _bulwark_updateHud() {
+  _bulwark_ensureHud();
+  const playing = state === 'playing' || state === 'apocalypse';
+  const has = activeOrb === 'asteroid' && rankOf('blackHole') > 0 && playing;
+  _bulwark_hudEl.style.display = has ? 'flex' : 'none';
+  if (has) {
+    // While the golden shield is up the counter is locked out (not accumulating);
+    // show its active state instead of a frozen number.
+    _bulwark_hudDeadStarEl.textContent = goldenShieldActive
+      ? 'DEAD STAR ★ ACTIVE'
+      : 'DEAD STAR ' + deadStarStackCounter + '/' + DEAD_STAR_TRIGGER;
+  }
+}
+OrbHooks.on('onRender', () => { if (activeOrb === 'asteroid') { _bulwark_drawGoldenShield(); _bulwark_drawImplode(); _bulwark_updateHud(); } });
 OrbHooks.on('onResetGame', () => {
   _asteroidPhalanxForkPending = false;
   asteroidCapacitorNextPulse = 0; secondWallNextArm = 0; secondWallShieldlessSince = 0;
   accretionNextWindow = 0; accretionWindowEnd = 0;
   deadStarStackCounter = 0; goldenShieldActive = false; goldenShieldHits = 0; deadStarImplode = null;
+  if (_bulwark_hudEl) _bulwark_hudEl.style.display = 'none';
 });
 
 // === NEBULA schema migration (v1 multi-rank → v2 active-budget) ============
@@ -13038,13 +13023,15 @@ function _phantomV2_drawWraiths() {
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
     ctx.lineCap = 'round';
+    // v1.9.0 perf: shadowBlur/shadowColor constant for all arcs — set once (was
+    // per-arc, up to 24 redundant GPU state changes/frame). ctx.restore() clears.
+    ctx.shadowBlur = 8; ctx.shadowColor = 'rgba(210,150,255,0.8)';
     for (const a of _phantomV2_chainArcs) {
       const age = now - a.born;
       if (age >= a.lifeMs) continue;
       liveArcs.push(a);
       const fade = 1 - age / a.lifeMs;
       ctx.strokeStyle = `rgba(210,150,255,${(0.85 * fade).toFixed(2)})`;
-      ctx.shadowBlur = 8; ctx.shadowColor = 'rgba(210,150,255,0.8)';
       ctx.lineWidth = 2.5 * fade + 0.5;
       ctx.beginPath(); ctx.moveTo(a.x1, a.y1); ctx.lineTo(a.x2, a.y2); ctx.stroke();
     }
@@ -14993,9 +14980,6 @@ let twilightEchoNextFireTime = 0;
 let beyondEndTime = 0;
 // Edge-detect flag for ghost-active → inactive transition.
 let prevGhostActive = false;
-// Razor Veil (Phantom Wraith T1): rearm timer gating next destroy-on-contact
-// kill during ghost-without-shield.
-let razorVeilNextArmTime = 0;
 // Combustion (Inferno Inferno T3): kills tallied during nova casts — applied
 // as bonus wave count to the NEXT nova within the 3 s carryover window.
 // v1.6.3: 5 s cooldown between consumption events; if blocked, the bonus
@@ -15090,9 +15074,6 @@ let lingeringHorizonLastFireTime = 0;
 let nightShadeNextFireTime = 0;
 let sunForgeNextFireTime   = 0;
 let aegisNextFireTime      = 0;
-// BUTTERFLY EFFECT (Drifter capstone) v1.6.3 rework: 10 s cooldown
-// gate on successful procs. Failed rolls do NOT stamp the cooldown.
-let butterflyEffectNextProcTime = 0;
 // Loaded Dice (Drifter Chance T1) v1.6.3 rework: 15 s cooldown gate on
 // the burst-cooldown-reset proc. Failed rolls do NOT stamp the cooldown.
 let loadedDiceNextProcTime = 0;
@@ -15100,10 +15081,6 @@ let loadedDiceNextProcTime = 0;
 // on the second-pickup proc only. The longest-expired type bias has no
 // cooldown.
 let fortuneFavorsNextProcTime = 0;
-// Legacy state — old butterfly used setTimeouts; current path schedules
-// inline via spawnButterflyEffectSplit. Kept (and cleared on reset) in
-// case any external path still queues into it.
-let butterflyPending = [];
 // DEAD CENTER (Drifter capstone): radial-menu overlay state.
 let deadCenterActive = false;
 let deadCenterTimeoutId = null;
@@ -15118,7 +15095,6 @@ function resetTreeNodeState() {
   twilightEchoNextFireTime = 0;
   beyondEndTime = 0;
   prevGhostActive = false;
-  razorVeilNextArmTime = 0;
   combustionBonus = 0;
   combustionBonusExpiry = 0;
   combustionNextConsumeTime = 0;
@@ -15162,9 +15138,6 @@ function resetTreeNodeState() {
   nightShadeNextFireTime = now + NIGHT_SHADE_CYCLE_MS;
   sunForgeNextFireTime   = now + SUN_FORGE_CYCLE_MS;
   aegisNextFireTime      = now + AEGIS_CYCLE_MS;
-  for (const id of butterflyPending) clearTimeout(id);
-  butterflyPending = [];
-  butterflyEffectNextProcTime = 0;
   butterflyEffectVisuals = [];
   loadedDiceNextProcTime = 0;
   fortuneFavorsNextProcTime = 0;
@@ -15182,12 +15155,6 @@ function novaScale(r) {
   if (rankOf('corona') > 0) mult += 0.20;
   if (rankOf('solarFlare') > 0) mult += 0.10;
   return mult;
-}
-
-// Razor Veil rearm cooldown ms by rank.
-function razorVeilRearmMs() {
-  const r = rankOf('razorVeil');
-  return [3000, 2000, 1000][r - 1] || 0;
 }
 
 // DEAD CENTER (Drifter capstone) overlay lifecycle. Called from executeBurst
@@ -16997,14 +16964,6 @@ const SFX = (function() {
   // cues, and routed through the same destroy-density gain ceiling so a burst of
   // absorbs in one window can't pile into a wall (absorbs come in clusters when
   // Gravity Well drags several bodies in at once).
-  function shieldAbsorb() {
-    const ds = destroySfxGainScale();
-    safeSfx(t => {
-      chipSweep('sine', 340, 760, t, 0.11, 0.10 * ds);
-      chipSweep('triangle', 170, 380, t, 0.09, 0.06 * ds);
-    });
-  }
-
   // Combo activate — every combo distinct, all at vol ~0.4.
   // Wired by activateCombo() in the game loop, keys must match COMBO_DEFS.
   function comboActivate(key) {
@@ -17994,7 +17953,7 @@ const SFX = (function() {
   }
 
   return {
-    init, attract, repel, pickup, planetDestroyed, shieldAbsorb, death,
+    init, attract, repel, pickup, planetDestroyed, death,
     comboActivate, comboDestroySound, startHyperspeedWhoosh,
     startApocalypseRumble, playApocalypseImpact, screamShriek, startVoidHum,
     playSfxBuffer,
@@ -21907,15 +21866,9 @@ function spawnEmpRing(x, y, isChain, depth, opts) {
       segs: 5 + Math.floor(Math.random() * 2), // 5-6
     });
   }
-  // 12-16 edge spark angles — sparks ride the ring circumference.
-  const sparkCount = 12 + Math.floor(Math.random() * 5);
-  const sparks = [];
-  for (let i = 0; i < sparkCount; i++) {
-    sparks.push({
-      angle: (i / sparkCount) * Math.PI * 2 + Math.random() * 0.25,
-      phase: Math.random() * 6.28,
-    });
-  }
+  // (v1.9.0 cleanup: the per-ring `sparks[]` array was removed — individual edge
+  // sparks were dropped from both EMP draw paths in the Android GPU-crash
+  // mitigation pass, so the allocation was dead.)
   // Dead Star golden shield (v1.9.0): while the gold shield is up, its EMP bursts
   // read GOLDEN and discharge 50% larger than normal. opts.golden lets the
   // golden chain (below) keep tinting hops gold even after the shield depletes
@@ -21956,7 +21909,7 @@ function spawnEmpRing(x, y, isChain, depth, opts) {
     maxRadius: _maxR,
     golden,   // gold-tinted draw (Dead Star golden shield EMP)
     opacity: isChain ? 0.6 : 1,
-    bolts, sparks,
+    bolts,
   }, EMP_RINGS_CAP);
 }
 
@@ -22315,7 +22268,6 @@ function resetGame(isResume) {
   currentGameplayTrack = 1;
   document.getElementById('score').textContent = '0';
   updateRunTimerDisplay();
-  console.log('[reset] elapsedRunSeconds after reset:', elapsedRunSeconds());
   // Orb run-state reset (was: Roamer then Phantasm resetGame wraps).
   OrbHooks.emit('onResetGame');
 }
@@ -22699,7 +22651,11 @@ function checkCollisions() {
             activeEffects.shield = Math.max(activeEffects.shield, shieldEndTime - _nowAbs);
           }
           emitDestroyBurst(bodies[i].x, bodies[i].y, ASTEROID_PATH_COLORS.opportunism);
-          try { SFX.shieldAbsorb(); } catch {}
+          // v1.9.0 fix: the old SFX.shieldAbsorb() procedural cue (0.10 vol) was
+          // inaudible. Use the real shield-destroy crunch — audible, fitting, and
+          // already gain-scaled by destroySfxGainScale() so a burst of absorbs in
+          // one frame doesn't pile up.
+          try { SFX.planetDestroyed('shield'); } catch {}
           addDestroyPoints();
           releaseBodyCanvases(bodies[i]);
           bodies.splice(i, 1);
@@ -23594,6 +23550,9 @@ function _updateCore() {
   const _gwActive = (activeOrb === 'asteroid') && rankOf('gravityWell') > 0 && activeEffects.shield > 0;
   const gravityWellForce = _gwActive ? 0.5 : 0;
   const _gwTidal = _gwActive && rankOf('tidalForce') > 0;
+  // v1.9.0 perf: hoist the Prime Mover (Drifter) rankOf out of the per-body loop —
+  // it's frame-constant. Identical result (read once vs once per passed body).
+  const _primeMover = (activeOrb === 'cyan') && rankOf('primeMover') > 0;
   for (const b of bodies) {
     // v1.9.0 perf: snapshot prev-frame position BEFORE movement so nova-ring
     // sweeps below can run a continuous-collision check (prev-distance vs
@@ -23614,7 +23573,7 @@ function _updateCore() {
     if (!b.passed && b.y > H * 0.75) {
       b.passed = true;
       // Prime Mover (Drifter Cadence): missed planets grant +5 instead of +1.
-      const _passPts = (activeOrb === 'cyan' && rankOf('primeMover') > 0) ? 5 : 1;
+      const _passPts = _primeMover ? 5 : 1;
       score += _passPts;
       planetsPassed++;
       runStats.totalPassed++;
@@ -24014,6 +23973,14 @@ function _updateCore() {
       // secondaries AFTER the body sweep completes (avoid mutating empRings
       // while iterating it).
       const secondarySpawns = [];
+      // v1.9.0 perf: chain-depth ranks are frame-constant — hoist the rankOf reads
+      // out of the per-killed-body branch below (was scanning the tree per kill).
+      // Identical values, just read once per frame.
+      const _isA = activeOrb === 'asteroid';
+      const _empMaxDepth = _isA
+        ? (1 + rankOf('chainReaction') + rankOf('chainReaction2') + 2 * rankOf('conduction') + 3 * rankOf('phalanx'))
+        : 1;
+      const _empPhalanx = _isA && rankOf('phalanx') > 0;
       for (const b of bodies) {
         let killed = false;
         for (const r of empRings) {
@@ -24041,10 +24008,6 @@ function _updateCore() {
             // secondary (jittered), bounded by EMP_RINGS_CAP. EMP kills now FEED
             // Bastion II (the source:'emp' exclusion was removed — §8: 3s CD +
             // 2× cap bound it).
-            const isA = activeOrb === 'asteroid';
-            const maxDepth = isA
-              ? (1 + rankOf('chainReaction') + rankOf('chainReaction2') + 2 * rankOf('conduction') + 3 * rankOf('phalanx'))
-              : 1;
             // Dead Star golden EMP (v1.9.0): the gold burst chains INDEFINITELY —
             // each hop is 20% smaller than its parent, so it self-terminates once
             // it shrinks below a usable radius (~15 hops from a 270px primary) or
@@ -24054,9 +24017,9 @@ function _updateCore() {
             if (r.golden) {
               const nextR = (r.maxRadius || EMP_MAX_RADIUS) * 0.8;
               if (nextR >= 8) secondarySpawns.push({ x: b.x, y: b.y, depth: (r.depth || 1) + 1, golden: true, goldenR: nextR });
-            } else if ((r.depth || 1) < maxDepth) {
+            } else if ((r.depth || 1) < _empMaxDepth) {
               secondarySpawns.push({ x: b.x, y: b.y, depth: (r.depth || 1) + 1 });
-              if (isA && rankOf('phalanx') && Math.random() < 0.25) {
+              if (_empPhalanx && Math.random() < 0.25) {
                 secondarySpawns.push({ x: b.x + (Math.random() - 0.5) * 40, y: b.y + (Math.random() - 0.5) * 40, depth: (r.depth || 1) + 1, fork: true });
                 _asteroidPhalanxForkPending = true;
               }
@@ -29891,7 +29854,6 @@ function applyPauseDeltaShift(pauseDelta) {
   if (burstCooldownEnd) burstCooldownEnd += pauseDelta;
   // v1.6.3 tree-node timers.
   if (beyondEndTime) beyondEndTime += pauseDelta;
-  if (razorVeilNextArmTime) razorVeilNextArmTime += pauseDelta;
   if (combustionBonusExpiry) combustionBonusExpiry += pauseDelta;
   if (combustionNextConsumeTime) combustionNextConsumeTime += pauseDelta;
   if (conflagrationNextApplyTime) conflagrationNextApplyTime += pauseDelta;
@@ -29929,6 +29891,7 @@ function applyPauseDeltaShift(pauseDelta) {
   if (secondWallShieldlessSince) secondWallShieldlessSince += pauseDelta;
   if (accretionNextWindow) accretionNextWindow += pauseDelta;
   if (accretionWindowEnd) accretionWindowEnd += pauseDelta;
+  if (bastion2NextProcTime) bastion2NextProcTime += pauseDelta;
   if (burstCooldownStart) burstCooldownStart += pauseDelta;
   if (deadStarImplode && deadStarImplode.startTime) deadStarImplode.startTime += pauseDelta;
   if (criticalMassCooldownEnd) criticalMassCooldownEnd += pauseDelta;
@@ -29939,8 +29902,20 @@ function applyPauseDeltaShift(pauseDelta) {
   if (_cyanHotStartUntil) _cyanHotStartUntil += pauseDelta;
   if (_cyanLastDiceReset) _cyanLastDiceReset += pauseDelta;
   if (fortuneFavorsNextProcTime) fortuneFavorsNextProcTime += pauseDelta;
-  if (butterflyEffectNextProcTime) butterflyEffectNextProcTime += pauseDelta;
   if (_drifterV2_heartbeatMagnetUntil) _drifterV2_heartbeatMagnetUntil += pauseDelta;
+  // v1.9.0 ship-fix: Roamer (drifterV2) wall-clock cooldown/lockout/last-fire gates.
+  if (_drifterV2_drumrollLockoutUntil) _drifterV2_drumrollLockoutUntil += pauseDelta;
+  if (_drifterV2_patternLockoutUntil) _drifterV2_patternLockoutUntil += pauseDelta;
+  if (_drifterV2_tapestryLockoutUntil) _drifterV2_tapestryLockoutUntil += pauseDelta;
+  if (_drifterV2_breakingPointLockoutUntil) _drifterV2_breakingPointLockoutUntil += pauseDelta;
+  if (_drifterV2_breakingPointCooldownUntil) _drifterV2_breakingPointCooldownUntil += pauseDelta;
+  if (_drifterV2_tensionLastFire) _drifterV2_tensionLastFire += pauseDelta;
+  if (_drifterV2_threshold75LastFire) _drifterV2_threshold75LastFire += pauseDelta;
+  if (_drifterV2_crescendoLastFire) _drifterV2_crescendoLastFire += pauseDelta;
+  // v1.9.0 ship-fix: Phantasm (phantomV2) Coven active window (drives scroll-speed)
+  // + capstone lockout. covenActiveUntil missing here desynced scroll-speed across pause.
+  if (_phantomV2_covenActiveUntil) _phantomV2_covenActiveUntil += pauseDelta;
+  if (_phantomV2_capstoneLockoutUntil) _phantomV2_capstoneLockoutUntil += pauseDelta;
   for (const v of butterflyEffectVisuals) {
     if (v.startTime !== undefined) v.startTime += pauseDelta;
   }
@@ -33122,7 +33097,7 @@ function buildCapstonePill(orbKey, cap) {
   const def = TREE_DEFS[orbKey];
   const state = orbTrees[orbKey];
   const owned = !!state.capstones[cap.key];
-  const prereqOk = capstonePrereqMet(orbKey, cap.key);
+  const prereqOk = false;   // capstonePrereqMet always returned false (pool empty); buildCapstonePill is never called (no capstones to iterate)
   const comingSoon = isCapstoneComingSoon(cap.key);
   // v1.6.6: capstones can be "frozen" — owned but their prereq tier was
   // refunded (e.g., BLACK HOLE owned with Gravity Well respec'd below 3).
@@ -33240,7 +33215,7 @@ function _renderTreeDetail_default() {
     const cap = def.capstones.find(c => c.key === t.capKey);
     const owned = !!state.capstones[t.capKey];
     const comingSoon = isCapstoneComingSoon(t.capKey);
-    const prereqOkCap = capstonePrereqMet(t.orbKey, t.capKey);
+    const prereqOkCap = false;   // capstonePrereqMet always returned false (pool empty); this 'cap' branch is unreachable (no capstone pills built)
     const frozen = owned && !prereqOkCap;
     titleEl.textContent = '★ ' + cap.name;
     titleEl.style.color = `rgba(${def.color},1)`;
