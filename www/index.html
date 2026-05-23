@@ -5699,15 +5699,15 @@ const TREE_DEFS = {
           { key: 'bastion2', name: 'Bastion II', tier: 1, max: 1, costOverride: [3000], pointCost: 2,
             desc: 'On a kill while shielded, 20% chance to add +1s of shield duration. 2s cooldown. Caps at 2× base duration.',
             effect: r => r ? '20% kill → +1s shield (2s CD)' : 'Locked' },
-          { key: 'accretion', name: 'Accretion', tier: 1, max: 1, costOverride: [3000], pointCost: 2,
-            desc: 'While shielded, every 3s a 2-second window opens — bodies pulled into contact are crushed into shield stacks (+1 hit, up to your cap) and still count as kills.',
-            effect: r => r ? 'Absorb pulled bodies → shield hits' : 'Locked' },
-          { key: 'tidalForce', name: 'Tidal Force', tier: 2, max: 1, costOverride: [5500], pointCost: 3,
+          { key: 'accretion', name: 'Accretion', tier: 1, max: 1, costOverride: [5500], pointCost: 3,
+            desc: 'While shielded, every 6s a 2-second window opens — bodies pulled into contact are crushed into shield stacks (+1 hit, up to your cap, and count as kills), and the window extends your shield +0.5s.',
+            effect: r => r ? 'Absorb pulled bodies → shield hits · +0.5s/window' : 'Locked' },
+          { key: 'tidalForce', name: 'Tidal Force', tier: 2, max: 1, costOverride: [3000], pointCost: 2,
             desc: 'Your gravity pull is +50% stronger, and pulls harder the closer a body gets.',
             effect: r => r ? '+50% pull · ramps with closeness' : 'Locked' },
           { key: 'blackHole', name: 'Dead Star', tier: 3, max: 1, costOverride: [9000], pointCost: 5,
-            desc: 'CAPSTONE. Every 20 shield stacks you lose, IMPLODE: space collapses inward, dragging every planet on screen into you and crushing them into a glowing GOLDEN SHIELD (10 hits). You are invulnerable through the whole collapse.',
-            effect: r => r ? '20 stacks lost → implode + golden shield' : 'Locked' },
+            desc: 'CAPSTONE. Every 30 shield stacks you lose, IMPLODE: space collapses inward, dragging every planet on screen into you and crushing them into a glowing GOLDEN SHIELD (10 hits). You are invulnerable through the whole collapse.',
+            effect: r => r ? '30 stacks lost → implode + golden shield' : 'Locked' },
         ],
       },
     },
@@ -8169,14 +8169,21 @@ function _bulwark_tick(now) {
     }
   } else { secondWallShieldlessSince = 0; }
 
-  // Accretion (Collapse T1): every 3s, open a 2s absorb window. The actual
-  // absorb (pulled-contact body → +1 shield hit) is applied in the shield
-  // body-contact loop while now < accretionWindowEnd.
+  // Accretion (Collapse T1) v1.9.0: every 6s, open a 2s absorb window. Pulled-
+  // contact bodies become shield stacks (applied in the shield body-contact loop
+  // while now < accretionWindowEnd). Opening a window also extends the active
+  // shield +0.5s (once per window). The golden shield is hit-based (no timer), so
+  // the +0.5s only applies to a normal timed shield. The shield aura pulses while
+  // the window is open (now < accretionWindowEnd) as the visual cue.
   if (rankOf('accretion') && shielded) {
-    if (accretionNextWindow === 0) accretionNextWindow = now + 3000;
+    if (accretionNextWindow === 0) accretionNextWindow = now + 6000;
     else if (now >= accretionNextWindow) {
-      accretionNextWindow = now + 3000;
+      accretionNextWindow = now + 6000;
       accretionWindowEnd = now + 2000;
+      if (!goldenShieldActive && shieldEndTime > now) {
+        shieldEndTime += 500;
+        activeEffects.shield = Math.max(activeEffects.shield, shieldEndTime - now);
+      }
       _asteroid_flash('accretion', 'ACCRETION', ASTEROID_PATH_COLORS.opportunism, 600);
     }
   } else { accretionNextWindow = 0; accretionWindowEnd = 0; }
@@ -15030,7 +15037,7 @@ let deadStarStackCounter = 0;
 let goldenShieldActive = false;
 let goldenShieldHits = 0;
 const GOLDEN_SHIELD_HITS = 10;
-const DEAD_STAR_TRIGGER = 20;            // shield stacks lost per implode
+const DEAD_STAR_TRIGGER = 30;            // shield stacks lost per implode (v1.9.0: 20 → 30)
 // Implode animation state: null when idle, else { startTime, dragged: [...] }.
 let deadStarImplode = null;
 const DEAD_STAR_IMPLODE_MS = 1600;       // total animation (invulnerable throughout)
@@ -21298,13 +21305,21 @@ function detectCombo(newType) {
 // that are actually active (>0); never reactivates a dead one.
 function syncComboDurations(...effectKeys) {
   // All values here are in milliseconds — activeEffects.X is remaining ms.
+  // Dead Star golden shield (v1.9.0 fix): goldenShieldActive holds
+  // activeEffects.shield at a perpetual ~60s proxy. It must NOT act as a sync
+  // source (nor be extended), or it inflates ghost/hyperspeed to near-infinite
+  // via Wraith (ghost↔shield) → Spectral Rush (hyperspeed↔ghost). Skip 'shield'
+  // entirely while the golden shield is up.
+  const _skipShield = goldenShieldActive;
   let max = 0;
   for (const k of effectKeys) {
+    if (k === 'shield' && _skipShield) continue;
     if (activeEffects[k] > max) max = activeEffects[k];
   }
   if (max <= 0) return;
   const now = Date.now();
   for (const k of effectKeys) {
+    if (k === 'shield' && _skipShield) continue;
     if (activeEffects[k] > 0 && activeEffects[k] < max) {
       activeEffects[k] = max;
       if (k === 'shield') shieldEndTime = now + max;
@@ -21511,7 +21526,9 @@ function _activateCombo_default(key, x, y) {
     shieldBroken = false;
     bastion2BonusMs = 0;
     pulsarNextNovaTime = Date.now();
-    activeCombos[key] = { def, deps: ['shield'] };
+    // endTime: real Pulsar lifetime, used to expire it if a Dead Star golden
+    // shield is holding the shield proxy perpetually (see combo bookkeeping).
+    activeCombos[key] = { def, deps: ['shield'], endTime: Date.now() + SHIELD_DURATION() };
   } else if (key === 'hyperspeed_ghost') {
     // SPECTRAL RUSH: 8s, 2x spike, barrier fires during ghost.
     // If Eternal Phantom is running, its longer ghost timer wins — don't
@@ -21566,7 +21583,7 @@ function _activateCombo_default(key, x, y) {
       shieldHits = Math.min(2, shieldHits + 2);
     }
     fortressShield = true;
-    activeCombos[key] = { def, deps: ['shield'] };
+    activeCombos[key] = { def, deps: ['shield'], endTime: Date.now() + FORTRESS_SHIELD_DURATION_MS };
   }
   // Warp Harmonic (Warp Cap T1) v1.9.0: single-rank +3 bonus stacks on a
   // hyperspeed pair combo. 10s cooldown.
@@ -23444,22 +23461,24 @@ function _updateCore() {
   // Combo bookkeeping: expire when deps run out or endTime passes
   for (const k of Object.keys(activeCombos)) {
     const c = activeCombos[k];
+    let expired = false;
     if (c.deps) {
-      let alive = true;
       for (const dep of c.deps) {
-        if (activeEffects[dep] <= 0) { alive = false; break; }
+        if (activeEffects[dep] <= 0) { expired = true; break; }
       }
-      if (!alive) {
-        delete activeCombos[k];
-        lastComboEndTime = Date.now(); // Twilight Echo hook
-        if (lastComboLabel === k) lastComboLabel = null;
-      }
+      // Dead Star golden shield (v1.9.0 fix): its perpetual activeEffects.shield
+      // proxy would keep a shield-dep combo (Pulsar / Fortress) alive forever.
+      // While golden is up, honor the combo's stamped endTime so it still expires
+      // on its real duration. (Non-golden behavior unchanged — deps drive it.)
+      if (!expired && goldenShieldActive && c.deps.includes('shield')
+          && c.endTime !== undefined && Date.now() >= c.endTime) expired = true;
     } else if (c.endTime !== undefined) {
-      if (Date.now() >= c.endTime) {
-        delete activeCombos[k];
-        lastComboEndTime = Date.now(); // Twilight Echo hook
-        if (lastComboLabel === k) lastComboLabel = null;
-      }
+      if (Date.now() >= c.endTime) expired = true;
+    }
+    if (expired) {
+      delete activeCombos[k];
+      lastComboEndTime = Date.now(); // Twilight Echo hook
+      if (lastComboLabel === k) lastComboLabel = null;
     }
   }
 
@@ -28078,6 +28097,16 @@ function drawPlayer(tctx = ctx) {
         ctx.beginPath(); ctx.arc(0, 0, ringR + 5, 0, 6.28); ctx.stroke();
       }
       ctx.shadowBlur = 0;
+    }
+    // Accretion (Collapse T1) absorb window OPEN: pulse an amber ring on the
+    // shield as the "now absorbing" cue (v1.9.0). Both render paths share
+    // drawPlayer, so this shows under Pixi and Canvas2D alike.
+    if (activeOrb === 'asteroid' && rankOf('accretion') && Date.now() < accretionWindowEnd) {
+      const ap = 0.5 + 0.5 * Math.sin(Date.now() * 0.018);   // ~3 Hz pulse
+      ctx.globalAlpha = shieldVis * (0.35 + 0.45 * ap);
+      ctx.strokeStyle = `rgba(${ASTEROID_PATH_COLORS.opportunism},0.95)`;
+      ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.arc(0, 0, PLAYER_R * (3.4 + 0.5 * ap), 0, 6.28); ctx.stroke();
     }
     ctx.globalAlpha = 1;
   }
