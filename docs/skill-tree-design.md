@@ -1,7 +1,7 @@
 # Drift — orb skill-tree spec
 
-**Status:** shipped in v1.6.3; balance pass + Momentum rework in v1.6.4.
-**Last updated:** 2026-05-18.
+**Status:** original multi-rank trees shipped in v1.6.3; **fully superseded by the v1.9.0 single-rank / active-budget rework — all five original orbs migrated.**
+**Last updated:** 2026-05-23.
 **Source of truth:** `TREE_DEFS` in `www/index.html` — grep for the
 identifier rather than chasing line numbers (the file changes too fast
 for them to stay accurate). Tree unlock costs live at
@@ -9,19 +9,18 @@ for them to stay accurate). Tree unlock costs live at
 `ORB_CAPSTONE_COST_SCALE`. Behaviour notes below summarise current
 implementation; consult the code for exact constants and proc gates.
 
-> **⚠️ v1.9.0 supersedes most of this doc.** Orbs are being reworked from the
-> multi-rank model described below to a **single-rank + 25-point active-budget**
-> model (the one Roamer and Phantasm use): each node is unlocked once, then
-> toggled active/inactive within a limited active-point budget. **Drifter,
-> Phantom, Inferno (and the new Roamer/Phantasm)** already use this model —
-> their nodes are `max:1` with a `costOverride` + `pointCost`, capstones are
-> folded into the paths, and there is no separate tree-unlock fee. Budgets:
-> Roamer/Phantasm base 25 / cap 30; the reworked original orbs (Drifter,
-> Phantom, Inferno) base 20 / cap 25, expandable via crystals. The cost tables,
-> tree-unlock fees, and per-rank scaling below now apply **only to the
-> not-yet-reworked orbs (Warp, Bulwark)**. The code (`ActiveBudget`, `TREE_DEFS`,
-> `ORB_BEHAVIOR.<orb>`) remains the source of truth. This doc will be rewritten
-> once all five originals are migrated.
+> **⚠️ v1.9.0 supersedes this doc's multi-rank model.** **All five original orbs
+> (Drifter, Phantom, Inferno, Warp, Bulwark) — plus Roamer and Phantasm — now use
+> the single-rank + active-budget model**: each node is `max:1` with a
+> `costOverride` + `pointCost`, unlocked once and then toggled active/inactive
+> within a limited active-point budget; capstones are folded into the paths and
+> there is no separate tree-unlock fee. Budgets: Roamer/Phantasm base 25 / cap 30;
+> the five original orbs base 20 / cap 25, expandable via crystals. The legacy
+> cost tables, flat tier pricing, tree-unlock fees, and per-rank scaling described
+> below **no longer apply to any orb** — they are retained only as historical
+> context and for the one-time save-migration paths. The code (`ActiveBudget`,
+> `TREE_DEFS`, `ORB_BEHAVIOR.<orb>`) is the source of truth for the live trees;
+> the per-orb path/node breakdowns below are not kept current.
 
 ## Overview
 

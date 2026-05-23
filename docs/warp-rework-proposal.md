@@ -1,7 +1,9 @@
-# WARP REWORK — DESIGN SPEC v4 (IMPLEMENTED)
+# WARP REWORK — DESIGN SPEC v4 (IMPLEMENTED in v1.9.0)
 
-> Status: **IMPLEMENTED** in `www/index.html` (engine + UI + migration). This doc is now the
+> Status: **IMPLEMENTED in v1.9.0** in `www/index.html` (engine + UI + migration). This doc is now the
 > spec-of-record; numbers below match the shipped code. Line numbers are approximate anchors.
+> (Note: post-ship tuning has moved some Singularity numbers — it now charges on a 20s cooldown and the
+> next hyperspeed snaps to max stacks + tears the rift on exit; consult the code for current values.)
 >
 > **v4 changes (post-implementation tuning pass):**
 > - **Hard cap ceiling raised 8 → 10** (`NEBULA_MAX_CAP_CEILING = 10`). Confirmed playable. All ceiling

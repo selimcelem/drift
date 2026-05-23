@@ -6,13 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Each version header links to its GitHub release; see the release notes for full
 detail beyond the summaries here.
 
-## v1.9.0-wip — Orb rework (single-rank / active-budget skill trees)
+## v1.9.0 — Orb rework complete (single-rank / active-budget skill trees) + Ascension
 
-The original-five orbs are being migrated, one at a time, from the old
-multi-rank "grind every node" trees to the same single-rank +
-active-point-budget model used by Roamer and Phantasm: each node is
-unlocked once with crystals, then toggled active/inactive within a limited
-active-point budget — so build choice, not grind, defines a run.
+**Headline: all five original orbs (Drifter, Phantom, Inferno, Warp, Bulwark) are
+now reworked to the single-rank / active-budget model, and the first-death "rainbow
+orb" run is replaced by Ascension.** Every node is unlocked once with crystals, then
+toggled active/inactive within a limited active-point budget — so build choice, not
+grind, defines a run. This completes the migration of the original five to the same
+model Roamer and Phantasm pioneered.
+
+### Ascension — replaces the rainbow-orb run
+- The old first-death "rainbow orb" run is gone. On the **first death** of a save,
+  a cutscene now plays and the run resumes as **Ascension**: a one-shot, fully-
+  powered **Phantasm** run (all three Phantasm paths active, budget ignored) that
+  continues from the death frame. Career stats and the leaderboard are skipped; a
+  fixed crystal reward is granted at run end. Phantasm stays locked afterward — it's
+  a one-time taste. During Ascension the progression clock advances at 2×.
 
 ### Phantom (cosmic) — full rework (headline)
 - Rebuilt as a single-rank / active-budget tree: 3 paths — **DUSK**
@@ -69,6 +78,55 @@ active-point budget — so build choice, not grind, defines a run.
   burst-CD floor** so per-kill cooldown refunds can't collapse the burst. One-time
   schema-versioned migration refunds legacy Inferno investments at the old rates;
   rainbow runs no longer auto-fire Sun Forge.
+
+### Warp (nebula) — full rework
+- Rebuilt as a single-rank / active-budget tree (base 20 / cap 25): 3 paths —
+  **BLUESHIFT** (peak velocity), **CONTINUUM** (hyperspeed duration & uptime),
+  **SINGULARITY** (stack cap & payoff) — with the same branching activate/deactivate UI.
+- New/reworked mechanics: **Overdrive** (+2 stack cap), **Continuum** (each stack
+  gained while warping extends the timer), **Slipstream** (destroy → +2 stacks),
+  **Warp Harmonic** (+3 stacks on a hyperspeed combo), **Critical Velocity** (max-stack
+  kills detonate novas), **Infinite Gate**, **Lightspeed** & **Lingering Horizon**
+  capstones (no-decay top speed + periodic max-cap growth / auto full-stack), and
+  **Singularity** — a 20s charge where the **next hyperspeed (from any source) snaps
+  to MAX stacks** and, when it ends, tears a **RIFT** at the top of the screen that
+  drags in and devours nearby planets for 3s. Max stack-cap ceiling raised 8 → 10.
+- A left-side **RIFT** cooldown ring shows Singularity's charged-vs-charging state.
+  One-time schema-versioned migration refunds legacy Warp investments.
+
+### Bulwark (asteroid) — full rework (5th and final original orb)
+- Rebuilt as a single-rank / active-budget tree (base 20 / cap 25): 3 paths —
+  **RAMPART** (shield hits & duration), **OVERLOAD** (EMP width & chains),
+  **COLLAPSE** (gravity pull & absorption) — with the branching activate/deactivate UI.
+- New/reworked mechanics: **Bastion** (+2 hit cap, pickups refill to full),
+  **Second Wall** (auto full-cap shield after 1.5s shieldless), **Capacitor** (auto-EMP
+  every 5s while shielded), **Aegis** capstone (screen-clearing EMP every 30s, with a
+  cooldown ring), **Overload / Conduction / Phalanx** (wider, deeper, forking EMP
+  chains), **Gravity Well** (pull bodies into the hull while shielded), **Tidal Force**,
+  **Salvage**, **Bastion II**, **Accretion** (a recurring 2s window that crushes pulled
+  bodies into shield stacks — each absorb counts as a kill and extends the shield), and
+  **Dead Star** — every **30 shield-stacks lost**, the field IMPLODES into a 10-hit
+  **golden shield** (you're invulnerable through the collapse) whose EMP bursts read
+  gold, are 50% larger, and **chain indefinitely** (each hop 20% smaller). Bottom-left
+  **DEAD STAR n/30** counter tracks progress. One-time schema-versioned migration
+  refunds legacy Bulwark investments.
+
+### Fixes
+- **Dead Star golden shield** no longer desyncs: a regular shield pickup or expiry
+  could leave the gold visual on screen while real protection was gone, so a hit
+  killed the player through a visible shield. The golden shield is now an authoritative
+  10-hit consumable kept in lockstep with its visual; pickups can't stomp it and
+  Accretion can't infinitely upkeep it.
+- **Black-screen blocker** investigated and traced to a dev clock-fast-forward cheat
+  (not the shipped build) — the apocalypse fires at 600 progression-seconds, which a
+  time-dilation cheat reached instantly, clearing the field. Confirmed `TIME_DILATION = 1`
+  in production.
+- **Infinite combo-duration bug**: the Dead Star golden shield held `activeEffects.shield`
+  at a perpetual proxy, which leaked through `syncComboDurations` (Wraith → ghost →
+  Spectral Rush → hyperspeed) and through shield-dependent combo deps (Pulsar, Fortress),
+  making those combos last forever. Combo syncing/expiry now ignores the golden-shield proxy.
+- Ascension run no longer black-screens; the apocalypse "sun closing in" clears active
+  skill visuals on trigger for a clean cinematic.
 
 ### Drifter (cyan)
 - Active-point budget tightened to **base 20 / cap 25** (was 25/30) — the

@@ -1,6 +1,6 @@
-# BULWARK REWORK — DESIGN PROPOSAL v3.1 (no implementation)
+# BULWARK REWORK — DESIGN SPEC v3.1 (IMPLEMENTED in v1.9.0)
 
-> Status: **proposal only**, no Bulwark code changed. The 5th and final original-orb rework.
+> Status: **IMPLEMENTED in v1.9.0** — the 5th and final original-orb rework shipped. (Note: live tuning has moved past this doc — e.g. the Dead Star trigger is now 30 shield-stacks-lost and the golden-shield EMP chains indefinitely; consult `www/index.html` for current values.)
 > Same framework as Drifter/Phantom/Inferno/Warp: single-rank + ActiveBudget, costOverride/pointCost,
 > capstones folded into paths, per-orb schema migration, shape-based mergeTrees guard, `_asteroid_`
 > flash system, branching tree UI. Grounded in the current `www/index.html`.
