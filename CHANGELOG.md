@@ -6,6 +6,64 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Each version header links to its GitHub release; see the release notes for full
 detail beyond the summaries here.
 
+## Unreleased (v1.10.0-wip) — Death-narrator: second-death fake-out + reusable dialogue framework
+
+**Stage 1 of a death-narrator system.** Introduces a reusable, speaker-prefixed
+death-dialogue framework (generalized out of the Ascension intro-text system) and
+the one-time **second-death** fake-out cutscene that builds on it.
+
+### Reusable dialogue framework
+- The Ascension typewriter (per-letter reveal + retro blip, tap-to-skip-typing,
+  tap-to-advance, sequence + onComplete callback, parametric speaker prefix and
+  `{token}` substitution) is now a self-contained engine (`dialogueStart` /
+  `dialogueTap` / `dialogueStop`). The Ascension cutscene was refactored to drive
+  it (no parallel typewriter), and future Stage 2/3 death messages build on it.
+- The "orb reforming" convergence particle effect is now a parametric helper
+  (`convergeReform`) — same system, recoloured per caller (Ascension grey, the
+  second-death resurrection red).
+
+### Second-death cutscene (one-time fake-out)
+- Fires exactly once per install on the player's **second death** (Ascension owns
+  death #1). The narrator "???" fakes giving god-mode: a **red** resurrection, then
+  the field **scrolls in from the top exactly like a normal run** (real planet
+  sprites, normal spacing) so the player believes another power-moment is starting —
+  until the orb glides to centre and **charges**. Four lasting N/E/S/W lasers fire,
+  the orb spins up to extreme speed sweeping a massive field of planets, then a
+  **glitchy reverse** rewinds the whole stunt before "??? : Just kidding…" drops the
+  player on the **real death screen with their actual score**. The scene renders at
+  full brightness (the rug-pull only lands if the spectacle is convincing); all
+  leftover gameplay visuals are cleared up front so nothing bleeds through.
+- The scripted destruction is pure theater — it never touches score / stats /
+  leaderboard. The real run is finalized normally afterward, so it counts.
+- One-time flag (`drift_second_death_used`) mirrors the Ascension flag exactly:
+  localStorage + PGS payload, OR-merged across devices, surviving reinstall.
+- Reverse-glitch approach: the scripted cutscene is authored as a pure function of
+  a single time parameter `t`, so the rewind is a genuine `t: 1→0` replay (faithful,
+  zero extra buffers) with a VHS glitch overlay (RGB split, slice tears, scanline
+  jitter, frame stutter) on top.
+
+### Polish + fixes (run-count, death-feel, particles, laser-feel, resume)
+- **Run count:** the forced first-run tutorial no longer counts itself as a run
+  (`tutorialBegin` used `resetGame()` which bumped `totalRunsPlayed`, then
+  `tutorialFinish` bumped it again — so a fresh install's first death→Ascension
+  showed "2 runs"). The tutorial is now `resetGame(true)`; the first real run is
+  still counted by `tutorialFinish`. The Ascension sequence counts as exactly 1 run.
+- **Second-death trigger feel:** the triggering death now plays the full normal
+  death shake (the cutscene's up-front transient-clear was zeroing `screenShake`
+  right after the death shake was applied).
+- **Particles:** removed the extra scripted +1.2s particle scatter from BOTH the
+  second-death cutscene and the Ascension resurrection — the genuine orb-shatter
+  shards + flash are the death explosion.
+- **Laser-sequence impact:** the laser-spin destruction beat now drives the shared
+  `screenShake` (light/building on charge+fire → escalating with the rotation ramp)
+  plus a rhythmic shake spike + brief hitstop on each frame planets are vaporized.
+- **Resume safety:** the second-death cutscene clears the resume snapshot at start
+  and never writes one (its states aren't `'playing'`), so a force-quit mid-cutscene
+  can't be resumed — relaunch is a fresh start. The one-time Ascension run is
+  resumable across a true OS-kill (snapshot is localStorage-persisted with the
+  run-type flag + pre-Ascension orb); the 2× progression baseline is now persisted
+  too so resumed Ascension progression stays correct.
+
 ## v1.9.0 — Orb rework complete (single-rank / active-budget skill trees) + Ascension
 
 **Headline: all five original orbs (Drifter, Phantom, Inferno, Warp, Bulwark) are

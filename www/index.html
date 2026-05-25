@@ -2502,6 +2502,20 @@
   #ascensionOverlay.particle-phase {
     background: rgba(0, 0, 4, 0.35);
   }
+  /* v1.10.0 second-death cutscene: opaque-ish black behind the scripted laser
+     theater so the additive orb/lasers/planets pop; and a full blackout used
+     for the fade to the real death screen (0.5s ease, paired with the JS
+     timing in secondDeathFadeOut → secondDeathFinalize). */
+  /* v1.10.0 second-death cutscene: the resurrect → laser → reverse scene renders
+     at FULL brightness (transparent overlay) so the power-fantasy beat reads like
+     normal gameplay — the rug-pull only lands if the player believes it. Any
+     intentional darkness lives in the glitch-reverse overlay + the blackout fade. */
+  #ascensionOverlay.sd-scene { background: transparent; }
+  #ascensionOverlay.blackout { background: rgba(0, 0, 0, 1); transition: background 0.5s ease; }
+  /* Hide the empty dialogue banner while the scripted scene / fade plays — only
+     the narrator's spoken beats (no .sd-scene/.blackout) show the box. */
+  #ascensionOverlay.sd-scene #ascensionDialogue,
+  #ascensionOverlay.blackout #ascensionDialogue { display: none; }
   #ascensionOverlay.visible { display: block; }
   /* v1.8.0 PART B: visual-novel-style dialogue banner. Spans most of the
      viewport width, anchored to the bottom of the screen. The full-width
@@ -2566,6 +2580,15 @@
     animation: tutContinuePulse 1.4s ease-in-out infinite;
   }
   #ascensionContinue.hidden { visibility: hidden; }
+
+  /* v1.10.0 tutorial-v2: the rebuilt tutorial reuses this narrator overlay for
+     all its text. During on-rails HOLD / FREEPLAY steps the overlay must let
+     canvas touches through to the giant hold-buttons, so pointer-events is
+     dropped and the tap-to-continue affordance is hidden (the button + the
+     game action gate the advance instead). A lighter dim keeps the buttons +
+     orb clearly readable while the narrator line sits in the banner. */
+  #ascensionOverlay.tut-hold { pointer-events: none; background: rgba(0,0,4,0.22); }
+  #ascensionOverlay.tut-hold #ascensionContinue { display: none; }
 
   /* Username prompt overlay */
   #usernameOverlay {
@@ -5920,6 +5943,24 @@ function saveAscensionUsed(v) {
   pgsScheduleWrite();
 }
 loadAscensionUsed();
+
+// Second-death cutscene one-time flag (v1.10.0 — Stage 1 death-narrator).
+// Fires once per install on the player's SECOND death (the Ascension first-death
+// cutscene owns death #1). Mirrors `ascensionUsed` EXACTLY: localStorage key
+// 'drift_second_death_used' + a PGS payload field, OR-merged across devices, so
+// it survives reinstall / cross-device sign-in identically to the tutorial and
+// Ascension flags. Set permanently the moment the cutscene begins.
+let secondDeathUsed = false;
+function loadSecondDeathUsed() {
+  try { secondDeathUsed = localStorage.getItem('drift_second_death_used') === '1'; }
+  catch { secondDeathUsed = false; }
+}
+function saveSecondDeathUsed(v) {
+  secondDeathUsed = !!v;
+  try { localStorage.setItem('drift_second_death_used', secondDeathUsed ? '1' : '0'); } catch {}
+  pgsScheduleWrite();
+}
+loadSecondDeathUsed();
 // Attempt to unlock the given orb's skill tree. Returns true if the
 // purchase succeeded (enough crystals, not already unlocked).
 function purchaseTreeUnlock(orbKey) {
@@ -15542,6 +15583,9 @@ const PGS = (() => {
       // so a player who saw it on one device cannot re-trigger on another
       // (e.g. reinstall + sign in).
       rainbowOrbUsed: !!ascensionUsed,   // PGS field kept as-is for cross-device/reinstall persistence
+      // v1.10.0: second-death cutscene one-time flag. OR-merged like rainbowOrbUsed
+      // so a player who saw it on one device cannot re-trigger on another.
+      secondDeathUsed: !!secondDeathUsed,
       stats: statsSnapshot,
     };
   }
@@ -15830,6 +15874,13 @@ const PGS = (() => {
         try { localStorage.setItem('drift_rainbow_orb_used', '1'); } catch {}
       }
     }
+    // v1.10.0: second-death cutscene flag — OR-merged. Local true never reverts.
+    if (typeof payload.secondDeathUsed === 'boolean') {
+      if (payload.secondDeathUsed && !secondDeathUsed) {
+        secondDeathUsed = true;
+        try { localStorage.setItem('drift_second_death_used', '1'); } catch {}
+      }
+    }
     // v1.6.6.3: drift_stats — counters/bests/per-orb/difficulty completions
     // and cosmetic-trail unlocks. mergeStats already produced a sanitized,
     // element-wise-max-merged shape, so we replace `stats` directly and
@@ -15944,7 +15995,7 @@ const PGS = (() => {
 // The `state` string drives almost every gameplay branch:
 //   'idle' | 'playing' | 'paused' | 'dead' | 'apocalypse'
 //   | 'devmode' | 'tutorial' | 'ascension_predeath' | 'ascension_cutscene'
-//   | 'bodypreview'
+//   | 'seconddeath_predeath' | 'seconddeath_cutscene' | 'bodypreview'
 let state = 'idle', score = 0, frame = 0, planetsPassed = 0;
 let player = {}, bodies = [], trail = [], bgStars = [], deathParticles = [];
 let leftDown = false, rightDown = false;
@@ -19870,34 +19921,34 @@ function updatePixiOverlayLayer() {
     if (t >= 3 && t < 8) tintAlpha = 0.15 * ((t - 3) / 5);
     else if (t >= 8) tintAlpha = 0.15 + 0.25 * Math.min(1, (t - 8) / 20);
     if (tintAlpha > 0) {
-      fg.beginFill(0x820000, tintAlpha);
+      fg.beginFill(0x280046, tintAlpha);
       fg.drawRect(0, 0, W, H);
       fg.endFill();
     }
     if (apocalypseImpactTriggered) {
       const impactT = (Date.now() - apocalypseImpactStart) / 1000;
-      // Small expanding white ring at player position.
+      // Small expanding violet ring at player position.
       if (impactT <= 0.2) {
         const k = Math.min(1, impactT / 0.1);
         const rr = 30 + 70 * k;
-        fg.beginFill(0xFFFFFF, Math.max(0, (1 - k)) * 0.95);
+        fg.beginFill(0xD2A0FF, Math.max(0, (1 - k)) * 0.95);
         fg.drawCircle(player.x, player.y, rr);
         fg.endFill();
       }
       if (impactT > 0.2 && impactT <= 0.5) {
         const k = (impactT - 0.2) / 0.3;
-        fg.beginFill(0xFFFFFF, k);
+        fg.beginFill(0xBE78FF, k);
         fg.drawRect(0, 0, W, H);
         fg.endFill();
       }
       if (impactT > 0.5 && impactT <= 0.7) {
-        fg.beginFill(0xFFFFFF, 1);
+        fg.beginFill(0xBE78FF, 1);
         fg.drawRect(0, 0, W, H);
         fg.endFill();
       }
       if (impactT > 0.7 && impactT <= 1.2) {
         const k = (impactT - 0.7) / 0.5;
-        fg.beginFill(0xFFFFFF, 1 - k);
+        fg.beginFill(0xBE78FF, 1 - k);
         fg.drawRect(0, 0, W, H);
         fg.endFill();
         fg.beginFill(0x000000, k);
@@ -23076,6 +23127,10 @@ function maybeSaveResumeState() {
       // asteroid), plus the pre-Ascension orb so it's restored when the run ends.
       ascension: ascensionRunActive,
       prevOrb: ascensionRunActive ? _ascensionPrevOrb : null,
+      // v1.10.0: persist the 2× progression-clock baseline so an OS-kill resume
+      // of a mid-Ascension run keeps progression doubling only PAST the ascension
+      // start (not from t=0). Without this, resetGame(true) zeroed it on resume.
+      ascensionBaseline: ascensionRunActive ? _ascensionElapsedAtStartSec : 0,
       timesurvived: Math.floor(s),
       phase: phaseForElapsed(s),
       crystalsEarned: ascensionRunActive ? 20000 : Math.floor(score * mult),
@@ -24222,59 +24277,19 @@ function updateTutorial() {
   for (const p of powerups) {
     p.pulse += 0.05 * dtScale;
   }
-  // Targeting + force + drag — same pipeline as gameplay, minus the
-  // hyperspeed/scroll-speed scaling tweaks (those don't apply at idle).
-  findClosest();
-  if (closestBody) {
-    const dx = closestBody.x - player.x;
-    const dy = closestBody.y - player.y;
-    const d  = Math.max(Math.hypot(dx, dy), closestBody.radius * 2.2);
-    const nx = dx / d, ny = dy / d;
-    const influence = Math.min(140 / d, 1.8);
-    const f = FORCE * influence;
-    if (leftDown)  { player.vx += nx * f * dtScale; player.vy += ny * f * dtScale; }
-    if (rightDown) { player.vx -= nx * f * dtScale; player.vy -= ny * f * dtScale; }
+  // v1.10.0 tutorial-v2 movement model, by current step kind:
+  //   hold     → on-rails 1-axis clamped movement (tutRailMovement), can't fail
+  //   freeplay → the real force model with soft walls + pickups, no death
+  //   else     → orb stays pinned at its home position (no free movement while
+  //              the narrator is talking / demoing)
+  if (tutorialState.railMove) {
+    tutRailMovement();
+  } else if (tutorialState.freeplay) {
+    tutFreeplayMovement();
+  } else {
+    player.vx = 0; player.vy = 0;
   }
-  // Light drag.
-  player.vx *= 0.91;
-  player.vy *= 0.91;
-  // Integrate.
-  player.x += player.vx * dtScale;
-  player.y += player.vy * dtScale;
-  // Wall rebound — same boundaries as the death zones (PLAYER_R+3 inset
-  // on x, ±50 on y) but instead of dying, the player bounces with a soft
-  // velocity invert + clamp. Visual feedback handled by the wall flash on
-  // step 11; rebounds happen silently otherwise so step 2/3 movement isn't
-  // disrupted.
-  const xMin = PLAYER_R + 4, xMax = W - PLAYER_R - 4;
-  const yMin = -40,           yMax = H + 40;
-  if (player.x < xMin) { player.x = xMin; player.vx = Math.abs(player.vx) * 0.6; }
-  if (player.x > xMax) { player.x = xMax; player.vx = -Math.abs(player.vx) * 0.6; }
-  if (player.y < yMin) { player.y = yMin; player.vy = Math.abs(player.vy) * 0.6; }
-  if (player.y > yMax) { player.y = yMax; player.vy = -Math.abs(player.vy) * 0.6; }
-  // Powerup pickup. Mirrors the production pickup-test geometry but routes
-  // collected pickups to a tutorial-only no-op activation: we mark them
-  // collected and apply the visible effect (cyan ring for shield, etc.)
-  // via the same activatePowerup path the real game uses, so the player
-  // sees the actual gameplay effect. Active effects last for their normal
-  // duration; tutorialFinish + resetGame clear them before real gameplay.
-  for (const p of powerups) {
-    if (p.collected) continue;
-    if (dist(player, p) < (PLAYER_R + p.radius)) {
-      p.collected = true;
-      try { activatePowerup(p.type, p.x, p.y); } catch (err) {
-        console.error('[tutorial] activatePowerup threw', err);
-      }
-    }
-  }
-  // Drop collected powerups from the array (same end-of-frame cleanup as
-  // production). tutorialSpawnedPowerups still references them so step
-  // teardown can detect that they were grabbed.
-  powerups = powerups.filter(p => !p.collected);
-  // Throttled audio cues for held input — keeps the attract/repel feel.
-  if (leftDown)  SFX.attract(frame);
-  if (rightDown) SFX.repel(frame);
-  // Trail particles so the orb shows movement nicely during steps 2/3.
+  // Trail particles so the orb shows movement nicely.
   emitOrbTrail();
   updateOrbTrailParticles();
   // v1.7.0 polish r7: Warp orbital rings are stateless renders — no per-tick update needed.
@@ -24453,7 +24468,12 @@ function updateApocalypse() {
   }
 }
 
-// The sun object itself: layered radial gradient core + corona rays + flares.
+// The Void itself (formerly the apocalypse sun): a black/near-black core with
+// a bright violet rim + corona. Layered radial gradient core + corona halo +
+// writhing violet tendrils (formerly solar flares). v1.10.0 recolor: shifted
+// from a blinding sun to "the Void" — consuming darkness, not light. The core
+// disc is near-black so it would vanish against the dark space background; the
+// bright violet rim + additive corona define its shape and menace.
 function drawApocalypseSun(tctx = ctx) {
   const ctx = tctx;
   if (!apocalypseSun) return;
@@ -24464,19 +24484,20 @@ function drawApocalypseSun(tctx = ctx) {
 
   ctx.save();
 
-  // --- Outer glow: large soft radial extending 2x sun radius. Tints the
-  // whole screen red/orange as the sun approaches.
+  // --- Outer glow: large soft radial extending 2x radius. Tints the whole
+  // screen deep violet as the Void approaches.
   const glowR = r * 2;
   const outerGlow = ctx.createRadialGradient(x, y, r * 0.95, x, y, glowR);
-  outerGlow.addColorStop(0,    'rgba(255,100,0,0.3)');
-  outerGlow.addColorStop(0.55, 'rgba(255,50,0,0.1)');
-  outerGlow.addColorStop(1,    'rgba(255,30,0,0)');
+  outerGlow.addColorStop(0,    'rgba(150,60,220,0.34)');
+  outerGlow.addColorStop(0.55, 'rgba(90,25,170,0.12)');
+  outerGlow.addColorStop(1,    'rgba(60,10,130,0)');
   ctx.fillStyle = outerGlow;
   ctx.beginPath(); ctx.arc(x, y, glowR, 0, 6.28); ctx.fill();
 
   // --- Animated corona: 4 overlapping radial gradients pulsing at different
   // frequencies. Each gradient is offset slightly from center so the corona
-  // looks organic rather than a perfect circle.
+  // looks organic rather than a perfect circle. Additive ('lighter') bright
+  // violet so the rim reads as a glowing halo around the black core.
   const coronaLayers = [
     { ox: 0,       oy: 0,      freq: 0.002,  phase: 0,   scale: 1.00 },
     { ox: r * 0.04, oy: -r*0.03, freq: 0.0013, phase: 1.7, scale: 0.92 },
@@ -24489,10 +24510,10 @@ function drawApocalypseSun(tctx = ctx) {
     const cr = r * (1.25 * L.scale) + pulse;
     const cx = x + L.ox, cy = y + L.oy;
     const grad = ctx.createRadialGradient(cx, cy, r * 0.6, cx, cy, cr);
-    grad.addColorStop(0,    'rgba(255,247,230,0.55)');
-    grad.addColorStop(0.35, 'rgba(255,102,0,0.35)');
-    grad.addColorStop(0.75, 'rgba(204,34,0,0.18)');
-    grad.addColorStop(1,    'rgba(204,34,0,0)');
+    grad.addColorStop(0,    'rgba(198,130,255,0.50)');
+    grad.addColorStop(0.35, 'rgba(157,78,221,0.34)');
+    grad.addColorStop(0.75, 'rgba(96,20,160,0.18)');
+    grad.addColorStop(1,    'rgba(96,20,160,0)');
     ctx.globalAlpha = 0.9;
     ctx.fillStyle = grad;
     ctx.beginPath(); ctx.arc(cx, cy, cr, 0, 6.28); ctx.fill();
@@ -24500,19 +24521,24 @@ function drawApocalypseSun(tctx = ctx) {
   ctx.globalCompositeOperation = 'source-over';
   ctx.globalAlpha = 1;
 
-  // --- Core radial gradient.
+  // --- Core radial gradient: near-black center fading to a bright violet rim.
+  // The opaque disc covers the inner corona; the lit rim + corona beyond r are
+  // what define the Void's silhouette against space.
   const core = ctx.createRadialGradient(x, y, r * 0.1, x, y, r);
-  core.addColorStop(0,    '#fff7e6');
-  core.addColorStop(0.45, '#ff6600');
-  core.addColorStop(0.85, '#cc2200');
-  core.addColorStop(1,    '#8b0000');
+  core.addColorStop(0,    '#050007');
+  core.addColorStop(0.55, '#120322');
+  core.addColorStop(0.82, '#3d0a6b');
+  core.addColorStop(0.94, '#7a1fb8');
+  core.addColorStop(1,    '#b14dff');
   ctx.fillStyle = core;
   ctx.beginPath(); ctx.arc(x, y, r, 0, 6.28); ctx.fill();
 
-  // --- Surface texture: 8-10 darker sunspots rotating slowly around center
-  // and drifting. Clipped to the sun disc so they can't leak off the limb.
+  // --- Surface texture: dim violet energy wisps swirling in the black core
+  // (formerly darker sunspots). Clipped to the disc so they can't leak off the
+  // limb. Additive so they read as faint inner light rather than holes.
   ctx.save();
   ctx.beginPath(); ctx.arc(x, y, r, 0, 6.28); ctx.clip();
+  ctx.globalCompositeOperation = 'lighter';
   const spotCount = 9;
   for (let i = 0; i < spotCount; i++) {
     const baseAngle = (i / spotCount) * 6.28 + tSec * 0.06 + i * 0.3;
@@ -24522,21 +24548,21 @@ function drawApocalypseSun(tctx = ctx) {
     const sx = x + Math.cos(baseAngle) * baseRad + driftX;
     const sy = y + Math.sin(baseAngle) * baseRad + driftY;
     const spotR = 10 + ((i * 13) % 10);
-    const darker = i % 2 === 0 ? '#cc2200' : '#880000';
+    const lighter = i % 2 === 0 ? 'rgba(120,50,190,0.5)' : 'rgba(80,25,150,0.45)';
     const spotGrad = ctx.createRadialGradient(sx, sy, 0, sx, sy, spotR);
-    spotGrad.addColorStop(0,   darker);
-    spotGrad.addColorStop(0.7, 'rgba(120,20,0,0.55)');
-    spotGrad.addColorStop(1,   'rgba(120,20,0,0)');
-    ctx.globalAlpha = 0.65;
+    spotGrad.addColorStop(0,   lighter);
+    spotGrad.addColorStop(0.7, 'rgba(70,20,130,0.30)');
+    spotGrad.addColorStop(1,   'rgba(70,20,130,0)');
+    ctx.globalAlpha = 0.5;
     ctx.fillStyle = spotGrad;
     ctx.beginPath(); ctx.arc(sx, sy, spotR, 0, 6.28); ctx.fill();
   }
   ctx.restore();
   ctx.globalAlpha = 1;
 
-  // --- Solar flares: bezier curves arcing off the surface. Each has its own
-  // phase offset so they animate independently. Width tapers base→tip via
-  // segmented strokes with decreasing lineWidth.
+  // --- Void tendrils (formerly solar flares): bezier curves arcing off the
+  // rim. Each has its own phase offset so they animate independently. Width
+  // tapers base→tip via segmented strokes with decreasing lineWidth.
   const flareCount = 7;
   for (let i = 0; i < flareCount; i++) {
     const phase = i * 0.9;
@@ -24568,11 +24594,11 @@ function drawApocalypseSun(tctx = ctx) {
       const u1 = (s + 1) / steps;
       const p0 = bezierPoint(bx, by, c1x, c1y, c2x, c2y, tipX, tipY, u0);
       const p1 = bezierPoint(bx, by, c1x, c1y, c2x, c2y, tipX, tipY, u1);
-      // Color: #ff4500 at base → transparent at tip.
+      // Color: bright violet at base → transparent at tip.
       const fadeAtBase = 0.85;
       const a0 = fadeAtBase * (1 - u0);
       ctx.globalAlpha = a0;
-      ctx.strokeStyle = 'rgba(255,69,0,1)';
+      ctx.strokeStyle = 'rgba(178,102,255,1)';
       ctx.lineWidth = baseW * (1 - u0);
       ctx.lineCap = 'round';
       ctx.beginPath();
@@ -24603,53 +24629,54 @@ function drawApocalypseOverlay(tctx = ctx) {
   if (state !== 'apocalypse') return;
   const t = apocalypseElapsed();
 
-  // Red screen tint builds through phase 2, peaks as sun descends.
+  // Deep-violet screen tint builds through phase 2, peaks as the Void descends.
   let tintAlpha = 0;
   if (t >= 3 && t < 8) tintAlpha = 0.15 * ((t - 3) / 5);
   else if (t >= 8) tintAlpha = 0.15 + 0.25 * Math.min(1, (t - 8) / 20);
   if (tintAlpha > 0) {
-    ctx.fillStyle = `rgba(130,0,0,${tintAlpha})`;
+    ctx.fillStyle = `rgba(40,0,70,${tintAlpha})`;
     ctx.fillRect(0, 0, W, H);
   }
 
-  // Sun.
+  // The Void.
   drawApocalypseSun(ctx);
 
-  // Impact flashes and fade.
+  // Impact flashes and fade. v1.10.0: violet discharge instead of a blinding
+  // white flash — the Void consumes rather than blinds.
   if (apocalypseImpactTriggered) {
     const impactT = (Date.now() - apocalypseImpactStart) / 1000;
-    // Small white ring at player position (0 → 0.1s: expand 30 → 100).
+    // Small violet ring at player position (0 → 0.1s: expand 30 → 100).
     if (impactT <= 0.2) {
       const k = Math.min(1, impactT / 0.1);
       const rr = 30 + 70 * k;
       ctx.globalAlpha = Math.max(0, 1 - k);
-      ctx.fillStyle = 'rgba(255,255,255,0.95)';
+      ctx.fillStyle = 'rgba(210,160,255,0.95)';
       ctx.beginPath(); ctx.arc(player.x, player.y, rr, 0, 6.28); ctx.fill();
       ctx.globalAlpha = 1;
     }
-    // Big white flash 0.2 → 0.5s: alpha 0→1 over 0.3s.
+    // Big violet flash 0.2 → 0.5s: alpha 0→1 over 0.3s.
     if (impactT > 0.2 && impactT <= 0.5) {
       const k = (impactT - 0.2) / 0.3;
-      ctx.fillStyle = `rgba(255,255,255,${k})`;
+      ctx.fillStyle = `rgba(190,120,255,${k})`;
       ctx.fillRect(0, 0, W, H);
     }
-    // Hold white 0.5 → 0.7.
+    // Hold violet 0.5 → 0.7.
     if (impactT > 0.5 && impactT <= 0.7) {
-      ctx.fillStyle = 'rgba(255,255,255,1)';
+      ctx.fillStyle = 'rgba(190,120,255,1)';
       ctx.fillRect(0, 0, W, H);
     }
-    // Fade white → black 0.7 → 1.2. v1.9.0 perf: the old two sequential
-    // full-screen fills (white@(1-k) then black@k) compose algebraically into a
-    // SINGLE source-over fill. Over any background B the pair yields
-    //   B·(k - k²) + white·(1-k)²
-    // which equals one fill rgba(c,c,c,a) with a = 1 - k + k² and
-    // c = 255·(1-k)²/a. Pixel-identical to the original (modulo 8-bit rounding),
-    // one full-screen pass instead of two.
+    // Fade violet → black 0.7 → 1.2. v1.9.0 perf: the old two sequential
+    // full-screen fills (violet@(1-k) then black@k) compose algebraically into
+    // a SINGLE source-over fill. Over any background B the pair yields
+    //   B·(k - k²) + violet·(1-k)²
+    // which equals one fill rgba(cr,cg,cb,a) with a = 1 - k + k² and
+    // each channel cN = violetN·(1-k)²/a. One full-screen pass instead of two.
     if (impactT > 0.7 && impactT <= 1.2) {
       const k = (impactT - 0.7) / 0.5;
       const a = 1 - k + k * k;
-      const c = Math.round(255 * (1 - k) * (1 - k) / a);
-      ctx.fillStyle = `rgba(${c},${c},${c},${a})`;
+      const f = (1 - k) * (1 - k) / a;
+      const cr = Math.round(190 * f), cg = Math.round(120 * f), cb = Math.round(255 * f);
+      ctx.fillStyle = `rgba(${cr},${cg},${cb},${a})`;
       ctx.fillRect(0, 0, W, H);
     }
   }
@@ -24712,31 +24739,13 @@ function triggerDeath() {
     clearPendingNovaTimeouts();
     // Pre-cutscene freeze: update() exits early on unknown states, so the
     // world stops scrolling while the death animation plays. render() keeps
-    // ticking, so shards/flash/particles animate normally.
+    // ticking, so shards/flash animate normally.
     state = 'ascension_predeath';
-    // Particle burst at 1.2 s, matching the normal death-flow. Purple-tinted
-    // (Phantasm), not rainbow.
-    if (pendingDeathBurstTimer) { clearTimeout(pendingDeathBurstTimer); }
-    pendingDeathBurstTimer = setTimeout(() => {
-      pendingDeathBurstTimer = null;
-      if (state !== 'ascension_predeath') return;
-      deathParticles = [];
-      const deathCount = Math.min(50, DEATH_PART_CAP);
-      const nowDpSpawn = Date.now();
-      for (let i = 0; i < deathCount; i++) {
-        const a = Math.random() * Math.PI * 2, s = Math.random() * 3.5 + 0.8;
-        // v1.9.0: Ascension is now a BULWARK run — debris reads GREY (silvery
-        // stone), not Phantasm purple. Low-saturation cool grey with lightness jitter.
-        const rgb = hslToRgbStr(210, 10, 58 + Math.random() * 20);
-        pushCapped(deathParticles, {
-          x: player.x, y: player.y,
-          vx: Math.cos(a) * s, vy: Math.sin(a) * s,
-          life: 1, startTime: nowDpSpawn,
-          maxLifeMs: DEATH_PART_LIFE_MS,
-          size: Math.random() * 2.5 + 0.8, rgb,
-        }, DEATH_PART_CAP);
-      }
-    }, 1200);
+    // v1.10.0 polish: the genuine orb-shatter shards + white flash above ARE
+    // the death explosion. The old extra +1.2s scripted grey particle scatter
+    // was removed — it read as a redundant second burst on top of the real
+    // death. Cancel any leftover burst timer defensively.
+    if (pendingDeathBurstTimer) { clearTimeout(pendingDeathBurstTimer); pendingDeathBurstTimer = null; }
     // Cutscene fires once the death animation has played out (~1.7 s).
     // Player has seen the explosion, particles are still expanding behind
     // the (now dimmer) overlay when the typewriter begins.
@@ -24744,6 +24753,15 @@ function triggerDeath() {
       if (state !== 'ascension_predeath') return;
       ascensionStartCutscene();
     }, 1700);
+    return;
+  }
+  // v1.10.0: SECOND-DEATH cutscene — the narrator fake-out. Fires on the
+  // player's second death (Ascension owns death #1). Plays its own theater,
+  // then re-enters triggerDeath() to finalize the REAL death normally. Placed
+  // AFTER the Ascension check (priority) and BEFORE the normal path; gated on
+  // !ascensionRunActive so the Ascension run's own end-death doesn't count.
+  if (secondDeathCutsceneEligible()) {
+    secondDeathStart();
     return;
   }
   // v1.7.0 game-feel: hard impact spike on death — scaled by cause. The
@@ -29349,8 +29367,15 @@ function render() {
     }
   }
   drawBg();
-  drawBodies();
-  drawCrackFragments();
+  // v1.10.0: during the second-death scripted theater, suppress the real
+  // (frozen) world so only the cinematic orb/lasers/planets render over the
+  // starfield. The cutscene's draw runs here, on its own clean backdrop.
+  if (state === 'seconddeath_cutscene') {
+    drawSecondDeathTheater();
+  } else {
+    drawBodies();
+    drawCrackFragments();
+  }
   // Step 3c: when pixi is active, preview outlines are drawn via the pixi
   // effects layer so they share the body sprites' coordinate system.
   if (state === 'bodypreview' && !pixiActive) drawPreviewOutlines();
@@ -29365,7 +29390,7 @@ function render() {
     ctx.globalAlpha = 1;
   }
 
-  if (state==='playing'||state==='dead'||state==='paused'||state==='apocalypse'||state==='devmode'||state==='tutorial'||state==='ascension_predeath') {
+  if (state==='playing'||state==='dead'||state==='paused'||state==='apocalypse'||state==='devmode'||state==='tutorial'||state==='ascension_predeath'||state==='seconddeath_predeath') {
     drawBurnZones();
     drawGravityWellLines();
     drawPowerups();
@@ -29448,6 +29473,12 @@ function render() {
     ctx.restore();
   }
 
+  // v1.10.0 tutorial-v2: giant hold-buttons, safe-zone target ring, and the
+  // streak demo badge. Drawn on top of the scene; self-gates on step kind.
+  if (state === 'tutorial') {
+    try { drawTutorialScene(); } catch (err) { console.error('[tutorial] draw threw', err); }
+  }
+
   updatePowerupTimer();
   updateBurstBar();
   updateCapstoneCountdowns();
@@ -29501,7 +29532,10 @@ function getFrameInterval() {
   // is actively interacting and 30 fps would feel sluggish.
   const inGameplay = state === 'playing' || state === 'paused'
                   || state === 'apocalypse' || state === 'devmode'
-                  || state === 'bodypreview' || state === 'tutorial';
+                  || state === 'bodypreview' || state === 'tutorial'
+                  // v1.10.0: the second-death theater (spinning orb, sweeping
+                  // lasers, glitch rewind) needs the full frame rate to read.
+                  || state === 'seconddeath_cutscene' || state === 'seconddeath_predeath';
   if (!inGameplay) return 1000 / FPS_TARGET_MENU;
   const target = getFpsTargetGameplay();
   if (target === 0) return 0;            // uncapped
@@ -29732,12 +29766,32 @@ document.getElementById('startBtn').addEventListener('click', ()=>{
     // next post-tutorial first death. saveAscensionUsed writes localStorage AND
     // schedules a PGS write, so the cleared state propagates to cloud too.
     saveAscensionUsed(false);
+    // v1.10.0: also clear the second-death cutscene flag so the dev tester
+    // re-experiences both narrator beats (Ascension on death #1, second-death
+    // fake-out on death #2) on the freshly reset profile.
+    saveSecondDeathUsed(false);
     pgsScheduleWrite();
     refreshActiveTreeCache();
     if (typeof refreshOrbBrowser === 'function') { try { refreshOrbBrowser(); } catch {} }
     if (typeof refreshImpossibleVisibility === 'function') refreshImpossibleVisibility();
     console.log('[DRIFTRESET] All progress wiped, tutorial + rainbow flags cleared');
     // Fall through — run starts normally on the now-reset profile.
+  }
+  // ===== TEMPORARY debug cheat (v1.10.0 Void recolor QA) =====
+  // Pilot name "VOIDTEST" starts a normal run and immediately triggers the
+  // Void descent (the 10-minute apocalypse sequence) so the recolor can be
+  // verified without surviving a full run. Gated exactly like TREETEST.
+  // TODO: REMOVE BEFORE RELEASE — search "VOIDTEST" (this block + the trigger
+  // at the bottom of this handler + the _voidTestRun local).
+  let _voidTestRun = false;
+  if (getUsername().toUpperCase() === 'VOIDTEST') {
+    _voidTestRun = true;
+    // Skip the forced first-run tutorial so the run starts immediately.
+    // In-memory only — does NOT persist, so the real tutorial flag is left
+    // untouched once this cheat is removed.
+    tutorialCompleted = true;
+    console.log('[VOIDTEST] Run will start and immediately trigger the Void descent (TEMPORARY debug cheat)');
+    // Fall through — the run starts normally, then the trigger below fires.
   }
   // Sentry fire-test cheat: pilot name "SENTRY" triggers a tagged test event
   // on start so a tester can verify the crash-reporting pipeline end-to-end.
@@ -29772,6 +29826,12 @@ document.getElementById('startBtn').addEventListener('click', ()=>{
   _ov.classList.remove('death-mode');
   _ov.classList.add('hidden');
   pauseBtn.classList.add('visible');
+  // TEMPORARY (VOIDTEST debug cheat): jump straight to the Void descent. Short
+  // delay so the first gameplay frame renders before the sequence takes over.
+  // TODO: REMOVE BEFORE RELEASE — search "VOIDTEST".
+  if (_voidTestRun) {
+    setTimeout(() => { try { if (state === 'playing') startApocalypse(); } catch (e) { console.error('[VOIDTEST] trigger failed', e); } }, 200);
+  }
 });
 
 let resumeCountdownTimers = [];
@@ -29833,6 +29893,14 @@ function beginResumedRun(snap) {
   score = snap.score | 0;
   document.getElementById('score').textContent = String(score);
   runStartTime = Date.now() - (snap.timesurvived * 1000);
+  // v1.10.0: restore the Ascension 2× progression baseline (resetGame(true)
+  // zeroed it). Falls back to the resumed elapsed time for older snapshots so
+  // progression doesn't suddenly double the pre-resume portion.
+  if (ascensionRunActive) {
+    _ascensionElapsedAtStartSec = (typeof snap.ascensionBaseline === 'number')
+      ? snap.ascensionBaseline
+      : elapsedRunSeconds();
+  }
   // Grace period starts fresh so the player isn't insta-killed on resume.
   graceEndTime = Date.now() + GRACE_DURATION_MS;
   state = 'playing';
@@ -30068,273 +30136,245 @@ function tutClearSpawned() {
   tutorialSpawnedPowerups = [];
 }
 
-// Step definitions. Order matters — tutorialStepIndex walks through this
-// array. taskCheck === null means info-only (tap-to-continue immediately).
-// Streak text in step 10 derives from the actual mechanic: streak increments
-// on every body destroyed (addDestroyPoints), breaks after 1500 ms without
-// a destroy (see update() ~12089), capped at ×4 points per kill (×4 × 8
-// streak slots = 32 pts max per kill, plus +rank for Drifter Prime Mover).
+// =====================================================================
+// TUTORIAL v2 (v1.10.0 rebuild) — fully on-rails, narrator-driven.
+// =====================================================================
+// The tutorial IS the narrator ("???") — the player's first contact with the
+// voice, before it has a name. ALL instruction text runs through the SAME
+// typewriter visuals + retro blip as the dialogue framework: 'say'/'demo'/
+// 'streak'/'walls' beats use dialogueStart() (tap-to-advance, like the narrator
+// everywhere else); 'hold'/'freeplay' beats use tutType() — the identical
+// typewriter pieces (#ascension* DOM, clickSecondary blip, DLG_TYPE_INTERVAL_MS)
+// but gated on a game ACTION instead of a tap.
+//
+// Step kinds:
+//   'say'      — pure narrator; tap to advance.
+//   'demo'     — narrator hands you a powerup; it auto-activates so the effect
+//                plays on the pinned orb while the line types. Tap to advance.
+//   'hold'     — a giant glowing HOLD-button on the taught side + on-rails,
+//                hard-clamped 1-axis movement to a safe zone. Cannot fail,
+//                cannot go off-screen, cannot enter the planet. Wrong-side
+//                input → the narrator mocks you. Gated on arrival at the zone.
+//   'streak'   — narrator + a clean, properly-oriented STREAK badge drawn
+//                center-screen (replaces the old upside-down HUD marker).
+//   'walls'    — narrator + the deadly-edge flash.
+//   'freeplay' — brief OPTIONAL unconstrained practice (real force model, no
+//                death) that auto-completes once they grab the gift (or 12s).
 const TUTORIAL_STEPS = [
-  // 1 INTRO — no world objects, just text.
-  {
-    id: 'intro',
-    title: 'WELCOME TO DRIFT',
-    body: "Let's learn the controls.",
-    taskCheck: null,
-  },
-  // 2 ATTRACT — planet at top, player must enter zone via left-side hold.
-  {
-    id: 'attract',
-    title: 'ATTRACT',
-    body: 'HOLD the LEFT side of the screen to pull toward the planet.',
-    successTitle: 'GREAT',
-    successBody: 'The orb pulls toward the planet when you hold the left side.',
-    onEnter: () => {
-      tutorialState.planet = tutSpawnPlanet(W * 0.5, H * 0.32, 26);
-      tutShowArrow('left');
-    },
-    taskCheck: () => {
-      const p = tutorialState.planet;
-      if (!p) return true;
-      return dist(player, p) < (p.radius + 60);
-    },
-    onSuccess: () => { tutHideArrows(); },
-  },
-  // 3 REPEL — same planet (re-spawn close to player), player must move away.
-  {
-    id: 'repel',
-    title: 'REPEL',
-    body: 'HOLD the RIGHT side of the screen to push away from the planet.',
-    successTitle: 'GOT IT',
-    successBody: 'The orb pushes away when you hold the right side.',
-    onEnter: () => {
-      tutClearSpawned();
-      // Spawn close to the player so repel has something to push from.
-      const px = player.x, py = player.y;
-      tutorialState.planet = tutSpawnPlanet(px, Math.max(120, py - 80), 26);
-      tutorialState.repelStartDist = dist(player, tutorialState.planet);
-      tutShowArrow('right');
-    },
-    taskCheck: () => {
-      const p = tutorialState.planet;
-      if (!p) return true;
-      return dist(player, p) >= (tutorialState.repelStartDist || 0) + 180;
-    },
-    onSuccess: () => { tutHideArrows(); },
-    onExit: () => { tutClearSpawned(); },
-  },
-  // 3.5 GRAVITY DISTANCE SCALING — pro tip. Attract/repel force scales with
-  // proximity; this reveal teaches players to slingshot off nearby bodies
-  // rather than mashing the input from far away.
-  {
-    id: 'gravityTip',
-    title: 'PRO TIP',
-    body: 'Gravity scales with distance. Get close to a body for stronger pull/push effects. Use this to slingshot around planets.',
-    taskCheck: null,
-  },
-  // 4 POWERUPS INTRO — info-only.
-  {
-    id: 'powerupsIntro',
-    title: 'POWERUPS',
-    body: 'Now let\'s learn about powerups.',
-    taskCheck: null,
-  },
-  // 5 SHIELD
-  {
-    id: 'shield',
-    title: 'SHIELD',
-    body: 'Move to grab the cyan SHIELD. It absorbs one collision.',
-    successTitle: 'SHIELD EQUIPPED',
-    successBody: 'A cyan ring forms around the orb. It absorbs one hit, then breaks.',
-    onEnter: () => {
-      tutorialState.powerup = tutSpawnPowerup('shield', W * 0.5, H * 0.32);
-    },
-    taskCheck: () => tutorialState.powerup && tutorialState.powerup.collected,
-  },
-  // 6 NOVA
-  {
-    id: 'nova',
-    title: 'NOVA',
-    body: 'Grab the orange NOVA. It auto-fires an explosive ring.',
-    successTitle: 'NOVA READY',
-    successBody: 'The ring expands from the orb and destroys nearby planets.',
-    onEnter: () => {
-      tutorialState.powerup = tutSpawnPowerup('nova', W * 0.5, H * 0.32);
-    },
-    taskCheck: () => tutorialState.powerup && tutorialState.powerup.collected,
-  },
-  // 7 HYPERSPEED
-  {
-    id: 'hyperspeed',
-    title: 'HYPERSPEED',
-    body: 'Grab the yellow HYPERSPEED. Speed burst with a forward barrier.',
-    successTitle: 'HYPERSPEED ENGAGED',
-    successBody: 'You become invulnerable and faster. The barrier destroys planets it touches.',
-    onEnter: () => {
-      tutorialState.powerup = tutSpawnPowerup('hyperspeed', W * 0.5, H * 0.32);
-    },
-    taskCheck: () => tutorialState.powerup && tutorialState.powerup.collected,
-  },
-  // 8 GHOST
-  {
-    id: 'ghost',
-    title: 'GHOST',
-    body: 'Grab the purple GHOST. Phase through planets harmlessly.',
-    successTitle: 'GHOST ACTIVE',
-    successBody: 'Planets pass through you without dealing damage.',
-    onEnter: () => {
-      tutorialState.powerup = tutSpawnPowerup('ghost', W * 0.5, H * 0.32);
-    },
-    taskCheck: () => tutorialState.powerup && tutorialState.powerup.collected,
-  },
-  // 9 PAIR / COMBO
-  {
-    id: 'pair',
-    title: 'PAIRS',
-    body: 'Some powerups arrive in pairs. Grab both quickly to trigger a COMBO.',
-    successTitle: 'PAIR COMBO',
-    successBody: 'Combinations create powerful effects. Experiment to find them all.',
-    onEnter: () => {
-      const pair = tutSpawnPair('shield', 'nova', W * 0.5, H * 0.30);
-      tutorialState.pair = pair;
-    },
-    taskCheck: () => {
-      const p = tutorialState.pair;
-      return p && p[0].collected && p[1].collected;
-    },
-  },
-  // 10 BURST — hold BOTH halves to fire orb's special. Spawn 1-2 planets
-  // in front of the player so the burst has visible targets. Burst
-  // cooldown is reset on enter so the player can fire immediately, and
-  // again on exit so the next gameplay run starts with a ready burst.
-  {
-    id: 'burst',
-    title: 'BURST',
-    body: "Hold BOTH sides of the screen at the same time to fire your orb's special ability.",
-    successTitle: 'BURST!',
-    // Shorter text — first-time player only experiences Drifter's burst
-    // (random powerup), so listing every orb's burst would over-explain
-    // mechanics they haven't met yet. Variety is teased, specifics are
-    // discoverable.
-    successBody: "That's your orb's special. Each orb has a different one — find your favorite!",
-    onEnter: () => {
-      // No scripted target planets — burst can roll shield (passive
-      // visual, no body interaction), and tutorial physics doesn't run
-      // burst-kill paths anyway, so a planet that survives a nova ring
-      // looks broken. Pure gesture demonstration is cleaner.
-      tutorialState.burstFired = false;
-      // Reset burst cooldown so the player can fire immediately. This is
-      // also re-set on exit (see below) for the same reason.
-      burstCooldownEnd = 0;
-      // Show BOTH arrows simultaneously — visual cue for "hold both
-      // sides". tutShowArrow only flips one at a time, so reach into
-      // the DOM directly. tutHideArrows() in onExit clears both.
-      const el = tutTextEl();
-      if (el.arrowL) el.arrowL.classList.add('visible');
-      if (el.arrowR) el.arrowR.classList.add('visible');
-    },
-    taskCheck: () => {
-      // Detect the moment burstTriggered flips true (both halves held).
-      // burstTriggered is consumed by the next gameplay update, but the
-      // tutorial loop doesn't run that path; we latch the flag in
-      // tutorialState.burstFired so a single trigger sticks even if the
-      // player lifts their fingers immediately afterward. We also fire
-      // executeBurst() here so the player sees the actual orb effect.
-      if (tutorialState.burstFired) return true;
-      if (leftDown && rightDown && Date.now() >= burstCooldownEnd) {
-        try { executeBurst(); } catch (err) { console.error('[tutorial] executeBurst threw', err); }
-        burstCooldownEnd = Date.now() + 9999999; // lock cooldown for the rest of the step
-        burstTriggered = false;
-        tutorialState.burstFired = true;
-        return true;
-      }
-      return false;
-    },
-    onExit: () => {
-      tutHideArrows();
-      // Reset cooldown to "ready now" so post-tutorial gameplay starts
-      // with the burst available.
-      burstCooldownEnd = 0;
-      burstTriggered = false;
-    },
-  },
-  // 11 STREAK — info, with HUD pointer to streakDisplay. Mechanic-accurate
-  // text: addDestroyPoints() increments destroyStreak, the streak resets if
-  // 1500 ms pass without a destroy (update() at the streak-timeout check).
-  {
-    id: 'streak',
-    title: 'STREAK',
-    body: 'Destroy planets within 1.5 seconds of each other to build a STREAK. Higher streaks score more points and earn more crystals.',
-    taskCheck: null,
-    onEnter: () => {
-      // Briefly fake-show the streak indicator at 🔥 x3 so the player sees
-      // what to look for. We don't touch the real destroyStreak counter.
-      const sd = document.getElementById('streakDisplay');
-      if (sd) {
-        tutorialState.priorStreakText = sd.textContent;
-        tutorialState.priorStreakClass = sd.className;
-        sd.textContent = '🔥 x3';
-        sd.classList.add('visible');
-        // Position the HUD arrow above the streak display.
-        const r = sd.getBoundingClientRect();
-        const overlay = tutTextEl().overlay;
-        const oRect = overlay ? overlay.getBoundingClientRect() : { left: 0, top: 0 };
-        const arrow = tutTextEl().arrowHud;
-        if (arrow) {
-          arrow.style.left = (r.left - oRect.left + r.width / 2 - 11) + 'px';
-          arrow.style.top  = (r.bottom - oRect.top + 6) + 'px';
-        }
-      }
-      tutShowArrow('hud');
-    },
-    onExit: () => {
-      tutHideArrows();
-      const sd = document.getElementById('streakDisplay');
-      if (sd) {
-        sd.textContent = tutorialState.priorStreakText || '';
-        sd.className   = tutorialState.priorStreakClass || '';
-      }
-    },
-  },
-  // 12 WALLS — info, with red flash on play-area edges. The render path
-  // checks tutorialWallFlashUntil and overlays a red gradient on the four
-  // edges while active.
-  {
-    id: 'walls',
-    title: 'WALLS ARE DEADLY',
-    body: 'Walls are deadly. But Shield bounces you off and consumes one stack. Ghost lets you phase through them safely.',
-    taskCheck: null,
-    onEnter: () => {
-      // Flash for 2 s; render() reads the timer and draws the edges.
-      tutorialWallFlashUntil = Date.now() + 2000;
-    },
-  },
-  // 13 COMPLETE — info, then transition.
-  {
-    id: 'complete',
-    title: 'YOU’RE READY',
-    body: 'Now... DRIFT.',
-    taskCheck: null,
-  },
+  // 1 — INTRO. Establish the voice.
+  { id: 'intro', kind: 'say', lines: [
+      'Oh. A new one.',
+      "You don't know what you're doing yet. That's fine — nobody does.",
+      "Watch. I'll only show you once. ...probably twice.",
+  ] },
+  // 2 — ATTRACT (hold LEFT). Planet above; pull UP into the safe ring.
+  { id: 'attract', kind: 'hold', side: 'left',
+    instruction: 'Hold the LEFT side. PULL yourself toward the planet.',
+    success: "There. That's attraction — hold left, and you're drawn in.",
+    mock: "...the OTHER side. The LEFT one. We'll get there.",
+    setup: tutSetupAttract },
+  // 3 — REPEL (hold RIGHT). Planet close above; push DOWN to the safe zone.
+  { id: 'repel', kind: 'hold', side: 'right',
+    instruction: 'Now hold the RIGHT side. PUSH yourself away.',
+    success: "Good. Push, pull. That's all gravity ever asks of you.",
+    mock: 'Other hand, genius. The RIGHT side.',
+    setup: tutSetupRepel },
+  // 4 — GRAVITY TIP.
+  { id: 'gravityTip', kind: 'say', lines: [
+      'Closer means stronger. Hug a planet and the pull is fierce — drift far and it barely whispers.',
+      "Use it. Slingshot. Don't fight space; ride it.",
+  ] },
+  // 5 — POWERUPS INTRO.
+  { id: 'powerupsIntro', kind: 'say', lines: [
+      'Space left you gifts. Let me put a few in your hands.',
+  ] },
+  // 6 — SHIELD (auto-demo).
+  { id: 'shield', kind: 'demo', powerup: 'shield', lines: [
+      "SHIELD. A skin of light. It eats one hit, then it's gone.",
+  ] },
+  // 7 — NOVA (auto-demo).
+  { id: 'nova', kind: 'demo', powerup: 'nova', lines: [
+      "NOVA. It detonates outward and unmakes whatever's near. Lovely, isn't it.",
+  ] },
+  // 8 — HYPERSPEED (auto-demo).
+  { id: 'hyperspeed', kind: 'demo', powerup: 'hyperspeed', lines: [
+      'HYPERSPEED. You blur forward behind a barrier. Nothing survives the front of it.',
+  ] },
+  // 9 — GHOST (auto-demo).
+  { id: 'ghost', kind: 'demo', powerup: 'ghost', lines: [
+      'GHOST. You stop being solid. Planets pass right through you — and you through them.',
+  ] },
+  // 10 — PAIRS / COMBOS.
+  { id: 'pairs', kind: 'say', lines: [
+      'Grab two gifts at once and they COMBINE. Some pairings are... spectacular.',
+      "I'll let you find those yourself.",
+  ] },
+  // 11 — BURST (hold BOTH sides).
+  { id: 'burst', kind: 'hold', side: 'both',
+    instruction: 'Hold BOTH sides at once. Force a gift out of nothing — your BURST.',
+    success: "Hah. Every orb bursts differently. That one's yours.",
+    mock: 'BOTH sides. At the SAME time. I believe in you. Barely.',
+    setup: tutSetupBurst },
+  // 12 — STREAK (clean centered badge demo).
+  { id: 'streak', kind: 'streak', lines: [
+      'Destroy planets fast, one after another, and a STREAK builds — like this.',
+      'The higher it climbs, the more each kill is worth. Greed pays, here.',
+  ] },
+  // 13 — WALLS (deadly-edge flash).
+  { id: 'walls', kind: 'walls', lines: [
+      'One more thing — the edges. Touch a wall and you die. Simple as that.',
+      'A Shield bounces you off. A Ghost slips through. Everything else? Bones.',
+  ] },
+  // 14 — FREEPLAY (optional, unfailable practice).
+  { id: 'freeplay', kind: 'freeplay',
+    instruction: 'Enough talk. Drift. Grab that light — nothing here can end you.',
+    success: '...you might actually survive out there. Might.',
+    setup: tutSetupFreeplay },
+  // 15 — OUTRO.
+  { id: 'outro', kind: 'say', lines: [
+      "That's all I'll give you for free.",
+      "Now go. Let's see what the dark does to you.",
+  ] },
 ];
+
+// --- Tutorial v2 scene setup (geometry computed at runtime from W/H) -------
+// Each 'hold'/'freeplay' step's setup() seeds tutorialState with the world
+// fixtures + the movement/render config the tick + draw paths read.
+function tutPinOrbHome() {
+  player.x = W / 2; player.y = H * 0.44; player.vx = 0; player.vy = 0;
+  closestBody = null; // no stale target line/ring while text is on screen
+}
+function tutMakeButton(side, label, rgb) {
+  const r = Math.max(46, Math.min(76, Math.min(W, H) * 0.12));
+  const x = side === 'left' ? Math.max(r + 14, W * 0.22)
+                            : Math.min(W - r - 14, W * 0.78);
+  return { side, label, rgb, x, y: H * 0.52, r };
+}
+function tutSetupAttract() {
+  const px = W / 2, py = H * 0.24;
+  const planet = tutSpawnPlanet(px, py, 24);
+  const startY = H * 0.62;
+  const targetY = py + (planet ? planet.radius : 24) + 64;
+  player.x = px; player.y = startY; player.vx = 0; player.vy = 0;
+  tutorialState.railMove = { side: 'left', x: px, startY, targetY, speed: 2.6, reached: false };
+  tutorialState.targetRing = { x: px, y: targetY, r: 30, rgb: '125,232,255' };
+  tutorialState.buttons = [ tutMakeButton('left', 'ATTRACT', '125,232,255') ];
+}
+function tutSetupRepel() {
+  const px = W / 2, py = H * 0.30;
+  const planet = tutSpawnPlanet(px, py, 24);
+  const startY = py + (planet ? planet.radius : 24) + 50;
+  const targetY = H * 0.72;
+  player.x = px; player.y = startY; player.vx = 0; player.vy = 0;
+  tutorialState.railMove = { side: 'right', x: px, startY, targetY, speed: 2.6, reached: false };
+  tutorialState.targetRing = { x: px, y: targetY, r: 30, rgb: '255,150,90' };
+  tutorialState.buttons = [ tutMakeButton('right', 'REPEL', '255,150,90') ];
+}
+function tutSetupBurst() {
+  const px = W / 2, startY = H * 0.50;
+  player.x = px; player.y = startY; player.vx = 0; player.vy = 0;
+  burstCooldownEnd = 0; burstTriggered = false;
+  tutorialState.railMove = { side: 'both', x: px, startY, targetY: startY, speed: 0, reached: false };
+  tutorialState.buttons = [
+    tutMakeButton('left',  'HOLD', '255,210,120'),
+    tutMakeButton('right', 'HOLD', '255,210,120'),
+  ];
+}
+function tutSetupFreeplay() {
+  tutPinOrbHome();
+  tutorialState.powerup = tutSpawnPowerup('shield', W * 0.5, H * 0.26);
+  tutSpawnPlanet(W * 0.30, H * 0.40, 22);
+  tutSpawnPlanet(W * 0.70, H * 0.56, 22);
+  tutorialState.freeplay = true;
+  tutorialState.freeplayDeadline = Date.now() + 12000;
+  const bl = tutMakeButton('left',  'ATTRACT', '125,232,255');
+  const br = tutMakeButton('right', 'REPEL',   '255,150,90');
+  bl.faint = true; br.faint = true;
+  tutorialState.buttons = [bl, br];
+}
+
+// --- Tutorial v2 narrator plumbing ----------------------------------------
+// Reuses the dialogue framework's typewriter DOM + blip. tutType() types a
+// single line then fires onDone (no tap needed) — used for hold/freeplay
+// instructions + mock jabs where advancement is gated on a game action.
+let _tutTypeTimer = null;
+let _tutMockUntil = 0;
+let _tutMockTimer = null;
+function tutType(line, onDone) {
+  if (_tutTypeTimer) { clearTimeout(_tutTypeTimer); _tutTypeTimer = null; }
+  _dlgSetSpeaker('???');
+  _dlgShowContinue(false);
+  const full = line || '';
+  let shown = 0;
+  _dlgSetText('');
+  const stepFn = () => {
+    if (state !== 'tutorial') { _tutTypeTimer = null; return; }
+    shown++;
+    _dlgSetText(full.slice(0, shown));
+    if ((shown & 1) === 0) { try { if (SFX.clickSecondary) SFX.clickSecondary(); } catch {} }
+    if (shown >= full.length) { _tutTypeTimer = null; if (typeof onDone === 'function') onDone(); return; }
+    _tutTypeTimer = setTimeout(stepFn, DLG_TYPE_INTERVAL_MS);
+  };
+  stepFn();
+}
+// Wrong-input jab during a hold step. Cooled-down so mashing can't spam it;
+// after the jab lands it re-states the instruction.
+function tutMock(step) {
+  if (!step || Date.now() < _tutMockUntil) return;
+  _tutMockUntil = Date.now() + 3000;
+  if (_tutMockTimer) { clearTimeout(_tutMockTimer); _tutMockTimer = null; }
+  try { if (SFX.clickSecondary) SFX.clickSecondary(); } catch {}
+  tutType(step.mock, () => {
+    _tutMockTimer = setTimeout(() => {
+      if (state === 'tutorial' && TUTORIAL_STEPS[tutorialStepIndex] === step && !tutorialState.railDone) {
+        tutType(step.instruction);
+      }
+    }, 1200);
+  });
+}
+// Normalize a step's text into the [speaker, text] form the dialogue engine
+// wants, all spoken by '???'.
+function tutLines(v) {
+  const arr = Array.isArray(v) ? v : [v];
+  return arr.map(s => ['???', s]);
+}
+// Overlay mode: 'tap' = pointer-events on, tap-to-continue (say/demo beats);
+// 'hold' = pointer-events OFF so canvas touches reach the giant hold-buttons,
+// continue affordance hidden (the button + action gate the advance instead).
+function tutSetOverlayMode(mode) {
+  const ov = document.getElementById('ascensionOverlay');
+  if (!ov) return;
+  ov.classList.add('visible');
+  ov.classList.toggle('tut-hold', mode === 'hold');
+  _dlgSetSpeaker('???');
+}
 
 function tutorialEnterStep(idx) {
   tutorialStepIndex = idx;
-  tutorialPhase = 'task';
   tutorialState = {};
+  if (_tutTypeTimer) { clearTimeout(_tutTypeTimer); _tutTypeTimer = null; }
+  if (_tutMockTimer) { clearTimeout(_tutMockTimer); _tutMockTimer = null; }
+  _tutMockUntil = 0;
   const step = TUTORIAL_STEPS[idx];
-  if (!step) return;
-  if (typeof step.onEnter === 'function') {
-    try { step.onEnter(); } catch (err) { console.error('[tutorial] onEnter threw', err); }
+  if (!step) { tutorialFinish(); return; }
+  tutClearSpawned();
+  if (step.kind === 'hold' || step.kind === 'freeplay') {
+    // Pass-through overlay so the player can hold the giant on-screen buttons.
+    tutSetOverlayMode('hold');
+    try { step.setup(); } catch (err) { console.error('[tutorial] setup threw', err); }
+    tutType(step.instruction);
+    return;
   }
-  // Info-only steps go straight to success phase so tap-to-continue works.
-  const isInfo = step.taskCheck == null;
-  if (isInfo) {
-    tutorialPhase = 'success';
-    tutShowText(step.title, step.body, true);
-  } else {
-    tutShowText(step.title, step.body, false);
+  // say / demo / streak / walls → tap-advance via the shared dialogue engine.
+  tutSetOverlayMode('tap');
+  tutPinOrbHome();
+  if (step.kind === 'demo') {
+    // Auto-hand the gift so its effect plays on the orb while the line types.
+    try { activatePowerup(step.powerup, player.x, player.y); }
+    catch (err) { console.error('[tutorial] demo activate threw', err); }
   }
+  if (step.kind === 'walls') tutorialWallFlashUntil = Date.now() + 2600;
+  dialogueStart(tutLines(step.lines), { defaultSpeaker: '???', onComplete: tutorialAdvance });
 }
 
 // v1.6.4 Fix 2: shared cleanup of every active gameplay effect at step
@@ -30393,10 +30433,8 @@ function tutorialClearActiveEffects() {
 }
 
 function tutorialAdvance() {
-  const step = TUTORIAL_STEPS[tutorialStepIndex];
-  if (step && typeof step.onExit === 'function') {
-    try { step.onExit(); } catch (err) { console.error('[tutorial] onExit threw', err); }
-  }
+  if (_tutTypeTimer) { clearTimeout(_tutTypeTimer); _tutTypeTimer = null; }
+  if (_tutMockTimer) { clearTimeout(_tutMockTimer); _tutMockTimer = null; }
   // Wipe any active gameplay effects (shield rings, hyperspeed barrier,
   // ghost bubble, nova rings, etc.) before the next step starts.
   try { tutorialClearActiveEffects(); } catch (err) {
@@ -30410,38 +30448,241 @@ function tutorialAdvance() {
   tutorialEnterStep(nextIdx);
 }
 
-function tutorialOnTap() {
-  // Tap is honored only when in success phase. While the player is
-  // mid-task, tapping the text area must NOT advance (they need to learn
-  // by doing).
-  if (state !== 'tutorial') return;
-  if (tutorialPhase !== 'success') return;
-  tutorialAdvance();
+// A 'hold' step's safe zone was reached (or the burst fired): swap to a
+// tap-advance success line via the shared dialogue engine.
+function tutHoldSucceed(step) {
+  tutorialState.railDone = true;
+  tutorialState.railMove = null;
+  tutorialState.targetRing = null;
+  tutorialState.buttons = null;
+  // Stop any in-flight instruction/mock typing so it can't fight the success
+  // line's typewriter for the shared text element.
+  if (_tutTypeTimer) { clearTimeout(_tutTypeTimer); _tutTypeTimer = null; }
+  if (_tutMockTimer) { clearTimeout(_tutMockTimer); _tutMockTimer = null; }
+  try { if (SFX.clickPrimary) SFX.clickPrimary(); } catch {}
+  tutSetOverlayMode('tap');
+  dialogueStart(tutLines(step.success), { defaultSpeaker: '???', onComplete: tutorialAdvance });
 }
 
-// Per-frame tick: progress the task-check, transition into success phase
-// when the predicate flips. Gameplay-side state changes (powerup pickup,
-// player approach to planet) flow through here.
+// Free-play practice finished (gift grabbed or timed out): tear down the
+// fixtures and play the success line.
+function tutFreeplaySucceed(step) {
+  tutorialState.freeplayDone = true;
+  tutorialState.freeplay = false;
+  tutorialState.buttons = null;
+  if (_tutTypeTimer) { clearTimeout(_tutTypeTimer); _tutTypeTimer = null; }
+  if (_tutMockTimer) { clearTimeout(_tutMockTimer); _tutMockTimer = null; }
+  tutClearSpawned();
+  try { tutorialClearActiveEffects(); } catch {}
+  tutPinOrbHome();
+  tutSetOverlayMode('tap');
+  dialogueStart(tutLines(step.success), { defaultSpeaker: '???', onComplete: tutorialAdvance });
+}
+
+// Per-frame gate for the interactive ('hold' / 'freeplay') steps. say/demo/
+// streak/walls beats advance via the dialogue engine's tap → onComplete, so
+// they need no per-frame work here.
 function tutorialTick() {
   const step = TUTORIAL_STEPS[tutorialStepIndex];
   if (!step) return;
-  if (tutorialPhase === 'task' && typeof step.taskCheck === 'function') {
-    let done = false;
-    try { done = !!step.taskCheck(); } catch (err) {
-      console.error('[tutorial] taskCheck threw', err);
-    }
-    if (done) {
-      tutorialPhase = 'success';
-      if (typeof step.onSuccess === 'function') {
-        try { step.onSuccess(); } catch (err) { console.error('[tutorial] onSuccess threw', err); }
-      }
-      tutShowText(
-        step.successTitle || step.title,
-        step.successBody  || step.body,
-        true
-      );
+  if (step.kind === 'hold' && !tutorialState.railDone) {
+    const m = tutorialState.railMove;
+    if (m && m.reached) tutHoldSucceed(step);
+  } else if (step.kind === 'freeplay' && !tutorialState.freeplayDone) {
+    const pu = tutorialState.powerup;
+    if ((pu && pu.collected) ||
+        (tutorialState.freeplayDeadline && Date.now() > tutorialState.freeplayDeadline)) {
+      tutFreeplaySucceed(step);
     }
   }
+}
+
+// --- Tutorial v2 movement models (called from updateTutorial) -------------
+// On-rails: orb X locked to the track, Y hard-clamped between start and the
+// safe zone. Movement happens ONLY while the correct side is held; the wrong
+// side (or, for burst, holding just one side) triggers the narrator's jab.
+function tutRailMovement() {
+  const m = tutorialState.railMove;
+  if (!m) return;
+  const step = TUTORIAL_STEPS[tutorialStepIndex];
+  try { findClosest(); } catch {} // targeting line to the planet while holding
+  player.x = m.x; player.vx = 0; player.vy = 0;
+  if (m.side === 'both') {
+    player.y = m.startY;
+    const bothHeld = leftDown && rightDown;
+    const oneHeld = (leftDown ? 1 : 0) + (rightDown ? 1 : 0) === 1;
+    if (bothHeld && !m.reached) {
+      if (Date.now() >= burstCooldownEnd) {
+        try { executeBurst(); } catch (err) { console.error('[tutorial] executeBurst threw', err); }
+        burstCooldownEnd = Date.now() + 9999999; // lock for the rest of the step
+        burstTriggered = false;
+        m.reached = true;
+      }
+    } else if (oneHeld) {
+      tutMock(step);
+    }
+    return;
+  }
+  const correct = m.side === 'left' ? (leftDown && !rightDown) : (rightDown && !leftDown);
+  const wrong   = m.side === 'left' ? rightDown : leftDown;
+  if (correct) {
+    const dir = m.targetY > m.startY ? 1 : -1;
+    player.y += dir * m.speed * dtScale;
+    const lo = Math.min(m.startY, m.targetY), hi = Math.max(m.startY, m.targetY);
+    if (player.y < lo) player.y = lo;
+    if (player.y > hi) player.y = hi;
+    if (m.side === 'left') { try { SFX.attract(frame); } catch {} }
+    else                   { try { SFX.repel(frame); } catch {} }
+    if (Math.abs(player.y - m.targetY) < 3) m.reached = true;
+  } else if (wrong) {
+    tutMock(step);
+  }
+}
+// Free-play: the real gravity force model + soft wall rebound + pickups, but
+// no death — so the player practices unconstrained yet cannot fail.
+function tutFreeplayMovement() {
+  findClosest();
+  if (closestBody) {
+    const dx = closestBody.x - player.x;
+    const dy = closestBody.y - player.y;
+    const d  = Math.max(Math.hypot(dx, dy), closestBody.radius * 2.2);
+    const nx = dx / d, ny = dy / d;
+    const influence = Math.min(140 / d, 1.8);
+    const f = FORCE * influence;
+    if (leftDown)  { player.vx += nx * f * dtScale; player.vy += ny * f * dtScale; }
+    if (rightDown) { player.vx -= nx * f * dtScale; player.vy -= ny * f * dtScale; }
+  }
+  player.vx *= 0.91; player.vy *= 0.91;
+  player.x += player.vx * dtScale;
+  player.y += player.vy * dtScale;
+  const xMin = PLAYER_R + 4, xMax = W - PLAYER_R - 4;
+  const yMin = 40,           yMax = H - 40;
+  if (player.x < xMin) { player.x = xMin; player.vx =  Math.abs(player.vx) * 0.6; }
+  if (player.x > xMax) { player.x = xMax; player.vx = -Math.abs(player.vx) * 0.6; }
+  if (player.y < yMin) { player.y = yMin; player.vy =  Math.abs(player.vy) * 0.6; }
+  if (player.y > yMax) { player.y = yMax; player.vy = -Math.abs(player.vy) * 0.6; }
+  for (const p of powerups) {
+    if (p.collected) continue;
+    if (dist(player, p) < (PLAYER_R + p.radius)) {
+      p.collected = true;
+      try { activatePowerup(p.type, p.x, p.y); } catch (err) { console.error('[tutorial] activatePowerup threw', err); }
+    }
+  }
+  powerups = powerups.filter(p => !p.collected);
+  if (leftDown)  { try { SFX.attract(frame); } catch {} }
+  if (rightDown) { try { SFX.repel(frame); } catch {} }
+}
+
+// --- Tutorial v2 canvas overlays (called from render) ---------------------
+function drawTutorialScene() {
+  const step = TUTORIAL_STEPS[tutorialStepIndex];
+  if (!step) return;
+  const now = Date.now();
+  // Safe-zone target ring (hold steps) — shows WHERE to bring the orb.
+  const tr = tutorialState.targetRing;
+  if (tr) {
+    const pulse = 0.5 + 0.5 * Math.sin(now * 0.005);
+    ctx.save();
+    ctx.globalAlpha = 0.5 + 0.4 * pulse;
+    ctx.strokeStyle = `rgba(${tr.rgb},0.9)`;
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 6]);
+    ctx.beginPath(); ctx.arc(tr.x, tr.y, tr.r + pulse * 4, 0, 6.28); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+  }
+  if (tutorialState.buttons) {
+    for (const b of tutorialState.buttons) drawTutHoldButton(b, now);
+  }
+  if (step.kind === 'streak') drawTutStreakBadge(now);
+}
+// A giant, impossible-to-miss "press and hold here" button: soft glow, an
+// inward-converging ring animation (the universal hold affordance), a label,
+// and a bright active state when the correct side is actually held.
+function drawTutHoldButton(b, now) {
+  const held = b.side === 'left' ? leftDown
+             : b.side === 'right' ? rightDown
+             : (leftDown && rightDown);
+  const baseA = b.faint ? 0.5 : 1;
+  ctx.save();
+  // Outer soft glow.
+  const glow = ctx.createRadialGradient(b.x, b.y, b.r * 0.4, b.x, b.y, b.r * 1.9);
+  glow.addColorStop(0, `rgba(${b.rgb},${(held ? 0.42 : 0.22) * baseA})`);
+  glow.addColorStop(1, `rgba(${b.rgb},0)`);
+  ctx.fillStyle = glow;
+  ctx.beginPath(); ctx.arc(b.x, b.y, b.r * 1.9, 0, 6.28); ctx.fill();
+  // Inward-converging rings (only while NOT held — the brightened fill is the
+  // "yes, keep holding" confirmation once engaged).
+  if (!held) {
+    const period = 1500;
+    for (let i = 0; i < 3; i++) {
+      const ph = (((now - i * (period / 3)) % period) / period);
+      const rr = b.r * (1.85 - 0.95 * ph);
+      const a = 0.5 * (1 - ph) * baseA;
+      if (a <= 0.02) continue;
+      ctx.globalAlpha = a;
+      ctx.strokeStyle = `rgba(${b.rgb},1)`;
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(b.x, b.y, rr, 0, 6.28); ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  }
+  // Disc + rim.
+  ctx.fillStyle = held ? `rgba(${b.rgb},0.85)` : `rgba(${b.rgb},${0.14 * baseA})`;
+  ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, 6.28); ctx.fill();
+  ctx.lineWidth = held ? 3 : 2;
+  ctx.strokeStyle = `rgba(${b.rgb},${held ? 1 : 0.7 * baseA})`;
+  ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, 6.28); ctx.stroke();
+  // Label.
+  ctx.fillStyle = held ? 'rgba(10,12,24,0.96)' : `rgba(${b.rgb},${0.95 * baseA})`;
+  ctx.font = '700 ' + Math.round(b.r * 0.30) + "px 'Orbitron', monospace";
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(b.label, b.x, b.y);
+  // Active confirmation pulse.
+  if (held) {
+    const p = 0.5 + 0.5 * Math.sin(now * 0.012);
+    ctx.globalAlpha = 0.6 * p;
+    ctx.strokeStyle = `rgba(${b.rgb},1)`;
+    ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(b.x, b.y, b.r + 6 + p * 5, 0, 6.28); ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+  ctx.restore();
+}
+// Clean, properly-oriented STREAK demo (replaces the old upside-down HUD
+// arrow): three planets pop in sequence above a pill that counts 1→2→3.
+function drawTutStreakBadge(now) {
+  const cx = W / 2, cy = H * 0.30;
+  const count = 1 + Math.min(2, Math.floor(((now % 3000) / 3000) * 3));
+  ctx.save();
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  for (let i = 0; i < 3; i++) {
+    const lit = i < count;
+    const px = cx - 44 + i * 44;
+    const py = cy - 46;
+    ctx.globalAlpha = lit ? 1 : 0.25;
+    ctx.fillStyle = lit ? 'rgba(255,170,90,0.95)' : 'rgba(120,130,150,0.6)';
+    ctx.beginPath(); ctx.arc(px, py, lit ? 8 : 6, 0, 6.28); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  const pw = 150, ph = 40;
+  ctx.fillStyle = 'rgba(12,14,28,0.92)';
+  ctx.strokeStyle = 'rgba(255,170,90,0.9)';
+  ctx.lineWidth = 2;
+  if (ctx.roundRect) {
+    ctx.beginPath(); ctx.roundRect(cx - pw / 2, cy - ph / 2, pw, ph, 10); ctx.fill(); ctx.stroke();
+  } else {
+    ctx.fillRect(cx - pw / 2, cy - ph / 2, pw, ph);
+    ctx.strokeRect(cx - pw / 2, cy - ph / 2, pw, ph);
+  }
+  ctx.shadowColor = 'rgba(255,140,60,0.6)'; ctx.shadowBlur = 16;
+  ctx.fillStyle = 'rgba(255,200,120,0.98)';
+  ctx.font = "700 18px 'Orbitron', monospace";
+  ctx.fillText('STREAK  x' + count, cx, cy + 1);
+  ctx.shadowBlur = 0;
+  ctx.restore();
 }
 
 function tutorialBegin(difficultyKey) {
@@ -30449,9 +30690,9 @@ function tutorialBegin(difficultyKey) {
   // chosen difficulty so we can resume it cleanly when the tutorial ends.
   tutorialPendingDifficulty = difficultyKey || difficulty || 'NORMAL';
   // Fresh world. resetGame clears bodies/powerups/effects + re-seeds the
-  // player at (W/2, H*0.72). After resetGame we override state to 'tutorial'
-  // so update() / collisions don't run normal-gameplay logic.
-  resetGame();
+  // player. v1.10.0: pass isResume=true so the TUTORIAL is NOT counted as a
+  // run (the real first run is counted by tutorialFinish()'s resetGame()).
+  resetGame(true);
   state = 'tutorial';
   // Ensure no random bodies linger from initBodies(). Tutorial scripts spawn
   // their own fixtures.
@@ -30461,24 +30702,26 @@ function tutorialBegin(difficultyKey) {
   tutorialSpawnedBodies = [];
   tutorialSpawnedPowerups = [];
   tutorialWallFlashUntil = 0;
-  // Show overlay, hide normal HUD chrome that shouldn't appear during the
-  // tutorial. pauseBtn deliberately stays hidden so the player can't pause
-  // mid-tutorial.
+  // Hide normal HUD chrome. The retired plain-text overlay is hidden
+  // defensively; the rebuilt tutorial draws on the narrator overlay instead.
   document.getElementById('overlay').classList.add('hidden');
-  document.getElementById('tutorialOverlay').classList.add('visible');
-  pauseBtn.classList.remove('visible');
-  // Music: keep menu music playing until the tutorial completes — switching
-  // tracks here would feel jumpy. Crossfade to gameplay happens in tutorialFinish.
+  const _to = document.getElementById('tutorialOverlay');
+  if (_to) _to.classList.remove('visible');
+  pauseBtn.classList.remove('visible'); // can't pause mid-tutorial
+  // Music: keep menu music until the tutorial completes; crossfade to gameplay
+  // happens in tutorialFinish.
   tutorialEnterStep(0);
 }
 
 function tutorialFinish() {
   // Mark the flag (localStorage + PGS) so the tutorial never re-fires.
   saveTutorialCompleted(true);
-  document.getElementById('tutorialOverlay').classList.remove('visible');
-  tutHideArrows();
+  if (_tutTypeTimer) { clearTimeout(_tutTypeTimer); _tutTypeTimer = null; }
+  if (_tutMockTimer) { clearTimeout(_tutMockTimer); _tutMockTimer = null; }
+  try { dialogueStop(); } catch {}
+  const ov = document.getElementById('ascensionOverlay');
+  if (ov) { ov.classList.remove('visible'); ov.classList.remove('tut-hold'); }
   tutClearSpawned();
-  tutorialPhase = 'task';
   tutorialState = {};
   tutorialWallFlashUntil = 0;
   // Apply the difficulty the player chose before the tutorial.
@@ -30493,19 +30736,140 @@ function tutorialFinish() {
   pauseBtn.classList.add('visible');
 }
 
-// Tap-to-continue handler on the text box. Wired once at module scope.
-(function wireTutorialTap() {
-  const txt = document.getElementById('tutorialText');
-  if (!txt) return;
-  const handler = (e) => {
-    if (state !== 'tutorial') return;
-    e.preventDefault();
-    e.stopPropagation();
-    tutorialOnTap();
-  };
-  txt.addEventListener('click', handler);
-  txt.addEventListener('touchstart', handler, { passive: false });
-})();
+// =====================================================================
+// REUSABLE DEATH-DIALOGUE FRAMEWORK (v1.10.0 — Stage 1 death-narrator)
+// =====================================================================
+// Generalized from the Ascension intro-text system into a self-contained,
+// speaker-prefixed typewriter engine. Drives the shared #ascensionOverlay DOM
+// (speaker label + typewriter body + "TAP TO CONTINUE" affordance) with:
+//   - letter-by-letter reveal + the retro per-letter blip (clickSecondary),
+//   - tap-to-skip the typing animation, tap-to-advance between lines,
+//   - a sequence of lines followed by an onComplete callback (fire a cutscene,
+//     resurrect, drop to the death screen, …),
+//   - a configurable speaker prefix (param, so it's "???:" now and a real name
+//     later) and an optional {token} substitution hook.
+// This engine has NO knowledge of any specific cutscene, so Stage 2/3 (tiered
+// death messages, revive) build on it directly. Score/leaderboard/stats are
+// never touched here — the framework is pure presentation, so any caller that
+// runs it stays excluded from scoring exactly like the Ascension flow.
+//
+// Line shape: each entry is [speaker, text]  OR  a bare string (uses
+// defaultSpeaker). opts = { defaultSpeaker, onComplete, typeIntervalMs,
+// substitute, keepOverlayState }.
+const DLG_TYPE_INTERVAL_MS = 28; // letter-by-letter pace (arcade-fast)
+let dlgActive = false;
+let dlgLines = [];
+let dlgIdx = 0;
+let dlgTyping = false;
+let dlgTimer = null;
+let dlgFullText = '';
+let dlgShownChars = 0;
+let dlgOnComplete = null;
+let dlgSubstitute = null;
+let dlgDefaultSpeaker = '???';
+let dlgTypeInterval = DLG_TYPE_INTERVAL_MS;
+
+function _dlgSetSpeaker(s) {
+  const el = document.getElementById('ascensionSpeaker');
+  if (el) el.textContent = s || '';
+}
+function _dlgSetText(s) {
+  const el = document.getElementById('ascensionText');
+  if (el) el.textContent = s;
+}
+function _dlgShowContinue(show) {
+  const el = document.getElementById('ascensionContinue');
+  if (el) el.classList.toggle('hidden', !show);
+}
+// Per-letter blip on every 2nd char (keeps it from sounding manic). Reuses the
+// lightest existing UI tick rather than allocating new audio per letter.
+function _dlgBlip() {
+  if ((dlgShownChars & 1) === 0) {
+    try { if (typeof SFX !== 'undefined' && SFX.clickSecondary) SFX.clickSecondary(); } catch {}
+  }
+}
+function _dlgLineAt(i) {
+  const ln = dlgLines[i];
+  if (Array.isArray(ln)) return { speaker: ln[0], text: ln[1] };
+  return { speaker: dlgDefaultSpeaker, text: String(ln) };
+}
+function _dlgStartTyping(text) {
+  dlgFullText = text;
+  dlgShownChars = 0;
+  dlgTyping = true;
+  _dlgShowContinue(false);
+  _dlgSetText('');
+  function step() {
+    if (!dlgActive) { dlgTyping = false; return; }
+    dlgShownChars++;
+    _dlgSetText(dlgFullText.slice(0, dlgShownChars));
+    _dlgBlip();
+    if (dlgShownChars >= dlgFullText.length) {
+      dlgTyping = false;
+      _dlgShowContinue(true);
+      return;
+    }
+    dlgTimer = setTimeout(step, dlgTypeInterval);
+  }
+  step();
+}
+function _dlgShowScreen(i) {
+  dlgIdx = i;
+  const ln = _dlgLineAt(i);
+  _dlgSetSpeaker(ln.speaker);
+  _dlgStartTyping(dlgSubstitute ? dlgSubstitute(ln.text) : ln.text);
+}
+// Begin a dialogue sequence. Lines type out one at a time; the player taps to
+// skip the typing then taps to advance. After the final line is dismissed,
+// onComplete fires (which may immediately start another sequence).
+function dialogueStart(lines, opts) {
+  opts = opts || {};
+  dlgLines = Array.isArray(lines) ? lines.slice() : [];
+  dlgIdx = 0;
+  dlgActive = true;
+  dlgOnComplete = opts.onComplete || null;
+  dlgSubstitute = opts.substitute || null;
+  dlgDefaultSpeaker = opts.defaultSpeaker || '???';
+  dlgTypeInterval = opts.typeIntervalMs || DLG_TYPE_INTERVAL_MS;
+  const ov = document.getElementById('ascensionOverlay');
+  if (ov) {
+    ov.classList.add('visible');
+    // keepOverlayState lets a caller preserve the dimmer 'particle-phase'
+    // backdrop (e.g. typing a line over a still-playing particle effect).
+    if (!opts.keepOverlayState) ov.classList.remove('particle-phase');
+  }
+  if (dlgLines.length === 0) { dialogueTap(); return; } // empty → fire onComplete
+  _dlgShowScreen(0);
+}
+// Overlay tap dispatch: skip typing → advance line → fire onComplete on the
+// final line. Cannot soft-lock: TAP TO CONTINUE is always reachable, and a tap
+// during a non-dialogue phase (dlgActive false) is a harmless no-op.
+function dialogueTap() {
+  if (!dlgActive) return;
+  if (dlgTyping) {
+    if (dlgTimer) { clearTimeout(dlgTimer); dlgTimer = null; }
+    dlgShownChars = dlgFullText.length;
+    _dlgSetText(dlgFullText);
+    dlgTyping = false;
+    _dlgShowContinue(true);
+    return;
+  }
+  const next = dlgIdx + 1;
+  if (next < dlgLines.length) { _dlgShowScreen(next); return; }
+  // Sequence complete. Clear active BEFORE the callback so onComplete can
+  // start a fresh sequence cleanly.
+  dlgActive = false;
+  const cb = dlgOnComplete;
+  dlgOnComplete = null;
+  if (typeof cb === 'function') { try { cb(); } catch (e) { console.error('[dialogue] onComplete threw', e); } }
+}
+// Abort the current sequence (cancels the pending typing timer). Defensive
+// cleanup for menu/reset transitions.
+function dialogueStop() {
+  dlgActive = false;
+  dlgTyping = false;
+  if (dlgTimer) { clearTimeout(dlgTimer); dlgTimer = null; }
+}
 
 // --- v1.9.0 ASCENSION intro cutscene (replaces the old Rainbow Orb run) ---
 // Fires exactly once per install: on the player's very first death after
@@ -30514,6 +30878,9 @@ function tutorialFinish() {
 // full all-trees BULWARK (v1.9.0; was Phantasm). Persistence flag is `ascensionUsed`
 // (localStorage key 'drift_rainbow_orb_used' + PGS field, OR-merged; key kept
 // for backward-compatible one-time persistence across reinstall).
+// v1.10.0: the typewriter is now the shared dialogue framework above; this
+// section keeps only the Ascension-specific orchestration (converge particles,
+// run hand-off).
 const ASCENSION_DIALOGUE_PRE = [
   // [speaker, body]
   ['???', 'Wake up, {PILOT}.'],
@@ -30524,14 +30891,6 @@ const ASCENSION_DIALOGUE_PRE = [
   ['???', 'Take this. Feel what was. Feel what could be.'],
 ];
 const ASCENSION_DIALOGUE_POST = ['???', 'Now go. The cosmos remembers those who dare.'];
-const ASCENSION_TYPE_INTERVAL_MS = 28; // letter-by-letter pace (arcade-fast)
-
-let ascensionCutsceneScreenIdx = 0;
-let ascensionCutsceneTyping = false;
-let ascensionCutsceneTimer = null;
-let ascensionCutsceneFullText = '';
-let ascensionCutsceneShownChars = 0;
-let ascensionCutscenePhase = 'pre'; // 'pre' | 'particle' | 'post'
 
 function ascensionPilotName() {
   try {
@@ -30544,95 +30903,13 @@ function ascensionSubstitute(text) {
   return text.replace('{PILOT}', ascensionPilotName());
 }
 
-function ascensionSetSpeaker(s) {
-  const el = document.getElementById('ascensionSpeaker');
-  if (el) el.textContent = s;
-}
-
-function ascensionSetText(s) {
-  const el = document.getElementById('ascensionText');
-  if (el) el.textContent = s;
-}
-
-function ascensionShowContinue(show) {
-  const el = document.getElementById('ascensionContinue');
-  if (!el) return;
-  el.classList.toggle('hidden', !show);
-}
-
-// Arcade-style per-letter typing tick. Uses an existing short SFX as the
-// blip — `clickSecondary` is the lightest UI tick available; reuses a
-// shared SFX context instead of allocating new audio per letter.
-function ascensionTypeTick() {
-  // Every 2nd char only — keeps the per-letter blip from sounding manic.
-  if ((ascensionCutsceneShownChars & 1) === 0) {
-    try { if (typeof SFX !== 'undefined' && SFX.clickSecondary) SFX.clickSecondary(); } catch {}
-  }
-}
-
-function ascensionStartTyping(text) {
-  ascensionCutsceneFullText = text;
-  ascensionCutsceneShownChars = 0;
-  ascensionCutsceneTyping = true;
-  ascensionShowContinue(false);
-  ascensionSetText('');
-  function step() {
-    if (!ascensionCutsceneActive) { ascensionCutsceneTyping = false; return; }
-    ascensionCutsceneShownChars++;
-    ascensionSetText(ascensionCutsceneFullText.slice(0, ascensionCutsceneShownChars));
-    ascensionTypeTick();
-    if (ascensionCutsceneShownChars >= ascensionCutsceneFullText.length) {
-      ascensionCutsceneTyping = false;
-      ascensionShowContinue(true);
-      return;
-    }
-    ascensionCutsceneTimer = setTimeout(step, ASCENSION_TYPE_INTERVAL_MS);
-  }
-  step();
-}
-
-function ascensionShowScreen(idx) {
-  ascensionCutsceneScreenIdx = idx;
-  const entry = ASCENSION_DIALOGUE_PRE[idx];
-  if (!entry) return;
-  ascensionSetSpeaker(entry[0]);
-  ascensionStartTyping(ascensionSubstitute(entry[1]));
-}
-
-// Called when the player taps the cutscene overlay. Behavior depends on
-// the current phase + whether typing is mid-stream.
-function ascensionCutsceneTap() {
+// PRE dialogue finished → dim the overlay and play the grey convergence
+// particle effect (which itself starts the POST line, then begins the run).
+function ascensionAfterPre() {
   if (!ascensionCutsceneActive) return;
-  if (ascensionCutsceneTyping) {
-    // Mid-typewriter — fast-forward to end of current screen.
-    if (ascensionCutsceneTimer) { clearTimeout(ascensionCutsceneTimer); ascensionCutsceneTimer = null; }
-    ascensionCutsceneShownChars = ascensionCutsceneFullText.length;
-    ascensionSetText(ascensionCutsceneFullText);
-    ascensionCutsceneTyping = false;
-    ascensionShowContinue(true);
-    return;
-  }
-  if (ascensionCutscenePhase === 'pre') {
-    const next = ascensionCutsceneScreenIdx + 1;
-    if (next < ASCENSION_DIALOGUE_PRE.length) {
-      ascensionShowScreen(next);
-      return;
-    }
-    // Pre-dialogue finished → particle + post.
-    ascensionCutscenePhase = 'particle';
-    ascensionPlayConverge();
-    return;
-  }
-  if (ascensionCutscenePhase === 'post') {
-    // Final tap after screen 7 → begin rainbow run.
-    ascensionCutsceneActive = false;
-    const _ov = document.getElementById('ascensionOverlay');
-    if (_ov) {
-      _ov.classList.remove('visible');
-      _ov.classList.remove('particle-phase');
-    }
-    ascensionBeginRun();
-  }
+  const ov = document.getElementById('ascensionOverlay');
+  if (ov) ov.classList.add('particle-phase');
+  ascensionPlayConverge();
 }
 
 // Reverse-death particle + audio. Spawns a burst of inward-flowing rainbow
@@ -30649,74 +30926,94 @@ function ascensionCutsceneTap() {
 // total is ~1.7 s; the post-dialogue setTimeout below is tuned to that.
 const ASCENSION_CONVERGE_DURATION_MS = 1700;
 const ASCENSION_CONVERGE_COUNT = 80;
+
+// Reusable "orb reforming" convergence (v1.10.0): a ring of inward-flowing
+// particles that decelerate into (px,py), then an expanding burst flash when
+// the last one arrives. Colour is parametric so the SAME system serves the
+// Ascension resurrection (Bulwark grey) and the second-death resurrection
+// (red). opts = { count, durationMs, hslFn:()->[h,s,l], flashHS:[h,s] }.
+// Returns the flash delay (ms) so callers can time follow-on beats. Particles
+// live in `ascensionParticles` and render via drawAscensionParticles().
+function convergeReform(px, py, opts) {
+  opts = opts || {};
+  const count = opts.count || ASCENSION_CONVERGE_COUNT;
+  const durationMs = opts.durationMs || ASCENSION_CONVERGE_DURATION_MS;
+  const hslFn = opts.hslFn || function () { return [210, 10, 58 + Math.random() * 20]; };
+  const now = Date.now();
+  ascensionParticles = [];                  // clear any prior batch (defensive)
+  for (let i = 0; i < count; i++) {
+    // Even angular distribution + small jitter so the ring isn't mechanical.
+    const a = (i / count) * Math.PI * 2 + (Math.random() - 0.5) * 0.18;
+    const dist = 200 + Math.random() * 200;     // 200-400 px radius
+    const sx = px + Math.cos(a) * dist;
+    const sy = py + Math.sin(a) * dist;
+    // Per-particle duration ±15 % so they don't all arrive on one frame.
+    const dur = durationMs * (0.85 + Math.random() * 0.3);
+    const hsl = hslFn(i);
+    ascensionParticles.push({
+      sx, sy,             // spawn position (frozen)
+      tx: px, ty: py,     // target position (reform point)
+      x: sx, y: sy,       // current position
+      startTime: now,
+      duration: dur,
+      size: 2.0 + Math.random() * 2.2,
+      rgb: hslToRgbStr(hsl[0], hsl[1], hsl[2]),
+    });
+  }
+  // Burst-flash tint read by drawAscensionParticles (grey default).
+  convFlashH = (opts.flashHS && opts.flashHS[0] != null) ? opts.flashHS[0] : 210;
+  convFlashS = (opts.flashHS && opts.flashHS[1] != null) ? opts.flashHS[1] : 10;
+  // Schedule the "orb reformed" burst flash for when the last particle arrives.
+  const flashDelay = Math.floor(durationMs * 1.05);
+  setTimeout(() => {
+    ascensionFlashX = px;
+    ascensionFlashY = py;
+    ascensionFlashUntil = Date.now() + 380;
+  }, flashDelay);
+  return flashDelay;
+}
+
 function ascensionPlayConverge() {
-  // Hide dialogue while the particles play. Cleared back to speaker text
-  // when post-dialogue starts below.
-  ascensionShowContinue(false);
-  ascensionSetSpeaker('');
-  ascensionSetText('');
-  // Drop the overlay opacity further so the inward-flowing rainbow
-  // particles read clearly through the dim. The class persists through
-  // post-dialogue (screen 7) so the particle tail stays visible while the
-  // final line types out.
+  // Hide dialogue while the particles play (restored when the POST line types).
+  _dlgShowContinue(false);
+  _dlgSetSpeaker('');
+  _dlgSetText('');
+  // Drop the overlay opacity further so the inward-flowing particles read
+  // clearly through the dim. The class persists through the POST line so the
+  // converge tail stays visible while the final line types out.
   const _ovEl = document.getElementById('ascensionOverlay');
   if (_ovEl) _ovEl.classList.add('particle-phase');
   // Target = the death position recorded in player.x/y. Cutscene runs with
   // update() frozen, so player.x/y still hold the death-frame values.
   const px = (typeof player !== 'undefined' && player) ? player.x : (W / 2);
   const py = (typeof player !== 'undefined' && player) ? player.y : (H / 2);
-  const now = Date.now();
-  // Clear any prior reverse-particle batch (defensive — should be empty).
-  ascensionParticles = [];
-  for (let i = 0; i < ASCENSION_CONVERGE_COUNT; i++) {
-    // Even angular distribution around the death point + small jitter so
-    // the ring doesn't look mechanical.
-    const a = (i / ASCENSION_CONVERGE_COUNT) * Math.PI * 2 + (Math.random() - 0.5) * 0.18;
-    const dist = 200 + Math.random() * 200;     // 200-400 px radius
-    const sx = px + Math.cos(a) * dist;
-    const sy = py + Math.sin(a) * dist;
-    // Per-particle duration ±15 % so they don't all arrive on the same
-    // frame — gives the convergence a natural "stragglers" feel and lets
-    // the burst flash land cleanly when the LAST particle arrives.
-    const dur = ASCENSION_CONVERGE_DURATION_MS * (0.85 + Math.random() * 0.3);
-    // Bulwark GREY: a low-saturation cool-grey band with per-particle lightness
-    // jitter so the convergence reads as silvery stone reforming (v1.9.0:
-    // Ascension is now Bulwark, not Phantasm — was a violet band).
-    ascensionParticles.push({
-      sx, sy,             // spawn position (frozen)
-      tx: px, ty: py,     // target position (death point)
-      x: sx, y: sy,       // current position
-      startTime: now,
-      duration: dur,
-      size: 2.0 + Math.random() * 2.2,
-      rgb: hslToRgbStr(210, 10, 58 + Math.random() * 20),
-    });
-  }
-  // Audio: reversed swoosh sustains across the full convergence window.
-  // The barrier SFX is short (~0.5 s), so play it slightly delayed to peak
-  // when the particles are converging on center (~60-70 % through).
+  const flashDelay = convergeReform(px, py, {
+    hslFn: function () { return [210, 10, 58 + Math.random() * 20]; }, // Bulwark grey
+    flashHS: [210, 10],
+  });
+  // Audio: reversed swoosh sustains across the convergence window.
   try { if (typeof SFX !== 'undefined' && SFX.playSfxBuffer) SFX.playSfxBuffer('hyperspeedBarrier', 0.55); } catch {}
   setTimeout(() => {
     try { if (typeof SFX !== 'undefined' && SFX.playSfxBuffer) SFX.playSfxBuffer('hyperspeedBarrier', 0.45); } catch {}
   }, 700);
   // Fade phase music back in slowly during the effect tail.
   try { if (typeof SFX !== 'undefined' && SFX.playTrack) SFX.playTrack('gameplay', 1.2); } catch {}
-  // Schedule the rainbow "orb reformed" burst flash at the moment the last
-  // particle is expected to arrive. Triggers a wide rainbow circle that
-  // expands and fades over 350 ms.
+  // POST line via the shared dialogue framework. keepOverlayState preserves
+  // the dim particle-phase backdrop so the converge tail stays visible; its
+  // onComplete (final tap) hands off to the Ascension run.
   setTimeout(() => {
     if (!ascensionCutsceneActive) return;
-    ascensionFlashX = px;
-    ascensionFlashY = py;
-    ascensionFlashUntil = Date.now() + 380;
-  }, Math.floor(ASCENSION_CONVERGE_DURATION_MS * 1.05));
-  // Post-dialogue starts shortly after the burst flash fades.
-  setTimeout(() => {
-    if (!ascensionCutsceneActive) return;
-    ascensionCutscenePhase = 'post';
-    ascensionSetSpeaker(ASCENSION_DIALOGUE_POST[0]);
-    ascensionStartTyping(ascensionSubstitute(ASCENSION_DIALOGUE_POST[1]));
-  }, Math.floor(ASCENSION_CONVERGE_DURATION_MS * 1.05) + 420);
+    dialogueStart([ASCENSION_DIALOGUE_POST], {
+      substitute: ascensionSubstitute,
+      keepOverlayState: true,
+      onComplete: function () {
+        ascensionCutsceneActive = false;
+        const _ov = document.getElementById('ascensionOverlay');
+        if (_ov) { _ov.classList.remove('visible'); _ov.classList.remove('particle-phase'); }
+        ascensionBeginRun();
+      },
+    });
+  }, flashDelay + 420);
 }
 
 // Per-frame physics + render for the reverse-death particles. Called from
@@ -30768,8 +31065,9 @@ function drawAscensionParticles() {
     ctx.restore();
     ascensionParticles = survivors;
   }
-  // Post-convergence "orb reformed" burst flash. Expanding GREY rings, additive,
-  // fade over 380 ms (v1.9.0: Ascension is Bulwark — grey, not Phantasm purple).
+  // Post-convergence "orb reformed" burst flash. Expanding rings, additive,
+  // fade over 380 ms. Tint is parametric (convFlashH/S) so the same flash
+  // serves Ascension (Bulwark grey) and the second-death cutscene (red).
   if (ascensionFlashUntil && now < ascensionFlashUntil) {
     const remain = ascensionFlashUntil - now;
     const total = 380;
@@ -30778,12 +31076,12 @@ function drawAscensionParticles() {
     ctx.save();
     const prevComp = ctx.globalCompositeOperation;
     ctx.globalCompositeOperation = 'lighter';
-    // Five concentric expanding rings across a cool-grey band (silver → light grey).
+    // Five concentric expanding rings, brightening outward.
     for (let i = 0; i < 5; i++) {
       const ringT = t + i * 0.05;
       if (ringT > 1) continue;
       const r = 6 + ringT * 90;
-      const rgb = hslToRgbStr(210, 10, 64 + i * 4);   // grey, brightening outward
+      const rgb = hslToRgbStr(convFlashH, convFlashS, 64 + i * 4);
       ctx.globalAlpha = alpha * (1 - i * 0.15);
       ctx.strokeStyle = `rgba(${rgb},1)`;
       ctx.lineWidth = 3.5 - i * 0.4;
@@ -30791,7 +31089,7 @@ function drawAscensionParticles() {
     }
     // Bright inner core that fades fast.
     if (t < 0.5) {
-      const coreRgb = hslToRgbStr(210, 8, 88);   // near-white cool grey
+      const coreRgb = hslToRgbStr(convFlashH, Math.min(convFlashS, 12) + (convFlashS > 40 ? 30 : 0), 88);
       ctx.globalAlpha = (1 - t * 2) * 0.9;
       ctx.fillStyle = `rgba(${coreRgb},1)`;
       ctx.beginPath(); ctx.arc(ascensionFlashX, ascensionFlashY, 18 * (1 - t * 2) + 6, 0, 6.28); ctx.fill();
@@ -30824,12 +31122,10 @@ function hslToRgbStr(h, s, l) {
 
 // Entry point: caller checks the gate (state was 'playing', tutorial done,
 // rainbowOrbUsed false). Stops music, hides death-screen affordances,
-// shows the overlay, starts the typewriter on screen 1.
+// shows the overlay, drives the PRE dialogue through the shared framework.
 function ascensionStartCutscene() {
   if (ascensionCutsceneActive) return;
   ascensionCutsceneActive = true;
-  ascensionCutscenePhase = 'pre';
-  ascensionCutsceneScreenIdx = 0;
   state = 'ascension_cutscene';
   // v1.8.0 PART C: clear residual death-animation visuals BEFORE switching
   // to the cutscene state. The Canvas-2D render path is gated to specific
@@ -30871,7 +31167,12 @@ function ascensionStartCutscene() {
   // Pause/ad chrome should not appear over the cutscene.
   if (typeof pauseBtn !== 'undefined' && pauseBtn) pauseBtn.classList.remove('visible');
   if (typeof AdManager !== 'undefined' && AdManager.hideBanner) try { AdManager.hideBanner(); } catch {}
-  ascensionShowScreen(0);
+  // Drive the PRE dialogue through the reusable framework; on completion it
+  // plays the convergence + POST line, then begins the run.
+  dialogueStart(ASCENSION_DIALOGUE_PRE, {
+    substitute: ascensionSubstitute,
+    onComplete: ascensionAfterPre,
+  });
 }
 
 // Stash for restoring the player's normal orb after the rainbow run ends.
@@ -30895,6 +31196,10 @@ let ascensionParticles = [];
 let ascensionFlashUntil = 0;
 let ascensionFlashX = 0;
 let ascensionFlashY = 0;
+// v1.10.0: parametric burst-flash tint for convergeReform — grey for Ascension
+// (Bulwark), red for the second-death resurrection. Read by drawAscensionParticles.
+let convFlashH = 210;
+let convFlashS = 10;
 
 // Begin the ASCENSION run: the player becomes BULWARK with all 3 Bulwark trees
 // fully active (budget ignored — see asteroid.rankOf's ascensionRunActive
@@ -30955,15 +31260,18 @@ function ascensionBeginRun() {
   if (typeof pauseBtn !== 'undefined' && pauseBtn) pauseBtn.classList.add('visible');
 }
 
-// Tap handler — wired once at module scope.
+// Tap handler — wired once at module scope. v1.10.0: dispatches to the shared
+// dialogue framework, which both the Ascension cutscene and the second-death
+// cutscene drive. A tap outside an active dialogue line (e.g. during the
+// scripted laser theater) is a harmless no-op — no soft-lock, no control.
 (function wireAscensionCutsceneTap() {
   const ov = document.getElementById('ascensionOverlay');
   if (!ov) return;
   const handler = (e) => {
-    if (!ascensionCutsceneActive) return;
+    if (!dlgActive) return;
     e.preventDefault();
     e.stopPropagation();
-    ascensionCutsceneTap();
+    dialogueTap();
   };
   ov.addEventListener('click', handler);
   ov.addEventListener('touchstart', handler, { passive: false });
@@ -30974,6 +31282,622 @@ function ascensionBeginRun() {
 // FIRST normal death qualifies).
 function ascensionCutsceneEligible() {
   return tutorialCompleted && !ascensionUsed && !ascensionRunActive && !ascensionCutsceneActive;
+}
+
+// =====================================================================
+// SECOND-DEATH CUTSCENE (v1.10.0 — Stage 1 death-narrator, the fake-out)
+// =====================================================================
+// Fires exactly once per install on the player's SECOND death (the Ascension
+// first-death cutscene owns death #1). The narrator "???" fakes giving the
+// player god-mode — a red resurrection, a scripted laser rampage that wipes a
+// massive field of planets — then a glitchy REVERSE rewinds the whole stunt and
+// "??? : Just kidding…" drops the player onto the REAL death screen with their
+// ACTUAL score. The scripted destruction is pure theater: it never touches
+// score / stats / leaderboard. The REAL run (the second death) is finalized
+// normally by re-entering triggerDeath() after the cutscene, so it counts.
+//
+// Eligibility mirrors the Ascension flag mechanism: gated purely by flags so
+// the SECOND death is the second death simply because `ascensionUsed` is now
+// true and `secondDeathUsed` is still false. `!ascensionRunActive` excludes the
+// Ascension continuation-run's own end-death from counting as "the second
+// death" (that death routes through the normal path at ascensionRunActive=true,
+// before it's cleared — so this cutscene fires on the next FRESH-run death).
+function secondDeathCutsceneEligible() {
+  return tutorialCompleted && ascensionUsed && !secondDeathUsed
+      && !ascensionRunActive && !ascensionCutsceneActive
+      && !secondDeathActive;
+}
+
+// --- second-death dialogue (drives the shared framework, speaker "???") ---
+const SECOND_DEATH_DIALOGUE_1 = [
+  ['???', 'You felt that again, didn’t you?'],
+  ['???', 'Don’t worry, we’ll beat the void.'],
+];
+const SECOND_DEATH_DIALOGUE_2 = [
+  ['???', 'Just kidding, we don’t have that kind of power... yet.'],
+];
+
+// --- cutscene timing (ms) ---
+const SD_PREDEATH_MS  = 1700;   // death animation plays before the narrator speaks
+const SD_RESURRECT_MS = 1700;   // red convergence "orb reforming" window
+const SD_THEATER_MS   = 5200;   // scripted laser rampage (pure function of t)
+const SD_REVERSE_MS   = 1500;   // glitchy rewind
+const SD_FADE_MS      = 650;    // fade to the real death screen
+const SD_ROT_TURNS    = 3.6;    // how many turns the orb spins during the sweep
+const SD_PLANET_COUNT = 40;     // scripted theater planets ("massive amount")
+const SD_HITSTOP_BUDGET_MS = 300; // total theater-clock freeze the impact hitstops may spend
+let   SD_SCROLL_TOTAL = 0;      // px the scripted field scrolls over the theater
+                                // (set from H at theater begin → normal scroll feel)
+
+// --- cutscene state (all theater-only; never affects the real run) ---
+let secondDeathActive = false;
+let sdPhase = 'idle'; // 'predeath'|'resurrect'|'theater'|'reverse'|'dialogue2'|'fade'
+let sdDeathX = 0, sdDeathY = 0;       // recorded death position
+// Real run length (ms) at the moment of the second death. Restored into
+// runStartTime before the finalize triggerDeath() so the death screen's TIME
+// SURVIVED + time-bonus reflect the real death, not the ~12s cutscene wall-time.
+let sdDeathElapsedMs = 0;
+let sdTheaterStart = 0;
+let sdReverseStart = 0;
+let sdFadeStart = 0;
+let sdPlanets = [];                    // scripted planets (function-of-t positions)
+let sdStreaks = [];                    // forward-rush starfield streak seeds
+let sdLMAX = 0;                        // laser length (screen diagonal)
+let sdTimers = [];                     // pending setTimeout handles (for clean abort)
+// Impact-feel state (item 4): the theater clock is frozen while sdHitstopUntil
+// is in the future (punchy hitstop), with the frozen time banked in
+// sdHitstopAccum so `t` resumes without a jump. sdPrevT tracks the previous
+// frame's t to detect planets vaporized THIS frame (rhythmic destruction punch).
+let sdHitstopUntil = 0;
+let sdHitstopAccum = 0;
+let sdLastFrameMs = 0;
+let sdPrevT = 0;
+
+function _sdTimeout(fn, ms) { const id = setTimeout(fn, ms); sdTimers.push(id); return id; }
+function _sdClearTimers() { for (const id of sdTimers) { try { clearTimeout(id); } catch {} } sdTimers = []; }
+
+// Wipe every transient gameplay visual so the cutscene starts from a clean
+// slate — the dead orb's trail, particles, EMP rings, novas, ripples, and all
+// per-orb skill/capstone overlays would otherwise keep rendering (frozen)
+// during the predeath + cutscene beats and bleed through. Mirrors the exact
+// clear list startApocalypse() uses going into its curtain (same arrays, same
+// no-audio-bypass guarantee). Deliberately does NOT touch deathParticles /
+// deathShards — those carry the death animation the cutscene opens on.
+function secondDeathClearTransients() {
+  powerups = [];
+  empRings = []; novaRings = []; burnZones = []; afterburnDiscs = [];
+  planetRipples = []; crackFragments = [];
+  pickupParticles = []; salvageSparkles = [];
+  twilightEchoVisuals = []; butterflyEffectVisuals = [];
+  phantomBlades = []; ghostlightBursts = []; ghostlightPendingKills = [];
+  beyondAfterimage = null; orbTrailParticles = []; destroyEffects = [];
+  nebulaRift = null; deadStarImplode = null;
+  goldenShieldActive = false; goldenShieldHits = 0;
+  _solarFireballs = [];
+  _cosmicClones = []; _cosmicArcs = [];
+  _drifterV2_threads = []; _drifterV2_threadProjectiles = [];
+  _phantomV2_deathBursts = []; _phantomV2_wraiths = []; _phantomV2_chainArcs = [];
+  _phantomV2_echoes = []; _phantomV2_severSnaps = []; _phantomV2_lingerZones = [];
+  _phantomV2_reverbDropPositions = [];
+  _cyan_flashes = []; _cosmic_flashes = []; _solar_flashes = [];
+  _nebula_flashes = []; _asteroid_flashes = []; _drifterV2_flashes = [];
+  _phantomV2_flashes = [];
+  if (voidHumNodes) { try { voidHumNodes.stop(); } catch {} voidHumNodes = null; }
+  // NOTE: intentionally does NOT zero screenShake — secondDeathStart fires the
+  // normal death shake (shakePlayerDeath) and this clear runs AFTER it; zeroing
+  // here previously suppressed the death-impact shake on the trigger death.
+}
+
+// Entry point — called from triggerDeath() when secondDeathCutsceneEligible().
+// Plays the death animation (like Ascension's predeath), locks the one-time
+// flag immediately, then opens the narrator dialogue.
+function secondDeathStart() {
+  if (secondDeathActive) return;
+  secondDeathActive = true;
+  sdPhase = 'predeath';
+  // Lock the one-time flag NOW (survives an interrupted/backgrounded cutscene
+  // exactly like ascensionBeginRun locks ascensionUsed). Persists to
+  // localStorage + PGS (OR-merged) so it can never re-trigger.
+  saveSecondDeathUsed(true);
+  // Record death position for the resurrection convergence.
+  sdDeathX = (typeof player !== 'undefined' && player) ? player.x : (W / 2);
+  sdDeathY = (typeof player !== 'undefined' && player) ? player.y : (H / 2);
+  // Snapshot the real run length now so the finalize death screen can restore
+  // it (the cutscene's wall-time must not inflate TIME SURVIVED / time-bonus).
+  sdDeathElapsedMs = runStartTime ? (Date.now() - runStartTime) : 0;
+  const _wasApoc = !!apocalypseDeathFlag;
+  // Death feel + animation, mirroring the Ascension predeath beat.
+  shakePlayerDeath(_wasApoc ? 'apocalypse' : (lastDeathCause || 'body'));
+  triggerHitstop(_wasApoc ? 150 : 100);
+  clearResumeState();
+  try { SFX.death(); } catch {}
+  // Music cuts — silence carries into the narrator's first line.
+  try { SFX.stopAllGameplayTracks(0.2); } catch {}
+  try { SFX.playTrack(null, 0.3); } catch {}
+  // Stop a lingering apocalypse rumble WITHOUT clearing apocalypseDeathFlag —
+  // the flag must survive to the real death screen (CONSUMED BY THE SUN).
+  if (typeof apocalypseRumbleNodes !== 'undefined' && apocalypseRumbleNodes) {
+    try { apocalypseRumbleNodes.stop(); } catch {}
+    apocalypseRumbleNodes = null;
+  }
+  pauseBtn.classList.remove('visible');
+  if (typeof AdManager !== 'undefined') try { AdManager.hideBanner(); } catch {}
+  // Clear ALL leftover gameplay visuals up front so nothing from the dead orb
+  // (trail, particles, EMP rings, novas, skill overlays) lingers through the
+  // predeath beat (which still renders the transient arrays) or the cutscene.
+  secondDeathClearTransients();
+  // Orb shatter → white flash → delayed particle burst (normal death visuals).
+  spawnDeathShards(player.x, player.y);
+  deathFlashFrames = 1;
+  activeEffects = { shield: 0, hyperspeed: 0, ghost: 0 };
+  shieldEndTime = 0; ghostEndTime = 0; hyperspeedEndTime = 0;
+  hyperSpeedStacks = 0; hyperspeedCurrentMult = 1; hyperspeedTargetSpeed = 0;
+  if (hyperspeedWhooshNodes) { try { hyperspeedWhooshNodes.stop(0.1); } catch {} hyperspeedWhooshNodes = null; }
+  shieldBroken = false; shieldHits = 0; fortressShield = false;
+  activeCombos = {}; lastComboLabel = null;
+  clearPendingNovaTimeouts();
+  // Frozen world: update() exits early on this state; render keeps animating.
+  state = 'seconddeath_predeath';
+  // v1.10.0 polish: the genuine orb-shatter shards (spawnDeathShards above) +
+  // white flash ARE the death explosion. The old extra +1.2s scripted particle
+  // scatter was removed — it read as a redundant second burst on top of the
+  // real death. Cancel any leftover burst timer defensively.
+  if (pendingDeathBurstTimer) { clearTimeout(pendingDeathBurstTimer); pendingDeathBurstTimer = null; }
+  // After the death animation, the narrator speaks.
+  _sdTimeout(() => {
+    if (state !== 'seconddeath_predeath') return;
+    secondDeathDialogue1();
+  }, SD_PREDEATH_MS);
+}
+
+// Beat 1 — narrator dialogue over the dimmed, frozen field.
+function secondDeathDialogue1() {
+  sdPhase = 'predeath';
+  state = 'seconddeath_cutscene';
+  // Clear residual gameplay visuals so the canvas reads clean behind the text
+  // (mirrors ascensionStartCutscene's cleanup).
+  deathParticles = []; deathShards = []; deathFlashFrames = 0;
+  if (pendingDeathBurstTimer) { clearTimeout(pendingDeathBurstTimer); pendingDeathBurstTimer = null; }
+  pickupParticles = []; salvageSparkles = [];
+  twilightEchoVisuals = []; butterflyEffectVisuals = [];
+  phantomBlades = []; ghostlightBursts = []; destroyEffects = []; orbTrailParticles = [];
+  ascensionParticles = []; ascensionFlashUntil = 0;
+  // Hide death/menu chrome under the cutscene overlay.
+  const overlayEl = document.getElementById('overlay');
+  if (overlayEl) overlayEl.classList.add('hidden');
+  dialogueStart(SECOND_DEATH_DIALOGUE_1, { onComplete: secondDeathResurrect });
+}
+
+// Beat 2 — music resumes, the player resurrects into a bright RED orb with RED
+// resurrection particles (reuses convergeReform, recoloured red).
+function secondDeathResurrect() {
+  sdPhase = 'resurrect';
+  // Clear the dialogue text; switch to the bright full-brightness scene backdrop
+  // (transparent) so the red resurrection particles read at full intensity.
+  _dlgShowContinue(false); _dlgSetSpeaker(''); _dlgSetText('');
+  const ov = document.getElementById('ascensionOverlay');
+  if (ov) { ov.classList.remove('particle-phase'); ov.classList.add('sd-scene'); }
+  // Music resumes.
+  try { SFX.playTrack('gameplay', 0.8); } catch {}
+  // RED convergence — same particle system as Ascension, hue 0 / high sat.
+  convergeReform(sdDeathX, sdDeathY, {
+    count: 90,
+    durationMs: SD_RESURRECT_MS,
+    hslFn: function () { return [(Math.random() * 14) | 0, 85, 52 + Math.random() * 22]; },
+    flashHS: [2, 88],
+  });
+  try { SFX.playSfxBuffer('hyperspeedBarrier', 0.5); } catch {}
+  // +550ms lets the "orb reformed" burst flash (≈SD_RESURRECT_MS×1.05 + 380ms)
+  // finish before the theater clears it, so the red pop reads cleanly.
+  _sdTimeout(secondDeathTheaterBegin, SD_RESURRECT_MS + 550);
+}
+
+// Beat 3 — the scripted laser rampage. Builds the theater field, then the whole
+// sequence is driven as a pure function of normalized time `t` in
+// drawSecondDeathTheater (so the reverse can simply run `t` backward).
+function secondDeathTheaterBegin() {
+  if (!secondDeathActive) return;
+  sdPhase = 'theater';
+  ascensionParticles = []; ascensionFlashUntil = 0;
+  // Full-brightness scene backdrop (transparent) — the opening must look like a
+  // normal Drift run so the fake-out lands.
+  const ov = document.getElementById('ascensionOverlay');
+  if (ov) { ov.classList.remove('particle-phase'); ov.classList.add('sd-scene'); }
+  sdLMAX = Math.hypot(W, H);
+  SD_SCROLL_TOTAL = H * 1.5;       // ≈ normal scroll feel across the theater
+  const cx = W / 2, cy = H / 2;
+  // Scripted planets that look + behave like a NORMAL run: build REAL bodies via
+  // the production spawnBody() (real per-type sprites, palette, glow, spacing)
+  // in a tall column ABOVE the screen so they SCROLL IN from the top — never pop
+  // in mid-screen. Bias to bright planet/star types for the power-fantasy look.
+  // We stage them in the global `bodies` array only so spawnBody's clash-rejection
+  // spaces them naturally, then detach into sdPlanets (the cutscene drives their
+  // y itself; the normal world stays frozen/empty). Each planet's destroy-time is
+  // a pure function of its position → the rewind un-destroys them for free.
+  bodies = [];
+  const spacing = Math.max(46, Math.floor(H / 10));   // ~10 visible at once (busy-but-normal)
+  const startY = H * 0.92;
+  for (let i = 0; i < SD_PLANET_COUNT; i++) {
+    const ty = Math.random() < 0.8 ? 'planet' : 'star';
+    const b = spawnBody(startY - i * spacing, { type: ty });
+    if (b) bodies.push(b);
+  }
+  for (const b of bodies) {
+    b.sdY0 = b.y;                                       // world position at t=0
+    // Destroy-time keyed to angle around centre (rotating wipe wave), but never
+    // before the planet has actually scrolled onto the screen (so none vanish
+    // while still off-screen above).
+    const repY = b.sdY0 + SD_SCROLL_TOTAL * 0.62;
+    const ang = Math.atan2(repY - cy, b.x - cx);
+    const sweepFrac = (((ang % (Math.PI / 2)) + (Math.PI / 2)) % (Math.PI / 2)) / (Math.PI / 2);
+    const enterT = (-b.radius - b.sdY0) / SD_SCROLL_TOTAL;
+    b.sdDestroyT = Math.min(0.985, Math.max(0.57 + sweepFrac * 0.40, enterT + 0.05));
+  }
+  sdPlanets = bodies;     // the cutscene now owns these
+  bodies = [];            // normal render path draws nothing during the cutscene
+  // Forward-rush streak seeds (deterministic → reversible).
+  sdStreaks = [];
+  for (let i = 0; i < 70; i++) {
+    sdStreaks.push({ a: Math.random() * Math.PI * 2, r0: 30 + Math.random() * 160, w: 0.6 + Math.random() * 1.4 });
+  }
+  sdTheaterStart = Date.now();
+  // Reset impact-feel state for this run of the theater.
+  sdHitstopUntil = 0; sdHitstopAccum = 0; sdLastFrameMs = 0; sdPrevT = 0;
+  // Charge cue, then the laser "lasting" fire cue, then the sweep escalation.
+  // Audio cues track the new beat timing: a quiet natural-play opening, then the
+  // charge tell (~34%), the laser fire (~48%), and the sweep escalation (~60%).
+  _sdTimeout(() => { try { if (SFX.laserCharge) SFX.laserCharge(); else SFX.playSfxBuffer('hyperspeedBarrier', 0.4); } catch {} }, Math.floor(SD_THEATER_MS * 0.34));
+  _sdTimeout(() => { try { SFX.playSfxBuffer('rift', 0.45); } catch {} }, Math.floor(SD_THEATER_MS * 0.48));
+  _sdTimeout(() => { try { SFX.playSfxBuffer('hyperspeedBarrier', 0.6); } catch {} }, Math.floor(SD_THEATER_MS * 0.6));
+  _sdTimeout(() => { try { SFX.playSfxBuffer('novaDestroy', 0.5); } catch {} }, Math.floor(SD_THEATER_MS * 0.8));
+  // Reverse fires after the theater duration PLUS the hitstop budget, so the
+  // accumulated impact freezes don't cut the sweep short of t=1.
+  _sdTimeout(secondDeathReverse, SD_THEATER_MS + SD_HITSTOP_BUDGET_MS);
+}
+
+// Beat 4 — music stops; the cutscene visually REWINDS with a glitch overlay.
+// The rewind is genuine: drawSecondDeathTheater runs `t` from 1 → 0 (the scene
+// is a pure function of t), and a VHS glitch (RGB split, slice tears, scanline
+// jitter, frame stutter) is layered on top.
+function secondDeathReverse() {
+  if (!secondDeathActive) return;
+  sdPhase = 'reverse';
+  sdReverseStart = Date.now();
+  try { SFX.stopAllGameplayTracks(0.15); } catch {}
+  try { SFX.playTrack(null, 0.15); } catch {}
+  // Glitchy reverse audio: existing buffers pitched WAY down + stuttered.
+  try { SFX.playSfxBuffer('hyperspeedBarrier', 0.55, 0.45); } catch {}
+  _sdTimeout(() => { try { SFX.playSfxBuffer('mirror', 0.4, 0.5); } catch {} }, 200);
+  _sdTimeout(() => { try { SFX.playSfxBuffer('shieldDestroy', 0.35, 0.6); } catch {} }, 520);
+  _sdTimeout(() => { try { SFX.playSfxBuffer('rift', 0.4, 0.4); } catch {} }, 900);
+  _sdTimeout(secondDeathDialogue2, SD_REVERSE_MS);
+}
+
+// Beat 5 — hard cut to a blank field, narrator delivers the punchline.
+function secondDeathDialogue2() {
+  if (!secondDeathActive) return;
+  sdPhase = 'dialogue2';
+  // Hard cut: clear the theater so the rewind snaps to nothing.
+  sdPlanets = []; sdStreaks = [];
+  ascensionParticles = []; ascensionFlashUntil = 0;
+  const ov = document.getElementById('ascensionOverlay');
+  if (ov) { ov.classList.remove('sd-scene'); }   // restore the dialogue banner + dim
+  dialogueStart(SECOND_DEATH_DIALOGUE_2, { onComplete: secondDeathFadeOut });
+}
+
+// Beat 6 — fade to black, then drop to the REAL death screen.
+function secondDeathFadeOut() {
+  if (!secondDeathActive) return;
+  sdPhase = 'fade';
+  sdFadeStart = Date.now();
+  _dlgShowContinue(false); _dlgSetSpeaker(''); _dlgSetText('');
+  // CSS fade of the overlay to opaque black over the canvas.
+  const ov = document.getElementById('ascensionOverlay');
+  if (ov) { ov.classList.remove('particle-phase'); ov.classList.remove('sd-scene'); ov.classList.add('blackout'); }
+  _sdTimeout(secondDeathFinalize, SD_FADE_MS);
+}
+
+// Finalize — hand control to the REAL death flow. secondDeathUsed is already
+// true and secondDeathActive is cleared here, so re-entering triggerDeath()
+// runs the NORMAL path: real score + stats + leaderboard, real death screen.
+// The black overlay stays up until that screen has rendered, then lifts.
+function secondDeathFinalize() {
+  secondDeathActive = false;
+  sdPhase = 'idle';
+  dialogueStop();
+  sdPlanets = []; sdStreaks = [];
+  ascensionParticles = []; ascensionFlashUntil = 0;
+  // Restore the run clock to the real death moment so elapsedRunSeconds() (and
+  // thus TIME SURVIVED + time-bonus) ignore the cutscene's wall-time.
+  if (runStartTime) runStartTime = Date.now() - Math.max(0, sdDeathElapsedMs);
+  // Run the real death finalization (computes/saves the ACTUAL score). The
+  // cutscene never touched score/runStats/planetsPassed, so this is clean.
+  try { triggerDeath(); } catch (e) { console.error('[seconddeath] finalize triggerDeath threw', e); }
+  // Lift the blackout once the death screen has fully faded in BEHIND it
+  // (triggerDeath un-hides #overlay at +800ms; its opacity fade is 0.6s → ~1400ms).
+  // Holding the black through +1500ms means the reveal is a clean hard cut to a
+  // fully-rendered death screen, with the fade-in hidden under the black.
+  setTimeout(() => {
+    const ov = document.getElementById('ascensionOverlay');
+    if (ov) { ov.classList.remove('visible'); ov.classList.remove('blackout'); ov.classList.remove('sd-scene'); ov.classList.remove('particle-phase'); }
+  }, 1500);
+}
+
+// Defensive abort (menu/reset mid-cutscene): stop timers + dialogue, hide the
+// overlay, clear theater state. Does NOT finalize — the caller is leaving.
+function secondDeathAbort() {
+  if (!secondDeathActive && sdPhase === 'idle') return;
+  secondDeathActive = false;
+  sdPhase = 'idle';
+  _sdClearTimers();
+  dialogueStop();
+  sdPlanets = []; sdStreaks = [];
+  ascensionParticles = []; ascensionFlashUntil = 0;
+  const ov = document.getElementById('ascensionOverlay');
+  if (ov) { ov.classList.remove('visible'); ov.classList.remove('blackout'); ov.classList.remove('sd-scene'); ov.classList.remove('particle-phase'); }
+}
+
+// Item 4 — impact feel for the laser sequence. Drives the SAME global
+// screenShake / hitstop the rest of the game uses (screenShake renders every
+// frame regardless of state; the theater clock above honours sdHitstopUntil):
+//   • light, building shake as the orb charges + the lasers extend
+//   • escalating shake as the rotation accelerates to extreme speed
+//   • a punchy shake spike + brief hitstop EACH frame planets are vaporized
+//     (rhythmic, tied to the actual destruction — not one constant rumble)
+function _sdTheaterImpact(t) {
+  let shake = 0;
+  if (t >= 0.34 && t < 0.56) {
+    // Charge + laser-extend: light, building.
+    shake = 1.5 + ((t - 0.34) / 0.22) * 4.5;          // ~1.5 → 6
+  } else if (t >= 0.56) {
+    // Sweep: escalating with the (quadratic) rotation ramp.
+    const u = (t - 0.56) / 0.44;
+    shake = 5 + u * u * 17;                            // ~5 → 22 at peak spin
+  }
+  // Rhythmic destruction punch: count planets whose destroy-time was crossed
+  // since last frame (pure t-comparison, no per-planet latch → reverse-safe).
+  if (t >= 0.56 && t > sdPrevT) {
+    let justKilled = 0;
+    for (const b of sdPlanets) {
+      if (b.sdDestroyT > sdPrevT && b.sdDestroyT <= t) justKilled++;
+    }
+    if (justKilled > 0) {
+      shake += Math.min(3 + justKilled * 2.5, 13);
+      // Brief hitstop on the bigger destruction beats (banked against the
+      // budget so it can't cut the sweep short).
+      if (justKilled >= 2 && sdHitstopAccum < SD_HITSTOP_BUDGET_MS) {
+        sdHitstopUntil = Date.now() + Math.min(35 + justKilled * 12, 80);
+      }
+    }
+  }
+  sdPrevT = t;
+  // Use max so our target dominates render()'s per-frame decay (and never
+  // reduces a bigger shake already in flight).
+  if (shake > screenShake) screenShake = shake;
+}
+
+// --- theater renderer: the scene as a pure function of t (0 → 1) ---
+// Called from render() during 'seconddeath_cutscene'. Reads sdPhase to decide
+// forward play (theater), backward play + glitch (reverse), or a black fade.
+function drawSecondDeathTheater() {
+  let t, glitch = 0;
+  if (sdPhase === 'theater') {
+    // Theater clock with hitstop accounting: time spent inside a hitstop window
+    // is banked (sdHitstopAccum) and excluded from `t`, so big-destruction
+    // freezes hold the spin punchily without making t jump afterward.
+    const nowMs = Date.now();
+    const frameDelta = sdLastFrameMs ? (nowMs - sdLastFrameMs) : 0;
+    sdLastFrameMs = nowMs;
+    if (nowMs < sdHitstopUntil && sdHitstopAccum < SD_HITSTOP_BUDGET_MS) {
+      sdHitstopAccum = Math.min(SD_HITSTOP_BUDGET_MS, sdHitstopAccum + frameDelta);
+    }
+    t = Math.max(0, Math.min(1, (nowMs - sdTheaterStart - sdHitstopAccum) / SD_THEATER_MS));
+    _sdTheaterImpact(t);
+  } else if (sdPhase === 'reverse') {
+    const rev = Math.max(0, Math.min(1, (Date.now() - sdReverseStart) / SD_REVERSE_MS));
+    // Ease the rewind slightly + add frame-stutter jitter so it judders.
+    let rt = 1 - rev;
+    if (Math.random() < 0.22) rt = Math.max(0, Math.min(1, rt + (Math.random() - 0.5) * 0.08));
+    t = rt;
+    // Pulsing glitch intensity (0.7–1.0) so the tearing/scanlines breathe.
+    glitch = 0.7 + 0.3 * Math.abs(Math.sin(rev * 22));
+  } else if (sdPhase === 'fade') {
+    // Fade handled by the CSS blackout overlay; draw the last frame faintly.
+    t = 0;
+  } else {
+    return; // resurrect/dialogue beats: nothing theater-specific to draw here
+  }
+  if (sdPhase === 'reverse') {
+    // RGB chromatic split: faint red + cyan offset copies, then the main pass.
+    const dx = 3 + glitch * 6;
+    _sdDrawScene(t, -dx, '255,40,60');
+    _sdDrawScene(t, dx, '40,220,255');
+    _sdDrawScene(t, 0, null);
+    _sdGlitchOverlay(glitch);
+  } else {
+    _sdDrawScene(t, 0, null);
+  }
+}
+
+// Render ONE scripted planet exactly like the real game does (glow + per-type
+// sprite + faint outer rings), reusing the production draw functions so the
+// field is visually indistinguishable from a normal run. Mirrors drawBodies'
+// per-body core minus the target ring/pixi branch (cutscene is Canvas-2D only).
+function _sdDrawPlanetBody(b) {
+  const pulse = Math.sin(b.pulse) * 0.3 + 0.7;
+  const glowR = b.radius * (2.6 + Math.sin(b.pulse) * 0.35);
+  ctx.save();
+  ctx.translate(b.x, b.y);
+  ctx.globalAlpha = 0.32 * pulse;
+  ctx.fillStyle = b.cachedGlow;
+  ctx.beginPath(); ctx.arc(0, 0, glowR, 0, 6.28); ctx.fill();
+  ctx.restore();
+  ctx.globalAlpha = 1;
+  if (b.type === 'star') safeDrawBody(b, drawStar);
+  else                   safeDrawBody(b, drawPlanet);
+  // Subtle outer rings (matches drawBodies).
+  ctx.globalAlpha = 0.05 + 0.03 * Math.sin(b.pulse * 1.4);
+  ctx.strokeStyle = b.glowColor;
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.arc(b.x, b.y, b.radius * 2, 0, 6.28); ctx.stroke();
+  ctx.beginPath(); ctx.arc(b.x, b.y, b.radius * 3.5, 0, 6.28); ctx.stroke();
+  ctx.globalAlpha = 1;
+}
+
+// Draw the full theater scene at progress t. `mono` (an 'r,g,b' string) forces a
+// single tint and SKIPS the planets — used for the cheap chromatic-split copies
+// (only the bright orb/lasers/streaks need splitting). null = the real pass with
+// full-colour, real-looking planets. `dx` offsets horizontally (for the split).
+// Everything keys off t → the rewind is a faithful t:1→0 replay.
+//
+// Beat timing (t):
+//   [0, 0.34]   NORMAL PLAY — orb idles at the resurrection point, planets scroll
+//               in from the top exactly like a real run (the fake-out setup).
+//   [0.34,0.48] orb glides to centre + charges (the "wait, something's up" tell)
+//   [0.48,0.56] four lasting lasers extend N/E/S/W
+//   [0.56, 1.0] orb spins up (accelerating), lasers sweep, planets vaporize
+function _sdDrawScene(t, dx, mono) {
+  const cx = W / 2, cy = H / 2;
+  // Orb idles at the resurrection point through the normal-play beat, then
+  // glides to centre as it begins charging.
+  let ox = sdDeathX, oy = sdDeathY;
+  if (t >= 0.34) {
+    const k = Math.min(1, (t - 0.34) / 0.14), e = 1 - Math.pow(1 - k, 3);
+    ox = sdDeathX + (cx - sdDeathX) * e;
+    oy = sdDeathY + (cy - sdDeathY) * e;
+  } else {
+    oy += Math.sin(t * 26) * 3;   // subtle idle bob so it reads as "alive / playing"
+  }
+  const chargeT = Math.max(0, Math.min(1, (t - 0.34) / 0.14));
+  // Laser length: extends 48%→56%, then holds full (the "lasting" beams).
+  let laserLen = 0;
+  if (t >= 0.56) laserLen = sdLMAX;
+  else if (t >= 0.48) laserLen = sdLMAX * ((t - 0.48) / 0.08);
+  // Rotation: starts at the sweep (56%), accelerating.
+  let rot = 0, u = 0;
+  if (t >= 0.56) { u = (t - 0.56) / 0.44; rot = SD_ROT_TURNS * Math.PI * 2 * Math.pow(u, 2.3); }
+
+  // --- Planets (real appearance, source-over) — main pass only ---
+  // Real bodies whose y is driven by t so they scroll in from the top like a
+  // normal run; they vaporize (additive burst) once the sweep reaches them.
+  if (!mono) {
+    const scroll = SD_SCROLL_TOTAL * t;
+    for (const b of sdPlanets) {
+      b.y = b.sdY0 + scroll;
+      if (b.y - b.radius > H + 70) continue;          // scrolled off the bottom
+      if (b.y + b.radius < -70) continue;             // not yet entered from the top
+      if (t >= b.sdDestroyT) {
+        const bt = (t - b.sdDestroyT) / 0.06;
+        if (bt > 1) continue;                          // fully vaporized → gone
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        const br = b.radius * (1 + bt * 2.6);
+        ctx.globalAlpha = (1 - bt) * 0.85;
+        ctx.strokeStyle = `rgba(255,${(120 + bt * 110) | 0},${(70 + bt * 90) | 0},1)`;
+        ctx.lineWidth = 2.6 * (1 - bt) + 0.6;
+        ctx.beginPath(); ctx.arc(b.x, b.y, br, 0, 6.28); ctx.stroke();
+        ctx.globalAlpha = (1 - bt) * 0.6;
+        ctx.fillStyle = 'rgba(255,210,170,1)';
+        ctx.beginPath(); ctx.arc(b.x, b.y, b.radius * (1 - bt) * 0.8, 0, 6.28); ctx.fill();
+        ctx.restore();
+      } else {
+        _sdDrawPlanetBody(b);
+      }
+    }
+  }
+
+  ctx.save();
+  if (dx) ctx.translate(dx, 0);
+  const prevComp = ctx.globalCompositeOperation;
+  ctx.globalCompositeOperation = 'lighter';
+
+  // Forward-rush streaks (sells "orb speeds forward" as it spins up).
+  if (u > 0) {
+    const rush = u * u;
+    for (const s of sdStreaks) {
+      const a = s.a + rot * 0.15;
+      const r1 = s.r0 + rush * 60;
+      const r2 = r1 + (40 + rush * 220) * s.w;
+      const x1 = cx + Math.cos(a) * r1, y1 = cy + Math.sin(a) * r1;
+      const x2 = cx + Math.cos(a) * r2, y2 = cy + Math.sin(a) * r2;
+      ctx.globalAlpha = 0.10 + rush * 0.30;
+      ctx.strokeStyle = mono ? `rgba(${mono},1)` : 'rgba(255,180,190,1)';
+      ctx.lineWidth = s.w;
+      ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+    }
+  }
+
+  // Four lasting lasers from the orb (N/E/S/W, rotating with the orb).
+  if (laserLen > 0) {
+    for (let i = 0; i < 4; i++) {
+      const a = rot + i * (Math.PI / 2);
+      const ex = ox + Math.cos(a) * laserLen, ey = oy + Math.sin(a) * laserLen;
+      // outer glow
+      ctx.globalAlpha = 0.18;
+      ctx.strokeStyle = mono ? `rgba(${mono},1)` : 'rgba(255,40,60,1)';
+      ctx.lineWidth = 14;
+      ctx.beginPath(); ctx.moveTo(ox, oy); ctx.lineTo(ex, ey); ctx.stroke();
+      // mid
+      ctx.globalAlpha = 0.5;
+      ctx.lineWidth = 6;
+      ctx.beginPath(); ctx.moveTo(ox, oy); ctx.lineTo(ex, ey); ctx.stroke();
+      // bright core
+      ctx.globalAlpha = 0.95;
+      ctx.strokeStyle = mono ? `rgba(${mono},1)` : 'rgba(255,210,200,1)';
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(ox, oy); ctx.lineTo(ex, ey); ctx.stroke();
+    }
+  }
+
+  // The red orb (with charge glow before firing).
+  const orbR = 11 + chargeT * 7;
+  const glowR = orbR + 10 + chargeT * 22 + (laserLen > 0 ? 8 * (0.5 + 0.5 * Math.sin(t * 40)) : 0);
+  ctx.globalAlpha = 0.5;
+  ctx.fillStyle = mono ? `rgba(${mono},1)` : 'rgba(255,40,55,1)';
+  ctx.beginPath(); ctx.arc(ox, oy, glowR, 0, 6.28); ctx.fill();
+  ctx.globalAlpha = 0.95;
+  ctx.fillStyle = mono ? `rgba(${mono},1)` : 'rgba(255,90,90,1)';
+  ctx.beginPath(); ctx.arc(ox, oy, orbR, 0, 6.28); ctx.fill();
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = mono ? `rgba(${mono},1)` : 'rgba(255,235,230,1)';
+  ctx.beginPath(); ctx.arc(ox, oy, orbR * 0.45, 0, 6.28); ctx.fill();
+
+  ctx.globalCompositeOperation = prevComp;
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+// VHS-style glitch overlay for the rewind: horizontal slice tears, scanline
+// jitter, and occasional full-frame stutter flashes. Cheap, screen-space only.
+function _sdGlitchOverlay(intensity) {
+  ctx.save();
+  // Slice tears: a few random full-width bands shifted/tinted.
+  const tears = 2 + (Math.random() * 4 * intensity | 0);
+  for (let i = 0; i < tears; i++) {
+    const y = Math.random() * H;
+    const h = 4 + Math.random() * 26 * intensity;
+    ctx.globalCompositeOperation = Math.random() < 0.5 ? 'lighter' : 'source-over';
+    ctx.globalAlpha = 0.15 + Math.random() * 0.25 * intensity;
+    ctx.fillStyle = Math.random() < 0.4 ? 'rgba(255,40,60,1)' : (Math.random() < 0.5 ? 'rgba(40,220,255,1)' : 'rgba(0,0,0,1)');
+    ctx.fillRect(0, y, W, h);
+    // bright tear edge
+    ctx.globalAlpha = 0.5 * intensity;
+    ctx.fillStyle = 'rgba(255,255,255,1)';
+    ctx.fillRect(0, y, W, 1);
+  }
+  // Scanlines.
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.globalAlpha = 0.10 + 0.12 * intensity;
+  ctx.fillStyle = 'rgba(0,0,0,1)';
+  const off = (Math.random() * 3) | 0;
+  for (let y = off; y < H; y += 3) ctx.fillRect(0, y, W, 1);
+  // Stutter flash.
+  if (Math.random() < 0.12 * intensity) {
+    ctx.globalAlpha = 0.18 * intensity;
+    ctx.fillStyle = Math.random() < 0.5 ? 'rgba(255,255,255,1)' : 'rgba(0,0,0,1)';
+    ctx.fillRect(0, 0, W, H);
+  }
+  ctx.restore();
 }
 
 // v1.8.0 final: the standalone post-rainbow crystal-reward banner was
@@ -31023,6 +31947,17 @@ function restartFromPause() {
 
 function goToMainMenu() {
   state = 'idle';
+  // v1.10.0: defensively abort any in-flight second-death cutscene (cancels its
+  // timers + dialogue, hides the overlay). The one-time flag was already locked
+  // when the cutscene began, so it can't re-trigger regardless.
+  if (typeof secondDeathAbort === 'function') secondDeathAbort();
+  // v1.10.0: defensively dismiss the narrator overlay. Both the rebuilt
+  // tutorial and the ascension/second-death dialogue drive #ascensionOverlay;
+  // if a run (or tutorial) is interrupted into the menu, make sure it can't be
+  // left stuck visible / in pass-through (.tut-hold) state.
+  try { if (typeof dialogueStop === 'function') dialogueStop(); } catch {}
+  { const _ascOv = document.getElementById('ascensionOverlay');
+    if (_ascOv) { _ascOv.classList.remove('visible', 'tut-hold', 'particle-phase'); } }
   // v1.8.0: clear any in-flight rainbow run state when returning to main
   // menu (pause→menu mid-rainbow-run, or post-rainbow death screen flow).
   // Restore the player's pre-rainbow orb so the menu shows their actual
@@ -32066,7 +33001,7 @@ const GUIDE_PAGES = [
   },
   {
     title: 'THE VOID AWAKENS',
-    text: 'The longer you survive, the faster and more dangerous the void becomes. At 3 minutes: WARNING. At 4+ minutes: more planets spawn every minute. At 10 minutes… something comes for you.',
+    text: 'The longer you survive, the faster and more dangerous space becomes. After 3 minutes, more planets crowd the screen — another every 90 seconds, up to a per-difficulty cap. At 10 minutes… the Void itself descends for you.',
     draw: drawGuideTimer,
   },
   {
@@ -32637,32 +33572,45 @@ function drawGuideTimer(ctx, t) {
   ctx.restore();
   guideLabel(ctx, 'more planets', W / 2, 108, 'rgba(255,200,120,0.65)', 8);
 
-  // Sun illustration at bottom with 10:00 warning
-  const sunX = W / 2, sunY = 158;
-  const sunPulse = 0.5 + 0.5 * Math.sin(t * 1.3);
+  // Void illustration at bottom with 10:00 warning. v1.10.0: matches the
+  // in-run recolor — a near-black core ringed by a bright violet corona +
+  // tendrils, so the shape reads against the dark panel.
+  const voidX = W / 2, voidY = 158;
+  const voidPulse = 0.5 + 0.5 * Math.sin(t * 1.3);
   ctx.save();
-  const sg = ctx.createRadialGradient(sunX, sunY, 0, sunX, sunY, 30);
-  sg.addColorStop(0, '#ffe08c');
-  sg.addColorStop(0.5, `rgba(255,140,60,${0.85 + sunPulse * 0.15})`);
-  sg.addColorStop(1, 'rgba(200,50,20,0)');
-  ctx.fillStyle = sg;
-  ctx.beginPath(); ctx.arc(sunX, sunY, 26 + sunPulse * 3, 0, 6.28); ctx.fill();
+  // Additive violet corona halo behind the disc.
+  ctx.globalCompositeOperation = 'lighter';
+  const halo = ctx.createRadialGradient(voidX, voidY, 14, voidX, voidY, 34 + voidPulse * 4);
+  halo.addColorStop(0, `rgba(157,78,221,${0.5 + voidPulse * 0.25})`);
+  halo.addColorStop(0.6, 'rgba(120,40,200,0.22)');
+  halo.addColorStop(1, 'rgba(96,20,160,0)');
+  ctx.fillStyle = halo;
+  ctx.beginPath(); ctx.arc(voidX, voidY, 34 + voidPulse * 4, 0, 6.28); ctx.fill();
+  ctx.globalCompositeOperation = 'source-over';
+  // Black core fading to a bright violet rim.
+  const vg = ctx.createRadialGradient(voidX, voidY, 2, voidX, voidY, 22 + voidPulse * 2);
+  vg.addColorStop(0, '#050007');
+  vg.addColorStop(0.6, '#1a0533');
+  vg.addColorStop(0.9, '#7a1fb8');
+  vg.addColorStop(1, '#b14dff');
+  ctx.fillStyle = vg;
+  ctx.beginPath(); ctx.arc(voidX, voidY, 22 + voidPulse * 2, 0, 6.28); ctx.fill();
   ctx.restore();
-  // flares
+  // Violet tendrils reaching off the rim.
   ctx.save();
-  ctx.strokeStyle = `rgba(255,160,80,${0.6 + sunPulse * 0.3})`;
+  ctx.strokeStyle = `rgba(178,102,255,${0.55 + voidPulse * 0.3})`;
   ctx.lineWidth = 1.2;
   for (let i = 0; i < 8; i++) {
     const a = (i / 8) * Math.PI * 2 + t * 0.4;
-    const r1 = 18 + sunPulse * 2;
-    const r2 = 28 + Math.sin(t * 2 + i) * 3;
+    const r1 = 20 + voidPulse * 2;
+    const r2 = 30 + Math.sin(t * 2 + i) * 3;
     ctx.beginPath();
-    ctx.moveTo(sunX + Math.cos(a) * r1, sunY + Math.sin(a) * r1);
-    ctx.lineTo(sunX + Math.cos(a) * r2, sunY + Math.sin(a) * r2);
+    ctx.moveTo(voidX + Math.cos(a) * r1, voidY + Math.sin(a) * r1);
+    ctx.lineTo(voidX + Math.cos(a) * r2, voidY + Math.sin(a) * r2);
     ctx.stroke();
   }
   ctx.restore();
-  guideLabel(ctx, '⚠ 10:00', sunX + 54, sunY, 'rgba(255,200,80,0.95)', 10);
+  guideLabel(ctx, '⚠ 10:00', voidX + 54, voidY, 'rgba(200,150,255,0.95)', 10);
 }
 
 function drawGuideOrbs(ctx, t) {
