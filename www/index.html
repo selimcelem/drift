@@ -16014,7 +16014,7 @@ let devGodMode = false;
 let devPauseScroll = false;
 
 // Streak scoring. lastDestroyTime tracks the wall-clock of the most recent
-// destroy so the streak resets after 5s of inactivity instead of on the next
+// destroy so the streak resets after 1.5s of inactivity instead of on the next
 // passed-planet — rewards any aggressive playstyle, not just nova chains.
 let destroyStreak = 0;
 let lastDestroyTime = 0;
@@ -23324,7 +23324,7 @@ function _updateCore() {
   // that aren't the current or next phase.
   maybeDeepCleanup();
 
-  // Streak timeout: if no destroy in 5 seconds, drop the streak. Replaces
+  // Streak timeout: if no destroy in 1.5 seconds, drop the streak. Replaces
   // the old "passed-planet resets streak" rule so any aggressive playstyle
   // (shield, nova, hyperspeed, EMP) keeps the meter alive.
   if (destroyStreak > 0 && Date.now() - lastDestroyTime > 1500) {
@@ -24985,7 +24985,7 @@ function triggerDeath() {
       ? `<div class="rs-row" style="color:rgba(100,220,255,0.9);"><span class="rs-label" style="color:rgba(100,220,255,0.75);">TIME BONUS</span><span class="rs-val"></span><span class="rs-pts" style="color:rgba(100,220,255,0.9);">+${timeBonus} pts</span></div>`
       : '';
     const apocalypseBanner = apocalypseDeathFlag
-      ? `<div style="font-family:'Orbitron',monospace;font-weight:900;letter-spacing:3px;font-size:15px;color:rgba(255,110,60,0.98);text-shadow:0 0 18px rgba(255,80,40,0.6);text-align:center;margin-bottom:8px;">CONSUMED BY THE SUN</div>`
+      ? `<div style="font-family:'Orbitron',monospace;font-weight:900;letter-spacing:3px;font-size:15px;color:rgba(190,120,255,0.98);text-shadow:0 0 18px rgba(150,60,220,0.6);text-align:center;margin-bottom:8px;">CONSUMED BY THE VOID</div>`
       : '';
     // v1.7.0 dopamine pass: BEST tags next to fields where this run set a
     // new personal best. runIsBest is computed in statsOnRunEnd above and
@@ -30182,7 +30182,7 @@ const TUTORIAL_STEPS = [
   // 4 — GRAVITY TIP.
   { id: 'gravityTip', kind: 'say', lines: [
       'Closer means stronger. Hug a planet and the pull is fierce — drift far and it barely whispers.',
-      "Use it. Slingshot. Don't fight space; ride it.",
+      "Use it. Don't fight the pull — ride it.",
   ] },
   // 5 — POWERUPS INTRO.
   { id: 'powerupsIntro', kind: 'say', lines: [
@@ -30232,7 +30232,7 @@ const TUTORIAL_STEPS = [
     setup: tutSetupFreeplay },
   // 15 — OUTRO.
   { id: 'outro', kind: 'say', lines: [
-      "That's all I'll give you for free.",
+      "That's all I can teach you.",
       "Now go. Let's see what the dark does to you.",
   ] },
 ];
@@ -30281,12 +30281,20 @@ function tutSetupBurst() {
   ];
 }
 function tutSetupFreeplay() {
-  tutPinOrbHome();
-  tutorialState.powerup = tutSpawnPowerup('shield', W * 0.5, H * 0.26);
-  tutSpawnPlanet(W * 0.30, H * 0.40, 22);
-  tutSpawnPlanet(W * 0.70, H * 0.56, 22);
+  // Clean "drift up and grab it" layout: orb low-center, ONE planet straight
+  // above, and the gift sitting on the path between them. Holding ATTRACT
+  // (left) pulls the orb up toward the planet and straight through the shield,
+  // so the only natural action grabs it. (Two scattered planets used to pull
+  // the orb AWAY from the gift, which is why the grab felt broken.)
+  player.x = W / 2; player.y = H * 0.60; player.vx = 0; player.vy = 0;
+  closestBody = null;
+  tutorialState.freeplayPlanet = tutSpawnPlanet(W * 0.5, H * 0.20, 24);
+  tutorialState.powerup = tutSpawnPowerup('shield', W * 0.5, H * 0.40);
   tutorialState.freeplay = true;
-  tutorialState.freeplayDeadline = Date.now() + 12000;
+  // Anti-soft-lock safety net ONLY: if the player never moves at all, the gift
+  // is auto-granted at the deadline (handled in tutorialTick) so the success
+  // line still fires after a real grab rather than a bare timeout.
+  tutorialState.freeplayDeadline = Date.now() + 15000;
   const bl = tutMakeButton('left',  'ATTRACT', '125,232,255');
   const br = tutMakeButton('right', 'REPEL',   '255,150,90');
   bl.faint = true; br.faint = true;
@@ -30490,10 +30498,17 @@ function tutorialTick() {
     if (m && m.reached) tutHoldSucceed(step);
   } else if (step.kind === 'freeplay' && !tutorialState.freeplayDone) {
     const pu = tutorialState.powerup;
-    if ((pu && pu.collected) ||
-        (tutorialState.freeplayDeadline && Date.now() > tutorialState.freeplayDeadline)) {
-      tutFreeplaySucceed(step);
+    // Anti-soft-lock safety net: if the gift is still uncollected at the
+    // deadline (player never moved), auto-grant it — activating the shield for
+    // real — so success ALWAYS follows an actual grab, never a bare timeout.
+    if (pu && !pu.collected &&
+        tutorialState.freeplayDeadline && Date.now() > tutorialState.freeplayDeadline) {
+      pu.collected = true;
+      try { activatePowerup(pu.type, pu.x, pu.y); } catch (err) { console.error('[tutorial] auto-grant threw', err); }
+      const _i = powerups.indexOf(pu); if (_i >= 0) powerups.splice(_i, 1);
     }
+    // Advance ONLY once the gift has actually been grabbed.
+    if (pu && pu.collected) tutFreeplaySucceed(step);
   }
 }
 
@@ -31281,7 +31296,12 @@ function ascensionBeginRun() {
 // cutscene. Skipped when we're already inside a rainbow run (only the
 // FIRST normal death qualifies).
 function ascensionCutsceneEligible() {
-  return tutorialCompleted && !ascensionUsed && !ascensionRunActive && !ascensionCutsceneActive;
+  // v1.10.0: an apocalypse death (the Void descent / end-of-run) is a run
+  // COMPLETION, not a mid-run collision death — it must never trigger the
+  // first-death cutscene and must not consume the one-time `ascensionUsed`
+  // flag. The next NORMAL collision death is the player's "first death".
+  return tutorialCompleted && !ascensionUsed && !ascensionRunActive && !ascensionCutsceneActive
+      && !apocalypseDeathFlag;
 }
 
 // =====================================================================
@@ -31303,9 +31323,13 @@ function ascensionCutsceneEligible() {
 // death" (that death routes through the normal path at ascensionRunActive=true,
 // before it's cleared — so this cutscene fires on the next FRESH-run death).
 function secondDeathCutsceneEligible() {
+  // v1.10.0: like the Ascension check, an apocalypse death is a run completion,
+  // not a collision death — it must never trigger the second-death gag and must
+  // not consume the one-time `secondDeathUsed` flag. (This also fixes the
+  // VOIDTEST artifact where forcing the apocalypse fired the second-death gag.)
   return tutorialCompleted && ascensionUsed && !secondDeathUsed
       && !ascensionRunActive && !ascensionCutsceneActive
-      && !secondDeathActive;
+      && !secondDeathActive && !apocalypseDeathFlag;
 }
 
 // --- second-death dialogue (drives the shared framework, speaker "???") ---
@@ -31415,7 +31439,9 @@ function secondDeathStart() {
   try { SFX.stopAllGameplayTracks(0.2); } catch {}
   try { SFX.playTrack(null, 0.3); } catch {}
   // Stop a lingering apocalypse rumble WITHOUT clearing apocalypseDeathFlag —
-  // the flag must survive to the real death screen (CONSUMED BY THE SUN).
+  // the flag must survive to the real death screen (CONSUMED BY THE VOID).
+  // NOTE: as of v1.10.0 an apocalypse death no longer reaches this cutscene
+  // (secondDeathCutsceneEligible() now excludes it), so this is defensive only.
   if (typeof apocalypseRumbleNodes !== 'undefined' && apocalypseRumbleNodes) {
     try { apocalypseRumbleNodes.stop(); } catch {}
     apocalypseRumbleNodes = null;
@@ -32981,7 +33007,7 @@ let guideRafId = null;
 const GUIDE_PAGES = [
   {
     title: 'CONTROLS',
-    text: 'Tap LEFT to attract toward the nearest body. Tap RIGHT to repel away. Your orb always targets the CLOSEST object.',
+    text: 'HOLD the LEFT side to attract toward the nearest body. HOLD the RIGHT side to repel away. Your orb always targets the CLOSEST object.',
     draw: drawGuideControls,
   },
   {
@@ -32991,7 +33017,7 @@ const GUIDE_PAGES = [
   },
   {
     title: 'SCORING',
-    text: 'Pass planets = 1 pt each. Destroy planets = streak² pts (bigger streak = more points). Survive longer for a TIME BONUS at the end of your run.',
+    text: 'Pass planets = 1 pt each. Destroy planets to score more — each kill is worth 4 points × your current streak, so longer chains pay off fast. Survive longer for a TIME BONUS at the end of your run.',
     draw: drawGuideScoring,
   },
   {
