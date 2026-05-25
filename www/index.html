@@ -13221,16 +13221,18 @@ function _phantomV2_drawWraiths() {
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
     ctx.lineCap = 'round';
-    // v1.9.0 perf: shadowBlur/shadowColor constant for all arcs — set once (was
-    // per-arc, up to 24 redundant GPU state changes/frame). ctx.restore() clears.
-    ctx.shadowBlur = 8; ctx.shadowColor = 'rgba(210,150,255,0.8)';
+    // Recipe: each arc = a wide violet glow band + a bright thin core, both
+    // additive (replaces the old shadowBlur glow — no GPU blur state).
     for (const a of _phantomV2_chainArcs) {
       const age = now - a.born;
       if (age >= a.lifeMs) continue;
       liveArcs.push(a);
       const fade = 1 - age / a.lifeMs;
-      ctx.strokeStyle = `rgba(210,150,255,${(0.85 * fade).toFixed(2)})`;
-      ctx.lineWidth = 2.5 * fade + 0.5;
+      ctx.strokeStyle = `rgba(180,110,245,${(0.35 * fade).toFixed(2)})`;
+      ctx.lineWidth = 6 * fade + 1.5;
+      ctx.beginPath(); ctx.moveTo(a.x1, a.y1); ctx.lineTo(a.x2, a.y2); ctx.stroke();
+      ctx.strokeStyle = `rgba(235,205,255,${(0.9 * fade).toFixed(2)})`;
+      ctx.lineWidth = 2 * fade + 0.5;
       ctx.beginPath(); ctx.moveTo(a.x1, a.y1); ctx.lineTo(a.x2, a.y2); ctx.stroke();
     }
     ctx.restore();
@@ -13254,18 +13256,19 @@ function _phantomV2_drawWraiths() {
       : w.armed
         ? (1.4 * (w._sizeMul || 1))   // charging glow swells ~40 % bigger
         : (w._sizeMul || 1);
-    // Outer halo (additive feel via lighter).
+    // Spectral halo — baked violet bloom (soft wispy glow) instead of hard
+    // filled circles, additive. Bright core kept additive so each wraith reads
+    // as a glowing soul.
     ctx.globalCompositeOperation = 'lighter';
-    ctx.globalAlpha = baseAlpha * pulse * 0.55;
-    ctx.fillStyle = 'rgba(210,150,255,1)';
-    ctx.beginPath(); ctx.arc(w.x, w.y, 12 * pulse * sm, 0, 6.28); ctx.fill();
-    ctx.globalAlpha = baseAlpha * pulse * 0.35;
-    ctx.beginPath(); ctx.arc(w.x, w.y, 18 * pulse * sm, 0, 6.28); ctx.fill();
-    ctx.globalCompositeOperation = 'source-over';
-    // Core orb.
+    if (_burstBloom && _burstBloom.violet) {
+      const br = 20 * pulse * sm;
+      ctx.globalAlpha = baseAlpha * pulse * 0.6;
+      ctx.drawImage(_burstBloom.violet, w.x - br, w.y - br, br * 2, br * 2);
+    }
     ctx.globalAlpha = baseAlpha;
-    ctx.fillStyle = 'rgba(230,190,255,1)';
+    ctx.fillStyle = 'rgba(235,205,255,1)';
     ctx.beginPath(); ctx.arc(w.x, w.y, 4 * sm, 0, 6.28); ctx.fill();
+    ctx.globalCompositeOperation = 'source-over';
     // Motion blur streak.
     if (w.dashing) {
       const mag = Math.sqrt(w.vx * w.vx + w.vy * w.vy) || 1;
@@ -13745,7 +13748,13 @@ function _phantomV2_drawSeptagram(tctx, cx, cy, r, angleOffset, lineWidth) {
   tctx.save();
   tctx.translate(cx, cy);
   tctx.rotate(angleOffset || 0);
-  tctx.lineWidth = lineWidth || 1;
+  // Validated recipe: crisp glowing ritual geometry — one path stroked twice
+  // additively, a wide faint glow band under a bright thin core. Uses the
+  // caller's strokeStyle/globalAlpha (so per-call colour is preserved).
+  const prevComp = tctx.globalCompositeOperation;
+  tctx.globalCompositeOperation = 'lighter';
+  const baseAlpha = tctx.globalAlpha;
+  const lw = lineWidth || 1;
   tctx.beginPath();
   const N = 7, STEP = 3;
   const pts = [];
@@ -13759,7 +13768,13 @@ function _phantomV2_drawSeptagram(tctx, cx, cy, r, angleOffset, lineWidth) {
   tctx.moveTo(pts[order[0]].x, pts[order[0]].y);
   for (let i = 1; i < order.length; i++) tctx.lineTo(pts[order[i]].x, pts[order[i]].y);
   tctx.closePath();
+  tctx.globalAlpha = baseAlpha * 0.4;
+  tctx.lineWidth = lw + 2.5;
   tctx.stroke();
+  tctx.globalAlpha = baseAlpha;
+  tctx.lineWidth = lw;
+  tctx.stroke();
+  tctx.globalCompositeOperation = prevComp;
   tctx.restore();
 }
 
@@ -14293,6 +14308,11 @@ function _phantomV2_drawHaunt() {
   const now = Date.now();
   const spreadBonus = rankOf('phantomV2_spread') >= 1 ? PHANTOMV2_CURSE_FIELD_SPREAD_PX : 0;
   ctx.save();
+  // Recipe: the whole haunt suite (wake trails, linger zones, marks, septagrams,
+  // sever tethers/snaps, coven) renders additively so the curse reads as a
+  // luminous spectral glow rather than flat overlays. No per-frame gradients or
+  // shadowBlur anywhere below; sustained-safe (only strokes + baked blits).
+  ctx.globalCompositeOperation = 'lighter';
 
   // Wake trails — thicker streaks with a soft outer halo so the curse trail
   // reads at a glance. Two-pass: wide halo first, bright core on top.
@@ -14440,12 +14460,15 @@ function _phantomV2_drawHaunt() {
     const remain = _phantomV2_covenActiveUntil - now;
     const elapsed = PHANTOMV2_COVEN_LIFE_MS - remain;
     const pulse = 0.7 + 0.3 * Math.sin(now * 0.012);
-    // Faint full-screen tint.
-    ctx.globalAlpha = (0.18 + 0.10 * pulse);
-    ctx.fillStyle = 'rgba(255,90,150,1)';
-    ctx.fillRect(0, 0, W, H);
-    // Large rotating septagram.
     const cx = W / 2, cy = H / 2;
+    // Ambient ritual glow — a contained baked bloom at the ritual centre
+    // (replaces the old full-screen fillRect, which is forbidden). Additive.
+    if (_burstBloom && _burstBloom.violet) {
+      const br = Math.min(W, H) * 0.5;
+      ctx.globalAlpha = (0.12 + 0.08 * pulse);
+      ctx.drawImage(_burstBloom.violet, cx - br, cy - br, br * 2, br * 2);
+    }
+    // Large rotating septagram.
     const R = Math.min(W, H) * 0.42;
     ctx.globalAlpha = 0.9 * pulse;
     ctx.strokeStyle = 'rgba(255,200,230,1)';
@@ -19502,7 +19525,9 @@ function updatePixiPlayerLayer() {
         }
         pixiTrailGraphics.lineStyle({ width: 2, color: lineColorInt, alpha: a, cap: 'round' });
         pixiTrailGraphics.moveTo(p.x, p.y);
-        pixiTrailGraphics.lineTo(p.x - p.dx * p.len, p.y - p.dy * p.len);
+        // +dx,dy: extend the streak BEHIND the orb (dx,dy is the behind dir).
+        // The old `-` pointed it forward, so the trail read as in front.
+        pixiTrailGraphics.lineTo(p.x + p.dx * p.len, p.y + p.dy * p.len);
         pixiTrailGraphics.lineStyle(); // reset so next iter doesn't accidentally stroke a fill
       } else if (p.kind === 'shield-fragment') {
         // v1.7.0 polish r6: render shield-fragment as a mini electric ball
@@ -22008,22 +22033,24 @@ function scheduleAfterburnDiscs(rank) {
 function drawAfterburnDiscs() {
   if (!afterburnDiscs.length) return;
   const now = Date.now();
+  // Validated recipe: baked gold bloom (soft energy mass) + crisp additive
+  // crescent strokes (glow band + bright core). No per-frame gradients, no
+  // shadowBlur, no filled wedge — everything additive so the arcs read as a
+  // luminous shockwave shooting up. Gold = Warp Velocity / hyperspeed-barrier
+  // hue (the afterburn's existing identity).
+  const gold = (_burstBloom && _burstBloom.gold) ? _burstBloom.gold : null;
+  ctx.save();
+  ctx.lineCap = 'round';
+  ctx.globalCompositeOperation = 'lighter';
   for (const d of afterburnDiscs) {
-    // Charge-up window: 100 ms before launch.
+    // Charge-up window: 100 ms before launch — a baked gold bloom swelling.
     const preMs = d.launchTime - now;
     if (preMs > 0) {
-      if (preMs <= 100) {
+      if (preMs <= 100 && gold) {
         const cT = 1 - (preMs / 100); // 0 → 1 over the charge window
         const cR = 60 * cT;
-        ctx.save();
-        ctx.globalAlpha = 0.75 * cT;
-        const glow = ctx.createRadialGradient(d.originX, d.originY, 0, d.originX, d.originY, Math.max(1, cR));
-        glow.addColorStop(0,   'rgba(255,240,180,0.9)');
-        glow.addColorStop(0.6, 'rgba(255,200,100,0.5)');
-        glow.addColorStop(1,   'rgba(255,160,60,0)');
-        ctx.fillStyle = glow;
-        ctx.beginPath(); ctx.arc(d.originX, d.originY, Math.max(1, cR), 0, 6.28); ctx.fill();
-        ctx.restore();
+        ctx.globalAlpha = 0.8 * cT;
+        ctx.drawImage(gold, d.originX - cR, d.originY - cR, cR * 2, cR * 2);
       }
       continue;
     }
@@ -22041,36 +22068,30 @@ function drawAfterburnDiscs() {
     const r = 30 + (d.endpointRadius - 30) * tT;
     // Fade: full for first 80%, then linear to 0.
     const fade = tT < 0.8 ? 1 : Math.max(0, (1 - tT) / 0.2);
-    ctx.save();
-    // Body — semi-transparent wedge that mirrors hyperspeed barrier hue.
-    ctx.globalAlpha = 0.6 * fade;
-    const grd = ctx.createLinearGradient(d.originX, travelY - 14, d.originX, travelY + 18);
-    grd.addColorStop(0,   'rgba(255,220,90,0)');
-    grd.addColorStop(0.5, 'rgba(255,180,40,0.75)');
-    grd.addColorStop(1,   'rgba(255,130,30,0)');
-    ctx.fillStyle = grd;
+    if (fade <= 0.01) continue;
+    // Soft energy mass — baked gold bloom, flattened to hug the crescent.
+    if (gold) {
+      const br = r * 1.15;
+      ctx.globalAlpha = 0.4 * fade;
+      ctx.drawImage(gold, d.originX - br, travelY - br * 0.7, br * 2, br * 1.4);
+    }
+    // Crescent shockwave bow (upward). Glow band (wide, saturated gold) then a
+    // thin bright core — two additive strokes over the same arc.
+    ctx.globalAlpha = 1;
     ctx.beginPath();
     ctx.moveTo(d.originX - r, travelY + 14);
     ctx.quadraticCurveTo(d.originX, travelY - 22, d.originX + r, travelY + 14);
-    ctx.quadraticCurveTo(d.originX, travelY + 4, d.originX - r, travelY + 14);
-    ctx.fill();
-    // Bright edge line.
-    ctx.globalAlpha = 0.9 * fade;
-    ctx.strokeStyle = 'rgba(255,240,160,' + (0.95 * fade) + ')';
-    ctx.lineWidth = 2.2;
-    ctx.beginPath();
-    ctx.moveTo(d.originX - r, travelY + 14);
-    ctx.quadraticCurveTo(d.originX, travelY - 22, d.originX + r, travelY + 14);
+    ctx.strokeStyle = `rgba(255,185,70,${(0.45 * fade).toFixed(3)})`;
+    ctx.lineWidth = 7;
     ctx.stroke();
-    // Outer halo.
-    ctx.globalAlpha = 0.22 * fade;
-    const halo = ctx.createRadialGradient(d.originX, travelY, 0, d.originX, travelY, r * 1.3);
-    halo.addColorStop(0, 'rgba(255,200,90,0.5)');
-    halo.addColorStop(1, 'rgba(255,160,60,0)');
-    ctx.fillStyle = halo;
-    ctx.fillRect(d.originX - r * 1.3, travelY - r * 0.8, r * 2.6, r * 1.6);
-    ctx.restore();
+    ctx.beginPath();
+    ctx.moveTo(d.originX - r, travelY + 14);
+    ctx.quadraticCurveTo(d.originX, travelY - 22, d.originX + r, travelY + 14);
+    ctx.strokeStyle = `rgba(255,240,170,${(0.95 * fade).toFixed(3)})`;
+    ctx.lineWidth = 2.2;
+    ctx.stroke();
   }
+  ctx.restore();
   ctx.globalAlpha = 1;
 }
 
@@ -28130,7 +28151,10 @@ function drawOrbTrailParticles(tctx = ctx) {
       ctx.lineCap = 'round';
       ctx.beginPath();
       ctx.moveTo(p.x, p.y);
-      ctx.lineTo(p.x - p.dx * p.len, p.y - p.dy * p.len);
+      // dx,dy is the BEHIND direction (opposite the orb's motion). Extend the
+      // streak ALONG it (+) so the line trails behind the orb. The old `-`
+      // pointed it forward, making the trail stick out in front of the orb.
+      ctx.lineTo(p.x + p.dx * p.len, p.y + p.dy * p.len);
       ctx.stroke();
     } else if (p.kind === 'rock') {
       ctx.fillStyle = `rgba(${orbRgb},1)`;
