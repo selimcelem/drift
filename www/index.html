@@ -5485,7 +5485,7 @@ const TREE_DEFS = {
             desc: 'For 5s after a burst fires, the next planet you destroy sets your kill streak straight to the cap (12 with Prime Mover). Once per burst; later kills then build on top.',
             effect: r => r ? 'First kill after burst → streak cap (5s)' : 'Locked' },
           { key: 'cadenza', name: 'Cadenza', tier: 3, max: 1, costOverride: [6500], pointCost: 5,
-            desc: 'CAPSTONE. Every 2,000 points earned auto-fires a random pair combo. 5s lockout after each fire; score earned during the lockout does not count toward the next 2,000.',
+            desc: 'CAPSTONE. Every 2,000 points earned auto-fires a powerful pair combo (nova, supernova, spectral rush, or eternal phantom). 2s minimum gap between fires; points keep counting toward the next 2,000 the whole time.',
             effect: r => r ? 'Auto pair combo / 2,000 pts' : 'Locked' },
         ],
       },
@@ -7108,15 +7108,33 @@ function _cyan_drawButterflyRings() {
 OrbHooks.on('onRender', () => { if (activeOrb === 'cyan') { _cyan_drawButterflyRings(); _cyan_drawFlashes(); } });
 
 // === CADENZA (Cadence capstone) ============================================
-// Auto-fire a random pair combo every 2,000 points earned; 5s lockout after
-// each fire (score earned during the lockout doesn't count toward the next).
+// Auto-fire an IMPACTFUL pair combo every 2,000 points earned; 2s lockout after
+// each fire (only a minimum gap between procs — score keeps counting toward the
+// next 2,000 the whole time, including during the lockout).
+//
+// v1.10.0 buff: the pool is curated to combos that ALWAYS deliver a meaningful
+// effect regardless of what's already active. The old pool rolled uniformly over
+// all 9 pair combos, which caused the two reported failure modes:
+//   • shield+shield (FORTRESS) — purely defensive, felt like a wasted proc.
+//   • JUGGERNAUT (hyperspeed+shield) / WRAITH (ghost+shield) — their fresh
+//     activation gates each half on `activeEffects.X <= 0`, so when the player
+//     was already mid-hyperspeed/ghost/shield the combo "fired" (banner showed)
+//     but its effect was a NO-OP → "doesn't proc / weak when an effect is up".
+// Dropping those three leaves only combos whose effect always lands:
+//   nova_nova (SUPERNOVA), nova_hyperspeed (WARP TIME), nova_ghost (PHANTOM
+//   BLAST), nova_shield (PULSAR) all fire/refresh a real nova or auto-nova
+//   cadence regardless of state; hyperspeed_ghost (SPECTRAL RUSH) always
+//   re-applies the hyperspeed barrier; ghost_ghost (ETERNAL PHANTOM) always
+//   (re)extends ghost. So every Cadenza proc is now reliably impactful.
 let _cyanCadenzaBaseline = 0;
 let _cyanCadenzaLockoutEnd = 0;
 let _cyanSteadyK = 0;            // last 500-pt score threshold consumed by Steady Hands
 let _cyanHotStartUntil = 0;      // Hot Start armed-window deadline (after a burst)
 let _cyanHotStartUsed = false;   // Hot Start already consumed this burst window
 let _cyanLastDiceReset = 0;      // last time a burst CD was reset (Loaded Dice / Snake Eyes)
-const _CYAN_PAIR_COMBO_KEYS = ['nova_nova','nova_hyperspeed','nova_ghost','nova_shield','hyperspeed_ghost','hyperspeed_shield','ghost_shield','ghost_ghost','shield_shield'];
+// Curated impactful pool (see Cadenza note above): excludes shield_shield (weak)
+// and JUGGERNAUT/WRAITH (effect no-ops when the relevant effect is already up).
+const _CYAN_CADENZA_COMBO_KEYS = ['nova_nova','nova_hyperspeed','nova_ghost','nova_shield','hyperspeed_ghost','ghost_ghost'];
 OrbHooks.on('onUpdate', () => {
   if (activeOrb !== 'cyan') return;
   // Steady Hands: every 500 points crossed shaves 10% off the LIVE burst cooldown.
@@ -7135,14 +7153,18 @@ OrbHooks.on('onUpdate', () => {
       }
     }
   }
-  // Cadenza: auto pair combo every 2,000 pts; 5s lockout (score frozen during it).
+  // Cadenza: auto impactful pair combo every 2,000 pts; 2s lockout (a minimum
+  // gap between procs only). Score accumulates toward the next 2,000 CONTINUOUSLY
+  // — including during the lockout — so counting simply resumes once the lockout
+  // ends. The baseline is re-anchored to the current score at each fire, so the
+  // next proc needs a fresh 2,000 from that point.
   if (rankOf('cadenza') > 0) {
     const now = Date.now();
-    if (now < _cyanCadenzaLockoutEnd) { _cyanCadenzaBaseline = score; }
-    else if ((score | 0) - _cyanCadenzaBaseline >= 2000) {
-      const key = _CYAN_PAIR_COMBO_KEYS[Math.floor(Math.random() * _CYAN_PAIR_COMBO_KEYS.length)];
+    if (now >= _cyanCadenzaLockoutEnd && (score | 0) - _cyanCadenzaBaseline >= 2000) {
+      const key = _CYAN_CADENZA_COMBO_KEYS[Math.floor(Math.random() * _CYAN_CADENZA_COMBO_KEYS.length)];
       activateCombo(key, player.x, player.y);
-      _cyanCadenzaLockoutEnd = now + 5000;
+      _cyanCadenzaBaseline = score | 0;     // anchor the next 2,000-pt window here
+      _cyanCadenzaLockoutEnd = now + 2000;  // 2s minimum gap (was 5s)
       _cyan_addFlash('CADENZA', CYAN_PATH_COLORS.cadence);
     }
   }
