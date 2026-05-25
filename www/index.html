@@ -13193,7 +13193,10 @@ function _phantomV2_tickWraiths() {
       continue;
     }
     // Body-contact collision. Touch radius scales with Pack Hunters sizeMul.
-    const touchBase = 8 * sizeMul;
+    // v1.10.x: bumped 8 → 14 so the catch radius matches the visible glowing
+    // soul (renderer uses soulR = 14 * sm). Bigger catch = wraiths sweep bodies
+    // they visually overlap, fixing the "looks like it should hit but doesn't".
+    const touchBase = 14 * sizeMul;
     for (let i = bodies.length - 1; i >= 0; i--) {
       const b = bodies[i];
       if (!b || isNaN(b.x) || isNaN(b.y)) continue;
@@ -13256,15 +13259,21 @@ function _phantomV2_drawWraiths() {
       : w.armed
         ? (1.4 * (w._sizeMul || 1))   // charging glow swells ~40 % bigger
         : (w._sizeMul || 1);
-    // Spectral halo — baked violet bloom (soft wispy glow) instead of hard
-    // filled circles, additive. Bright core kept additive so each wraith reads
-    // as a glowing soul.
+    // Spectral soul — a COMPACT contained glow (concentric additive discs)
+    // sized to the wraith's hitbox, NOT a wide soft bloom. The previous baked
+    // bloom spread ~28–39px and several spinning wraiths smeared into a swarm-
+    // cloud; capping the glow at the catch radius keeps each as one clean soul.
+    // soulR mirrors the touchBase hitbox (14 * sizeMul) so the visible glow
+    // matches what actually catches bodies. pulse drives alpha only (no size
+    // throb → no smear).
+    const soulR = 14 * sm;
     ctx.globalCompositeOperation = 'lighter';
-    if (_burstBloom && _burstBloom.violet) {
-      const br = 20 * pulse * sm;
-      ctx.globalAlpha = baseAlpha * pulse * 0.6;
-      ctx.drawImage(_burstBloom.violet, w.x - br, w.y - br, br * 2, br * 2);
-    }
+    ctx.globalAlpha = baseAlpha * pulse * 0.22;
+    ctx.fillStyle = 'rgba(180,110,245,1)';
+    ctx.beginPath(); ctx.arc(w.x, w.y, soulR, 0, 6.28); ctx.fill();
+    ctx.globalAlpha = baseAlpha * pulse * 0.45;
+    ctx.fillStyle = 'rgba(210,150,255,1)';
+    ctx.beginPath(); ctx.arc(w.x, w.y, soulR * 0.55, 0, 6.28); ctx.fill();
     ctx.globalAlpha = baseAlpha;
     ctx.fillStyle = 'rgba(235,205,255,1)';
     ctx.beginPath(); ctx.arc(w.x, w.y, 4 * sm, 0, 6.28); ctx.fill();
@@ -13612,14 +13621,16 @@ function _phantomV2_drawAfterimage() {
       ctx.fillStyle = 'rgba(' + ECHO_HUE + ',1)';
       ctx.beginPath(); ctx.arc(sx, sy, 2.5 + s * 0.4, 0, 6.28); ctx.fill();
     }
-    // PULSING HALO — subtle, low alpha.
+    // SPECTRAL HALO — soft baked violet bloom (visible glow-up; stays subtle &
+    // low-alpha so echoes still read as translucent ghost copies, not the live
+    // orb). Contained (one bloom per echo) — echoes spread along the travel
+    // path so they don't smear like tightly-orbiting wraiths.
     const pulse = 0.7 + 0.3 * (0.5 + 0.5 * Math.sin(now * 0.004 + e.delayMs));
-    const haloSize = 11;
-    ctx.globalAlpha = 0.20 * hpFrac * pulse;
-    ctx.fillStyle = 'rgba(' + ECHO_HUE + ',1)';
-    ctx.beginPath(); ctx.arc(pos.x, pos.y, haloSize * pulse, 0, 6.28); ctx.fill();
-    ctx.globalAlpha = 0.12 * hpFrac;
-    ctx.beginPath(); ctx.arc(pos.x, pos.y, haloSize * pulse * 1.4, 0, 6.28); ctx.fill();
+    if (_burstBloom && _burstBloom.violet) {
+      const br = 16 * pulse;
+      ctx.globalAlpha = 0.22 * hpFrac * pulse;
+      ctx.drawImage(_burstBloom.violet, pos.x - br, pos.y - br, br * 2, br * 2);
+    }
     ctx.globalCompositeOperation = 'source-over';
     // TRAILING STREAK — short tangent.
     if (e.prevPos) {
@@ -14353,15 +14364,22 @@ function _phantomV2_drawHaunt() {
   // Linger zones.
   for (const z of _phantomV2_lingerZones) {
     const age = (now - z.startTime) / z.lifeMs;
-    const alpha = Math.max(0, 1 - age) * 0.55;
+    const fade = Math.max(0, 1 - age);
     const tint = z.fromPlague ? 'rgba(200,70,200,1)' : 'rgba(255,90,150,1)';
-    ctx.globalAlpha = alpha;
+    // Glow band + bright core ring (additive).
     ctx.strokeStyle = tint;
-    ctx.lineWidth = 2;
+    ctx.globalAlpha = fade * 0.30;
+    ctx.lineWidth = 6;
     ctx.beginPath(); ctx.arc(z.x, z.y, z.radius, 0, 6.28); ctx.stroke();
-    ctx.globalAlpha = alpha * 0.25;
-    ctx.fillStyle = tint;
-    ctx.beginPath(); ctx.arc(z.x, z.y, z.radius * 0.55, 0, 6.28); ctx.fill();
+    ctx.globalAlpha = fade * 0.7;
+    ctx.lineWidth = 1.8;
+    ctx.beginPath(); ctx.arc(z.x, z.y, z.radius, 0, 6.28); ctx.stroke();
+    // Soft spectral interior bloom (replaces the flat filled disc).
+    if (_burstBloom && _burstBloom.curse) {
+      const br = z.radius * 0.9;
+      ctx.globalAlpha = fade * 0.35;
+      ctx.drawImage(_burstBloom.curse, z.x - br, z.y - br, br * 2, br * 2);
+    }
   }
 
   // Mark visuals — transparent purple body tint + spinning septagram +
@@ -14371,19 +14389,26 @@ function _phantomV2_drawHaunt() {
   function drawMarkVisual(mx, my, mr, mt, isPhantom) {
     const fieldR = mr + PHANTOMV2_CURSE_FIELD_BASE_PX + spreadBonus;
     const pulse = 0.55 + 0.45 * (0.5 + 0.5 * Math.sin(pulsePhase + (mt || 0) * 0.001));
-    // Curse field outline.
-    ctx.globalAlpha = 0.18 * pulse;
+    // Curse-field ring — wide glow band + bright core (additive), brighter than
+    // the old single thin stroke so the haunt actually reads.
     ctx.strokeStyle = 'rgba(255,90,150,1)';
-    ctx.lineWidth = 1.2;
+    ctx.globalAlpha = 0.12 * pulse;
+    ctx.lineWidth = 5;
     ctx.beginPath(); ctx.arc(mx, my, fieldR, 0, 6.28); ctx.stroke();
-    // Transparent purple body overlay.
-    ctx.globalAlpha = isPhantom ? 0.45 : 0.32;
-    ctx.fillStyle = 'rgba(190,90,210,1)';
-    ctx.beginPath(); ctx.arc(mx, my, mr + 1, 0, 6.28); ctx.fill();
-    // Septagram inside the body — slowly rotating + pulsing.
+    ctx.globalAlpha = 0.5 * pulse;
+    ctx.lineWidth = 1.4;
+    ctx.beginPath(); ctx.arc(mx, my, fieldR, 0, 6.28); ctx.stroke();
+    // Possessed body glow — baked curse bloom instead of a flat tint (a soft
+    // spectral aura that's clearly visible).
+    if (_burstBloom && _burstBloom.curse) {
+      const br = (mr + 4) * 1.5;
+      ctx.globalAlpha = (isPhantom ? 0.6 : 0.45) * pulse;
+      ctx.drawImage(_burstBloom.curse, mx - br, my - br, br * 2, br * 2);
+    }
+    // Septagram inside the body — slowly rotating + pulsing (auto-glows).
     const starR = mr * 0.7;
     const starAngle = (now - (mt || 0)) * 0.0006;
-    ctx.globalAlpha = 0.75;
+    ctx.globalAlpha = 0.85;
     ctx.strokeStyle = 'rgba(255,210,230,0.95)';
     _phantomV2_drawSeptagram(ctx, mx, my, starR, starAngle, 1.2);
   }
@@ -29096,12 +29121,13 @@ function _burstFlash(c, fr, k) {
 // filling the burst, baked ONCE (reuses _bakeNovaFlash). This is the lever that
 // makes the brief bursts actually "pop" — thin strokes alone read too subtle on
 // a 300–400ms flash. Additive; the crisp ring is drawn over it.
-let _burstBloom = { cyan: null, gold: null, violet: null };
+let _burstBloom = { cyan: null, gold: null, violet: null, curse: null };
 function _ensureBurstBlooms() {
   if (_burstBloom.cyan) return;
   _burstBloom.cyan   = _bakeNovaFlash('205,240,255', '90,190,255');  // shield blue
   _burstBloom.gold   = _bakeNovaFlash('255,240,180', '255,190,70');  // Dead Star gold
   _burstBloom.violet = _bakeNovaFlash('230,190,255', '180,110,245'); // ghost / phantom
+  _burstBloom.curse  = _bakeNovaFlash('255,190,215', '255,90,150');  // Haunt curse pink
 }
 _ensureBurstBlooms();
 // Canvas: blit the bloom (caller is translated to centre + additive). bloomR is
