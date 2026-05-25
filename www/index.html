@@ -25324,6 +25324,16 @@ let lastBgSpawnTime = -1e9;     // ms timestamp of most recent spawn
 let nextBgSpawnDelay = 22500;   // ms until the next scheduled spawn (was 45*60 frames)
 let lastBgImageKey = null;      // prevents same image twice in a row
 let nextBgSide = 'left';        // alternates 'left' / 'right'
+// New images spawn at this y (off-screen above). A position-based spacing guard
+// (maybeSpawnBgObject) refuses to spawn while an existing image is still within
+// BG_MIN_SPAWN_GAP of the spawn point, so two images' black backing boxes /
+// vignettes can never overlap — regardless of screen width, scroll speed, or a
+// cutscene world-freeze (the Sirius revive's freeze pauses bg scroll but not the
+// wall-clock spawn schedule, which otherwise bunched a fresh spawn onto the
+// frozen one on resume). BG_MIN_SPAWN_GAP (520) exceeds the max image size (400)
+// with margin, so even same-x images on a narrow screen stay clear.
+const BG_SPAWN_Y = -300;
+const BG_MIN_SPAWN_GAP = 520;
 
 function nextBgSpawnStep() {
   // 30-45s between subsequent spawns at the 120fps baseline (was: 3600 + r*1801 frames).
@@ -25358,7 +25368,7 @@ function spawnBgObject() {
     ? 280 + Math.random() * 120   // 280..400
     : 220 + Math.random() * 100;  // 220..320
   const opacity = 0.2 + Math.random() * 0.1;   // 0.2..0.3
-  bgObjects.push({ key, x, y: -300, size, opacity, seed: Math.random() * 1e9 | 0 });
+  bgObjects.push({ key, x, y: BG_SPAWN_Y, size, opacity, seed: Math.random() * 1e9 | 0 });
   lastBgImageKey = key;
   nextBgSide = nextBgSide === 'left' ? 'right' : 'left';
   lastBgSpawnTime = Date.now();
@@ -25386,6 +25396,12 @@ function maybeSpawnBgObject() {
   // allow an extra spawn if it's been at least 30s since the last one.
   const hyperspeedReady = hyperSpeedStacks >= 3 && sinceLast >= 15000; // 30*60 frames @ 120fps baseline
   if (!scheduledReady && !hyperspeedReady) return;
+  // Spacing guard: never spawn while an existing image is still too close to the
+  // spawn point — otherwise the two black backing boxes / vignettes overlap into
+  // a visual mess. Robust across screen width / scroll speed, and the real fix
+  // for the revive-correlated overlap (a frozen pre-death image near the top
+  // would otherwise get a fresh image spawned right on top of it on resume).
+  if (bgObjects.some(o => o.y < BG_SPAWN_Y + BG_MIN_SPAWN_GAP)) return;
   spawnBgObject();
 }
 
@@ -32024,6 +32040,12 @@ function siriusResumeRun() {
   player.x = siriusDeathX; player.y = siriusDeathY; player.vx = 0; player.vy = 0;
   // Rewind the run clock by the cutscene wall-time → survival time is continuous.
   runStartTime = Date.now() - Math.max(0, siriusReviveElapsedMs);
+  // Re-baseline the background spawn clock to NOW so the cutscene's wall-time
+  // doesn't count as "time since last bg spawn" — without this, the stale
+  // wall-clock schedule fires a fresh bg image the instant play resumes. (The
+  // spacing guard in maybeSpawnBgObject already prevents the actual overlap;
+  // this keeps bg pacing clean on resume too.)
+  lastBgSpawnTime = Date.now();
   // The next death is final (no chained revive) until a fresh run resets it.
   siriusNextDeathFinal = true;
   siriusReviveActive = false;
