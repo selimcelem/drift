@@ -8618,12 +8618,17 @@ function _nebula_drawRift() {
   const wob = 1 + 0.04 * Math.sin(now / 45);
   ctx.save();
   ctx.translate(cx, cy);
-  // Pull-in haze.
-  const g = ctx.createRadialGradient(0, 0, 4, 0, 0, NEBULA_RIFT_PULL_RADIUS);
-  g.addColorStop(0, `rgba(${NEBULA_PATH_COLORS.cap},${(0.45 * alpha).toFixed(3)})`);
-  g.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.fillStyle = g;
-  ctx.beginPath(); ctx.arc(0, 0, NEBULA_RIFT_PULL_RADIUS, 0, Math.PI * 2); ctx.fill();
+  // Pull-in HALO — baked violet bloom sprite (validated recipe), additive.
+  // The dark tear is painted over its centre, so only the surrounding glow
+  // reads = a luminous singularity. Replaces the old per-frame radial gradient.
+  if (_burstBloom && _burstBloom.violet) {
+    const br = NEBULA_RIFT_PULL_RADIUS * 1.05;
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = 0.5 * alpha;
+    ctx.drawImage(_burstBloom.violet, -br, -br, br * 2, br * 2);
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'source-over';
+  }
   // The tear: a jagged vertical lens. Right edge then left edge, mirrored with jitter.
   const segs = 9;
   const maxW = 14 * wob;
@@ -8645,15 +8650,20 @@ function _nebula_drawRift() {
     ctx.lineTo(-jag, y);
   }
   ctx.closePath();
-  // Black core with a violet rim glow.
-  ctx.fillStyle = `rgba(8,4,18,${(0.92 * alpha).toFixed(3)})`;
-  ctx.shadowBlur = 22; ctx.shadowColor = `rgba(${NEBULA_PATH_COLORS.cap},${(0.9 * alpha).toFixed(3)})`;
+  // Dark void core (source-over, no shadowBlur).
+  ctx.fillStyle = `rgba(8,4,18,${(0.94 * alpha).toFixed(3)})`;
   ctx.fill();
-  // Bright seam down the center.
-  ctx.shadowBlur = 12;
-  ctx.strokeStyle = `rgba(200,180,255,${(0.85 * alpha).toFixed(3)})`;
+  // Bright violet RIM — crisp additive stroke of the tear outline (replaces
+  // the old shadowBlur glow). Dark void + glowing jagged edge = a tear in space.
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.strokeStyle = `rgba(200,150,255,${(0.9 * alpha).toFixed(3)})`;
+  ctx.lineWidth = 2.5;
+  ctx.stroke();
+  // Bright seam down the centre — crisp additive (no shadowBlur).
+  ctx.strokeStyle = `rgba(220,205,255,${(0.95 * alpha).toFixed(3)})`;
   ctx.lineWidth = 2;
   ctx.beginPath(); ctx.moveTo(0, -half * 0.96); ctx.lineTo(0, half * 0.96); ctx.stroke();
+  ctx.globalCompositeOperation = 'source-over';
   ctx.restore();
 }
 // Lightspeed cap-growth: +1 cap every 90s while the capstone is active. Per-run.
@@ -19605,30 +19615,38 @@ function pixiDrawWarpOrbitalRings(g, cx, cy, intensity, hyperOn, stacks) {
   const scaleMul = 1 + Math.sin(t * Math.PI * 6) * 0.05;
   const aBase = baseAlpha * pulse;
   const lineWidth = 1 + Math.min(0.5, (hyperOn && stacks >= 7) ? 0.5 : 0);
-  const RING_INT = (180 << 16) | (220 << 8) | 255;
+  const RING_GLOW_INT = (100 << 16) | (160 << 8) | 255;   // saturated blue glow band
+  const RING_CORE_INT = (200 << 16) | (230 << 8) | 255;   // bright blue-white core
   const Rs = R * scaleMul;
   const ringCount = ringTier === 1 ? 1 : (ringTier === 2 ? 2 : 3);
   const segs = 30;
 
   // Helper: stroke a 30-segment ellipse at (cx,cy) with optional rotation.
+  // Validated recipe parity: two additive passes — wide blue glow band + thin
+  // bright core — matching the Canvas-2D strokeEllipse.
   function strokeEllipse(rx, ry, alpha, rot) {
     if (alpha <= 0.01 || rx <= 0.5 || ry <= 0.5) return;
-    g.lineStyle({ width: lineWidth, color: RING_INT, alpha: Math.min(1, alpha), cap: 'round', join: 'round' });
     const cosR = rot ? Math.cos(rot) : 1;
     const sinR = rot ? Math.sin(rot) : 0;
-    for (let i = 0; i <= segs; i++) {
-      const a = (i / segs) * Math.PI * 2;
-      let x = Math.cos(a) * rx;
-      let y = Math.sin(a) * ry;
-      if (rot) {
-        const xr = x * cosR - y * sinR;
-        const yr = x * sinR + y * cosR;
-        x = xr; y = yr;
+    function emitPath() {
+      for (let i = 0; i <= segs; i++) {
+        const a = (i / segs) * Math.PI * 2;
+        let x = Math.cos(a) * rx;
+        let y = Math.sin(a) * ry;
+        if (rot) {
+          const xr = x * cosR - y * sinR;
+          const yr = x * sinR + y * cosR;
+          x = xr; y = yr;
+        }
+        x += cx; y += cy;
+        if (i === 0) g.moveTo(x, y);
+        else g.lineTo(x, y);
       }
-      x += cx; y += cy;
-      if (i === 0) g.moveTo(x, y);
-      else g.lineTo(x, y);
     }
+    g.lineStyle({ width: lineWidth + 3, color: RING_GLOW_INT, alpha: Math.min(1, alpha * 0.5), cap: 'round', join: 'round' });
+    emitPath();
+    g.lineStyle({ width: lineWidth, color: RING_CORE_INT, alpha: Math.min(1, alpha), cap: 'round', join: 'round' });
+    emitPath();
     g.lineStyle();
   }
 
@@ -27970,8 +27988,9 @@ function drawWarpOrbitalRings(ctx, cx, cy, intensity, hyperOn, stacks, radiusOve
   // exactly so the same shape renders on both backends.
   function strokeEllipse(rx, ry, alpha, width) {
     if (alpha <= 0.01 || rx <= 0.5 || ry <= 0.5) return;
-    ctx.strokeStyle = `rgba(180,220,255,${Math.min(1, alpha)})`;
-    ctx.lineWidth = width;
+    // Validated recipe: one path, two additive strokes — a wide saturated
+    // blue glow band + a thin bright blue-white core. Constant thickness (no
+    // texture magnification), so rings stay crisp and luminous at any tier.
     ctx.beginPath();
     const segs = 30;
     for (let i = 0; i <= segs; i++) {
@@ -27981,6 +28000,11 @@ function drawWarpOrbitalRings(ctx, cx, cy, intensity, hyperOn, stacks, radiusOve
       if (i === 0) ctx.moveTo(x, y);
       else ctx.lineTo(x, y);
     }
+    ctx.strokeStyle = `rgba(100,160,255,${Math.min(1, alpha * 0.5).toFixed(3)})`;
+    ctx.lineWidth = width + 3;
+    ctx.stroke();
+    ctx.strokeStyle = `rgba(200,230,255,${Math.min(1, alpha).toFixed(3)})`;
+    ctx.lineWidth = width;
     ctx.stroke();
   }
 
