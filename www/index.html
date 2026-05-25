@@ -3692,11 +3692,11 @@ const pixiPowerupEntries = new Map(); // powerup -> { sprite, canvas, ctx, canva
 // canvases + ctx-shadow refactor of the existing drawXxx functions.
 let pixiOverlayLayer = null;
 let pixiNovaRingsG = null;
-// v1.10.0 nova visual upgrade: pooled additive sprites (baked shockwave + flash)
-// replace the old stroked ring graphic. Container + pools live here; sprites are
+// v1.10.0 nova visual upgrade (r3): the ring itself is drawn as crisp additive
+// vector strokes on pixiNovaRingsG; only the soft detonation FLASH uses pooled
+// additive sprites (baked texture). Container + flash pool live here; sprites are
 // reused per-frame and hidden when unused (cap 12 rings → tiny pool).
 let pixiNovaSpriteLayer = null;
-const pixiNovaShockPool = [];
 const pixiNovaFlashPool = [];
 const _pixiNovaTexCache = {};
 let pixiEmpRingsG = null;
@@ -20121,11 +20121,11 @@ function updatePixiOverlayLayer() {
     fg.endFill();
   }
 
-  // Nova rings: v1.10.0 visual upgrade — pooled additive baked shockwave + flash
-  // sprites (glow baked into the texture, no per-frame strokes/gradients). The
-  // legacy ring Graphic is kept cleared so nothing lingers from older frames.
-  pixiNovaRingsG.clear();
-  _updatePixiNovaSprites();
+  // Nova rings: v1.10.0 r3 — crisp additive vector-stroke ring drawn into the
+  // (additive) ring Graphic + baked soft detonation-flash sprites. Constant
+  // stroke thickness stays razor-sharp at any radius (no texture-scale blur).
+  _drawPixiNovaRings();
+  _updatePixiNovaFlashes();
 
   // Planet ripples: two stroked rings per entry.
   const rg = pixiPlanetRipplesG;
@@ -28788,160 +28788,156 @@ function drawPowerups() {
 }
 
 // =====================================================================
-// NOVA VISUAL UPGRADE (v1.10.0) — baked additive shockwave + detonation flash.
+// NOVA VISUAL (v1.10.0 r3) — CRISP additive vector-stroke ring + baked flash.
 // =====================================================================
 // DRAW-ONLY. Nova physics, the kill sweep, lifetimes, the 12-ring cap, supernova
 // staggering — all UNCHANGED (they read novaRings as before). Only the *render*
-// changes: each ring is one additive sprite of a pre-baked shockwave texture
-// (the glow is painted INTO the texture once, no per-frame gradient/shadowBlur),
-// plus a brief detonation-flash sprite at the origin derived from the ring's own
-// startTime (no new state / arrays). Additive blend makes overlapping rings and
-// supernova wave-stacks brighten where they cross — the "blast of light" look.
-const NOVA_TEX_SIZE   = 256;   // baked texture resolution (one-time)
-const NOVA_SHOCK_EDGE = 0.82;  // where the bright leading edge sits in the texture (0..1 of radius)
-const NOVA_FLASH_MS   = 220;   // detonation-flash bloom duration per ring
-let novaShockCanvas = { orange: null, red: null };
+// changes.
+//
+// r2 used a scaled radial TEXTURE for the ring — but a fixed-res texture blown
+// up to a large circle magnifies its band, so the ring read thicker + blurrier
+// the further it expanded. r3 draws the ring as CRISP VECTOR STROKES instead:
+// constant pixel thickness at any radius, razor-sharp (no magnification blur),
+// with ADDITIVE blend + a bright sharp leading-edge core line over a vivid glow
+// band so it POPS and stacks into bloom where supernova waves overlap. The
+// detonation flash stays a baked soft sprite (a flash *should* be soft) at the
+// origin, derived from the ring's own startTime (no new state/arrays).
+const NOVA_TEX_SIZE = 256;     // baked flash texture resolution (one-time)
+const NOVA_FLASH_MS = 220;     // detonation-flash bloom duration per ring
 let novaFlashCanvas = { orange: null, red: null };
-function _bakeNovaShock(bodyRGB, edgeRGB) {
-  // Radial profile: transparent center → soft inner glow → BRIGHT thin leading
-  // edge at NOVA_SHOCK_EDGE → soft luminous outer tail → transparent.
-  const c = document.createElement('canvas');
-  c.width = c.height = NOVA_TEX_SIZE;
-  const cx = c.getContext('2d');
-  const m = NOVA_TEX_SIZE / 2;
-  const g = cx.createRadialGradient(m, m, 0, m, m, m);
-  g.addColorStop(0.00, `rgba(${bodyRGB},0)`);
-  g.addColorStop(0.45, `rgba(${bodyRGB},0.04)`);
-  g.addColorStop(0.66, `rgba(${bodyRGB},0.18)`);
-  g.addColorStop(0.78, `rgba(${edgeRGB},0.55)`);
-  g.addColorStop(NOVA_SHOCK_EDGE, `rgba(${edgeRGB},0.95)`); // bright thin edge
-  g.addColorStop(0.86, `rgba(${edgeRGB},0.50)`);
-  g.addColorStop(0.93, `rgba(${bodyRGB},0.12)`);
-  g.addColorStop(1.00, `rgba(${bodyRGB},0)`);
-  cx.fillStyle = g;
-  cx.beginPath(); cx.arc(m, m, m, 0, 6.28); cx.fill();
-  return c;
+// Per-ring stroke palette: [glow-band rgb, bright crisp core rgb]. Vivid/saturated.
+function _novaStrokeCols(sn) {
+  return sn
+    ? ['255,55,45',  '255,180,140']   // supernova: vivid red glow + hot white-red core
+    : ['255,120,20', '255,240,160'];  // nova: vivid orange glow + yellow-hot core
+}
+function _rgbStrToHex(s) {
+  const p = s.split(',');
+  return ((+p[0] & 255) << 16) | ((+p[1] & 255) << 8) | (+p[2] & 255);
 }
 function _bakeNovaFlash(coreRGB, midRGB) {
-  // Soft white-hot radial bloom that fades from a bright core.
+  // Soft white-hot radial bloom that fades from a bright core (origin detonation).
   const c = document.createElement('canvas');
   c.width = c.height = NOVA_TEX_SIZE;
   const cx = c.getContext('2d');
   const m = NOVA_TEX_SIZE / 2;
   const g = cx.createRadialGradient(m, m, 0, m, m, m);
-  g.addColorStop(0.00, `rgba(${coreRGB},0.95)`);
-  g.addColorStop(0.25, `rgba(${coreRGB},0.60)`);
-  g.addColorStop(0.50, `rgba(${midRGB},0.28)`);
-  g.addColorStop(0.80, `rgba(${midRGB},0.06)`);
+  g.addColorStop(0.00, `rgba(${coreRGB},1.0)`);
+  g.addColorStop(0.22, `rgba(${coreRGB},0.80)`);
+  g.addColorStop(0.45, `rgba(${midRGB},0.50)`);
+  g.addColorStop(0.72, `rgba(${midRGB},0.14)`);
   g.addColorStop(1.00, `rgba(${midRGB},0)`);
   cx.fillStyle = g;
   cx.beginPath(); cx.arc(m, m, m, 0, 6.28); cx.fill();
   return c;
 }
 function _ensureNovaTextures() {
-  if (novaShockCanvas.orange) return; // baked once
-  // Nova = warm orange (white-hot edge); supernova = crimson red. Colored
-  // variants are baked for BOTH paths (canvas-2D can't GPU-tint), so Pixi uses
-  // the colored textures directly — no per-sprite tint divergence.
-  novaShockCanvas.orange = _bakeNovaShock('255,150,60',  '255,225,150');
-  novaShockCanvas.red    = _bakeNovaShock('255,70,70',   '255,160,150');
-  novaFlashCanvas.orange = _bakeNovaFlash('255,240,205', '255,180,90');
-  novaFlashCanvas.red    = _bakeNovaFlash('255,215,200', '255,90,80');
+  if (novaFlashCanvas.orange) return; // baked once
+  novaFlashCanvas.orange = _bakeNovaFlash('255,245,190', '255,160,40'); // white-hot → vivid orange
+  novaFlashCanvas.red    = _bakeNovaFlash('255,225,190', '255,70,55');  // hot → vivid red
 }
 _ensureNovaTextures(); // bake at load — ready before the first nova fires
 
-// Pixi: cache one PIXI.Texture per baked canvas (created lazily on first use).
+// Pixi: cache one PIXI.Texture per baked flash canvas (lazy, first use).
 function _pixiNovaTex(key) {
   if (_pixiNovaTexCache[key]) return _pixiNovaTexCache[key];
   _ensureNovaTextures();
-  const src = key === 'shockRed'   ? novaShockCanvas.red
-            : key === 'shockOrange'? novaShockCanvas.orange
-            : key === 'flashRed'   ? novaFlashCanvas.red
-            :                        novaFlashCanvas.orange;
-  const t = PIXI.Texture.from(src);
+  const t = PIXI.Texture.from(key === 'flashRed' ? novaFlashCanvas.red : novaFlashCanvas.orange);
   _pixiNovaTexCache[key] = t;
   return t;
 }
-// Pixi sprite-pool render — reuses sprites across frames, hides the unused tail.
-function _updatePixiNovaSprites() {
+// Pixi: crisp additive vector-stroke rings drawn into the (additive) ring Graphic.
+function _drawPixiNovaRings() {
+  const ng = pixiNovaRingsG;
+  if (!ng) return;
+  ng.clear();
+  ng.blendMode = PIXI.BLEND_MODES.ADD;   // additive glow/pop + supernova-stack bloom
+  for (const r of novaRings) {
+    const drawR = r.radius * (r.radiusMult || 1);
+    if (drawR < 1) continue;
+    const life = Math.max(0, Math.min(1, r.life));
+    const cols = _novaStrokeCols(r.supernova);
+    const glow = _rgbStrToHex(cols[0]), core = _rgbStrToHex(cols[1]);
+    // Wide additive glow band (solid colour = crisp edges, constant thickness).
+    ng.lineStyle({ width: 14, color: glow, alpha: life * 0.32 });
+    ng.drawCircle(r.x, r.y, drawR);
+    // Thin inner trailing accent (shockwave depth).
+    ng.lineStyle({ width: 2, color: glow, alpha: life * 0.5 });
+    ng.drawCircle(r.x, r.y, Math.max(0, drawR - 10));
+    // Crisp bright leading-edge core line — razor-thin, constant width at any radius.
+    ng.lineStyle({ width: 4, color: core, alpha: Math.min(1, life * 1.05) });
+    ng.drawCircle(r.x, r.y, drawR);
+  }
+  ng.lineStyle();
+}
+// Pixi: baked soft detonation-flash sprites (pooled, reused, unused tail hidden).
+function _updatePixiNovaFlashes() {
   if (!pixiActive || !pixiNovaSpriteLayer) return;
   _ensureNovaTextures();
   const now = Date.now();
-  let si = 0, fi = 0;
+  let fi = 0;
   for (const r of novaRings) {
-    const drawR = r.radius * (r.radiusMult || 1);
-    const sn = r.supernova;
-    const sm = r.sizeMult || 1;
-    const life = Math.max(0, Math.min(1, r.life));
-    // Shockwave: scale so the texture's bright edge (NOVA_SHOCK_EDGE) sits on drawR.
-    const shockTex = _pixiNovaTex(sn ? 'shockRed' : 'shockOrange');
-    let sp = pixiNovaShockPool[si];
-    if (!sp) {
-      sp = new PIXI.Sprite(shockTex);
-      sp.anchor.set(0.5);
-      sp.blendMode = PIXI.BLEND_MODES.ADD;
-      pixiNovaSpriteLayer.addChild(sp);
-      pixiNovaShockPool[si] = sp;
-    }
-    if (sp.texture !== shockTex) sp.texture = shockTex;
-    sp.visible = true;
-    sp.x = r.x; sp.y = r.y;
-    const sr = drawR / NOVA_SHOCK_EDGE;
-    sp.width = sp.height = sr * 2;
-    sp.alpha = life * 0.6;
-    si++;
-    // Detonation flash — first NOVA_FLASH_MS of the ring's life, blooms + collapses.
     const flashAge = now - (r.startTime || now);
-    if (flashAge < NOVA_FLASH_MS) {
-      const fl = 1 - flashAge / NOVA_FLASH_MS;
-      const flashTex = _pixiNovaTex(sn ? 'flashRed' : 'flashOrange');
-      let fp = pixiNovaFlashPool[fi];
-      if (!fp) {
-        fp = new PIXI.Sprite(flashTex);
-        fp.anchor.set(0.5);
-        fp.blendMode = PIXI.BLEND_MODES.ADD;
-        pixiNovaSpriteLayer.addChild(fp);
-        pixiNovaFlashPool[fi] = fp;
-      }
-      if (fp.texture !== flashTex) fp.texture = flashTex;
-      fp.visible = true;
-      fp.x = r.x; fp.y = r.y;
-      const fr = (90 * sm) * (0.6 + 0.7 * fl);
-      fp.width = fp.height = fr * 2;
-      fp.alpha = 0.7 * fl * fl;
-      fi++;
+    if (flashAge >= NOVA_FLASH_MS) continue;
+    const sm = r.sizeMult || 1;
+    const fl = 1 - flashAge / NOVA_FLASH_MS;
+    const tex = _pixiNovaTex(r.supernova ? 'flashRed' : 'flashOrange');
+    let fp = pixiNovaFlashPool[fi];
+    if (!fp) {
+      fp = new PIXI.Sprite(tex);
+      fp.anchor.set(0.5);
+      fp.blendMode = PIXI.BLEND_MODES.ADD;
+      pixiNovaSpriteLayer.addChild(fp);
+      pixiNovaFlashPool[fi] = fp;
     }
+    if (fp.texture !== tex) fp.texture = tex;
+    fp.visible = true;
+    fp.x = r.x; fp.y = r.y;
+    const fr = (95 * sm) * (0.55 + 0.7 * fl);
+    fp.width = fp.height = fr * 2;
+    fp.alpha = 0.9 * fl;
+    fi++;
   }
-  for (let k = si; k < pixiNovaShockPool.length; k++) pixiNovaShockPool[k].visible = false;
   for (let k = fi; k < pixiNovaFlashPool.length; k++) pixiNovaFlashPool[k].visible = false;
 }
 
 function drawNovaRings() {
-  // Step 6: pixi pipeline renders via _updatePixiNovaSprites(); this is the
-  // Canvas-2D fallback — 1 additive baked-sprite blit per ring (+ flash blit)
-  // instead of the old 2 stroked arcs. Same shape, baked glow, no live gradients.
+  // Canvas-2D fallback: crisp additive vector-stroke ring (glow band + inner
+  // accent + bright core line) + the baked soft detonation-flash blit. Mirrors
+  // the Pixi path; constant-thickness strokes stay sharp at any radius.
   if (pixiActive) return;
-  if (!novaShockCanvas.orange) return; // textures not baked yet (shouldn't happen post-load)
+  if (!novaFlashCanvas.orange) return; // flash texture not baked yet (shouldn't happen post-load)
   const now = Date.now();
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';
   for (const r of novaRings) {
     const drawR = r.radius * (r.radiusMult || 1);
+    if (drawR < 1) continue;
     const sn = r.supernova;
     const sm = r.sizeMult || 1;
     const life = Math.max(0, Math.min(1, r.life));
-    // Shockwave: bright edge aligns to drawR (the gameplay ring radius).
-    const shock = sn ? novaShockCanvas.red : novaShockCanvas.orange;
-    const sr = drawR / NOVA_SHOCK_EDGE;
-    ctx.globalAlpha = life * 0.6;
-    ctx.drawImage(shock, r.x - sr, r.y - sr, sr * 2, sr * 2);
-    // Detonation flash.
+    const cols = _novaStrokeCols(sn);
+    const glow = cols[0], core = cols[1];
+    // Wide additive glow band.
+    ctx.globalAlpha = 1;
+    ctx.lineWidth = 14;
+    ctx.strokeStyle = `rgba(${glow},${(life * 0.32).toFixed(3)})`;
+    ctx.beginPath(); ctx.arc(r.x, r.y, drawR, 0, 6.28); ctx.stroke();
+    // Inner trailing accent.
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = `rgba(${glow},${(life * 0.5).toFixed(3)})`;
+    ctx.beginPath(); ctx.arc(r.x, r.y, Math.max(0, drawR - 10), 0, 6.28); ctx.stroke();
+    // Crisp bright leading-edge core line (drawn last, over the glow).
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = `rgba(${core},${Math.min(1, life * 1.05).toFixed(3)})`;
+    ctx.beginPath(); ctx.arc(r.x, r.y, drawR, 0, 6.28); ctx.stroke();
+    // Detonation flash (soft baked bloom at the origin).
     const flashAge = now - (r.startTime || now);
     if (flashAge < NOVA_FLASH_MS) {
       const fl = 1 - flashAge / NOVA_FLASH_MS;
       const flash = sn ? novaFlashCanvas.red : novaFlashCanvas.orange;
-      const fr = (90 * sm) * (0.6 + 0.7 * fl);
-      ctx.globalAlpha = 0.7 * fl * fl;
+      const fr = (95 * sm) * (0.55 + 0.7 * fl);
+      ctx.globalAlpha = 0.9 * fl;
       ctx.drawImage(flash, r.x - fr, r.y - fr, fr * 2, fr * 2);
     }
   }
