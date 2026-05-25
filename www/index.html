@@ -18879,15 +18879,18 @@ function updatePixiBgObjects() {
   if (!pixiActive || !pixiBgLayer) return;
   const liveSeeds = new Set();
   for (const o of bgObjects) {
-    const img = bgImages[o.key];
-    if (!img || !img.complete || img.naturalWidth === 0) continue;
+    // v1.10.0 perf: texture from the pre-scaled offscreen canvas (~512²), not the
+    // multi-MP source — ~30–60× less VRAM and no mid-run GPU upload hitch. Skip
+    // until ready. The sprite is still sized to o.size, so the render is unchanged.
+    const src = bgScaled[o.key];
+    if (!src) continue;
     liveSeeds.add(o.seed);
     const style = o.key === 'galaxy' ? 'galaxy' : 'dim';
     const bucket = Math.max(20, Math.round(o.size / 10) * 10);
     const vignetteCanvas = getBgVignetteCanvas(style, bucket);
     let entry = pixiBgEntries.get(o.seed);
     if (!entry) {
-      const imageSprite = new PIXI.Sprite(PIXI.Texture.from(img));
+      const imageSprite = new PIXI.Sprite(PIXI.Texture.from(src));
       imageSprite.anchor.set(0.5);
       imageSprite.blendMode = PIXI.BLEND_MODES.SCREEN;
       const vignetteSprite = new PIXI.Sprite(PIXI.Texture.from(vignetteCanvas));
@@ -25325,6 +25328,42 @@ bgImages.remnant.src    = './assets/bg-remnant.jpg?v=' + Date.now();
 bgImages.void.src       = './assets/bg-void.jpg?v=' + Date.now();
 bgImages.darkMatter.src = './assets/bg-darkmatter.jpg?v=' + Date.now();
 
+// v1.10.0 perf: the source JPEGs are huge (up to 2711×2920 / ~7.9 MP) but the
+// objects display at only 220–400px. Pre-scale each ONCE at load into an
+// offscreen canvas (longest side BG_SCALE_MAX, aspect preserved) and draw from
+// THAT instead of the full-res Image. Both draw paths still stretch the source
+// into the same o.size SQUARE they always did, so the final pixels are
+// unchanged — the pre-scale is aspect-preserved, then stretched to the square
+// exactly as before, which is an identical source→o.size² mapping. Wins:
+//   • Pixi: the GPU texture is ~512² (~1MB) instead of up to ~31MB, and the
+//     first-use upload is tiny → no mid-run hitch when a new image appears.
+//   • Canvas-2D fallback: no per-frame re-sample of a multi-MP source.
+const BG_SCALE_MAX = 512;          // ≈1.7× the 400px max display size (crisp)
+const bgScaled = {};               // key -> offscreen canvas; only set once ready
+function _buildScaledBg(key, img) {
+  try {
+    const iw = img.naturalWidth, ih = img.naturalHeight;
+    if (!iw || !ih) return;        // errored/empty → leave unset; draw paths skip
+    // Fit within BG_SCALE_MAX on the longest side, preserving aspect; never upscale.
+    const s = Math.min(1, BG_SCALE_MAX / Math.max(iw, ih));
+    const cw = Math.max(1, Math.round(iw * s));
+    const ch = Math.max(1, Math.round(ih * s));
+    const c = document.createElement('canvas');
+    c.width = cw; c.height = ch;
+    c.getContext('2d').drawImage(img, 0, 0, cw, ch);
+    bgScaled[key] = c;
+  } catch { /* leave bgScaled[key] unset → draw paths skip until ready */ }
+}
+// Wire load→scale for each image. .src is already set above; if an image is
+// already decoded (cache), build now — otherwise build on the load event. The
+// draw paths key readiness on bgScaled[...], so nothing ever draws the
+// not-yet-scaled (or full-res) source.
+for (const _bgKey of BG_IMAGE_KEYS) {
+  const _img = bgImages[_bgKey];
+  if (_img.complete && _img.naturalWidth > 0) _buildScaledBg(_bgKey, _img);
+  else _img.addEventListener('load', () => _buildScaledBg(_bgKey, _img), { once: true });
+}
+
 // Phase-scoped image pools: each run phase draws from a different slice of
 // the imagery set so the backdrop evolves with the difficulty curve. Phase
 // boundaries match phaseForElapsed(). Already-spawned objects from the old
@@ -25443,8 +25482,11 @@ function updateBgObjects() {
 
 function drawBgObjects() {
   for (const o of bgObjects) {
-    const img = bgImages[o.key];
-    if (!img || !img.complete || img.naturalWidth === 0) continue;
+    // v1.10.0 perf: draw from the pre-scaled offscreen canvas (longest side 512),
+    // not the multi-MP source — same o.size square as before, so identical pixels
+    // without re-sampling the huge source every frame. Skip until it's ready.
+    const src = bgScaled[o.key];
+    if (!src) continue;
     const r = o.size / 2;
     const left = o.x - r, top = o.y - r;
     ctx.save();
@@ -25452,7 +25494,7 @@ function drawBgObjects() {
     // vanish, colored light glows into the space background.
     ctx.globalAlpha = o.opacity;
     ctx.globalCompositeOperation = 'screen';
-    ctx.drawImage(img, left, top, o.size, o.size);
+    ctx.drawImage(src, left, top, o.size, o.size);
     // Vignette painted at full alpha so the fully opaque ring completely
     // hides the square image boundary. The fill rect covers the whole image
     // square; the radial gradient's last stop (1.0 alpha) extends to the
@@ -35263,15 +35305,14 @@ function warmPixiTextures() {
   powerups = origPowerups;
   try { updatePixiPowerupLayer(); } catch {}
 
-  // 3) Bg images: wrap each loaded one in a PIXI.Texture so pixi's internal
-  // cache has an entry. Actual GPU upload still happens on first render, but
-  // the cache pre-population avoids a cache-miss path during gameplay.
-  if (typeof bgImages === 'object') {
-    for (const k in bgImages) {
-      const img = bgImages[k];
-      if (img && img.complete && img.naturalWidth > 0) {
-        try { PIXI.Texture.from(img); } catch {}
-      }
+  // 3) Bg images: wrap each PRE-SCALED canvas (v1.10.0 perf) in a PIXI.Texture so
+  // pixi's internal cache has an entry. Warming the scaled source (not the full-res
+  // Image) keeps the pre-cached texture tiny — the actual draw path also uses
+  // bgScaled, so this matches what gameplay uploads.
+  if (typeof bgScaled === 'object') {
+    for (const k in bgScaled) {
+      const c = bgScaled[k];
+      if (c) { try { PIXI.Texture.from(c); } catch {} }
     }
   }
 
