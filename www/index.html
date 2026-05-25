@@ -8395,14 +8395,14 @@ function _bulwark_drawImplode() {
     ctx.lineWidth = 4 - i;
     ctx.beginPath(); ctx.arc(player.x, player.y, rr, 0, 6.28); ctx.stroke();
   }
-  // Bright core flash on the crush beat.
-  if (t >= 0.5 && t < 0.75) {
+  // Bright core flash on the crush beat — baked gold bloom (replaces the
+  // per-frame radial gradient). Already additive (lighter) from above.
+  if (t >= 0.5 && t < 0.75 && _burstBloom && _burstBloom.gold) {
     const cf = 1 - (t - 0.5) / 0.25;
-    const cg = ctx.createRadialGradient(player.x, player.y, 0, player.x, player.y, PLAYER_R * 4);
-    cg.addColorStop(0, `rgba(255,225,150,${(0.8 * cf).toFixed(3)})`);
-    cg.addColorStop(1, 'rgba(255,225,150,0)');
-    ctx.fillStyle = cg;
-    ctx.beginPath(); ctx.arc(player.x, player.y, PLAYER_R * 4, 0, 6.28); ctx.fill();
+    const br = PLAYER_R * 4;
+    ctx.globalAlpha = 0.85 * cf;
+    ctx.drawImage(_burstBloom.gold, player.x - br, player.y - br, br * 2, br * 2);
+    ctx.globalAlpha = 1;
   }
   ctx.restore();
 }
@@ -8417,22 +8417,29 @@ function _bulwark_drawGoldenShield() {
   const now = Date.now();
   ctx.save();
   ctx.translate(player.x, player.y);
-  // Glow (dims with frac).
-  const glow = ctx.createRadialGradient(0, 0, R * 0.5, 0, 0, R * 1.15);
-  glow.addColorStop(0, `rgba(255,210,110,${(0.10 + 0.22 * frac).toFixed(3)})`);
-  glow.addColorStop(1, 'rgba(255,210,110,0)');
-  ctx.fillStyle = glow;
-  ctx.beginPath(); ctx.arc(0, 0, R * 1.15, 0, 6.28); ctx.fill();
-  // Thick gold rim, brightness pulses; dims as it nears breaking.
+  // Recipe: baked GOLD bloom glow (replaces the per-frame radial gradient) +
+  // a crisp additive double-stroke rim (replaces the shadowBlur). Gold identity
+  // preserved. The dark cracks stay source-over so they read as fractures.
   const pulse = 0.8 + 0.2 * Math.sin(now / 140);
-  ctx.lineWidth = 3 + 2 * frac;
-  ctx.strokeStyle = `rgba(${230 + 25 * frac | 0},${180 + 20 * frac | 0},${70 + 20 * frac | 0},${(0.5 + 0.45 * frac * pulse).toFixed(3)})`;
-  ctx.shadowBlur = 10 * frac; ctx.shadowColor = 'rgba(255,200,90,0.8)';
-  ctx.beginPath(); ctx.arc(0, 0, R, 0, 6.28); ctx.stroke();
+  if (_burstBloom && _burstBloom.gold) {
+    const br = R * 1.15;
+    const prevComp = ctx.globalCompositeOperation;
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = 0.10 + 0.30 * frac;
+    ctx.drawImage(_burstBloom.gold, -br, -br, br * 2, br * 2);
+    ctx.globalAlpha = 1;
+    // Rim: wide gold glow band + bright core, additive.
+    ctx.strokeStyle = `rgba(255,200,90,${(0.25 * (0.5 + 0.5 * frac) * pulse).toFixed(3)})`;
+    ctx.lineWidth = 7 + 2 * frac;
+    ctx.beginPath(); ctx.arc(0, 0, R, 0, 6.28); ctx.stroke();
+    ctx.strokeStyle = `rgba(${230 + 25 * frac | 0},${190 + 15 * frac | 0},${90 + 20 * frac | 0},${(0.6 + 0.4 * frac * pulse).toFixed(3)})`;
+    ctx.lineWidth = 2 + 1.5 * frac;
+    ctx.beginPath(); ctx.arc(0, 0, R, 0, 6.28); ctx.stroke();
+    ctx.globalCompositeOperation = prevComp;
+  }
   // Cracks: more as it nears 10 hits (i.e. as frac drops). Up to ~6 jagged lines.
   const cracks = Math.round((1 - frac) * 6);
   if (cracks > 0) {
-    ctx.shadowBlur = 0;
     ctx.strokeStyle = `rgba(40,20,0,${(0.5 * (1 - frac) + 0.2).toFixed(3)})`;
     ctx.lineWidth = 1.4;
     for (let i = 0; i < cracks; i++) {
@@ -8446,7 +8453,7 @@ function _bulwark_drawGoldenShield() {
   ctx.restore();
 }
 // Dead Star bottom-left counter (mirrors Inferno's COLLAPSE / Phantasm's MARKS HUD).
-// Shows progress toward the DEAD_STAR_TRIGGER (30) shield-stacks-lost implode. Sits
+// Shows progress toward the DEAD_STAR_TRIGGER (20) shield-stacks-lost implode. Sits
 // in the counter column (safe-bottom +100px), 64px ABOVE the AEGIS ring row
 // (+36px) — no overlap. Bulwark has no other counter, so this column is its own.
 let _bulwark_hudEl = null, _bulwark_hudDeadStarEl = null;
@@ -8758,15 +8765,22 @@ function _solarDrawFireballs() {
   const now = Date.now();
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';
+  // Recipe: baked fire bloom (soft orange-red glow) + a bright hot core, no
+  // per-frame gradients.
+  const fireTex = (_burstBloom && _burstBloom.fire) ? _burstBloom.fire : null;
   for (const fb of _solarFireballs) {
     const r = (16 + 3 * Math.sin(now * 0.03)) * (fb.phase === 'launch' ? 1.2 : 1);
-    const g = ctx.createRadialGradient(fb.x, fb.y, 0, fb.x, fb.y, r * 1.6);
-    g.addColorStop(0, 'rgba(255,245,200,0.95)');
-    g.addColorStop(0.4, 'rgba(255,160,50,0.8)');
-    g.addColorStop(1, 'rgba(255,80,20,0)');
-    ctx.fillStyle = g;
-    ctx.beginPath(); ctx.arc(fb.x, fb.y, r * 1.6, 0, 6.28); ctx.fill();
+    const br = r * 1.6;
+    if (fireTex) {
+      ctx.globalAlpha = 0.95;
+      ctx.drawImage(fireTex, fb.x - br, fb.y - br, br * 2, br * 2);
+    }
+    // Hot white-orange core for definition.
+    ctx.globalAlpha = 0.9;
+    ctx.fillStyle = 'rgba(255,245,205,1)';
+    ctx.beginPath(); ctx.arc(fb.x, fb.y, r * 0.4, 0, 6.28); ctx.fill();
   }
+  ctx.globalAlpha = 1;
   ctx.globalCompositeOperation = 'source-over';
   ctx.restore();
 }
@@ -11284,6 +11298,9 @@ function _drifterV2_drawThread() {
   const now = Date.now();
   ctx.save();
   ctx.lineCap = 'round';
+  // Recipe: additive CYAN beams (Drifter family identity), glow-band + bright
+  // core instead of shadowBlur. No GPU blur state anywhere in this function.
+  ctx.globalCompositeOperation = 'lighter';
   // Draw regular + laser threads in two passes — regular first (below),
   // lasers on top with the glow effect.
   for (const t of _drifterV2_threads) {
@@ -11296,30 +11313,23 @@ function _drifterV2_drawThread() {
       : 1;
     const alpha = 0.55 * fadeAlpha;
     if (alpha <= 0.02) continue;
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = `rgba(255,180,60,${alpha.toFixed(2)})`;
-    ctx.shadowColor = `rgba(255,180,60,${(alpha * 0.6).toFixed(2)})`;
-    ctx.shadowBlur = 4;
-    ctx.beginPath();
-    ctx.moveTo(t.sx, t.sy);
-    ctx.lineTo(t.ex, t.ey);
-    ctx.stroke();
+    ctx.strokeStyle = `rgba(100,210,255,${(alpha * 0.5).toFixed(2)})`;
+    ctx.lineWidth = 5;
+    ctx.beginPath(); ctx.moveTo(t.sx, t.sy); ctx.lineTo(t.ex, t.ey); ctx.stroke();
+    ctx.strokeStyle = `rgba(190,240,255,${alpha.toFixed(2)})`;
+    ctx.lineWidth = 1.6;
+    ctx.beginPath(); ctx.moveTo(t.sx, t.sy); ctx.lineTo(t.ex, t.ey); ctx.stroke();
   }
-  // Laser pass — solid glowing beam: outer halo, mid amber core, white-hot inner.
-  // v1.9.0 perf (batch 1): every active laser shares identical style, so each
-  // of the three layers is rendered as ONE batched path + ONE stroke instead of
-  // 3 strokes per laser. shadowBlur (the dominant mobile cost) is set ONCE for
-  // the halo layer only; core + center carry no blur (the wide halo glow covers
-  // it). Net: 3 strokes / 1 blurred per frame regardless of laser count, vs the
-  // old 3×N strokes / 2×N blurred. Visual is identical for non-overlapping
-  // beams (overlaps composite once instead of twice — imperceptible).
+  // Laser pass — solid glowing CYAN beam: wide glow band, cyan core, white-hot
+  // center. Recipe: additive glow band replaces shadowBlur (no GPU blur).
+  // v1.9.0 perf (batch 1): every active laser shares identical style, so each of
+  // the three layers is rendered as ONE batched path + ONE stroke instead of
+  // 3 strokes per laser. Net: 3 strokes per frame regardless of laser count.
   const _laserPulse = 0.85 + 0.15 * Math.sin(now * 0.012);
   let _anyLaser = false;
-  // Layer 1 — outer halo (the ONLY shadowBlur pass).
+  // Layer 1 — wide cyan glow band (additive; replaces the shadowBlur halo).
   ctx.lineWidth = 14 * _laserPulse;
-  ctx.strokeStyle = 'rgba(255,180,60,0.18)';
-  ctx.shadowColor = 'rgba(255,180,60,0.7)';
-  ctx.shadowBlur = 8;
+  ctx.strokeStyle = 'rgba(100,210,255,0.22)';
   ctx.beginPath();
   for (const t of _drifterV2_threads) {
     if (!t.isLaser || now - t.startTime > t.durationMs) continue;
@@ -11328,10 +11338,9 @@ function _drifterV2_drawThread() {
   }
   if (_anyLaser) {
     ctx.stroke();
-    // Layer 2 — amber core (no shadowBlur).
-    ctx.shadowBlur = 0;
+    // Layer 2 — cyan core.
     ctx.lineWidth = 6;
-    ctx.strokeStyle = `rgba(255,200,90,${(0.85 * _laserPulse).toFixed(2)})`;
+    ctx.strokeStyle = `rgba(150,230,255,${(0.85 * _laserPulse).toFixed(2)})`;
     ctx.beginPath();
     for (const t of _drifterV2_threads) {
       if (!t.isLaser || now - t.startTime > t.durationMs) continue;
@@ -11340,7 +11349,7 @@ function _drifterV2_drawThread() {
     ctx.stroke();
     // Layer 3 — white-hot center.
     ctx.lineWidth = 2;
-    ctx.strokeStyle = `rgba(255,255,230,${_laserPulse.toFixed(2)})`;
+    ctx.strokeStyle = `rgba(235,250,255,${_laserPulse.toFixed(2)})`;
     ctx.beginPath();
     for (const t of _drifterV2_threads) {
       if (!t.isLaser || now - t.startTime > t.durationMs) continue;
@@ -11348,7 +11357,6 @@ function _drifterV2_drawThread() {
     }
     ctx.stroke();
   }
-  ctx.shadowBlur = 0;
   // v4 Projectile pass — full-length glowing bar projectiles. Each bar
   // preserves the original thread length and slides forward along its axis.
   // Layered render: midpoint motion-blur trail, then concentric strokes for
@@ -11356,14 +11364,12 @@ function _drifterV2_drawThread() {
   // laser-thread aesthetic.
   // v1.9.0 perf (batch 1): same batching as the laser pass. Trails draw as ONE
   // polyline per projectile (single stroke) instead of per-segment strokes;
-  // bar halo/core/center each batch into one path. shadowBlur set once (trail
-  // pass + bar-halo pass only). Projectiles are few (~2–4) and share style.
+  // bar glow-band/core/center each batch into one path. Additive cyan, no
+  // shadowBlur. Projectiles are few (~2–4) and share style.
   if (_drifterV2_threadProjectiles.length) {
-    // Motion-blur trails — one polyline per projectile, single shadowBlur set.
+    // Motion-blur trails — one cyan polyline per projectile (additive, no blur).
     ctx.lineWidth = 3;
-    ctx.strokeStyle = 'rgba(255,200,90,0.28)';
-    ctx.shadowColor = 'rgba(255,200,90,0.4)';
-    ctx.shadowBlur = 3;
+    ctx.strokeStyle = 'rgba(120,220,255,0.30)';
     ctx.beginPath();
     for (const p of _drifterV2_threadProjectiles) {
       if (p.trail.length < 2) continue;
@@ -11371,29 +11377,25 @@ function _drifterV2_drawThread() {
       for (let i = 1; i < p.trail.length; i++) ctx.lineTo(p.trail[i].x, p.trail[i].y);
     }
     ctx.stroke();
-    // Bar — outer halo (the only bar shadowBlur pass), all projectiles batched.
+    // Bar — wide cyan glow band (replaces the shadowBlur halo).
     ctx.lineWidth = 18;
-    ctx.strokeStyle = 'rgba(255,180,60,0.22)';
-    ctx.shadowColor = 'rgba(255,180,60,0.8)';
-    ctx.shadowBlur = 10;
+    ctx.strokeStyle = 'rgba(100,210,255,0.24)';
     ctx.beginPath();
     for (const p of _drifterV2_threadProjectiles) { ctx.moveTo(p.sx, p.sy); ctx.lineTo(p.ex, p.ey); }
     ctx.stroke();
-    // Amber core (no shadowBlur).
-    ctx.shadowBlur = 0;
+    // Cyan core.
     ctx.lineWidth = 8;
-    ctx.strokeStyle = 'rgba(255,200,90,0.95)';
+    ctx.strokeStyle = 'rgba(150,230,255,0.95)';
     ctx.beginPath();
     for (const p of _drifterV2_threadProjectiles) { ctx.moveTo(p.sx, p.sy); ctx.lineTo(p.ex, p.ey); }
     ctx.stroke();
     // White-hot center.
     ctx.lineWidth = 3;
-    ctx.strokeStyle = 'rgba(255,255,230,1)';
+    ctx.strokeStyle = 'rgba(235,250,255,1)';
     ctx.beginPath();
     for (const p of _drifterV2_threadProjectiles) { ctx.moveTo(p.sx, p.sy); ctx.lineTo(p.ex, p.ey); }
     ctx.stroke();
   }
-  ctx.shadowBlur = 0;
   ctx.restore();
 }
 
@@ -11727,14 +11729,18 @@ function _drifterV2_drawHeartbeatMagnetRings() {
   if (!powerups.length) return;
   const t = Date.now() * 0.006;
   ctx.save();
-  ctx.lineWidth = 2;
-  ctx.shadowColor = 'rgba(125,232,255,0.7)';
-  ctx.shadowBlur = 8;
+  // Recipe: additive cyan glow-band + bright core ring, no shadowBlur.
+  ctx.globalCompositeOperation = 'lighter';
   for (const p of powerups) {
     if (p.collected) continue;
     const ph = p.pulse || 0;
     const rr = (p.radius || 13) * 1.7 + 3 + Math.sin(t + ph) * 2;
-    ctx.strokeStyle = `rgba(125,232,255,${(0.55 + 0.25 * Math.sin(t + ph)).toFixed(2)})`;
+    const a = 0.55 + 0.25 * Math.sin(t + ph);
+    ctx.strokeStyle = `rgba(100,210,255,${(a * 0.4).toFixed(2)})`;
+    ctx.lineWidth = 5;
+    ctx.beginPath(); ctx.arc(p.x, p.y, rr, 0, 6.28); ctx.stroke();
+    ctx.strokeStyle = `rgba(170,238,255,${a.toFixed(2)})`;
+    ctx.lineWidth = 1.6;
     ctx.beginPath(); ctx.arc(p.x, p.y, rr, 0, 6.28); ctx.stroke();
   }
   ctx.restore();
@@ -13193,10 +13199,10 @@ function _phantomV2_tickWraiths() {
       continue;
     }
     // Body-contact collision. Touch radius scales with Pack Hunters sizeMul.
-    // v1.10.x: bumped 8 → 14 so the catch radius matches the visible glowing
-    // soul (renderer uses soulR = 14 * sm). Bigger catch = wraiths sweep bodies
-    // they visually overlap, fixing the "looks like it should hit but doesn't".
-    const touchBase = 14 * sizeMul;
+    // v1.10.x: bumped 8 → 14 → 20 so the catch radius matches the visible
+    // glowing soul (renderer uses soulR = 20 * sm). Bigger catch = wraiths
+    // sweep bodies they visually overlap, fixing "looks like it should hit".
+    const touchBase = 20 * sizeMul;
     for (let i = bodies.length - 1; i >= 0; i--) {
       const b = bodies[i];
       if (!b || isNaN(b.x) || isNaN(b.y)) continue;
@@ -13263,10 +13269,10 @@ function _phantomV2_drawWraiths() {
     // sized to the wraith's hitbox, NOT a wide soft bloom. The previous baked
     // bloom spread ~28–39px and several spinning wraiths smeared into a swarm-
     // cloud; capping the glow at the catch radius keeps each as one clean soul.
-    // soulR mirrors the touchBase hitbox (14 * sizeMul) so the visible glow
+    // soulR mirrors the touchBase hitbox (20 * sizeMul) so the visible glow
     // matches what actually catches bodies. pulse drives alpha only (no size
     // throb → no smear).
-    const soulR = 14 * sm;
+    const soulR = 20 * sm;
     ctx.globalCompositeOperation = 'lighter';
     ctx.globalAlpha = baseAlpha * pulse * 0.22;
     ctx.fillStyle = 'rgba(180,110,245,1)';
@@ -15262,7 +15268,7 @@ let deadStarStackCounter = 0;
 let goldenShieldActive = false;
 let goldenShieldHits = 0;
 const GOLDEN_SHIELD_HITS = 10;
-const DEAD_STAR_TRIGGER = 30;            // shield stacks lost per implode (v1.9.0: 20 → 30)
+const DEAD_STAR_TRIGGER = 20;            // shield stacks lost per implode (v1.9.0: 20 → 30; v1.10.x: back to 20)
 // Implode animation state: null when idle, else { startTime, dragged: [...] }.
 let deadStarImplode = null;
 const DEAD_STAR_IMPLODE_MS = 1600;       // total animation (invulnerable throughout)
@@ -27872,7 +27878,9 @@ function emitOrbTrailUnlocked(orb, intensity, sizeMul, alphaMul, px, py, bx, by,
     // Base wisp hue tracks the orb colour (violet); darkens to ink under ghost.
     const baseHue  = dense ? '110,55,170' : (orbColorRgb || '150,90,230');
     const sparkHue = dense ? '205,160,255' : '210,170,255';
-    const emitCount = dense ? 3 : 2;
+    // Thin the wisp cloud while Revenant wraiths orbit so it doesn't blend
+    // with the souls into a swarm (part of the smear fix).
+    const emitCount = _phantomV2_hasRevenant() ? 1 : (dense ? 3 : 2);
     for (let i = 0; i < emitCount; i++) {
       pushCapped(orbTrailParticles, {
         kind: 'wisp',
@@ -27903,8 +27911,12 @@ function emitOrbTrailUnlocked(orb, intensity, sizeMul, alphaMul, px, py, bx, by,
     }
     // Afterimage orb copies — faint when drifting, frequent + more solid during
     // Eternal Phantom (mirrors cosmic, but always-on at a lower rate here).
+    // SMEAR FIX: these orb-shaped violet ghosts are the main culprit behind the
+    // "looks like ~20 wraiths" read — they pile up around the player exactly
+    // where wraiths orbit and mimic extra souls. Suppress them entirely while
+    // Revenant wraiths are active so the orbiting souls stay countable.
     const aiEvery = eternal ? 4 : 10;
-    if ((frame % aiEvery) === 0) {
+    if (!_phantomV2_hasRevenant() && (frame % aiEvery) === 0) {
       pushCapped(orbTrailParticles, {
         kind: 'afterimage',
         x: player.x, y: player.y,
@@ -29045,27 +29057,27 @@ function drawBurnZones() {
     // pulse, so what you see is what kills.
     const pulse = 1 + 0.05 * Math.sin(now * 0.013 + seed);
     const rr = R * pulse;
-    const mg = ctx.createRadialGradient(z.x, z.y, 0, z.x, z.y, rr);
-    mg.addColorStop(0,    `rgba(255,245,200,${(0.9 * fade).toFixed(2)})`);
-    mg.addColorStop(0.45, `rgba(255,160,50,${(0.75 * fade).toFixed(2)})`);
-    mg.addColorStop(0.8,  `rgba(255,90,25,${(0.45 * fade).toFixed(2)})`);
-    mg.addColorStop(1,    'rgba(255,60,20,0)');
-    ctx.fillStyle = mg;
-    ctx.beginPath(); ctx.arc(z.x, z.y, rr, 0, 6.28); ctx.fill();
+    // Recipe: baked fire bloom (the outermost glow sits at the hitbox R) +
+    // 3 churning sub-globs as smaller blits — replaces 4 per-frame gradients
+    // per zone with cheap drawImage blits. Same orange-red fire identity.
+    const fireTex = (_burstBloom && _burstBloom.fire) ? _burstBloom.fire : null;
+    if (fireTex) {
+      ctx.globalAlpha = 0.9 * fade;
+      ctx.drawImage(fireTex, z.x - rr, z.y - rr, rr * 2, rr * 2);
+    }
     // Churning sub-globs — orbit/wobble for an animated, alive flame. Kept well
     // inside R (max reach ≈ 0.3R offset + 0.55R radius ≈ 0.85R) so they don't
     // push the apparent footprint past the hitbox.
-    for (let i = 0; i < 3; i++) {
-      const a = now * 0.004 * (i + 1) + i * 2.1 + seed;
-      const ox = Math.cos(a) * R * 0.3, oy = Math.sin(a * 1.3) * R * 0.3;
-      const sr = R * (0.4 + 0.15 * Math.sin(now * 0.02 + i + seed));
-      const sg = ctx.createRadialGradient(z.x + ox, z.y + oy, 0, z.x + ox, z.y + oy, sr);
-      sg.addColorStop(0,   `rgba(255,225,150,${(0.5 * fade).toFixed(2)})`);
-      sg.addColorStop(0.6, `rgba(255,140,40,${(0.25 * fade).toFixed(2)})`);
-      sg.addColorStop(1,   'rgba(255,90,30,0)');
-      ctx.fillStyle = sg;
-      ctx.beginPath(); ctx.arc(z.x + ox, z.y + oy, sr, 0, 6.28); ctx.fill();
+    if (fireTex) {
+      for (let i = 0; i < 3; i++) {
+        const a = now * 0.004 * (i + 1) + i * 2.1 + seed;
+        const ox = Math.cos(a) * R * 0.3, oy = Math.sin(a * 1.3) * R * 0.3;
+        const sr = R * (0.4 + 0.15 * Math.sin(now * 0.02 + i + seed));
+        ctx.globalAlpha = 0.5 * fade;
+        ctx.drawImage(fireTex, z.x + ox - sr, z.y + oy - sr, sr * 2, sr * 2);
+      }
     }
+    ctx.globalAlpha = 1;
     // Rising embers — kept within the zone footprint (climb capped at ~R).
     ctx.fillStyle = 'rgba(255,210,120,1)';
     for (let i = 0; i < 5; i++) {
@@ -29128,6 +29140,7 @@ function _ensureBurstBlooms() {
   _burstBloom.gold   = _bakeNovaFlash('255,240,180', '255,190,70');  // Dead Star gold
   _burstBloom.violet = _bakeNovaFlash('230,190,255', '180,110,245'); // ghost / phantom
   _burstBloom.curse  = _bakeNovaFlash('255,190,215', '255,90,150');  // Haunt curse pink
+  _burstBloom.fire   = _bakeNovaFlash('255,235,180', '255,90,30');   // Inferno fire orange-red
 }
 _ensureBurstBlooms();
 // Canvas: blit the bloom (caller is translated to centre + additive). bloomR is
