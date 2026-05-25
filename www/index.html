@@ -3701,7 +3701,8 @@ const pixiNovaFlashPool = [];
 const _pixiNovaTexCache = {};
 let pixiEmpRingsG = null;
 let pixiPlanetRipplesG = null;
-let pixiScreenFillG = null;       // hyperspeed gold tint + apocalypse curtain + tint + impact flashes
+let pixiScreenFillG = null;       // apocalypse curtain + tint + impact flashes (hyperspeed tint removed v1.10.0)
+let pixiHyperFxG = null;          // v1.10.0: hyperspeed edge bands + peripheral motion streaks (additive)
 let pixiHyperBarrierSprite = null;
 let pixiHyperBarrierCanvas = null;
 let pixiHyperBarrierCtx = null;
@@ -18788,6 +18789,10 @@ function initPixiStars() {
     // the screen-space rings, then the per-element sprites (barrier/stack
     // text/apocalypse sun) added lazily at first use.
     pixiOverlayLayer.addChild(pixiScreenFillG);
+    // v1.10.0: hyperspeed edge-band + streak FX (additive), behind the gameplay
+    // rings/barrier — peripheral, never a full-screen wash.
+    pixiHyperFxG = new PIXI.Graphics();
+    pixiOverlayLayer.addChild(pixiHyperFxG);
     pixiOverlayLayer.addChild(pixiNovaRingsG);
     // v1.10.0: nova shockwave/flash sprites render at the same z as the old ring
     // graphic (just after it, before EMP rings) so paint order is unchanged.
@@ -20060,16 +20065,9 @@ function updatePixiOverlayLayer() {
   const fg = pixiScreenFillG;
   fg.clear();
 
-  // Hyperspeed gold tint (fullscreen alpha wash).
-  if (activeEffects.hyperspeed > 0 && hyperspeedCurrentMult > 1.05) {
-    const fade = Math.min(activeEffects.hyperspeed / 500, 1);
-    const a = 0.12 * fade * ((hyperspeedCurrentMult - 1) / 2);
-    if (a > 0) {
-      fg.beginFill(0xFFDC3C, a);
-      fg.drawRect(0, 0, W, H);
-      fg.endFill();
-    }
-  }
+  // Hyperspeed FX: capped edge bands + peripheral motion streaks (NO fullscreen
+  // wash — see _drawPixiHyperFx). v1.10.0 readability fix.
+  _drawPixiHyperFx();
 
   // Apocalypse tint + impact flashes as native rects/circles. The complex
   // sun goes to its own offscreen canvas below.
@@ -28380,7 +28378,7 @@ function drawPlayer(tctx = ctx) {
   // top so it visibly screams "danger".
   if (hyperSpeedStacks > 0 && hyperspeedCurrentMult > 1.05) {
     const tint = hyperStackTint(hyperSpeedStacks);
-    const intensity = (hyperspeedCurrentMult - 1) / 2;
+    const intensity = Math.min(1, (hyperspeedCurrentMult - 1) / 2); // capped 0..1 (was unbounded)
     // v1.9.0 perf: skip the gradient alloc + fill when the resulting alpha rounds
     // to 0 over 8-bit (e.g. while ghostAlpha fades out) — the draw is invisible.
     const glowA = 0.55 * intensity * ghostAlpha;
@@ -29406,10 +29404,115 @@ function hyperStackTint(stacks) {
   return                  { r: 255, g: 220, b: 60,  edgeR: 255, edgeG: 240, edgeB: 120 };
 }
 
+// =====================================================================
+// HYPERSPEED FX (v1.10.0 baseline) — readability fix: replaces the unbounded
+// full-screen gold wash (which clamped to solid yellow at high stacks because
+// its alpha = 0.12·((mult−1)/2) and `mult` is the large SCROLL multiplier, not
+// a 0..1 value) with PERIPHERAL motion: capped edge bands (top/bottom) + crisp
+// additive vertical streaks biased to the left/right margins. The CENTER is
+// always left clear, so the playfield + threats stay visible at every tier.
+// Intensity is a CAPPED 0..1 remap of the multiplier; colour tiers by stacks
+// (gold → white-gold → blue-white) give the escalation. Pure additive strokes/
+// rects — no full-screen fill, no filters, no shadowBlur.
+const HYPER_STREAK_SEEDS = [];
+(function _initHyperStreaks() {
+  for (let i = 0; i < 48; i++) {
+    HYPER_STREAK_SEEDS.push({
+      edge: (i % 2 === 0) ? -1 : 1,    // alternate left / right margins
+      xf: Math.random(),               // fraction across the edge margin
+      phase: Math.random(),            // vertical stagger (0..1 of the span)
+      lenBase: 16 + Math.random() * 26 // 16..42 px base streak length
+    });
+  }
+})();
+// Capped 0..1 speed intensity (the old wash used the raw, unbounded multiplier).
+function hyperIntensity01() {
+  if (activeEffects.hyperspeed <= 0 || hyperspeedCurrentMult <= 1.05) return 0;
+  const fade = Math.min(1, activeEffects.hyperspeed / 500); // ease out the last 500ms
+  const speed01 = Math.max(0, Math.min(1, (hyperspeedCurrentMult - 1) / 11));
+  return fade * speed01;
+}
+// Stack-tiered colour ramp: warm gold → white-gold → cool/blue-white (blueshift).
+function hyperTierColor(stacks) {
+  if (stacks <= 1) return [255, 210, 90];   // 1× warm gold
+  if (stacks === 2) return [255, 225, 130];  // 2× brighter gold
+  if (stacks <= 4) return [255, 240, 190];   // 3–4× white-gold
+  if (stacks <= 6) return [215, 235, 255];   // 5–6× cool white
+  return [175, 215, 255];                    // 7+× blue-white
+}
+// Canvas-2D fallback path.
+function drawHyperspeedFx() {
+  const I = hyperIntensity01();
+  if (I <= 0.01) return;
+  const col = hyperTierColor(hyperSpeedStacks);
+  const c = col[0] + ',' + col[1] + ',' + col[2];
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  // Edge bands (top + bottom) — capped at ~0.20, fading inward; never the centre.
+  const bands = 7, bandSpan = H * 0.18, bh = bandSpan / bands;
+  for (let i = 0; i < bands; i++) {
+    const a = I * 0.20 * (1 - i / bands);
+    if (a <= 0.003) continue;
+    ctx.fillStyle = `rgba(${c},${a.toFixed(3)})`;
+    ctx.fillRect(0, i * bh, W, bh + 1);
+    ctx.fillRect(0, H - (i + 1) * bh, W, bh + 1);
+  }
+  // Streaks — left/right margins only, scrolling down, length/density by intensity.
+  const span = H + 60;
+  const speed = 2 + hyperspeedCurrentMult * 0.7;   // feel-fast: scales with real speed
+  const n = Math.max(4, Math.ceil(I * HYPER_STREAK_SEEDS.length));
+  ctx.lineWidth = 1 + I * 1.6;
+  ctx.lineCap = 'round';
+  for (let i = 0; i < n; i++) {
+    const s = HYPER_STREAK_SEEDS[i];
+    const x = s.edge < 0 ? (W * 0.02 + s.xf * W * 0.24) : (W * 0.74 + s.xf * W * 0.24);
+    const len = s.lenBase * (1 + I * 2.2);
+    const y = ((frame * speed) + s.phase * span) % span;
+    const a = I * (0.45 + 0.55 * s.xf);
+    ctx.strokeStyle = `rgba(${c},${a.toFixed(3)})`;
+    ctx.beginPath(); ctx.moveTo(x, y - len); ctx.lineTo(x, y); ctx.stroke();
+  }
+  ctx.restore();
+}
+// Pixi path — same recipe on an additive Graphics (batched, cheap, sustained-safe).
+function _drawPixiHyperFx() {
+  const g = pixiHyperFxG;
+  if (!g) return;
+  g.clear();
+  const I = hyperIntensity01();
+  if (I <= 0.01) return;
+  g.blendMode = PIXI.BLEND_MODES.ADD;
+  const col = hyperTierColor(hyperSpeedStacks);
+  const hex = (col[0] << 16) | (col[1] << 8) | col[2];
+  const bands = 7, bandSpan = H * 0.18, bh = bandSpan / bands;
+  for (let i = 0; i < bands; i++) {
+    const a = I * 0.20 * (1 - i / bands);
+    if (a <= 0.003) continue;
+    g.beginFill(hex, a);
+    g.drawRect(0, i * bh, W, bh + 1);
+    g.drawRect(0, H - (i + 1) * bh, W, bh + 1);
+    g.endFill();
+  }
+  const span = H + 60;
+  const speed = 2 + hyperspeedCurrentMult * 0.7;
+  const n = Math.max(4, Math.ceil(I * HYPER_STREAK_SEEDS.length));
+  const lw = 1 + I * 1.6;
+  for (let i = 0; i < n; i++) {
+    const s = HYPER_STREAK_SEEDS[i];
+    const x = s.edge < 0 ? (W * 0.02 + s.xf * W * 0.24) : (W * 0.74 + s.xf * W * 0.24);
+    const len = s.lenBase * (1 + I * 2.2);
+    const y = ((frame * speed) + s.phase * span) % span;
+    const a = I * (0.45 + 0.55 * s.xf);
+    g.lineStyle({ width: lw, color: hex, alpha: a });
+    g.moveTo(x, y - len); g.lineTo(x, y);
+  }
+  g.lineStyle();
+}
+
 function drawHyperspeedBarrier(tctx = ctx) {
   const ctx = tctx;
   if (activeEffects.hyperspeed <= 0 || hyperspeedCurrentMult <= 1.05) return;
-  const intensity = (hyperspeedCurrentMult - 1) / 2; // 0..1
+  const intensity = Math.min(1, (hyperspeedCurrentMult - 1) / 2); // capped 0..1 (was unbounded)
   const barrierY = player.y - 60;
   const halfW = hyperBarrierHalfW();   // Bow Shock widens 60 → 90 (Warp Velocity T2)
 
@@ -29728,15 +29831,9 @@ function render() {
   // effects layer so they share the body sprites' coordinate system.
   if (state === 'bodypreview' && !pixiActive) drawPreviewOutlines();
 
-  // Hyperspeed gold tint over the world. Step 6: pixi owns this via
-  // pixiScreenFillG in updatePixiOverlayLayer when active.
-  if (!pixiActive && activeEffects.hyperspeed > 0 && hyperspeedCurrentMult > 1.05) {
-    const fade = Math.min(activeEffects.hyperspeed / 500, 1);
-    ctx.globalAlpha = 0.12 * fade * ((hyperspeedCurrentMult - 1) / 2);
-    ctx.fillStyle = 'rgba(255,220,60,1)';
-    ctx.fillRect(0, 0, W, H);
-    ctx.globalAlpha = 1;
-  }
+  // Hyperspeed FX over the world (v1.10.0 readability fix): peripheral edge bands
+  // + motion streaks, no full-screen wash. Pixi path uses _drawPixiHyperFx().
+  if (!pixiActive) drawHyperspeedFx();
 
   if (state==='playing'||state==='dead'||state==='paused'||state==='apocalypse'||state==='devmode'||state==='tutorial'||state==='ascension_predeath'||state==='seconddeath_predeath'||state==='sirius_predeath') {
     drawBurnZones();
