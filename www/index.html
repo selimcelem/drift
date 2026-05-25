@@ -2172,6 +2172,9 @@
   /* The node TYPE (KEYSTONE / CAPSTONE) — distinct gold, so it reads as the
      node's category at a glance. */
   .tree-type-label {
+    /* v1.10.0: own line above the description — reads as the node's TYPE. */
+    display: block;
+    margin-bottom: 5px;
     font-family: 'Orbitron', monospace;
     color: rgba(255,200,90,1);
     font-weight: 700;
@@ -3504,7 +3507,7 @@
          term. Populated + shown by showTreeGlossary(). -->
     <div id="treeGlossary">
       <div class="tree-glossary-inner">
-        <div class="tree-glossary-speaker">???</div>
+        <div class="tree-glossary-speaker" id="treeGlossarySpeaker">???</div>
         <div class="tree-glossary-text" id="treeGlossaryText"></div>
         <button class="tree-btn close" id="treeGlossaryClose">GOT IT</button>
       </div>
@@ -6047,6 +6050,29 @@ function saveSecondDeathUsed(v) {
   pgsScheduleWrite();
 }
 loadSecondDeathUsed();
+// Sirius reveal / death-3 guaranteed-revive one-time flag (v1.10.0 — Stage 3).
+// True once the THIRD-death narrator beat has fired: "???" reveals itself as
+// "Sirius" and revives the player. From then on the narrator is named Sirius
+// permanently, and subsequent qualifying deaths roll the 1-in-20 revive.
+// Mirrors `secondDeathUsed` EXACTLY: localStorage key 'drift_sirius_used' + a
+// PGS payload field, OR-merged, surviving reinstall / cross-device sign-in.
+let siriusUsed = false;
+function loadSiriusUsed() {
+  try { siriusUsed = localStorage.getItem('drift_sirius_used') === '1'; }
+  catch { siriusUsed = false; }
+}
+function saveSiriusUsed(v) {
+  siriusUsed = !!v;
+  try { localStorage.setItem('drift_sirius_used', siriusUsed ? '1' : '0'); } catch {}
+  pgsScheduleWrite();
+}
+loadSiriusUsed();
+// The narrator's on-screen name. "???" until Sirius reveals itself at death 3,
+// then "Sirius" everywhere thereafter (tutorial re-runs, future beats, etc.).
+// The Ascension (death 1) and second-death (death 2) dialogues stay hardcoded
+// "???" since they play BEFORE the reveal; the death-3 reveal sequence itself
+// hardcodes the per-line "???"→"Sirius" flip (the label change IS the reveal).
+function narratorSpeaker() { return siriusUsed ? 'Sirius' : '???'; }
 // Attempt to unlock the given orb's skill tree. Returns true if the
 // purchase succeeded (enough crystals, not already unlocked).
 function purchaseTreeUnlock(orbKey) {
@@ -15672,6 +15698,9 @@ const PGS = (() => {
       // v1.10.0: second-death cutscene one-time flag. OR-merged like rainbowOrbUsed
       // so a player who saw it on one device cannot re-trigger on another.
       secondDeathUsed: !!secondDeathUsed,
+      // v1.10.0 Stage 3: Sirius reveal / death-3 guaranteed-revive flag. OR-merged
+      // like the others so the name reveal can't replay on another device.
+      siriusUsed: !!siriusUsed,
       stats: statsSnapshot,
     };
   }
@@ -15965,6 +15994,13 @@ const PGS = (() => {
       if (payload.secondDeathUsed && !secondDeathUsed) {
         secondDeathUsed = true;
         try { localStorage.setItem('drift_second_death_used', '1'); } catch {}
+      }
+    }
+    // v1.10.0 Stage 3: Sirius reveal flag — OR-merged. Local true never reverts.
+    if (typeof payload.siriusUsed === 'boolean') {
+      if (payload.siriusUsed && !siriusUsed) {
+        siriusUsed = true;
+        try { localStorage.setItem('drift_sirius_used', '1'); } catch {}
       }
     }
     // v1.6.6.3: drift_stats — counters/bests/per-orb/difficulty completions
@@ -22322,6 +22358,10 @@ function resetGame(isResume) {
   // per-orb kill counter on the stats screen while the run still played out.
   ascensionRunActive = false;
   _ascensionElapsedAtStartSec = 0;
+  // v1.10.0 Stage 3: clear per-run Sirius revive state on every fresh run —
+  // the "next death is final" lock and the in-flight flag never carry over.
+  siriusNextDeathFinal = false;
+  siriusReviveActive = false;
   player = { x: W/2, y: H*0.72, vx: 0, vy: 0, angle: 0 };
   trail = []; deathParticles = [];
   lastSpawnZone = -1;
@@ -24848,6 +24888,14 @@ function triggerDeath() {
   // !ascensionRunActive so the Ascension run's own end-death doesn't count.
   if (secondDeathCutsceneEligible()) {
     secondDeathStart();
+    return;
+  }
+  // v1.10.0 Stage 3: SIRIUS REVIVE — death 3 (guaranteed, name reveal) and the
+  // 1-in-20 revives thereafter. Continues the EXACT same run (no reset).
+  // Apocalypse-guarded, post-revive death is final (see siriusReviveEligible).
+  // Placed AFTER the Ascension + second-death checks; gated on !ascensionRunActive.
+  if (siriusReviveEligible()) {
+    siriusBeginRevive();
     return;
   }
   // v1.7.0 game-feel: hard impact spike on death — scaled by cause. The
@@ -29476,7 +29524,7 @@ function render() {
     ctx.globalAlpha = 1;
   }
 
-  if (state==='playing'||state==='dead'||state==='paused'||state==='apocalypse'||state==='devmode'||state==='tutorial'||state==='ascension_predeath'||state==='seconddeath_predeath') {
+  if (state==='playing'||state==='dead'||state==='paused'||state==='apocalypse'||state==='devmode'||state==='tutorial'||state==='ascension_predeath'||state==='seconddeath_predeath'||state==='sirius_predeath') {
     drawBurnZones();
     drawGravityWellLines();
     drawPowerups();
@@ -29856,6 +29904,9 @@ document.getElementById('startBtn').addEventListener('click', ()=>{
     // re-experiences both narrator beats (Ascension on death #1, second-death
     // fake-out on death #2) on the freshly reset profile.
     saveSecondDeathUsed(false);
+    // v1.10.0 Stage 3: clear the Sirius reveal flag too, so the dev tester
+    // re-experiences the death-3 reveal + revive on the freshly reset profile.
+    saveSiriusUsed(false);
     pgsScheduleWrite();
     refreshActiveTreeCache();
     if (typeof refreshOrbBrowser === 'function') { try { refreshOrbBrowser(); } catch {} }
@@ -30396,7 +30447,7 @@ let _tutMockUntil = 0;
 let _tutMockTimer = null;
 function tutType(line, onDone) {
   if (_tutTypeTimer) { clearTimeout(_tutTypeTimer); _tutTypeTimer = null; }
-  _dlgSetSpeaker('???');
+  _dlgSetSpeaker(narratorSpeaker());
   _dlgShowContinue(false);
   const full = line || '';
   let shown = 0;
@@ -30430,7 +30481,7 @@ function tutMock(step) {
 // wants, all spoken by '???'.
 function tutLines(v) {
   const arr = Array.isArray(v) ? v : [v];
-  return arr.map(s => ['???', s]);
+  return arr.map(s => [narratorSpeaker(), s]);
 }
 // Overlay mode: 'tap' = pointer-events on, tap-to-continue (say/demo beats);
 // 'hold' = pointer-events OFF so canvas touches reach the giant hold-buttons,
@@ -30440,7 +30491,7 @@ function tutSetOverlayMode(mode) {
   if (!ov) return;
   ov.classList.add('visible');
   ov.classList.toggle('tut-hold', mode === 'hold');
-  _dlgSetSpeaker('???');
+  _dlgSetSpeaker(narratorSpeaker());
 }
 
 function tutorialEnterStep(idx) {
@@ -30468,7 +30519,7 @@ function tutorialEnterStep(idx) {
     catch (err) { console.error('[tutorial] demo activate threw', err); }
   }
   if (step.kind === 'walls') tutorialWallFlashUntil = Date.now() + 2600;
-  dialogueStart(tutLines(step.lines), { defaultSpeaker: '???', onComplete: tutorialAdvance });
+  dialogueStart(tutLines(step.lines), { defaultSpeaker: narratorSpeaker(), onComplete: tutorialAdvance });
 }
 
 // v1.6.4 Fix 2: shared cleanup of every active gameplay effect at step
@@ -30555,7 +30606,7 @@ function tutHoldSucceed(step) {
   if (_tutMockTimer) { clearTimeout(_tutMockTimer); _tutMockTimer = null; }
   try { if (SFX.clickPrimary) SFX.clickPrimary(); } catch {}
   tutSetOverlayMode('tap');
-  dialogueStart(tutLines(step.success), { defaultSpeaker: '???', onComplete: tutorialAdvance });
+  dialogueStart(tutLines(step.success), { defaultSpeaker: narratorSpeaker(), onComplete: tutorialAdvance });
 }
 
 // Free-play practice finished (gift grabbed or timed out): tear down the
@@ -30570,7 +30621,7 @@ function tutFreeplaySucceed(step) {
   try { tutorialClearActiveEffects(); } catch {}
   tutPinOrbHome();
   tutSetOverlayMode('tap');
-  dialogueStart(tutLines(step.success), { defaultSpeaker: '???', onComplete: tutorialAdvance });
+  dialogueStart(tutLines(step.success), { defaultSpeaker: narratorSpeaker(), onComplete: tutorialAdvance });
 }
 
 // Per-frame gate for the interactive ('hold' / 'freeplay') steps. say/demo/
@@ -30930,7 +30981,11 @@ function dialogueStart(lines, opts) {
   dlgActive = true;
   dlgOnComplete = opts.onComplete || null;
   dlgSubstitute = opts.substitute || null;
-  dlgDefaultSpeaker = opts.defaultSpeaker || '???';
+  // v1.10.0 Stage 3: the narrator default-speaker fallback flips "???" → "Sirius"
+  // after the death-3 reveal, so any bare-string narrator line stays consistent.
+  // (Explicit per-line speakers in the one-time pre-reveal ascension/second-death
+  // beats are untouched — they correctly show "???" since they precede the reveal.)
+  dlgDefaultSpeaker = opts.defaultSpeaker || narratorSpeaker();
   dlgTypeInterval = opts.typeIntervalMs || DLG_TYPE_INTERVAL_MS;
   const ov = document.getElementById('ascensionOverlay');
   if (ov) {
@@ -31724,7 +31779,14 @@ function secondDeathFinalize() {
   if (runStartTime) runStartTime = Date.now() - Math.max(0, sdDeathElapsedMs);
   // Run the real death finalization (computes/saves the ACTUAL score). The
   // cutscene never touched score/runStats/planetsPassed, so this is clean.
+  // v1.10.0 Stage 3 fix: this re-entry is death 2 FINALIZING, not a new death —
+  // by now ascensionUsed AND secondDeathUsed are both true, which would make the
+  // Sirius death-3 revive eligible and fire it on the SAME death (chained off the
+  // gag). Guard the re-entry so it runs the plain death path; death 3 then waits
+  // for the player's next genuine collision death.
+  _secondDeathFinalizing = true;
   try { triggerDeath(); } catch (e) { console.error('[seconddeath] finalize triggerDeath threw', e); }
+  finally { _secondDeathFinalizing = false; }
   // Lift the blackout once the death screen has fully faded in BEHIND it
   // (triggerDeath un-hides #overlay at +800ms; its opacity fade is 0.6s → ~1400ms).
   // Holding the black through +1500ms means the reveal is a clean hard cut to a
@@ -31744,6 +31806,255 @@ function secondDeathAbort() {
   _sdClearTimers();
   dialogueStop();
   sdPlanets = []; sdStreaks = [];
+  ascensionParticles = []; ascensionFlashUntil = 0;
+  const ov = document.getElementById('ascensionOverlay');
+  if (ov) { ov.classList.remove('visible'); ov.classList.remove('blackout'); ov.classList.remove('sd-scene'); ov.classList.remove('particle-phase'); }
+}
+
+// =====================================================================
+// SIRIUS REVIVE (v1.10.0 — Stage 3): the third narrator beat + true revive.
+// =====================================================================
+// On the player's THIRD death ever, "???" reveals itself as "Sirius" and
+// revives the player FOR REAL — the EXACT same run continues (score, kills,
+// streak, run timer, orb, skill tree all preserved; nothing resets). After
+// that, every qualifying collision death has a 1-in-20 chance to revive again.
+//
+// Continuity approach (mirrors the Ascension resume): the death is intercepted
+// in triggerDeath() BEFORE any score/stats/leaderboard finalization runs, the
+// world is FROZEN in a custom state (update() early-returns for non-'playing'),
+// the dialogue + resurrect play, then state flips straight back to 'playing'.
+// Because triggerDeath() never reached the normal death path, the run's score /
+// runStats / planetsPassed / destroyStreak / runStartTime are untouched — the
+// run simply continues. The run clock is rewound by the cutscene wall-time so
+// survival time stays continuous (same trick as the Ascension/second-death
+// runStartTime restore).
+//
+// The granted powerups (Phantom Rush = hyperspeed+ghost combo, Nova Blast =
+// nova) ARE the death-protection: the hyperspeed barrier + ghost intangibility
+// make checkCollisions() non-lethal on the resume frame, and the nova clears
+// immediate threats. A short GRACE_DURATION_MS window backs that up.
+//
+// Force-quit during the revive: clearResumeState() is called at revive start
+// (exactly like the other cutscenes), so there is NO resume snapshot — an
+// interrupted/killed revive is simply run-over on relaunch (clean, no
+// half-revived state). A menu transition mid-revive routes through
+// siriusReviveAbort() (called from goToMainMenu).
+let siriusReviveActive = false;     // transient: true while the revive cutscene plays
+let siriusNextDeathFinal = false;   // per-run: after a revive, the next death is final
+let siriusRevealPending = false;    // this revive is the death-3 reveal (vs a 1-in-20)
+let siriusReviveElapsedMs = 0;      // run-clock snapshot (so cutscene time is "free")
+let siriusDeathX = 0, siriusDeathY = 0;
+let siriusTimers = [];
+let _siriusLastLineIdx = -1;        // random-pool no-immediate-repeat
+// True only while secondDeathFinalize()'s re-entry into triggerDeath() runs, so
+// that finalize (death 2 wrapping up) can't be mistaken for a NEW death and
+// trigger the Sirius death-3 revive on the same death event.
+let _secondDeathFinalizing = false;
+// TEMPORARY debug toggle (search "_SIRIUS_DEBUG_FORCE_REVIVE" to remove before
+// release). When on, every qualifying death (past beats 1 & 2) revives —
+// bypassing BOTH the 1-in-20 roll AND the next-death-final lock — so the revive
+// path + the random dialogue pool can be cycled rapidly for testing. Enable via
+// console: siriusDebugForceRevive(true), or localStorage drift_force_revive='1'.
+let _SIRIUS_DEBUG_FORCE_REVIVE = false;
+try { _SIRIUS_DEBUG_FORCE_REVIVE = localStorage.getItem('drift_force_revive') === '1'; } catch {}
+if (typeof window !== 'undefined') {
+  window.siriusDebugForceRevive = function (on) {
+    _SIRIUS_DEBUG_FORCE_REVIVE = !!on;
+    try { localStorage.setItem('drift_force_revive', on ? '1' : '0'); } catch {}
+    return _SIRIUS_DEBUG_FORCE_REVIVE;
+  };
+}
+const SIRIUS_PREDEATH_MS  = 1700;   // death animation before the narrator speaks
+const SIRIUS_RESURRECT_MS = 1700;   // orb-colour convergence window
+
+function _siriusTimeout(fn, ms) { const id = setTimeout(fn, ms); siriusTimers.push(id); return id; }
+function _siriusClearTimers() { for (const id of siriusTimers) { try { clearTimeout(id); } catch {} } siriusTimers = []; }
+
+// Death-3 reveal sequence: "???" for the first two lines, then "Sirius" (the
+// label flip IS the reveal). {player} → pilot name via siriusSubstitute.
+const SIRIUS_REVEAL_DIALOGUE = [
+  ['???',    'Aah, little {player}... don’t worry.'],
+  ['???',    'Sirius is here to save the day. ...Yes, THE Sirius. The BRIGHTEST star in the sky!'],
+  ['Sirius', 'The strongest being known to the universe!'],
+  ['Sirius', 'What do you mean I should just beat the Void myself? I mean... I could. If I wanted to. ...Shut up.'],
+  ['Sirius', 'RISE, LITTLE LIGHT! RISE AND SHINE!'],
+];
+// 1-in-20 subsequent revives — Sirius is already known, so these are short and
+// play off him reluctantly doing it again. Picked at random (no immediate repeat).
+const SIRIUS_REVIVE_POOL = [
+  ['Sirius', 'Ugh, AGAIN? Fine. Rise.'],
+  ['Sirius', 'You’re lucky I’m bored. Up you go.'],
+  ['Sirius', 'Don’t make this a habit, {player}. ...RISE.'],
+  ['Sirius', 'This is the last time. (It is never the last time.) Rise!'],
+  ['Sirius', 'I felt like being generous. Don’t waste it. Rise, little light.'],
+  ['Sirius', '*sigh* ...the things I do. Get up.'],
+];
+function siriusSubstitute(text) { return String(text).split('{player}').join(ascensionPilotName()); }
+function pickSiriusReviveLine() {
+  let i = 0;
+  if (SIRIUS_REVIVE_POOL.length > 1) {
+    do { i = Math.floor(Math.random() * SIRIUS_REVIVE_POOL.length); }
+    while (i === _siriusLastLineIdx);
+  }
+  _siriusLastLineIdx = i;
+  return SIRIUS_REVIVE_POOL[i];
+}
+// Orb-dependent resurrect colour — same colour a normal death produces for the
+// current orb (activeOrbColor()). Returns [h,s,l] for convergeReform's hslFn.
+function _siriusOrbHsl() {
+  const parts = (activeOrbColor() || '125,232,255').split(',').map(n => Math.max(0, Math.min(255, parseInt(n, 10) | 0)) / 255);
+  const r = parts[0] || 0, g = parts[1] || 0, b = parts[2] || 0;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  let h = 0, s = 0; const l = (max + min) / 2;
+  if (max !== min) {
+    const d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    if (max === r) h = (g - b) / d + (g < b ? 6 : 0);
+    else if (max === g) h = (b - r) / d + 2;
+    else h = (r - g) / d + 4;
+    h /= 6;
+  }
+  return [Math.round(h * 360), Math.round(s * 100), Math.round(l * 100)];
+}
+
+// Eligibility — checked once per death in triggerDeath(), AFTER the Ascension +
+// second-death checks. The single Math.random() roll happens here (can't
+// re-roll within the same death; the next-death-final lock prevents chaining).
+function siriusReviveEligible() {
+  if (apocalypseDeathFlag) return false;                 // never on an apocalypse run-ending
+  if (!tutorialCompleted) return false;
+  if (ascensionRunActive) return false;                  // the Ascension run's own end-death is excluded
+  if (_secondDeathFinalizing) return false;              // death 2's finalize re-entry isn't a new death
+  if (ascensionCutsceneActive || secondDeathActive || siriusReviveActive) return false;
+  // TEMPORARY debug: force a revive on every qualifying death (bypasses the
+  // 1-in-20 roll AND the next-death-final lock). See _SIRIUS_DEBUG_FORCE_REVIVE.
+  if (_SIRIUS_DEBUG_FORCE_REVIVE && ascensionUsed && secondDeathUsed) return true;
+  if (siriusNextDeathFinal) return false;                // the death AFTER any revive is final
+  if (!ascensionUsed || !secondDeathUsed) return false;  // must be past narrator beats 1 & 2
+  if (!siriusUsed) return true;                          // DEATH 3 → guaranteed reveal + revive
+  return Math.random() < 0.05;                           // thereafter: 1-in-20 (5%)
+}
+
+// Entry — called from triggerDeath(). Plays the death animation (like the other
+// cutscenes), then opens the dialogue. Locks the reveal flag immediately on the
+// death-3 beat so an interrupted reveal can't replay.
+function siriusBeginRevive() {
+  if (siriusReviveActive) return;
+  siriusReviveActive = true;
+  siriusRevealPending = !siriusUsed;          // death-3 reveal vs a later 1-in-20
+  if (siriusRevealPending) saveSiriusUsed(true); // lock + reveal the name permanently
+  // Snapshot the real run length so the cutscene wall-time doesn't inflate
+  // TIME SURVIVED / progression once the run resumes.
+  siriusReviveElapsedMs = runStartTime ? (Date.now() - runStartTime) : 0;
+  siriusDeathX = (typeof player !== 'undefined' && player) ? player.x : (W / 2);
+  siriusDeathY = (typeof player !== 'undefined' && player) ? player.y : (H / 2);
+  // Death feel + animation (never apocalypse here — guarded out of eligibility).
+  shakePlayerDeath(lastDeathCause || 'body');
+  triggerHitstop(100);
+  clearResumeState();                          // interrupted revive → run-over on relaunch
+  try { SFX.death(); } catch {}
+  try { SFX.stopAllGameplayTracks(0.2); } catch {}
+  try { SFX.playTrack(null, 0.3); } catch {}
+  pauseBtn.classList.remove('visible');
+  if (typeof AdManager !== 'undefined') try { AdManager.hideBanner(); } catch {}
+  // Clear transient gameplay visuals (NOT bodies / score / stats) so the cutscene
+  // reads clean — same helper the second-death cutscene uses. The run's bodies
+  // stay in place so the field is continuous when play resumes.
+  secondDeathClearTransients();
+  spawnDeathShards(player.x, player.y);
+  deathFlashFrames = 1;
+  activeEffects = { shield: 0, hyperspeed: 0, ghost: 0 };
+  shieldEndTime = 0; ghostEndTime = 0; hyperspeedEndTime = 0;
+  hyperSpeedStacks = 0; hyperspeedCurrentMult = 1; hyperspeedTargetSpeed = 0;
+  if (hyperspeedWhooshNodes) { try { hyperspeedWhooshNodes.stop(0.1); } catch {} hyperspeedWhooshNodes = null; }
+  shieldBroken = false; shieldHits = 0; fortressShield = false;
+  activeCombos = {}; lastComboLabel = null;
+  clearPendingNovaTimeouts();
+  if (pendingDeathBurstTimer) { clearTimeout(pendingDeathBurstTimer); pendingDeathBurstTimer = null; }
+  // Frozen world: update() early-returns on this state; render keeps animating.
+  state = 'sirius_predeath';
+  _siriusTimeout(() => { if (state === 'sirius_predeath') siriusDialogue(); }, SIRIUS_PREDEATH_MS);
+}
+
+// Beat 1 — narrator dialogue over the dimmed, frozen field.
+function siriusDialogue() {
+  if (!siriusReviveActive) return;
+  state = 'sirius_cutscene';
+  // Clear residual death visuals so the canvas reads clean behind the text.
+  deathParticles = []; deathShards = []; deathFlashFrames = 0;
+  if (pendingDeathBurstTimer) { clearTimeout(pendingDeathBurstTimer); pendingDeathBurstTimer = null; }
+  pickupParticles = []; orbTrailParticles = []; destroyEffects = [];
+  ascensionParticles = []; ascensionFlashUntil = 0;
+  const overlayEl = document.getElementById('overlay');
+  if (overlayEl) overlayEl.classList.add('hidden');
+  const lines = siriusRevealPending ? SIRIUS_REVEAL_DIALOGUE : [pickSiriusReviveLine()];
+  dialogueStart(lines, { substitute: siriusSubstitute, onComplete: siriusResurrect });
+}
+
+// Beat 2 — orb-coloured resurrection convergence (reuses convergeReform).
+function siriusResurrect() {
+  if (!siriusReviveActive) return;
+  state = 'sirius_resurrect';
+  _dlgShowContinue(false); _dlgSetSpeaker(''); _dlgSetText('');
+  // Full-brightness backdrop (transparent) so the particles read at full intensity.
+  const ov = document.getElementById('ascensionOverlay');
+  if (ov) { ov.classList.remove('particle-phase'); ov.classList.add('sd-scene'); }
+  try { SFX.playTrack('gameplay', 0.8); } catch {}
+  const base = _siriusOrbHsl();
+  convergeReform(siriusDeathX, siriusDeathY, {
+    count: 90,
+    durationMs: SIRIUS_RESURRECT_MS,
+    hslFn: function () { return [base[0], base[1], Math.max(40, Math.min(82, base[2] + (Math.random() * 26 - 8)))]; },
+    flashHS: [base[0], base[1]],
+  });
+  try { SFX.playSfxBuffer('hyperspeedBarrier', 0.5); } catch {}
+  // +450ms lets the "orb reformed" flash finish before the run resumes.
+  _siriusTimeout(siriusResumeRun, SIRIUS_RESURRECT_MS + 450);
+}
+
+// Beat 3 — the SAME run resumes. Nothing about score/stats/streak/orb/tree is
+// touched; we just unfreeze and grant the protective powerups.
+function siriusResumeRun() {
+  if (!siriusReviveActive) return;
+  const ov = document.getElementById('ascensionOverlay');
+  if (ov) { ov.classList.remove('visible'); ov.classList.remove('particle-phase'); ov.classList.remove('sd-scene'); ov.classList.remove('blackout'); }
+  dialogueStop();
+  ascensionParticles = []; ascensionFlashUntil = 0;
+  // Reseat the player at the death point and stop residual velocity.
+  player.x = siriusDeathX; player.y = siriusDeathY; player.vx = 0; player.vy = 0;
+  // Rewind the run clock by the cutscene wall-time → survival time is continuous.
+  runStartTime = Date.now() - Math.max(0, siriusReviveElapsedMs);
+  // The next death is final (no chained revive) until a fresh run resets it.
+  siriusNextDeathFinal = true;
+  siriusReviveActive = false;
+  siriusRevealPending = false;
+  // Resume the EXACT run.
+  state = 'playing';
+  pauseBtn.classList.add('visible');
+  if (typeof AdManager !== 'undefined') try { AdManager.hideBanner(); } catch {}
+  // Grant the protective powerups exactly as if triggered normally. Applied via
+  // the core paths (not the auto-combo pickup path) so they don't cross-combo:
+  //   PHANTOM RUSH = hyperspeed + ghost combo (Spectral Rush): barrier + intangibility
+  //   NOVA BLAST   = a full nova: clears immediate surrounding threats
+  try {
+    rawActivate('hyperspeed', player.x, player.y);
+    rawActivate('ghost', player.x, player.y);
+    activateCombo('hyperspeed_ghost', player.x, player.y);
+    try { if (SFX.comboActivate) SFX.comboActivate('hyperspeed_ghost'); } catch {}
+    rawActivate('nova', player.x, player.y);
+  } catch (e) { console.error('[sirius] powerup grant threw', e); }
+  // Grace window backs up the barrier/ghost so the resume frame can't insta-kill.
+  graceEndTime = Date.now() + GRACE_DURATION_MS;
+}
+
+// Defensive abort (menu/reset mid-revive): stop timers + dialogue, hide overlay,
+// clear state. Does NOT resume — the caller is leaving the run.
+function siriusReviveAbort() {
+  if (!siriusReviveActive) return;
+  siriusReviveActive = false;
+  siriusRevealPending = false;
+  _siriusClearTimers();
+  dialogueStop();
   ascensionParticles = []; ascensionFlashUntil = 0;
   const ov = document.getElementById('ascensionOverlay');
   if (ov) { ov.classList.remove('visible'); ov.classList.remove('blackout'); ov.classList.remove('sd-scene'); ov.classList.remove('particle-phase'); }
@@ -32063,6 +32374,7 @@ function goToMainMenu() {
   // timers + dialogue, hides the overlay). The one-time flag was already locked
   // when the cutscene began, so it can't re-trigger regardless.
   if (typeof secondDeathAbort === 'function') secondDeathAbort();
+  if (typeof siriusReviveAbort === 'function') siriusReviveAbort();
   // v1.10.0: defensively dismiss the narrator overlay. Both the rebuilt
   // tutorial and the ascension/second-death dialogue drive #ascensionOverlay;
   // if a run (or tutorial) is interrupted into the menu, make sure it can't be
@@ -34283,7 +34595,19 @@ function formatTreeNumbers(escaped) {
 // attributes containing digits that the number regex must not re-scan.
 function formatNodeDesc(raw) {
   let s = escTreeHtml(raw || '');
-  s = s.replace(/^(KEYSTONE|CAPSTONE)\b/, '<span class="tree-type-label">$1</span>');
+  // Pull the leading KEYSTONE/CAPSTONE label — AND its "(N pts)" budget cost, if
+  // present — onto its own gold line (the span is display:block). Extracting it
+  // up front (rather than wrapping in place) keeps the number/term colour passes
+  // OFF the label, so "(N pts)" stays gold and the body below starts cleanly
+  // with the actual effect text.
+  let labelHtml = '';
+  s = s.replace(/^(KEYSTONE|CAPSTONE)(\s*\([^)]*\))?[.:]?\s*/, (m, type, pts) => {
+    labelHtml = `<span class="tree-type-label">${type}${pts || ''}</span>`;
+    return '';
+  });
+  // Numbers + terms on the BODY only. Order matters: numbers BEFORE terms,
+  // because term spans inject colour attributes containing digits that the
+  // number regex must not re-scan.
   s = s.replace(TREE_NUM_RE, (full) => `<span class="tree-num">${full}</span>`);
   s = s.replace(TREE_TERM_RE, (full) => {
     const key = treeTermKey(full.toLowerCase());
@@ -34291,13 +34615,17 @@ function formatNodeDesc(raw) {
     const rgb = TREE_TERM_COLOR[key] || '125,232,255';
     return `<span class="tree-term" data-gloss="${key}" style="color:rgba(${rgb},1)">${full}</span>`;
   });
-  return s;
+  return labelHtml + s;
 }
 function showTreeGlossary(key) {
   const blurb = TREE_GLOSSARY[key];
   if (!blurb) return;
   const el = document.getElementById('treeGlossaryText');
   if (el) el.innerHTML = blurb;
+  // v1.10.0 Stage 3: the narrator's name flips "???" → "Sirius" after the
+  // death-3 reveal, same as the tutorial + death dialogue.
+  const sp = document.getElementById('treeGlossarySpeaker');
+  if (sp) sp.textContent = narratorSpeaker();
   document.getElementById('treeGlossary').classList.add('visible');
 }
 function closeTreeGlossary() {
@@ -34323,7 +34651,12 @@ function _renderTreeDetail_default() {
     let ranksHtml = '';
     for (let r = 1; r <= node.max; r++) {
       const cls = r <= current ? 'current' : (r === current + 1 ? 'next' : '');
-      const rowText = `Rank ${r}: ${node.effect(r)} · ${formatCrystals(nodeCost(node.tier, r, t.orbKey, node))} 💎`;
+      // v1.10.0: every node is single-rank since the active-budget rework, so a
+      // "Rank 1:" prefix is meaningless. Keep the useful effect-summary + cost;
+      // only prefix the rank number for genuinely multi-rank nodes (none today,
+      // but future-proof).
+      const _rankPrefix = node.max > 1 ? `Rank ${r}: ` : '';
+      const rowText = `${_rankPrefix}${node.effect(r)} · ${formatCrystals(nodeCost(node.tier, r, t.orbKey, node))} 💎`;
       ranksHtml += `<div class="rank-row ${cls}">${formatTreeNumbers(escTreeHtml(rowText))}</div>`;
     }
     ranksEl.innerHTML = ranksHtml;
