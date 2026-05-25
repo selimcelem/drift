@@ -2133,8 +2133,12 @@
   }
   #treeNodeDetail.visible { display: flex; }
   .tree-detail-inner {
-    max-width: 420px;
+    max-width: 440px;
     width: 100%;
+    /* v1.10.0: let long descriptions grow taller and scroll instead of
+       clipping off-screen, so nothing gets cramped on small viewports. */
+    max-height: calc(100vh - 40px);
+    overflow-y: auto;
     background: rgba(10,12,24,0.95);
     border: 1px solid rgba(255,255,255,0.22);
     border-radius: 6px;
@@ -2145,28 +2149,54 @@
     gap: 10px;
   }
   .tree-detail-title {
+    /* Display font (analogous to the reference's Audiowide) — thematic. */
     font-family: 'Orbitron', monospace;
-    font-size: 14px;
+    font-size: 15px;
     letter-spacing: 3px;
     text-transform: uppercase;
   }
+  /* v1.10.0 description overhaul: body switches to a clean, highly-readable
+     sans (reference used Calibri) — READABILITY first for the dense prose.
+     Numbers/math, the keystone/capstone TYPE label, and clickable glossary
+     terms get their own colors so dense text is easy to scan. */
   .tree-detail-desc {
+    font-family: Arial, 'Helvetica Neue', 'Segoe UI', Roboto, sans-serif;
+    font-size: 13.5px;
+    letter-spacing: 0.2px;
+    color: rgba(228,234,242,0.96);
+    line-height: 1.62;
+  }
+  /* Numbers / durations / cooldowns / costs / multipliers — green, like the
+     reference, so the math jumps out of the prose. */
+  .tree-num { color: rgba(125,225,150,1); font-weight: 700; }
+  /* The node TYPE (KEYSTONE / CAPSTONE) — distinct gold, so it reads as the
+     node's category at a glance. */
+  .tree-type-label {
     font-family: 'Orbitron', monospace;
-    font-size: 10px;
-    letter-spacing: 1px;
-    color: rgba(255,255,255,0.7);
-    line-height: 1.6;
+    color: rgba(255,200,90,1);
+    font-weight: 700;
+    letter-spacing: 1.5px;
+  }
+  /* Clickable glossary terms — coloured (by powerup theme where applicable),
+     bold, with a dotted underline to signal "tap me." */
+  .tree-term {
+    font-weight: 700;
+    text-decoration: underline;
+    text-decoration-style: dotted;
+    text-underline-offset: 2px;
+    cursor: pointer;
   }
   .tree-detail-ranks {
-    font-family: 'Orbitron', monospace;
-    font-size: 10px;
-    letter-spacing: 1.5px;
+    font-family: Arial, 'Helvetica Neue', 'Segoe UI', Roboto, sans-serif;
+    font-size: 12px;
+    letter-spacing: 0.3px;
     color: rgba(220,200,255,0.85);
+    line-height: 1.5;
     padding: 8px 0;
     border-top: 1px solid rgba(255,255,255,0.15);
     border-bottom: 1px solid rgba(255,255,255,0.15);
   }
-  .tree-detail-ranks .rank-row { margin: 2px 0; }
+  .tree-detail-ranks .rank-row { margin: 3px 0; }
   .tree-detail-ranks .rank-row.current { color: rgba(180,240,255,1); }
   .tree-detail-ranks .rank-row.next    { color: rgba(255,220,140,1); }
   /* v1.8.1: 3-column grid with equal fixed cells so the UPGRADE / RESPEC /
@@ -2218,6 +2248,51 @@
     flex-direction: column;
     gap: 12px;
   }
+
+  /* v1.10.0 clickable-glossary popup — the "???" narrator explaining a term in
+     their usual wry/mocking voice. Sits above the node-detail + confirm modals. */
+  #treeGlossary {
+    position: fixed;
+    inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0,0,8,0.78);
+    backdrop-filter: blur(6px);
+    z-index: 39;
+    padding: 24px;
+  }
+  #treeGlossary.visible { display: flex; }
+  .tree-glossary-inner {
+    max-width: 340px;
+    width: 100%;
+    background: rgba(8,10,22,0.98);
+    border: 1px solid rgba(120,180,220,0.4);
+    border-radius: 8px;
+    box-shadow: 0 0 32px rgba(0,0,12,0.7);
+    padding: 20px 22px 18px;
+    text-align: left;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .tree-glossary-speaker {
+    font-family: 'Orbitron', monospace;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 6px;
+    color: rgba(180,240,255,0.85);
+    text-transform: uppercase;
+    text-shadow: 0 0 20px rgba(120,200,255,0.5);
+  }
+  .tree-glossary-text {
+    font-family: Arial, 'Helvetica Neue', 'Segoe UI', Roboto, sans-serif;
+    font-size: 14px;
+    line-height: 1.6;
+    color: rgba(230,238,248,0.96);
+  }
+  .tree-glossary-text b { color: rgba(180,240,255,1); }
+  #treeGlossaryClose { align-self: flex-end; min-width: 110px; }
 
   /* Generic styled-confirm modal — reused for main-menu orb tree unlock
      and any other pre-gameplay confirmation. Mirrors #treeConfirm style
@@ -3417,10 +3492,21 @@
       <div class="tree-confirm-inner">
         <div class="tree-detail-title" id="treeConfirmTitle">CONFIRM</div>
         <div class="tree-detail-desc" id="treeConfirmMsg"></div>
-        <div class="tree-detail-actions" style="justify-content:center">
+        <!-- v1.10.0: two balanced columns so CONFIRM sits left and CANCEL
+             right, instead of both crammed into the left of the 3-col grid. -->
+        <div class="tree-detail-actions" style="grid-template-columns:1fr 1fr">
           <button class="tree-btn respec-full" id="treeConfirmYes">CONFIRM</button>
           <button class="tree-btn close" id="treeConfirmNo">CANCEL</button>
         </div>
+      </div>
+    </div>
+    <!-- v1.10.0 clickable-glossary popup: the "???" narrator explains a tapped
+         term. Populated + shown by showTreeGlossary(). -->
+    <div id="treeGlossary">
+      <div class="tree-glossary-inner">
+        <div class="tree-glossary-speaker">???</div>
+        <div class="tree-glossary-text" id="treeGlossaryText"></div>
+        <button class="tree-btn close" id="treeGlossaryClose">GOT IT</button>
       </div>
     </div>
   </div>
@@ -9147,7 +9233,7 @@ ORB_BEHAVIOR.drifterV2.renderTreeDetail = function() {
       upBtn.textContent = 'BUDGET FULL';
       upBtn.disabled = true;
     } else {
-      upBtn.textContent = `ACTIVATE (${pointCost} PT${pointCost > 1 ? 'S' : ''})`;
+      upBtn.textContent = 'ACTIVATE';
       upBtn.disabled = false;
     }
     upBtn.onclick = () => {
@@ -9178,7 +9264,7 @@ ORB_BEHAVIOR.drifterV2.renderTreeDetail = function() {
   } else {
     // Active — show DEACTIVATE.
     upBtn.style.visibility = '';
-    upBtn.textContent = `DEACTIVATE (FREES ${pointCost} PT${pointCost > 1 ? 'S' : ''})`;
+    upBtn.textContent = 'DEACTIVATE';
     upBtn.disabled = false;
     upBtn.onclick = () => {
       _drifterV2_deactivate(node.key);
@@ -9420,7 +9506,7 @@ ORB_BEHAVIOR.cyan.renderTreeDetail = function() {
       upBtn.textContent = 'BUDGET FULL';
       upBtn.disabled = true;
     } else {
-      upBtn.textContent = `ACTIVATE (${pointCost} PT${pointCost > 1 ? 'S' : ''})`;
+      upBtn.textContent = 'ACTIVATE';
       upBtn.disabled = false;
     }
     upBtn.onclick = () => {
@@ -9442,7 +9528,7 @@ ORB_BEHAVIOR.cyan.renderTreeDetail = function() {
     }
   } else {
     upBtn.style.visibility = '';
-    upBtn.textContent = `DEACTIVATE (FREES ${pointCost} PT${pointCost > 1 ? 'S' : ''})`;
+    upBtn.textContent = 'DEACTIVATE';
     upBtn.disabled = false;
     upBtn.onclick = () => {
       ActiveBudget.deactivate('cyan', node.key);
@@ -9674,7 +9760,7 @@ ORB_BEHAVIOR.cosmic.renderTreeDetail = function() {
       upBtn.textContent = 'BUDGET FULL';
       upBtn.disabled = true;
     } else {
-      upBtn.textContent = `ACTIVATE (${pointCost} PT${pointCost > 1 ? 'S' : ''})`;
+      upBtn.textContent = 'ACTIVATE';
       upBtn.disabled = false;
     }
     upBtn.onclick = () => {
@@ -9696,7 +9782,7 @@ ORB_BEHAVIOR.cosmic.renderTreeDetail = function() {
     }
   } else {
     upBtn.style.visibility = '';
-    upBtn.textContent = `DEACTIVATE (FREES ${pointCost} PT${pointCost > 1 ? 'S' : ''})`;
+    upBtn.textContent = 'DEACTIVATE';
     upBtn.disabled = false;
     upBtn.onclick = () => {
       ActiveBudget.deactivate('cosmic', node.key);
@@ -9928,7 +10014,7 @@ ORB_BEHAVIOR.solar.renderTreeDetail = function() {
       upBtn.textContent = 'BUDGET FULL';
       upBtn.disabled = true;
     } else {
-      upBtn.textContent = `ACTIVATE (${pointCost} PT${pointCost > 1 ? 'S' : ''})`;
+      upBtn.textContent = 'ACTIVATE';
       upBtn.disabled = false;
     }
     upBtn.onclick = () => {
@@ -9950,7 +10036,7 @@ ORB_BEHAVIOR.solar.renderTreeDetail = function() {
     }
   } else {
     upBtn.style.visibility = '';
-    upBtn.textContent = `DEACTIVATE (FREES ${pointCost} PT${pointCost > 1 ? 'S' : ''})`;
+    upBtn.textContent = 'DEACTIVATE';
     upBtn.disabled = false;
     upBtn.onclick = () => {
       ActiveBudget.deactivate('solar', node.key);
@@ -10182,7 +10268,7 @@ ORB_BEHAVIOR.nebula.renderTreeDetail = function() {
       upBtn.textContent = 'BUDGET FULL';
       upBtn.disabled = true;
     } else {
-      upBtn.textContent = `ACTIVATE (${pointCost} PT${pointCost > 1 ? 'S' : ''})`;
+      upBtn.textContent = 'ACTIVATE';
       upBtn.disabled = false;
     }
     upBtn.onclick = () => {
@@ -10204,7 +10290,7 @@ ORB_BEHAVIOR.nebula.renderTreeDetail = function() {
     }
   } else {
     upBtn.style.visibility = '';
-    upBtn.textContent = `DEACTIVATE (FREES ${pointCost} PT${pointCost > 1 ? 'S' : ''})`;
+    upBtn.textContent = 'DEACTIVATE';
     upBtn.disabled = false;
     upBtn.onclick = () => {
       ActiveBudget.deactivate('nebula', node.key);
@@ -10436,7 +10522,7 @@ ORB_BEHAVIOR.asteroid.renderTreeDetail = function() {
       upBtn.textContent = 'BUDGET FULL';
       upBtn.disabled = true;
     } else {
-      upBtn.textContent = `ACTIVATE (${pointCost} PT${pointCost > 1 ? 'S' : ''})`;
+      upBtn.textContent = 'ACTIVATE';
       upBtn.disabled = false;
     }
     upBtn.onclick = () => {
@@ -10458,7 +10544,7 @@ ORB_BEHAVIOR.asteroid.renderTreeDetail = function() {
     }
   } else {
     upBtn.style.visibility = '';
-    upBtn.textContent = `DEACTIVATE (FREES ${pointCost} PT${pointCost > 1 ? 'S' : ''})`;
+    upBtn.textContent = 'DEACTIVATE';
     upBtn.disabled = false;
     upBtn.onclick = () => {
       ActiveBudget.deactivate('asteroid', node.key);
@@ -12332,7 +12418,7 @@ ORB_BEHAVIOR.phantomV2.renderTreeDetail = function() {
       upBtn.textContent = 'BUDGET FULL';
       upBtn.disabled = true;
     } else {
-      upBtn.textContent = `ACTIVATE (${pointCost} PT${pointCost > 1 ? 'S' : ''})`;
+      upBtn.textContent = 'ACTIVATE';
       upBtn.disabled = false;
     }
     upBtn.onclick = () => {
@@ -12360,7 +12446,7 @@ ORB_BEHAVIOR.phantomV2.renderTreeDetail = function() {
     }
   } else {
     upBtn.style.visibility = '';
-    upBtn.textContent = `DEACTIVATE (FREES ${pointCost} PT${pointCost > 1 ? 'S' : ''})`;
+    upBtn.textContent = 'DEACTIVATE';
     upBtn.disabled = false;
     upBtn.onclick = () => {
       _phantomV2_deactivate(node.key);
@@ -34125,6 +34211,99 @@ function closeTreeDetail() {
   treeDetailCurrent = null;
   document.getElementById('treeNodeDetail').classList.remove('visible');
 }
+// =====================================================================
+// SKILL-TREE DESCRIPTION FORMATTING + CLICKABLE GLOSSARY (v1.10.0)
+// =====================================================================
+// Shared by the default renderer (so it applies to EVERY orb's tree). Turns a
+// plain node.desc string into rich HTML: a coloured KEYSTONE/CAPSTONE type
+// label, green numbers/math, and clickable glossary terms that pop a small
+// "???" narrator blurb. Built once here, not per-orb.
+
+// Per-term display colour (powerup terms use their in-game powerup colour;
+// generic mechanics use a neutral cyan/accent).
+const TREE_TERM_COLOR = {
+  shield: '120,230,255', nova: '255,180,80', supernova: '255,120,120',
+  hyperspeed: '255,220,60', ghost: '200,120,255', burst: '125,232,255',
+  single: '150,225,255', pair: '150,225,255', powerup: '150,225,255',
+  emp: '255,200,120', streak: '255,170,90', stack: '255,220,60',
+};
+
+// Glossary copy — wry/mocking "???" narrator voice; the term itself is bolded
+// at the end (reference-style). HTML is our own constant text (safe to inject).
+const TREE_GLOSSARY = {
+  burst: "Burst is... you know, when you press LEFT and RIGHT at the same time? You still don't know this? It squeezes a free powerup out of nothing. <b>Burst.</b>",
+  single: "Single. Like one. Uno. Ein. Ichi. Yī. 1. A single powerup. Just one. <b>Single.</b>",
+  pair: "Dos, deux, zwei, due, twee, dvě, ni. Two powerups at once. 1+1=2. That number. That's a <b>pair combo.</b>",
+  shield: "Shield. A bubble of light. It eats exactly one hit, then it's gone — like your focus. Try not to need a second. <b>Shield.</b>",
+  nova: "Nova. It goes BOOM and unmakes whatever's nearby. Aim it at planets. Not, you know, the empty space you keep firing at. <b>Nova.</b>",
+  supernova: "Supernova. It's a nova that's been hitting the gym. Bigger boom, more dead planets. Yes, you want this. <b>Supernova.</b>",
+  hyperspeed: "Hyperspeed. You blur forward behind a barrier that deletes anything it touches. Fast AND a wall. Even you can manage this one. <b>Hyperspeed.</b>",
+  ghost: "Ghost. You stop being solid and planets just... pass through you. Briefly intangible, briefly safe, briefly clever. <b>Ghost.</b>",
+  powerup: "Powerup. The shiny thing you grab to become temporarily less doomed. Grab them. That's the whole tip. <b>Powerup.</b>",
+  emp: "EMP. A shockwave that knocks the wind out of everything around you. Your shield's angrier little cousin. <b>EMP.</b>",
+  streak: "Streak. Destroy planets back-to-back and the points stack up. Hesitate and it's gone — fleeting, like my patience. <b>Streak.</b>",
+  stack: "Stacks. Hyperspeed and shields pile up in layers — more stacks, more of the good stuff. Hoard them. <b>Stacks.</b>",
+};
+
+function escTreeHtml(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+// Normalize a matched word (case/plural) to its glossary key.
+function treeTermKey(matchLower) {
+  const m = matchLower.replace(/\s+/g, ' ').trim();
+  if (m.indexOf('pair combo') === 0 || m === 'pair' || m === 'pairs') return 'pair';
+  if (m === 'single' || m === 'singles') return 'single';
+  if (m === 'burst' || m === 'bursts') return 'burst';
+  if (m === 'shield' || m === 'shields') return 'shield';
+  if (m === 'supernova' || m === 'supernovas') return 'supernova';
+  if (m === 'nova' || m === 'novas') return 'nova';
+  if (m === 'hyperspeed') return 'hyperspeed';
+  if (m === 'ghost' || m === 'ghosts') return 'ghost';
+  if (m === 'powerup' || m === 'powerups') return 'powerup';
+  if (m === 'emp' || m === 'emps') return 'emp';
+  if (m === 'streak' || m === 'streaks') return 'streak';
+  if (m === 'stack' || m === 'stacks') return 'stack';
+  return null;
+}
+// Longest-first alternation so "pair combo" beats "pair", "supernova" beats
+// "nova". Case-insensitive; \b keeps "nova" out of "Supernova" etc.
+const TREE_TERM_RE = /\b(pair combos|pair combo|hyperspeed|supernovas?|powerups?|shields?|bursts?|singles?|pairs?|novas?|ghosts?|streaks?|emps?|stacks?)\b/gi;
+// Numbers / math: signed numbers with optional decimals/commas + an optional
+// trailing unit (only units that can't be confused with a word — the (?![A-Za-z])
+// lookahead stops "s" in "shield" from matching), plus standalone → and ×.
+const TREE_NUM_RE = /([+\-−]?\d[\d,]*(?:\.\d+)?(?:\s?(?:%|×|px|ms|pts?|points?|s)(?![A-Za-z]))?|→|×)/g;
+
+// Number-only formatting (used for the rank rows, which keep their own row
+// state colour for text). Operates on already-escaped text.
+function formatTreeNumbers(escaped) {
+  return escaped.replace(TREE_NUM_RE, (full) => `<span class="tree-num">${full}</span>`);
+}
+// Full description formatting: type label + numbers + clickable terms.
+// Order matters: numbers BEFORE terms, because term spans inject colour
+// attributes containing digits that the number regex must not re-scan.
+function formatNodeDesc(raw) {
+  let s = escTreeHtml(raw || '');
+  s = s.replace(/^(KEYSTONE|CAPSTONE)\b/, '<span class="tree-type-label">$1</span>');
+  s = s.replace(TREE_NUM_RE, (full) => `<span class="tree-num">${full}</span>`);
+  s = s.replace(TREE_TERM_RE, (full) => {
+    const key = treeTermKey(full.toLowerCase());
+    if (!key) return full;
+    const rgb = TREE_TERM_COLOR[key] || '125,232,255';
+    return `<span class="tree-term" data-gloss="${key}" style="color:rgba(${rgb},1)">${full}</span>`;
+  });
+  return s;
+}
+function showTreeGlossary(key) {
+  const blurb = TREE_GLOSSARY[key];
+  if (!blurb) return;
+  const el = document.getElementById('treeGlossaryText');
+  if (el) el.innerHTML = blurb;
+  document.getElementById('treeGlossary').classList.add('visible');
+}
+function closeTreeGlossary() {
+  document.getElementById('treeGlossary').classList.remove('visible');
+}
+
 function _renderTreeDetail_default() {
   if (!treeDetailCurrent) return;
   const t = treeDetailCurrent;
@@ -34140,11 +34319,12 @@ function _renderTreeDetail_default() {
     const current = state[t.pathKey][t.nodeIdx] | 0;
     titleEl.textContent = node.name;
     titleEl.style.color = `rgba(${def.color},1)`;
-    descEl.textContent = node.desc;
+    descEl.innerHTML = formatNodeDesc(node.desc);
     let ranksHtml = '';
     for (let r = 1; r <= node.max; r++) {
       const cls = r <= current ? 'current' : (r === current + 1 ? 'next' : '');
-      ranksHtml += `<div class="rank-row ${cls}">Rank ${r}: ${node.effect(r)} · ${formatCrystals(nodeCost(node.tier, r, t.orbKey, node))} 💎</div>`;
+      const rowText = `Rank ${r}: ${node.effect(r)} · ${formatCrystals(nodeCost(node.tier, r, t.orbKey, node))} 💎`;
+      ranksHtml += `<div class="rank-row ${cls}">${formatTreeNumbers(escTreeHtml(rowText))}</div>`;
     }
     ranksEl.innerHTML = ranksHtml;
     const maxed = current >= node.max;
@@ -34201,7 +34381,7 @@ function _renderTreeDetail_default() {
     const frozen = owned && !prereqOkCap;
     titleEl.textContent = '★ ' + cap.name;
     titleEl.style.color = `rgba(${def.color},1)`;
-    descEl.textContent = cap.desc;
+    descEl.innerHTML = formatNodeDesc(cap.desc);
     ranksEl.innerHTML = frozen
       ? '<div class="rank-row next">Unlocked · effect suspended (prereq missing)</div>'
       : owned
@@ -34267,6 +34447,20 @@ document.getElementById('treeConfirmYes').addEventListener('click', () => {
   if (fn) fn();
 });
 document.getElementById('treeConfirmNo').addEventListener('click', () => { SFX.clickSecondary(); closeTreeConfirm(); });
+
+// v1.10.0 clickable-glossary wiring. Delegated click on the (static) description
+// element — its innerHTML is rebuilt per node, but the listener persists.
+document.getElementById('treeDetailDesc').addEventListener('click', (e) => {
+  const el = e.target.closest && e.target.closest('[data-gloss]');
+  if (!el) return;
+  e.preventDefault();
+  e.stopPropagation();
+  try { SFX.clickSecondary(); } catch {}
+  showTreeGlossary(el.dataset.gloss);
+});
+document.getElementById('treeGlossaryClose').addEventListener('click', () => { try { SFX.clickSecondary(); } catch {} closeTreeGlossary(); });
+// Tap the dimmed backdrop (outside the inner card) to dismiss.
+document.getElementById('treeGlossary').addEventListener('click', (e) => { if (e.target.id === 'treeGlossary') closeTreeGlossary(); });
 
 // v1.6.3: #skillTreesBtn removed; per-orb UPGRADE buttons gate tree access.
 
