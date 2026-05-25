@@ -3704,6 +3704,10 @@ let pixiPlanetRipplesG = null;
 let pixiScreenFillG = null;       // apocalypse curtain + tint + impact flashes (hyperspeed tint removed v1.10.0)
 let pixiHyperFxG = null;          // v1.10.0: hyperspeed edge bands + streaks + warp-tunnel (additive)
 let pixiHyperBloomSprite = null;  // v1.10.0: pooled vanishing-point bloom sprite (5+/7+ showcase)
+let pixiPhantomBlastG = null;     // v1.10.0: PHANTOM BLAST spectral ring (additive vector strokes)
+let pixiEmpBloomLayer = null;     // v1.10.0: pooled soft center-bloom sprites for EMP bursts
+const _pixiEmpBloomPool = [];
+const _pixiBurstBloomTexCache = {};
 let pixiHyperBarrierSprite = null;
 let pixiHyperBarrierCanvas = null;
 let pixiHyperBarrierCtx = null;
@@ -12738,15 +12742,11 @@ function _phantomV2_drawDeathBursts(tctx) {
     }, _ctx);
     _ctx.fillStyle = grad;
     _ctx.beginPath(); _ctx.arc(0, 0, auraR, 0, 6.28); _ctx.fill();
-    // 1b) OUTER RING stroke — bright violet, reads at a glance like the
-    // Ghostlight EMP ring. Drawn ABOVE the aura so it's visible against the
-    // bloom, fades with the burst lifetime.
-    _ctx.globalCompositeOperation = 'source-over';
-    _ctx.globalAlpha = fade;
-    _ctx.strokeStyle = 'rgba(220,180,255,0.95)';
-    _ctx.lineWidth = 2.5;
-    _ctx.beginPath(); _ctx.arc(0, 0, auraR, 0, 6.28); _ctx.stroke();
-    _ctx.globalCompositeOperation = 'lighter';
+    // 1b) Crisp additive VIOLET ring (glow band + bright core) — the shared
+    // EMP-family recipe, so this soul-burst's ring reads cohesively with the
+    // Ghostlight / shield EMP rings. Stays additive ('lighter' set above) over
+    // the soul-bloom aura.
+    _burstRing(_ctx, auraR, fade, _BURST_PAL_GHOST);
     // 2) GHOST DUST — drifting specks radiating outward with sideways swirl
     // and gentle upward acceleration. Each speck shrinks as it ages.
     for (const d of g.dust) {
@@ -15598,17 +15598,16 @@ function drawGhostlightBursts(tctx = ctx) {
     const outerR = 20 + life * (g.maxR - 20);
 
     _ctx.save();
+    _ctx.globalCompositeOperation = 'lighter';   // additive (shared EMP recipe)
     _ctx.translate(g.x, g.y);
 
-    // 1) OUTER RING — single stroke. Bright purple so it pops on dark bg.
-    _ctx.globalAlpha = fade;
-    _ctx.strokeStyle = 'rgba(200,140,255,0.95)';
-    _ctx.lineWidth = 2.5;
-    _ctx.beginPath(); _ctx.arc(0, 0, outerR, 0, 6.28); _ctx.stroke();
+    // Soft violet center-bloom (under the ring) — the detonation glow.
+    _burstBloomBlit(_ctx, g.maxR, fade, 'violet');
+    // Crisp additive VIOLET ring (glow band + bright core) at the kill radius.
+    _burstRing(_ctx, outerR, fade, _BURST_PAL_GHOST);
 
-    // 2) LIGHTNING BOLTS — single Path2D so all bolts stroke in one call.
-    // Bolts fade out faster than the ring (~200 ms) for a snap-then-glow
-    // feel matching the shield EMP.
+    // LIGHTNING BOLTS — single Path2D, additive, violet. Fade ~200ms for the
+    // snap-then-glow feel matching the shield EMP.
     const boltT = Math.min(1, age / 200);
     const boltFade = 1 - boltT;
     if (boltFade > 0 && g.bolts) {
@@ -15632,29 +15631,13 @@ function drawGhostlightBursts(tctx = ctx) {
       }
       _ctx.globalAlpha = boltFade;
       _ctx.lineWidth = 1.6;
-      _ctx.strokeStyle = `rgba(230,200,255,${0.9 * boltFade + 0.1})`;
+      _ctx.strokeStyle = `rgba(${_BURST_PAL_GHOST.bolt},${(0.9 * boltFade + 0.1).toFixed(3)})`;
       _ctx.stroke(bolts);
     }
 
-    // 3) CENTER FLASH — implodes 24 → 0 over the first 200 ms. White core
-    // fading to ghost purple gives the burst a clear ignition point.
+    // CENTER FLASH — crisp additive ignition circles (no per-frame gradient).
     const flashT = Math.min(1, age / 200);
-    if (flashT < 1) {
-      const fk = 1 - flashT;
-      // v1.9.0 perf: cache the center-flash gradient by integer radius (origin-
-      // translated, radius-only variance). 1px bucketing is sub-pixel here.
-      const fr = Math.max(1, Math.round(24 * fk));
-      _ctx.globalAlpha = fk;
-      const flash = getCachedGradient('ghostlightFlash_' + fr, (c) => {
-        const fl = c.createRadialGradient(0, 0, 0, 0, 0, fr);
-        fl.addColorStop(0,    'rgba(255,255,255,1)');
-        fl.addColorStop(0.55, 'rgba(220,180,255,0.85)');
-        fl.addColorStop(1,    'rgba(180,120,235,0)');
-        return fl;
-      }, _ctx);
-      _ctx.fillStyle = flash;
-      _ctx.beginPath(); _ctx.arc(0, 0, fr, 0, 6.28); _ctx.fill();
-    }
+    if (flashT < 1) _burstFlash(_ctx, Math.max(1, Math.round(24 * (1 - flashT))), 1 - flashT);
 
     _ctx.restore();
   }
@@ -18794,6 +18777,13 @@ function initPixiStars() {
     // rings/barrier — peripheral, never a full-screen wash.
     pixiHyperFxG = new PIXI.Graphics();
     pixiOverlayLayer.addChild(pixiHyperFxG);
+    // v1.10.0: PHANTOM BLAST spectral ring (additive), with the screen-space rings.
+    pixiPhantomBlastG = new PIXI.Graphics();
+    pixiOverlayLayer.addChild(pixiPhantomBlastG);
+    // v1.10.0: EMP soft center-bloom sprites — UNDER the EMP ring strokes so the
+    // crisp ring reads over the glow.
+    pixiEmpBloomLayer = new PIXI.Container();
+    pixiOverlayLayer.addChild(pixiEmpBloomLayer);
     pixiOverlayLayer.addChild(pixiNovaRingsG);
     // v1.10.0: nova shockwave/flash sprites render at the same z as the old ring
     // graphic (just after it, before EMP rings) so paint order is unchanged.
@@ -20069,6 +20059,8 @@ function updatePixiOverlayLayer() {
   // Hyperspeed FX: capped edge bands + peripheral motion streaks (NO fullscreen
   // wash — see _drawPixiHyperFx). v1.10.0 readability fix.
   _drawPixiHyperFx();
+  // PHANTOM BLAST spectral ring (additive vector strokes around the player).
+  _drawPixiPhantomBlast();
 
   // Apocalypse tint + impact flashes as native rects/circles. The complex
   // sun goes to its own offscreen canvas below.
@@ -20137,11 +20129,13 @@ function updatePixiOverlayLayer() {
   }
   rg.lineStyle();
 
-  // EMP rings: outer ring + lightning bolts + center flash (approx gradient
-  // via 2 concentric alpha rings for the flash).
+  // EMP soft center-blooms (pooled sprites, under the ring strokes).
+  _drawPixiEmpBlooms();
+  // EMP rings: crisp additive glow-band + bright core + bolts + ignition flash.
   const eg = pixiEmpRingsG;
   eg.clear();
   if (empRings.length) {
+    eg.blendMode = PIXI.BLEND_MODES.ADD;   // additive crisp ring (shared recipe)
     const now = Date.now();
     const maxLifeMs = 400;
     for (const r of empRings) {
@@ -20150,14 +20144,21 @@ function updatePixiOverlayLayer() {
       const fade = (1 - life) * (r.opacity != null ? r.opacity : 1);
       const ringMax = r.maxRadius != null ? r.maxRadius : EMP_MAX_RADIUS;
       const outerR = 20 + life * (ringMax - 20);
-      eg.lineStyle({ width: 2, color: r.golden ? 0xFFC850 : 0x64DCFF, alpha: fade * 0.9 });
-      eg.drawCircle(r.x, r.y, outerR);
+      const pal = r.golden ? _EMP_PAL_GOLD : _EMP_PAL_CYAN;
+      const ringHex = _rgbStrToHex(pal.ring), coreHex = _rgbStrToHex(pal.core), boltHex = _rgbStrToHex(pal.bolt);
+      if (outerR >= 1) {
+        // Wide glow band + crisp bright core ring at the kill radius.
+        eg.lineStyle({ width: 9, color: ringHex, alpha: fade * 0.30 });
+        eg.drawCircle(r.x, r.y, outerR);
+        eg.lineStyle({ width: 2, color: coreHex, alpha: Math.min(1, fade * 1.1) });
+        eg.drawCircle(r.x, r.y, outerR);
+      }
       const boltT = Math.min(1, age / 300);
       const boltFade = 1 - boltT;
       if (boltFade > 0 && r.bolts) {
         const flickerTick = Math.floor(frame / 3);
         const rng = mulberry32((r.startTime & 0xffff) ^ flickerTick);
-        eg.lineStyle({ width: 1.6, color: r.golden ? 0xFFE6A0 : 0xFFFFFF, alpha: boltFade * (0.9 * boltFade + 0.1) });
+        eg.lineStyle({ width: 1.6, color: boltHex, alpha: boltFade * (0.9 * boltFade + 0.1) });
         for (const b of r.bolts) {
           const tipR = outerR - 4;
           const dx = Math.cos(b.angle);
@@ -20178,12 +20179,12 @@ function updatePixiOverlayLayer() {
       if (flashT < 1) {
         const fk = 1 - flashT;
         const fr = Math.max(0.5, 20 * fk);
-        // Gradient approx: two concentric white alpha discs.
-        eg.beginFill(0xFFFFFF, fk * 0.85);
-        eg.drawCircle(r.x, r.y, fr * 0.4);
-        eg.endFill();
-        eg.beginFill(0xFFFFFF, fk * 0.35);
+        // Crisp white ignition flash — outer + inner additive discs.
+        eg.beginFill(0xFFFFFF, fk * 0.5);
         eg.drawCircle(r.x, r.y, fr);
+        eg.endFill();
+        eg.beginFill(0xFFFFFF, fk * 0.8);
+        eg.drawCircle(r.x, r.y, fr * 0.45);
         eg.endFill();
       }
     }
@@ -28247,7 +28248,9 @@ function drawPlayer(tctx = ctx) {
   const shielded = activeEffects.shield > 0;
   const ghosting = activeEffects.ghost  > 0;
   const eternal = !!activeCombos.ghost_ghost;
-  const phantomBlast = Date.now() < phantomBlastEndTime && ghosting;
+  // v1.10.0: PHANTOM BLAST ring moved OUT of drawPlayer to a dedicated additive
+  // overlay (_phantomBlastRings) so it blends additively against the scene. The
+  // player-canvas sprite is normal-composited, which can't bloom against the bg.
 
   // Shield blink in last 1s of duration — ~12hz (83ms period pair) so the
   // player-perceived blink rate is the same at any framerate.
@@ -28314,22 +28317,8 @@ function drawPlayer(tctx = ctx) {
     }
     ctx.globalAlpha = 1;
   }
-  // PHANTOM BLAST: red/orange damage aura around player
-  if (phantomBlast) {
-    const auraR = 120;
-    const pulse = Math.sin(frame * 0.18) * 0.15 + 0.85;
-    ctx.globalAlpha = 0.18 * pulse;
-    const pg = ctx.createRadialGradient(0, 0, PLAYER_R, 0, 0, auraR);
-    pg.addColorStop(0, 'rgba(255,140,60,0.55)');
-    pg.addColorStop(0.6, 'rgba(255,80,40,0.18)');
-    pg.addColorStop(1, 'rgba(255,60,20,0)');
-    ctx.fillStyle = pg;
-    ctx.beginPath(); ctx.arc(0,0,auraR,0,6.28); ctx.fill();
-    ctx.globalAlpha = 0.55 * pulse;
-    ctx.strokeStyle = 'rgba(255,120,50,0.85)';
-    ctx.lineWidth = 1.4;
-    ctx.beginPath(); ctx.arc(0,0,auraR,0,6.28); ctx.stroke();
-  }
+  // (PHANTOM BLAST ring is drawn on the additive overlay now — see
+  // _phantomBlastRings / drawPhantomBlastRing / _drawPixiPhantomBlast.)
 
   // Ghost wispy aura: 3 concentric pulsing rings out of phase + soft purple halo
   if (ghosting) {
@@ -29020,31 +29009,130 @@ function drawBurnZones() {
   ctx.restore();
 }
 
+// =====================================================================
+// EMP-FAMILY BURST VISUAL (v1.10.0) — one crisp additive recipe, colour-coded.
+// =====================================================================
+// The whole burst family was 3 structurally-identical copies (empRings /
+// ghostlightBursts / phantomV2 death-bursts): outer ring + lightning + centre
+// flash, differing only in colour. They now share ONE crisp additive ring
+// drawer — a wide GLOW BAND under a crisp BRIGHT CORE ring (constant pixel
+// thickness, no per-frame gradient), color-coded by SOURCE so colour still
+// tells you what fired it:
+//   shield/Bulwark/Aegis = cyan, Dead Star = gold, ghost/phantom = violet.
+// DRAW-ONLY: every burst keeps its own array, radius, timing, kills, caps.
+// Callers translate to the burst centre and set 'lighter' (additive) first.
+const _EMP_PAL_CYAN    = { ring: '90,200,255',  core: '205,240,255', bolt: '235,250,255' };
+const _EMP_PAL_GOLD    = { ring: '255,195,70',  core: '255,240,170', bolt: '255,235,170' };
+const _BURST_PAL_GHOST = { ring: '180,110,245', core: '225,170,255', bolt: '235,205,255' };
+// Crisp additive ring (origin-centred): wide glow band + sharp bright core line.
+function _burstRing(c, r, fade, pal) {
+  if (r < 1) return;
+  c.globalAlpha = fade * 0.30;
+  c.strokeStyle = `rgba(${pal.ring},1)`;
+  c.lineWidth = 9;
+  c.beginPath(); c.arc(0, 0, r, 0, 6.28); c.stroke();
+  c.globalAlpha = Math.min(1, fade * 1.1);
+  c.strokeStyle = `rgba(${pal.core},1)`;
+  c.lineWidth = 2;
+  c.beginPath(); c.arc(0, 0, r, 0, 6.28); c.stroke();
+}
+// Crisp white ignition flash (2 additive circles — no gradient alloc).
+function _burstFlash(c, fr, k) {
+  if (fr < 0.5) return;
+  c.globalAlpha = k * 0.5; c.fillStyle = 'rgba(255,255,255,1)';
+  c.beginPath(); c.arc(0, 0, fr, 0, 6.28); c.fill();
+  c.globalAlpha = k * 0.8;
+  c.beginPath(); c.arc(0, 0, fr * 0.45, 0, 6.28); c.fill();
+}
+// Soft center-bloom (the recipe's baked point-bloom): a colour-coded radial glow
+// filling the burst, baked ONCE (reuses _bakeNovaFlash). This is the lever that
+// makes the brief bursts actually "pop" — thin strokes alone read too subtle on
+// a 300–400ms flash. Additive; the crisp ring is drawn over it.
+let _burstBloom = { cyan: null, gold: null, violet: null };
+function _ensureBurstBlooms() {
+  if (_burstBloom.cyan) return;
+  _burstBloom.cyan   = _bakeNovaFlash('205,240,255', '90,190,255');  // shield blue
+  _burstBloom.gold   = _bakeNovaFlash('255,240,180', '255,190,70');  // Dead Star gold
+  _burstBloom.violet = _bakeNovaFlash('230,190,255', '180,110,245'); // ghost / phantom
+}
+_ensureBurstBlooms();
+// Canvas: blit the bloom (caller is translated to centre + additive). bloomR is
+// a fraction of the burst's max radius so it reads as a centred detonation glow.
+function _burstBloomBlit(c, maxR, fade, key) {
+  if (fade <= 0.02) return;
+  const img = _burstBloom[key];
+  if (!img) return;
+  const br = Math.max(8, maxR * 0.55);
+  c.globalAlpha = fade * 0.5;
+  c.drawImage(img, -br, -br, br * 2, br * 2);
+  c.globalAlpha = 1;
+}
+// Pixi: cached PIXI.Texture per baked bloom canvas.
+function _pixiBurstBloomTex(key) {
+  if (_pixiBurstBloomTexCache[key]) return _pixiBurstBloomTexCache[key];
+  _ensureBurstBlooms();
+  const t = PIXI.Texture.from(_burstBloom[key] || _burstBloom.cyan);
+  _pixiBurstBloomTexCache[key] = t;
+  return t;
+}
+// Pixi: pooled EMP center-bloom sprites (empRings has its own pixi Graphics path
+// that can't blit a sprite — ghostlight/phantomV2 draw on #c so the canvas blit
+// covers them in both modes).
+function _drawPixiEmpBlooms() {
+  if (!pixiActive || !pixiEmpBloomLayer) return;
+  let i = 0;
+  if (empRings.length) {
+    const now = Date.now();
+    const maxLifeMs = 400;
+    for (const r of empRings) {
+      const age = now - r.startTime;
+      const life = Math.max(0, Math.min(1, age / maxLifeMs));
+      const fade = (1 - life) * (r.opacity != null ? r.opacity : 1);
+      if (fade <= 0.02) continue;
+      const maxR = r.maxRadius != null ? r.maxRadius : EMP_MAX_RADIUS;
+      const br = Math.max(8, maxR * 0.55);
+      const tex = _pixiBurstBloomTex(r.golden ? 'gold' : 'cyan');
+      let sp = _pixiEmpBloomPool[i];
+      if (!sp) {
+        sp = new PIXI.Sprite(tex);
+        sp.anchor.set(0.5);
+        sp.blendMode = PIXI.BLEND_MODES.ADD;
+        pixiEmpBloomLayer.addChild(sp);
+        _pixiEmpBloomPool[i] = sp;
+      }
+      if (sp.texture !== tex) sp.texture = tex;
+      sp.visible = true;
+      sp.x = r.x; sp.y = r.y;
+      sp.width = sp.height = br * 2;
+      sp.alpha = fade * 0.5;
+      i++;
+    }
+  }
+  for (let k = i; k < _pixiEmpBloomPool.length; k++) _pixiEmpBloomPool[k].visible = false;
+}
 function drawEmpRings() {
   if (pixiActive) return;
   if (!empRings.length) return;
   const now = Date.now();
   const maxLifeMs = 400; // dome expansion window — everything keyed off this
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter'; // additive: bright, blooms on overlap
   for (const r of empRings) {
     const age = now - r.startTime;
     const life = Math.max(0, Math.min(1, age / maxLifeMs));
     const fade = (1 - life) * (r.opacity != null ? r.opacity : 1);
     const ringMax = r.maxRadius != null ? r.maxRadius : EMP_MAX_RADIUS;
-    const outerR = 20 + life * (ringMax - 20);
+    const outerR = 20 + life * (ringMax - 20);  // bright core sits at the actual reach
+    const pal = r.golden ? _EMP_PAL_GOLD : _EMP_PAL_CYAN;
 
     ctx.save();
     ctx.translate(r.x, r.y);
+    // Soft center-bloom (under the ring) — the colour-coded detonation glow.
+    _burstBloomBlit(ctx, ringMax, fade, r.golden ? 'gold' : 'cyan');
+    // Crisp additive ring (glow band + bright core) at the kill radius.
+    _burstRing(ctx, outerR, fade, pal);
 
-    // 1) OUTER RING — single stroke. Ground shockwave ellipse, inner stroke,
-    // ring-fill band, and individual sparks have been dropped in the Android
-    // GPU-crash mitigation pass.
-    ctx.globalAlpha = fade;
-    ctx.strokeStyle = r.golden ? 'rgba(255,200,80,0.9)' : 'rgba(100,220,255,0.9)';
-    ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.arc(0, 0, outerR, 0, 6.28); ctx.stroke();
-
-    // 2) LIGHTNING BOLTS — accumulated into a single Path2D so all bolts for
-    // this ring stroke in one call instead of one per bolt.
+    // Lightning bolts — one Path2D, additive, source-coloured.
     const boltT = Math.min(1, age / 300);
     const boltFade = 1 - boltT;
     if (boltFade > 0 && r.bolts) {
@@ -29068,26 +29156,18 @@ function drawEmpRings() {
       }
       ctx.globalAlpha = boltFade;
       ctx.lineWidth = 1.6;
-      ctx.strokeStyle = r.golden ? `rgba(255,230,160,${0.9 * boltFade + 0.1})` : `rgba(255,255,255,${0.9 * boltFade + 0.1})`;
+      ctx.strokeStyle = `rgba(${pal.bolt},${(0.9 * boltFade + 0.1).toFixed(3)})`;
       ctx.stroke(bolts);
     }
 
-    // 3) CENTER FLASH — implodes 20 → 0 over first 0.2s.
+    // Centre ignition flash (crisp additive circles — no per-frame gradient).
     const flashT = Math.min(1, age / 200);
-    if (flashT < 1) {
-      const fk = 1 - flashT;
-      const fr = 20 * fk;
-      ctx.globalAlpha = fk;
-      const flash = ctx.createRadialGradient(0, 0, 0, 0, 0, Math.max(0.5, fr));
-      flash.addColorStop(0, 'rgba(255,255,255,1)');
-      flash.addColorStop(1, 'rgba(255,255,255,0)');
-      ctx.fillStyle = flash;
-      ctx.beginPath(); ctx.arc(0, 0, Math.max(0.5, fr), 0, 6.28); ctx.fill();
-    }
+    if (flashT < 1) _burstFlash(ctx, 20 * (1 - flashT), 1 - flashT);
 
     ctx.restore();
   }
   ctx.globalAlpha = 1;
+  ctx.restore();
 }
 
 // v1.6.3 visual pass: Salvage sparkle update + draw. Called from the same
@@ -29654,6 +29734,60 @@ function _drawPixiHyperFx() {
   }
 }
 
+// =====================================================================
+// PHANTOM BLAST ring (v1.10.0) — nova+ghost combo's protective damage aura.
+// =====================================================================
+// DRAW-ONLY (the 120px kill aura's mechanics/timing/radius are untouched — gated
+// here on the same `phantomBlastEndTime` the damage uses). Validated recipe:
+// crisp ADDITIVE vector strokes (no per-frame gradient/fill — the old version
+// alloc'd a radialGradient + soft disc every frame), in the ghost VIOLET/spectral
+// palette so it reads as a phantom barrier. "Alive" via a pulse + two out-of-
+// phase wobbling spectral rings around the crisp bright core.
+// Shared geometry → emitArc(x,y,r,lineWidth,rgbStr,alpha) for both paths.
+function _phantomBlastRings(emitArc) {
+  if (!(Date.now() < phantomBlastEndTime)) return;  // matches the damage-aura gate
+  const px = player.x, py = player.y, R = 120;       // R = the actual kill radius
+  const pulse = Math.sin(frame * 0.18) * 0.15 + 0.85;
+  const f2 = Math.sin(frame * 0.12 + 1.0) * 0.5 + 0.5;
+  const f3 = Math.sin(frame * 0.10 + 3.3) * 0.5 + 0.5;
+  const wob1 = Math.sin(frame * 0.12 + 1.0) * 4;
+  const wob2 = Math.sin(frame * 0.09 + 2.2) * 4;
+  // Wide violet glow band (solid colour = crisp edges, additive bloom).
+  emitArc(px, py, R, 11, '160,85,235', 0.20 * pulse);
+  // Out-of-phase spectral inner echo + outer wisp (the "alive" phantom feel).
+  emitArc(px, py, R - 10 + wob1, 1.6, '200,130,255', 0.12 + 0.32 * f2);
+  emitArc(px, py, R + 7 + wob2, 1.2, '185,110,250', 0.08 + 0.24 * f3);
+  // Crisp bright violet-white core ring, drawn last (over the glow) at R.
+  emitArc(px, py, R, 2.5, '225,170,255', 0.80 * pulse);
+}
+// Canvas-2D path.
+function drawPhantomBlastRing() {
+  if (!(Date.now() < phantomBlastEndTime)) return;
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  _phantomBlastRings((x, y, r, lw, rgb, a) => {
+    if (r <= 0) return;
+    ctx.lineWidth = lw;
+    ctx.strokeStyle = `rgba(${rgb},${a.toFixed(3)})`;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, 6.28); ctx.stroke();
+  });
+  ctx.restore();
+}
+// Pixi path — additive Graphics, batched.
+function _drawPixiPhantomBlast() {
+  const g = pixiPhantomBlastG;
+  if (!g) return;
+  g.clear();
+  if (!(Date.now() < phantomBlastEndTime)) return;
+  g.blendMode = PIXI.BLEND_MODES.ADD;
+  _phantomBlastRings((x, y, r, lw, rgb, a) => {
+    if (r <= 0) return;
+    g.lineStyle({ width: lw, color: _rgbStrToHex(rgb), alpha: a });
+    g.drawCircle(x, y, r);
+  });
+  g.lineStyle();
+}
+
 function drawHyperspeedBarrier(tctx = ctx) {
   const ctx = tctx;
   if (activeEffects.hyperspeed <= 0 || hyperspeedCurrentMult <= 1.05) return;
@@ -29994,6 +30128,8 @@ function render() {
     if (state==='playing'||state==='paused'||state==='apocalypse'||state==='tutorial') {
       // Step 6: hyperspeed barrier on pixi overlay when active.
       if (!pixiActive) drawHyperspeedBarrier();
+      // PHANTOM BLAST spectral ring (additive, around the player) before the orb.
+      if (!pixiActive) drawPhantomBlastRing();
       if (!pixiActive) drawPlayer();
     }
     drawPickupParticles();
