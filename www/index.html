@@ -27528,7 +27528,24 @@ function emitOrbTrail() {
   // movement space (-vx, -vy); when still, use straight down in screen space
   // to match the scroll.
   let bx, by;
-  if (moveMag > 0.01) {
+  if (activeEffects.hyperspeed > 0) {
+    // v1.10.0 HYPERSPEED trail direction fix. Forward is thematically "up" (the
+    // orb screams up-screen), so the trail must ALWAYS flow DOWN/behind. The
+    // literal velocity is unsafe here: the hyperspeed center-pull correction
+    // (player.vy += ay, ay pulling toward H*0.72) drives vy DOWNWARD when the
+    // player is near the top of the screen, which makes -pvy/moveMag point UP
+    // and flips the trail (esp. Warp's long 'line' trail) the wrong way —
+    // exposing the center-drift as visible backward/upward motion. Pin the
+    // vertical behind-direction to DOWN and take only a gentle horizontal lean
+    // from the horizontal velocity, so strafing still reads while the trail
+    // consistently sells "screaming forward at speed". Draw-only — the
+    // center-pull mechanic itself is untouched. Both render paths read the
+    // stored particle dir/velocity, so this single emit-site fix covers both.
+    const lean = Math.max(-0.6, Math.min(0.6, -pvx * 0.15));
+    const m = Math.hypot(lean, 1);
+    bx = lean / m;
+    by = 1 / m;
+  } else if (moveMag > 0.01) {
     bx = -pvx / moveMag;
     by = -pvy / moveMag;
   } else {
@@ -32797,7 +32814,13 @@ function siriusReviveEligible() {
   if (siriusNextDeathFinal) return false;                // the death AFTER any revive is final
   if (!ascensionUsed || !secondDeathUsed) return false;  // must be past narrator beats 1 & 2
   if (!siriusUsed) return true;                          // DEATH 3 → guaranteed reveal + revive
-  return Math.random() < 0.05;                           // thereafter: 1-in-20 (5%)
+  // v1.10.0: subsequent-revive chance scales with difficulty (easier = more
+  // forgiving). NORMAL 10% / HARD 7% / EXTREME 5% / IMPOSSIBLE 5% — IMPOSSIBLE
+  // is kept at the EXTREME floor (it shares EXTREME's combat numbers, just a
+  // faster speed cap + post-cap growth, so a separate lower value isn't
+  // warranted). The DEATH-3 guaranteed revive above is unaffected by difficulty.
+  const REVIVE_CHANCE = { NORMAL: 0.10, HARD: 0.07, EXTREME: 0.05, IMPOSSIBLE: 0.05 };
+  return Math.random() < (REVIVE_CHANCE[difficulty] != null ? REVIVE_CHANCE[difficulty] : 0.05);
 }
 
 // Entry — called from triggerDeath(). Plays the death animation (like the other
