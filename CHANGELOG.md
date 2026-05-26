@@ -6,9 +6,41 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Each version header links to its GitHub release; see the release notes for full
 detail beyond the summaries here.
 
-## Unreleased (v1.10.0-wip) — Death-narrator: second-death fake-out + reusable dialogue framework
+## v2.0.0 — Sirius narrator, full visual overhaul, tutorial rebuild & performance settings
 
-**Stage 1 of a death-narrator system.** Introduces a reusable, speaker-prefixed
+A major release. The death-narrator system is complete (**Sirius**), every effect
+family was rebuilt on one additive rendering recipe, the tutorial was rebuilt, and
+new player-facing performance settings (render quality + frame-rate cap) plus heat
+reductions landed alongside balance and revive changes.
+
+### Highlights
+- **Sirius narrator system** — the three-beat arc (Ascension run → second-death
+  fake-out → Sirius's reveal + guaranteed revive), then post-reveal **subsequent
+  revives**: a difficulty-scaled chance (Normal 10% / Hard 7% / Extreme +
+  Impossible 5%), most a one-line revive and ~30% a **multiple-choice cosmic
+  quiz** (a right *or* charming-wrong answer revives you; a dull-wrong answer ends
+  the run), plus survival-tiered **death-screen roasts** when a revive doesn't fire.
+- **Full visual overhaul** — every effect family rebuilt on a single additive
+  recipe (crisp constant-thickness vector strokes + baked soft-sprite blooms; no
+  shadowBlur, per-frame gradients, or full-screen fills): novas, the EMP family,
+  the hyperspeed barrier, Phantom Blast, planet ripples, player auras, pickup &
+  destroy bursts, crack fragments, pair tethers, the Bulwark electric ball, and the
+  floating proc/combo labels.
+- **Tutorial rebuild** — reworked first-run onboarding.
+- **Render Quality setting** — a player-facing DPR cap (High 2.0 / Balanced 1.5 /
+  Battery 1.0; default Balanced) that rebuilds all scale-dependent baked assets
+  live when changed.
+- **Frame-rate cap setting** — 30 (battery saver) / 60 (default) / 120 / Adaptive,
+  with frame-rate-independence fixes so gameplay is identical at every cap.
+- **Heat reductions** — a lower default render resolution, throttled menu
+  animation, and frame-rate-independent stepping cut sustained GPU/CPU power on
+  long sessions.
+- **Cadenza buff** — the Drifter combo pool is curated down to always-impactful combos.
+- **Difficulty-scaled revives** — the subsequent-revive chance now scales with
+  difficulty (see the Sirius system above).
+
+### Stage 1 detail — reusable dialogue framework + second-death fake-out
+**Stage 1 of the death-narrator system.** Introduces a reusable, speaker-prefixed
 death-dialogue framework (generalized out of the Ascension intro-text system) and
 the one-time **second-death** fake-out cutscene that builds on it.
 

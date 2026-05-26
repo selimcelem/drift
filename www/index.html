@@ -3579,10 +3579,10 @@ if (typeof Sentry !== 'undefined') {
 const DEBUG_RESUME = false;
 const debugLines = [];
 function debugLog(msg) {
+  if (!DEBUG_RESUME) return;
   const t = Math.floor(performance.now());
   const line = t + 'ms ' + msg;
   try { console.log('[dbg] ' + line); } catch {}
-  if (!DEBUG_RESUME) return;
   debugLines.push(line);
   if (debugLines.length > 20) debugLines.splice(0, debugLines.length - 20);
   try {
@@ -16404,7 +16404,7 @@ let runStats = { totalPassed: 0, totalDestroyed: 0, pointsFromPassing: 0, points
 // Example: TIME_DILATION = 60 → 1 real second = 60 in-game seconds for
 // progression, apocalypse triggers in ~10 real seconds.
 const TIME_DILATION = 1;
-const GAME_VERSION = '1.9.0';
+const GAME_VERSION = '2.0.0';
 try {
   const vl = document.getElementById('versionLabel');
   if (vl) vl.textContent = 'v' + GAME_VERSION;
@@ -17926,7 +17926,6 @@ const SFX = (function() {
     if (!ctx) return Promise.reject(new Error('no audio context'));
     // Paths are relative to index.html — resolves to <base>/assets/<name>.mp3.
     const url = './assets/' + name + '.mp3';
-    console.log('[music] fetching', url);
     musicLoading[name] = fetch(url)
       .then(r => {
         if (!r.ok) throw new Error(name + '.mp3 fetch failed: ' + r.status);
@@ -17938,7 +17937,6 @@ const SFX = (function() {
       }))
       .then(buf => {
         musicBuffers[name] = buf;
-        console.log('[music] loaded', url, 'duration=' + buf.duration.toFixed(2) + 's');
         return buf;
       })
       .catch(err => {
@@ -17956,7 +17954,6 @@ const SFX = (function() {
     if (!ctx) return Promise.reject(new Error('no audio context'));
     const url = SFX_BUFFER_URLS[key];
     if (!url) return Promise.reject(new Error('unknown sfx ' + key));
-    console.log('[sfx] fetching', url);
     sfxLoading[key] = fetch(url)
       .then(r => {
         if (!r.ok) throw new Error(key + ' fetch failed: ' + r.status);
@@ -17967,7 +17964,6 @@ const SFX = (function() {
       }))
       .then(buf => {
         sfxBuffers[key] = buf;
-        console.log('[sfx] loaded', url, 'duration=' + buf.duration.toFixed(2) + 's');
         return buf;
       })
       .catch(err => {
@@ -18467,7 +18463,6 @@ function saveScore(s, d) {
   // schema extension breaks the per-difficulty bound.
   if (kept.length > 100) kept.length = 100;
   localStorage.setItem('drift_scores', JSON.stringify(kept));
-  console.log('[drift] saved scores:', JSON.stringify(kept));
   pgsScheduleWrite();
   return kept;
 }
@@ -25458,7 +25453,6 @@ function triggerDeath() {
   function renderLocalScores(diff) {
     const hsel = document.getElementById('highscores');
     const allScores = getScores();
-    console.log('[drift] renderLocalScores diff=' + diff, 'allScores:', JSON.stringify(allScores));
     const filtered = allScores.filter(s => s.difficulty === diff);
     if (filtered.length === 0) {
       hsel.innerHTML = '<div class="gs-status">no local scores</div>';
@@ -30993,50 +30987,6 @@ document.getElementById('startBtn').addEventListener('click', ()=>{
     console.log('[DRIFTRESET] All progress wiped, tutorial + rainbow flags cleared');
     // Fall through — run starts normally on the now-reset profile.
   }
-  // ===== TEMPORARY debug cheat (v1.10.0 Void recolor QA) =====
-  // Pilot name "VOIDTEST" starts a normal run and immediately triggers the
-  // Void descent (the 10-minute apocalypse sequence) so the recolor can be
-  // verified without surviving a full run. Gated exactly like TREETEST.
-  // TODO: REMOVE BEFORE RELEASE — search "VOIDTEST" (this block + the trigger
-  // at the bottom of this handler + the _voidTestRun local).
-  let _voidTestRun = false;
-  if (getUsername().toUpperCase() === 'VOIDTEST') {
-    _voidTestRun = true;
-    // Skip the forced first-run tutorial so the run starts immediately.
-    // In-memory only — does NOT persist, so the real tutorial flag is left
-    // untouched once this cheat is removed.
-    tutorialCompleted = true;
-    console.log('[VOIDTEST] Run will start and immediately trigger the Void descent (TEMPORARY debug cheat)');
-    // Fall through — the run starts normally, then the trigger below fires.
-  }
-  // ===== TEMPORARY debug cheat (v1.10.0 Sirius quiz QA) =====
-  // Pilot name "QUIZTEST" forces every qualifying death to be a Sirius QUIZ
-  // revive (random question each time), so the A/B/C/D popup + all three answer
-  // outcomes can be tested without the rare resurrect roll. It sets the beat
-  // prerequisites IN MEMORY ONLY (does NOT persist — the real save's Ascension /
-  // second-death / Sirius-reveal flags are untouched), so a quiz can fire on the
-  // very first death from a fresh state. _SIRIUS_QUIZTEST also bypasses the
-  // next-death-final lock (see siriusReviveEligible), so quizzes repeat on every
-  // death. TODO: REMOVE BEFORE RELEASE — search "QUIZTEST" (this block + the
-  // _SIRIUS_QUIZTEST flag + its two uses in siriusReviveEligible/siriusBeginRevive).
-  if (getUsername().toUpperCase() === 'QUIZTEST') {
-    tutorialCompleted = true;   // in-memory: skip the forced first-run tutorial
-    ascensionUsed = true;       // in-memory: past beat 1
-    secondDeathUsed = true;     // in-memory: past beat 2
-    siriusUsed = true;          // in-memory: post-reveal (name shows as "Sirius"; NOT persisted)
-    _SIRIUS_QUIZTEST = true;
-    console.log('[QUIZTEST] Every qualifying death will force a Sirius QUIZ revive with a random question (TEMPORARY debug cheat). Die normally to trigger it.');
-    // Fall through — the run starts normally; quizzes fire on death.
-  }
-  // Sentry fire-test cheat: pilot name "SENTRY" triggers a tagged test event
-  // on start so a tester can verify the crash-reporting pipeline end-to-end.
-  // flush() waits up to 2s for the beacon to actually leave the device.
-  if (getUsername() === 'SENTRY' && typeof Sentry !== 'undefined') {
-    try {
-      Sentry.captureException(new Error('sentry-test-' + GAME_VERSION + '-' + Date.now()));
-      if (typeof Sentry.flush === 'function') Sentry.flush(2000);
-    } catch {}
-  }
   // Starting a fresh run — wipe any resume snapshot so the old save can't
   // resurface if the player dies before the 5s save cadence fires.
   clearResumeState();
@@ -31061,12 +31011,6 @@ document.getElementById('startBtn').addEventListener('click', ()=>{
   _ov.classList.remove('death-mode');
   _ov.classList.add('hidden');
   pauseBtn.classList.add('visible');
-  // TEMPORARY (VOIDTEST debug cheat): jump straight to the Void descent. Short
-  // delay so the first gameplay frame renders before the sequence takes over.
-  // TODO: REMOVE BEFORE RELEASE — search "VOIDTEST".
-  if (_voidTestRun) {
-    setTimeout(() => { try { if (state === 'playing') startApocalypse(); } catch (e) { console.error('[VOIDTEST] trigger failed', e); } }, 200);
-  }
 });
 
 let resumeCountdownTimers = [];
@@ -32564,8 +32508,8 @@ function ascensionCutsceneEligible() {
 function secondDeathCutsceneEligible() {
   // v1.10.0: like the Ascension check, an apocalypse death is a run completion,
   // not a collision death — it must never trigger the second-death gag and must
-  // not consume the one-time `secondDeathUsed` flag. (This also fixes the
-  // VOIDTEST artifact where forcing the apocalypse fired the second-death gag.)
+  // not consume the one-time `secondDeathUsed` flag. (This also guards against a
+  // forced/instant apocalypse erroneously firing the second-death gag.)
   return tutorialCompleted && ascensionUsed && !secondDeathUsed
       && !ascensionRunActive && !ascensionCutsceneActive
       && !secondDeathActive && !apocalypseDeathFlag;
@@ -32948,20 +32892,6 @@ let _siriusLastLineIdx = -1;        // random-pool no-immediate-repeat
 // that finalize (death 2 wrapping up) can't be mistaken for a NEW death and
 // trigger the Sirius death-3 revive on the same death event.
 let _secondDeathFinalizing = false;
-// TEMPORARY debug toggle (search "_SIRIUS_DEBUG_FORCE_REVIVE" to remove before
-// release). When on, every qualifying death (past beats 1 & 2) revives —
-// bypassing BOTH the 1-in-20 roll AND the next-death-final lock — so the revive
-// path + the random dialogue pool can be cycled rapidly for testing. Enable via
-// console: siriusDebugForceRevive(true), or localStorage drift_force_revive='1'.
-let _SIRIUS_DEBUG_FORCE_REVIVE = false;
-try { _SIRIUS_DEBUG_FORCE_REVIVE = localStorage.getItem('drift_force_revive') === '1'; } catch {}
-if (typeof window !== 'undefined') {
-  window.siriusDebugForceRevive = function (on) {
-    _SIRIUS_DEBUG_FORCE_REVIVE = !!on;
-    try { localStorage.setItem('drift_force_revive', on ? '1' : '0'); } catch {}
-    return _SIRIUS_DEBUG_FORCE_REVIVE;
-  };
-}
 const SIRIUS_PREDEATH_MS  = 1700;   // death animation before the narrator speaks
 const SIRIUS_RESURRECT_MS = 1700;   // orb-colour convergence window
 
@@ -33015,10 +32945,6 @@ let _siriusIsQuiz = false;           // this revive is a quiz (decided in sirius
 let _siriusSkipDeathImpact = false;  // transient: re-entry to triggerDeath after a convo/quiz-fail skips the duplicate impact FX
 let _siriusCurrentQuiz = null;       // { q, options: shuffled[] } for the live quiz
 let _siriusQuizLastIdx = -1;         // no-immediate-repeat for quiz questions
-// TEMPORARY debug — TODO: REMOVE BEFORE RELEASE (search "QUIZTEST"): forces a
-// quiz revive on every qualifying death so the popup/answers/outcomes can be
-// tested without the rare roll. Set by the QUIZTEST pilot-name block at run start.
-let _SIRIUS_QUIZTEST = false;
 
 // --- Death-convo (roast, NO revive) — survival-tiered pools, no-immediate-repeat ---
 const SIRIUS_CONVO_TIERS = [
@@ -33310,14 +33236,6 @@ function siriusReviveEligible() {
   // quiz must NOT roll a revive — those paths already decided "no revive" and set
   // this flag to fall through to the normal death screen.
   if (_siriusSkipDeathImpact) return false;
-  // TEMPORARY debug: force a revive on every qualifying death (bypasses the
-  // 1-in-20 roll AND the next-death-final lock). See _SIRIUS_DEBUG_FORCE_REVIVE.
-  if (_SIRIUS_DEBUG_FORCE_REVIVE && ascensionUsed && secondDeathUsed) return true;
-  // TEMPORARY debug — TODO: REMOVE BEFORE RELEASE (search "QUIZTEST"): force a
-  // revive (which siriusBeginRevive then forces into a QUIZ) on every qualifying
-  // death, bypassing the resurrect roll AND the next-death-final lock so quizzes
-  // can be triggered repeatedly.
-  if (_SIRIUS_QUIZTEST && ascensionUsed && secondDeathUsed) return true;
   if (siriusNextDeathFinal) return false;                // the death AFTER any revive is final
   if (!ascensionUsed || !secondDeathUsed) return false;  // must be past narrator beats 1 & 2
   if (!siriusUsed) return true;                          // DEATH 3 → guaranteed reveal + revive
@@ -33339,9 +33257,9 @@ function siriusBeginRevive() {
   siriusRevealPending = !siriusUsed;          // death-3 reveal vs a later 1-in-20
   if (siriusRevealPending) saveSiriusUsed(true); // lock + reveal the name permanently
   // v1.10.0 Stage 4: a SUBSEQUENT revive (not the death-3 reveal) is sometimes a
-  // QUIZ. QUIZTEST forces it; otherwise the approved 30% fraction. Death-3 stays
-  // simple/no-quiz (it's the introduction beat).
-  _siriusIsQuiz = !siriusRevealPending && (_SIRIUS_QUIZTEST || Math.random() < SIRIUS_QUIZ_FRACTION);
+  // QUIZ — the approved 30% fraction. Death-3 stays simple/no-quiz (it's the
+  // introduction beat).
+  _siriusIsQuiz = !siriusRevealPending && (Math.random() < SIRIUS_QUIZ_FRACTION);
   // Snapshot the real run length so the cutscene wall-time doesn't inflate
   // TIME SURVIVED / progression once the run resumes.
   siriusReviveElapsedMs = runStartTime ? (Date.now() - runStartTime) : 0;
@@ -35031,7 +34949,6 @@ function openLeaderboardFromMenu() {
   renderMenuLocal(menuLbDifficulty);
   // The CSS rule for #leaderboardReturnBtn defaults to display:none, so
   // setting '' would just fall back to that. Force an explicit display value.
-  console.log('showing return btn');
   document.getElementById('leaderboardReturnBtn').style.display = 'inline-block';
 }
 
