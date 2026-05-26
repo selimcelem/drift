@@ -22703,6 +22703,11 @@ function resetGame(isResume) {
   // the "next death is final" lock and the in-flight flag never carry over.
   siriusNextDeathFinal = false;
   siriusReviveActive = false;
+  // v1.10.0 Stage 4: clear the death-convo / quiz transient state too.
+  _siriusSkipDeathImpact = false;
+  _siriusIsQuiz = false;
+  _siriusCurrentQuiz = null;
+  _siriusClearQuizOptions();
   player = { x: W/2, y: H*0.72, vx: 0, vy: 0, angle: 0 };
   trail = []; deathParticles = [];
   lastSpawnZone = -1;
@@ -25245,20 +25250,36 @@ function triggerDeath() {
     siriusBeginRevive();
     return;
   }
+  // v1.10.0 Stage 4: SIRIUS DEATH-CONVO — resurrect missed (or was blocked), so
+  // roll the survival-scaled roast. NO revive — it plays a line, then re-enters
+  // triggerDeath (with _siriusSkipDeathImpact) to fall through to the normal
+  // death screen. Mutual exclusion is automatic: this only runs when the revive
+  // above did NOT fire. Apocalypse is excluded inside the eligibility check.
+  if (siriusDeathConvoEligible()) {
+    siriusBeginDeathConvo();
+    return;
+  }
   // v1.7.0 game-feel: hard impact spike on death — scaled by cause. The
   // apocalypse path delivers a bigger shake (35) on top of the existing
   // ramp; standard deaths get 14. Hitstop is similar — 150ms on the sun
   // landing for a satisfying punctuation, 100ms on regular deaths.
+  // v1.10.0 Stage 4: skip this impact pass on a convo/quiz-fail re-entry — the
+  // convo/quiz already played the death FX; this pass would double it.
   const _wasApocalypse = !!apocalypseDeathFlag;
-  shakePlayerDeath(_wasApocalypse ? 'apocalypse' : (lastDeathCause || 'body'));
-  triggerHitstop(_wasApocalypse ? 150 : 100);
+  if (!_siriusSkipDeathImpact) {
+    shakePlayerDeath(_wasApocalypse ? 'apocalypse' : (lastDeathCause || 'body'));
+    triggerHitstop(_wasApocalypse ? 150 : 100);
+  }
   // The run ended — no more resume offering for this snapshot.
   clearResumeState();
   state = 'dead';
   if (typeof syncUpdateBanner === 'function') syncUpdateBanner();
   if (typeof AdManager !== 'undefined') AdManager.showDeathBanner();
   pauseBtn.classList.remove('visible');
-  SFX.death();
+  // v1.10.0 Stage 4: on a convo/quiz-fail re-entry the death SFX already fired —
+  // don't double it. The results-music crossfade still runs (the convo/quiz had
+  // stopped gameplay tracks, so this brings results audio in cleanly).
+  if (!_siriusSkipDeathImpact) SFX.death();
   // Crossfade gameplay → results over 0.3s.
   SFX.playTrack('results', 0.3);
   clearPendingNovaTimeouts();
@@ -30988,6 +31009,25 @@ document.getElementById('startBtn').addEventListener('click', ()=>{
     console.log('[VOIDTEST] Run will start and immediately trigger the Void descent (TEMPORARY debug cheat)');
     // Fall through — the run starts normally, then the trigger below fires.
   }
+  // ===== TEMPORARY debug cheat (v1.10.0 Sirius quiz QA) =====
+  // Pilot name "QUIZTEST" forces every qualifying death to be a Sirius QUIZ
+  // revive (random question each time), so the A/B/C/D popup + all three answer
+  // outcomes can be tested without the rare resurrect roll. It sets the beat
+  // prerequisites IN MEMORY ONLY (does NOT persist — the real save's Ascension /
+  // second-death / Sirius-reveal flags are untouched), so a quiz can fire on the
+  // very first death from a fresh state. _SIRIUS_QUIZTEST also bypasses the
+  // next-death-final lock (see siriusReviveEligible), so quizzes repeat on every
+  // death. TODO: REMOVE BEFORE RELEASE — search "QUIZTEST" (this block + the
+  // _SIRIUS_QUIZTEST flag + its two uses in siriusReviveEligible/siriusBeginRevive).
+  if (getUsername().toUpperCase() === 'QUIZTEST') {
+    tutorialCompleted = true;   // in-memory: skip the forced first-run tutorial
+    ascensionUsed = true;       // in-memory: past beat 1
+    secondDeathUsed = true;     // in-memory: past beat 2
+    siriusUsed = true;          // in-memory: post-reveal (name shows as "Sirius"; NOT persisted)
+    _SIRIUS_QUIZTEST = true;
+    console.log('[QUIZTEST] Every qualifying death will force a Sirius QUIZ revive with a random question (TEMPORARY debug cheat). Die normally to trigger it.');
+    // Fall through — the run starts normally; quizzes fire on death.
+  }
   // Sentry fire-test cheat: pilot name "SENTRY" triggers a tagged test event
   // on start so a tester can verify the crash-reporting pipeline end-to-end.
   // flush() waits up to 2s for the beacon to actually leave the device.
@@ -32946,6 +32986,12 @@ const SIRIUS_REVIVE_POOL = [
   ['Sirius', 'This is the last time. (It is never the last time.) Rise!'],
   ['Sirius', 'I felt like being generous. Don’t waste it. Rise, little light.'],
   ['Sirius', '*sigh* ...the things I do. Get up.'],
+  ['Sirius', 'Back on your feet. I’m not doing this for free, you know. ...Actually I am. RISE.'],
+  ['Sirius', 'The universe blinked. I un-blinked it. You’re welcome.'],
+  ['Sirius', 'Death is SO permanent. Let’s not. Up.'],
+  ['Sirius', 'I refuse to let my favorite project end like THAT. Rise, {player}.'],
+  ['Sirius', 'Consider this a loan. Against your dignity. RISE!'],
+  ['Sirius', 'Fine, FINE. Stop dying so dramatically and I’ll stop saving you. ...Rise.'],
 ];
 function siriusSubstitute(text) { return String(text).split('{player}').join(ascensionPilotName()); }
 function pickSiriusReviveLine() {
@@ -32956,6 +33002,282 @@ function pickSiriusReviveLine() {
   }
   _siriusLastLineIdx = i;
   return SIRIUS_REVIVE_POOL[i];
+}
+
+// =====================================================================
+// v1.10.0 Stage 4 — Sirius expansion: death-convo roasts + quiz revives
+// =====================================================================
+// All gated behind the first three beats (post death-3 / siriusUsed) — same as
+// the resurrect. Exclusion is enforced by triggerDeath's roll ORDER: resurrect
+// first (rare), and ONLY if it misses does the survival-scaled death-convo roll.
+const SIRIUS_QUIZ_FRACTION = 0.30;   // 30% of SUBSEQUENT revives are quizzes (death-3 is always simple)
+let _siriusIsQuiz = false;           // this revive is a quiz (decided in siriusBeginRevive)
+let _siriusSkipDeathImpact = false;  // transient: re-entry to triggerDeath after a convo/quiz-fail skips the duplicate impact FX
+let _siriusCurrentQuiz = null;       // { q, options: shuffled[] } for the live quiz
+let _siriusQuizLastIdx = -1;         // no-immediate-repeat for quiz questions
+// TEMPORARY debug — TODO: REMOVE BEFORE RELEASE (search "QUIZTEST"): forces a
+// quiz revive on every qualifying death so the popup/answers/outcomes can be
+// tested without the rare roll. Set by the QUIZTEST pilot-name block at run start.
+let _SIRIUS_QUIZTEST = false;
+
+// --- Death-convo (roast, NO revive) — survival-tiered pools, no-immediate-repeat ---
+const SIRIUS_CONVO_TIERS = [
+  { max: 30000,    chance: 0.20, lines: [   // Instant (< 30s)
+    `...That’s it? I’ve seen supernovae last longer.`,
+    `Blink and you missed your whole run. Impressive, in the worst way.`,
+    `I wasn’t even watching yet. Do it again. Properly this time.`,
+    `A new personal record! For brevity.`,
+  ] },
+  { max: 120000,   chance: 0.22, lines: [   // Fast (30s–2min)
+    `We were just getting comfortable. Tragic.`,
+    `I had high hopes. Briefly. Very briefly.`,
+    `You call that a run? I’ve coughed longer.`,
+    `The Void thanks you for the prompt delivery.`,
+  ] },
+  { max: 240000,   chance: 0.26, lines: [   // Decent (2–4min)
+    `Not bad, {player}. Not GOOD, but... not bad.`,
+    `You almost made me care. Almost.`,
+    `A respectable showing. I’d clap, but I’m a star.`,
+    `See, you CAN do things. And then you stop doing them. Curious.`,
+  ] },
+  { max: Infinity, chance: 0.30, lines: [   // Long (4min+)
+    `NOW that’s a run. Shame about the ending. Shame about all the endings, really.`,
+    `You shone out there, {player}. Don’t tell anyone I said that.`,
+    `So close to something special. The universe is cruel. (I would know — I’m its best part.)`,
+    `A magnificent light, extinguished. Poetic. ...I’m getting choked up. Don’t look at me.`,
+  ] },
+];
+// Dedicated convo for the death immediately AFTER a revive (resurrect is blocked
+// by siriusNextDeathFinal, but a roast can still land here).
+const SIRIUS_FINAL_REVIVE_CONVO = [
+  `I LITERALLY just saved you. Unbelievable.`,
+  `That was the FASTEST I’ve ever wasted a miracle. Bravo.`,
+  `I pull you back from the dark and THIS is how you repay me? Goodbye.`,
+];
+const _siriusConvoLastIdx = [-1, -1, -1, -1];
+let _siriusFinalConvoLastIdx = -1;
+function _siriusSurvivalMs() { return runStartTime ? Math.max(0, Date.now() - runStartTime) : 0; }
+function _siriusConvoTierIndex(ms) {
+  for (let i = 0; i < SIRIUS_CONVO_TIERS.length; i++) if (ms < SIRIUS_CONVO_TIERS[i].max) return i;
+  return SIRIUS_CONVO_TIERS.length - 1;
+}
+function pickSiriusConvoLine(ms) {
+  const ti = _siriusConvoTierIndex(ms);
+  const pool = SIRIUS_CONVO_TIERS[ti].lines;
+  let i = 0;
+  if (pool.length > 1) { do { i = Math.floor(Math.random() * pool.length); } while (i === _siriusConvoLastIdx[ti]); }
+  _siriusConvoLastIdx[ti] = i;
+  return ['Sirius', pool[i]];
+}
+function pickSiriusFinalConvoLine() {
+  const pool = SIRIUS_FINAL_REVIVE_CONVO;
+  let i = 0;
+  if (pool.length > 1) { do { i = Math.floor(Math.random() * pool.length); } while (i === _siriusFinalConvoLastIdx); }
+  _siriusFinalConvoLastIdx = i;
+  return ['Sirius', pool[i]];
+}
+
+// --- Quiz bank. Each option: { text, outcome, line }.
+//   outcome 'correct' → PROUD revive · 'funny' → DELIGHTED revive (still lives!)
+//           'boring'  → INSULTED, NO revive.
+// Options shuffle at display; the correct/funny/boring classification lives ONLY
+// in the `outcome` field and is NEVER shown in-game (buttons render just the
+// letter + option text). Each line references only the option actually chosen.
+const SIRIUS_QUIZ = [
+  { q: `Quick — what is the single brightest, most magnificent star in all the dark?`, options: [
+    { text: `Sirius`,                       outcome: 'correct', line: `Correct. The brightest, the best, the only name worth knowing. You’re learning. RISE.` },
+    { text: `A wandering comet`,            outcome: 'boring',  line: `A comet? A dirty snowball with a tail? You picked frozen garbage over ME. Back to the dark.` },
+    { text: `A black hole`,                 outcome: 'boring',  line: `A black hole — a thing that EATS light — as the brightest? You’ve got it exactly backwards. Down you go.` },
+    { text: `The dying ember of a nova`,    outcome: 'boring',  line: `An ember? A leftover scrap of a dead star, over the living brilliance right in front of you? Insulting. Goodbye.` },
+  ] },
+  { q: `When a truly great star reaches its end, how does it go?`, options: [
+    { text: `In a final, blinding explosion`, outcome: 'correct', line: `YES. A blaze of glory flung across the dark — that’s how the great ones go. Take notes. Rise.` },
+    { text: `Quietly, drifting off to sleep`, outcome: 'funny',   line: `To SLEEP? Stars don’t nap, you adorable thing — we DETONATE. ...Fine, that was cute enough. Up you go.` },
+    { text: `It simply stops existing`,       outcome: 'boring',  line: `“Simply stops”? We do not blink out like a candle — we END IN FIRE. You’ve offended every sun that ever burned. Down.` },
+    { text: `It becomes a cold, dark rock`,    outcome: 'boring',  line: `A ROCK? You think all my fury just settles into gravel? How DARE you. Back to the dark.` },
+  ] },
+  { q: `Name the thing so greedy that not even light can crawl out of its grip.`, options: [
+    { text: `A black hole`,                 outcome: 'correct', line: `Correct — the greediest pit in creation. Smart to know what to fear. Rise.` },
+    { text: `The empty space between stars`, outcome: 'funny',  line: `“The dark between the stars.” Wrong — but you were reaching for something vast and terrible, and I respect the instinct. Live.` },
+    { text: `A bright nebula`,              outcome: 'boring',  line: `A nebula? Those GLOW, you fool — they spill light, they don’t swallow it. Wrong. Down.` },
+    { text: `A falling star`,               outcome: 'boring',  line: `A falling star can’t keep hold of its OWN light, let alone trap anyone else’s. Wrong, and dim. Goodbye.` },
+  ] },
+  { q: `Why does a little body go tumbling toward a massive one?`, options: [
+    { text: `The massive one’s gravity pulls it in`, outcome: 'correct', line: `Gravity — the same relentless hand YOU ride to reach your prey. Correct. Rise.` },
+    { text: `The little one is curious`,    outcome: 'funny',   line: `“The little body is curious.” Wrong, but so charming I can’t be cross. Off you go, you whimsical fool.` },
+    { text: `Sheer bad luck`,               outcome: 'boring',  line: `LUCK? There is no luck, there is GRAVITY. Dismiss my universe as a dice roll again and see what happens. Down.` },
+    { text: `The dark shoves it`,           outcome: 'boring',  line: `The Void doesn’t shove — it DEVOURS. Don’t hand the enemy credit it didn’t earn. Goodbye.` },
+  ] },
+  { q: `Nothing that exists moves faster than —?`, options: [
+    { text: `Light`,                        outcome: 'correct', line: `Light. Nothing outruns it — believe me, lesser things have tried. Rise!` },
+    { text: `A clever excuse`,              outcome: 'funny',   line: `“A clever excuse moves faster than light.” ...Spoken like someone who’s made a few. I’m amused. Live.` },
+    { text: `A plummeting star`,            outcome: 'boring',  line: `A falling star? Quick, I’ll grant you — but light left it behind eons ago. Wrong. Down.` },
+    { text: `Sound`,                        outcome: 'boring',  line: `SOUND? In the silent dark, with nothing out here to even carry it? Dull creature. Wrong. Goodbye.` },
+  ] },
+  { q: `Does a star shine with its own fire, or borrow it from another?`, options: [
+    { text: `It burns with its own`,        outcome: 'correct', line: `Its OWN fire. No star worth the name begs light from another. Rise, self-made little spark.` },
+    { text: `It steals it from the Void`,   outcome: 'funny',   line: `STEAL from the Void? The suicidal NERVE of that. Wrong — but oh, I love a thief with ambition. Up.` },
+    { text: `It borrows from a brighter one`, outcome: 'boring', line: `A BRIGHTER one? There IS no brighter one. You insult me to my face and expect a rescue? Down.` },
+    { text: `It only reflects, like a mirror`, outcome: 'boring', line: `A mirror? I am not DÉCOR. I burn, I do not borrow. Reflect on THAT in the dark. Goodbye.` },
+  ] },
+  { q: `How many stars burn across the whole of creation?`, options: [
+    { text: `More than could ever be counted`,        outcome: 'correct', line: `Uncountable. Endless. Correct — and humbling, I’d imagine, for something as small as you. Rise.` },
+    { text: `One — me — and the rest are scenery`,     outcome: 'funny',   line: `...“One. Me. The rest are scenery.” WRONG. Also the finest answer anyone has ever given me. LIVE, you magnificent flatterer!` },
+    { text: `Exactly one thousand`,                    outcome: 'boring',  line: `“Exactly one thousand.” You counted? You did NOT count. There are more suns than you have thoughts. Down.` },
+    { text: `A modest handful`,                        outcome: 'boring',  line: `A handful?! The dark is DROWNING in stars and you offer me a handful. Small mind. Down you go.` },
+  ] },
+  { q: `You gaze at a far-off star. The light reaching you right now is —?`, options: [
+    { text: `Old — it crossed a vast distance to arrive`, outcome: 'correct', line: `Correct — that light is ANCIENT, older than your little run. You’re brighter than you look. Rise.` },
+    { text: `A clever illusion`,            outcome: 'funny',   line: `“It’s all an illusion.” Paranoid, conspiratorial, completely wrong. ...I love how little you trust the sky. Up.` },
+    { text: `Brand new this instant`,      outcome: 'boring',  line: `“Brand new”? That light CROSSED AN OCEAN OF DARK to reach you, and you call it fresh-minted? Rude. Down.` },
+    { text: `Borrowed from a nearer star`, outcome: 'boring',  line: `“Borrowed”? Light isn’t passed hand to hand like a coin, you simpleton. Wrong. Goodbye.` },
+  ] },
+  { q: `What is the Void — the great enemy?`, options: [
+    { text: `The hungry dark that devours all light`, outcome: 'correct', line: `Correct. It eats light, it eats worlds, it would eat ME if I let it. You know your enemy. Rise.` },
+    { text: `A kindly drifting mist`,       outcome: 'funny',   line: `“Kindly.” It DEVOURS SUNS, you precious, hopeless optimist. ...Bless you. I can’t let something that sweet die. Up.` },
+    { text: `Simply another kind of star`, outcome: 'boring',  line: `Another star? The Void is the OPPOSITE of a star — the absence, the anti-me. Wrong, and dangerous. Down.` },
+    { text: `A quiet place to rest`,        outcome: 'boring',  line: `“A place to rest.” That rest is OBLIVION, little light. Romanticize the thing erasing you again and I’ll let it. Goodbye.` },
+  ] },
+  { q: `In all that darkness, what holds the Void back?`, options: [
+    { text: `A single spark of light`,     outcome: 'correct', line: `A spark. ONE spark — striking light into the dark, body by shattered body. That’s all you are, and it’s ENOUGH. Now RISE and burn.` },
+    { text: `Sheer stubbornness`,          outcome: 'funny',   line: `“Sheer stubbornness holds back the Void.” Wrong! ...And the most ME answer I’ve ever heard. Stubborn little light. Fine — LIVE.` },
+    { text: `Nothing ever could`,          outcome: 'boring',  line: `“Nothing”?! I have held that dark back since before your kind had EYES. Despair on your OWN time. Down.` },
+    { text: `Louder darkness`,             outcome: 'boring',  line: `“Louder darkness.” That isn’t a thought, it’s a noise. You understand NOTHING of this war. Goodbye.` },
+  ] },
+  { q: `A spark of light bears down on a massive body in the dark. What does it DO?`, options: [
+    { text: `Strike, and shatter it in a burst of light`, outcome: 'correct', line: `YES. You don’t go AROUND a body — you go THROUGH it. Strike, shatter, scatter it across the dark. That’s what a spark is FOR. Rise and burn!` },
+    { text: `Charge in screaming and hope for the best`,  outcome: 'funny',   line: `“Charge in screaming and hope.” ...That’s not a technique, that’s just how you’ve played this ENTIRE run, isn’t it? Reckless. Glorious. Live.` },
+    { text: `Slip quietly past and leave it be`,          outcome: 'boring',  line: `Slip PAST it? Leave it BE? You are a spark of annihilation, not a polite houseguest. Cowardice. Down.` },
+    { text: `Turn and flee into the dark`,                outcome: 'boring',  line: `FLEE? Toward the DARK — the very thing I’m protecting you from? You’re running the wrong way, little light. Goodbye.` },
+  ] },
+];
+
+function _siriusShuffle(a) {
+  for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); const t = a[i]; a[i] = a[j]; a[j] = t; }
+  return a;
+}
+function _siriusPickQuestion() {
+  let i = 0;
+  if (SIRIUS_QUIZ.length > 1) { do { i = Math.floor(Math.random() * SIRIUS_QUIZ.length); } while (i === _siriusQuizLastIdx); }
+  _siriusQuizLastIdx = i;
+  return SIRIUS_QUIZ[i];
+}
+function _siriusHideOverlay() {
+  const ov = document.getElementById('ascensionOverlay');
+  if (ov) { ov.classList.remove('visible'); ov.classList.remove('particle-phase'); ov.classList.remove('sd-scene'); ov.classList.remove('blackout'); }
+}
+function _siriusClearQuizOptions() {
+  const w = document.getElementById('siriusQuizOptions');
+  if (w && w.parentNode) w.parentNode.removeChild(w);
+}
+// Quiz beat 1 — Sirius asks. onComplete renders the A/B/C/D buttons.
+function _siriusStartQuiz() {
+  const q = _siriusPickQuestion();
+  const shuffled = _siriusShuffle(q.options.slice());
+  _siriusCurrentQuiz = { q: q, options: shuffled };
+  dialogueStart([['Sirius', q.q]], { substitute: siriusSubstitute, onComplete: _siriusShowQuizOptions });
+}
+// Quiz beat 2 — 4 plain options (no markers). TAP-TO-CONTINUE is suppressed; the
+// only way forward is a button. No time pressure.
+function _siriusShowQuizOptions() {
+  if (!_siriusCurrentQuiz) return;
+  const dlg = document.getElementById('ascensionDialogue');
+  if (!dlg) return;
+  _dlgShowContinue(false);
+  _siriusClearQuizOptions();
+  const wrap = document.createElement('div');
+  wrap.id = 'siriusQuizOptions';
+  wrap.style.cssText = 'display:flex;flex-direction:column;gap:8px;margin-top:16px;pointer-events:auto;';
+  const letters = ['A', 'B', 'C', 'D'];
+  _siriusCurrentQuiz.options.forEach((opt, i) => {
+    const btn = document.createElement('button');
+    btn.className = 'pause-btn';                 // reuse existing button styling
+    btn.textContent = letters[i] + ')  ' + siriusSubstitute(opt.text);
+    const fire = (e) => { if (e) { e.preventDefault(); e.stopPropagation(); } _siriusAnswer(opt); };
+    btn.addEventListener('click', fire);
+    btn.addEventListener('touchstart', fire, { passive: false });
+    wrap.appendChild(btn);
+  });
+  dlg.appendChild(wrap);
+}
+// Quiz beat 3 — react to the chosen option. correct/funny → revive (existing
+// siriusResurrect continuity); boring → no revive → death screen.
+function _siriusAnswer(opt) {
+  if (!_siriusCurrentQuiz) return;
+  _siriusCurrentQuiz = null;            // guard against double-fire
+  _siriusClearQuizOptions();
+  const revive = (opt.outcome === 'correct' || opt.outcome === 'funny');
+  dialogueStart([['Sirius', opt.line]], { substitute: siriusSubstitute, onComplete: revive ? siriusResurrect : siriusQuizFail });
+}
+// Quiz terminal (wrong/boring answer): NO revive. Release the revive lock, hide
+// the dialogue, and route into the normal death screen WITHOUT replaying the
+// death impact FX (already played by siriusBeginRevive).
+function siriusQuizFail() {
+  _siriusClearQuizOptions();
+  _siriusIsQuiz = false;
+  siriusReviveActive = false;
+  dialogueStop();
+  _siriusHideOverlay();
+  _siriusSkipDeathImpact = true;
+  try { triggerDeath(); } catch (e) { console.error('[sirius] quiz-fail finalize threw', e); }
+}
+
+// --- Death-convo (roast, no revive) — eligibility + cutscene ---
+// Rolled by triggerDeath ONLY when the resurrect roll missed (mutual exclusion).
+// Allowed on the post-revive final death too (resurrect is blocked there, but a
+// roast can still land — uses the dedicated SIRIUS_FINAL_REVIVE_CONVO pool).
+function siriusDeathConvoEligible() {
+  if (apocalypseDeathFlag) return false;                 // apocalypse triggers nothing
+  if (!tutorialCompleted) return false;
+  if (ascensionRunActive) return false;
+  if (_secondDeathFinalizing) return false;
+  if (ascensionCutsceneActive || secondDeathActive || siriusReviveActive) return false;
+  if (_siriusSkipDeathImpact) return false;              // re-entry after a convo/quiz-fail → never a second beat
+  if (!ascensionUsed || !secondDeathUsed) return false;  // past beats 1 & 2
+  if (!siriusUsed) return false;                         // post-reveal only (death-3 is the reveal/revive)
+  const ms = _siriusSurvivalMs();
+  const chance = SIRIUS_CONVO_TIERS[_siriusConvoTierIndex(ms)].chance;
+  return Math.random() < chance;
+}
+function siriusBeginDeathConvo() {
+  // Death feel + animation (mirrors siriusBeginRevive's intro; never apocalypse —
+  // guarded out of eligibility). This is the only impact pass — the death-screen
+  // finalize is reached via _siriusSkipDeathImpact and skips a second one.
+  shakePlayerDeath(lastDeathCause || 'body');
+  triggerHitstop(100);
+  clearResumeState();
+  try { SFX.death(); } catch {}
+  try { SFX.stopAllGameplayTracks(0.2); } catch {}
+  try { SFX.playTrack(null, 0.3); } catch {}
+  pauseBtn.classList.remove('visible');
+  if (typeof AdManager !== 'undefined') try { AdManager.hideBanner(); } catch {}
+  secondDeathClearTransients();
+  spawnDeathShards(player.x, player.y);
+  deathFlashFrames = 1;
+  activeEffects = { shield: 0, hyperspeed: 0, ghost: 0 };
+  shieldEndTime = 0; ghostEndTime = 0; hyperspeedEndTime = 0;
+  hyperSpeedStacks = 0; hyperspeedCurrentMult = 1; hyperspeedTargetSpeed = 0;
+  if (hyperspeedWhooshNodes) { try { hyperspeedWhooshNodes.stop(0.1); } catch {} hyperspeedWhooshNodes = null; }
+  shieldBroken = false; shieldHits = 0; fortressShield = false;
+  activeCombos = {}; lastComboLabel = null;
+  clearPendingNovaTimeouts();
+  if (pendingDeathBurstTimer) { clearTimeout(pendingDeathBurstTimer); pendingDeathBurstTimer = null; }
+  const line = siriusNextDeathFinal ? pickSiriusFinalConvoLine() : pickSiriusConvoLine(_siriusSurvivalMs());
+  // Reuse the wired sirius cutscene states (render/FPS already handle them).
+  state = 'sirius_predeath';
+  _siriusTimeout(() => {
+    if (state !== 'sirius_predeath') return;
+    state = 'sirius_cutscene';
+    deathParticles = []; deathShards = []; deathFlashFrames = 0;
+    pickupParticles = []; orbTrailParticles = []; destroyEffects = [];
+    dialogueStart([line], { substitute: siriusSubstitute, onComplete: _siriusConvoComplete });
+  }, SIRIUS_PREDEATH_MS);
+}
+function _siriusConvoComplete() {
+  dialogueStop();
+  _siriusHideOverlay();
+  _siriusSkipDeathImpact = true;   // route to the normal death screen without re-running impact FX
+  try { triggerDeath(); } catch (e) { console.error('[sirius] convo finalize threw', e); }
 }
 // Orb-dependent resurrect colour — same colour a normal death produces for the
 // current orb (activeOrbColor()). Returns [h,s,l] for convergeReform's hslFn.
@@ -32984,9 +33306,18 @@ function siriusReviveEligible() {
   if (ascensionRunActive) return false;                  // the Ascension run's own end-death is excluded
   if (_secondDeathFinalizing) return false;              // death 2's finalize re-entry isn't a new death
   if (ascensionCutsceneActive || secondDeathActive || siriusReviveActive) return false;
+  // v1.10.0 Stage 4: re-entry to triggerDeath after a death-convo or a failed
+  // quiz must NOT roll a revive — those paths already decided "no revive" and set
+  // this flag to fall through to the normal death screen.
+  if (_siriusSkipDeathImpact) return false;
   // TEMPORARY debug: force a revive on every qualifying death (bypasses the
   // 1-in-20 roll AND the next-death-final lock). See _SIRIUS_DEBUG_FORCE_REVIVE.
   if (_SIRIUS_DEBUG_FORCE_REVIVE && ascensionUsed && secondDeathUsed) return true;
+  // TEMPORARY debug — TODO: REMOVE BEFORE RELEASE (search "QUIZTEST"): force a
+  // revive (which siriusBeginRevive then forces into a QUIZ) on every qualifying
+  // death, bypassing the resurrect roll AND the next-death-final lock so quizzes
+  // can be triggered repeatedly.
+  if (_SIRIUS_QUIZTEST && ascensionUsed && secondDeathUsed) return true;
   if (siriusNextDeathFinal) return false;                // the death AFTER any revive is final
   if (!ascensionUsed || !secondDeathUsed) return false;  // must be past narrator beats 1 & 2
   if (!siriusUsed) return true;                          // DEATH 3 → guaranteed reveal + revive
@@ -33007,6 +33338,10 @@ function siriusBeginRevive() {
   siriusReviveActive = true;
   siriusRevealPending = !siriusUsed;          // death-3 reveal vs a later 1-in-20
   if (siriusRevealPending) saveSiriusUsed(true); // lock + reveal the name permanently
+  // v1.10.0 Stage 4: a SUBSEQUENT revive (not the death-3 reveal) is sometimes a
+  // QUIZ. QUIZTEST forces it; otherwise the approved 30% fraction. Death-3 stays
+  // simple/no-quiz (it's the introduction beat).
+  _siriusIsQuiz = !siriusRevealPending && (_SIRIUS_QUIZTEST || Math.random() < SIRIUS_QUIZ_FRACTION);
   // Snapshot the real run length so the cutscene wall-time doesn't inflate
   // TIME SURVIVED / progression once the run resumes.
   siriusReviveElapsedMs = runStartTime ? (Date.now() - runStartTime) : 0;
@@ -33051,8 +33386,16 @@ function siriusDialogue() {
   ascensionParticles = []; ascensionFlashUntil = 0;
   const overlayEl = document.getElementById('overlay');
   if (overlayEl) overlayEl.classList.add('hidden');
-  const lines = siriusRevealPending ? SIRIUS_REVEAL_DIALOGUE : [pickSiriusReviveLine()];
-  dialogueStart(lines, { substitute: siriusSubstitute, onComplete: siriusResurrect });
+  // v1.10.0 Stage 4: death-3 reveal → scripted lines; subsequent → quiz (30%) or
+  // a simple one-liner (70%). Quiz correct/funny answers route to siriusResurrect
+  // (same continuity); a boring answer routes to siriusQuizFail (no revive).
+  if (siriusRevealPending) {
+    dialogueStart(SIRIUS_REVEAL_DIALOGUE, { substitute: siriusSubstitute, onComplete: siriusResurrect });
+  } else if (_siriusIsQuiz) {
+    _siriusStartQuiz();
+  } else {
+    dialogueStart([pickSiriusReviveLine()], { substitute: siriusSubstitute, onComplete: siriusResurrect });
+  }
 }
 
 // Beat 2 — orb-coloured resurrection convergence (reuses convergeReform).
