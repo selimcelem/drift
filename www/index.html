@@ -1140,6 +1140,14 @@
     opacity: 0;
     transition: opacity 0.15s;
     pointer-events: none;
+    /* v1.10.0 HUD fix: never wrap to a second line. At 3-digit streaks
+       ("🔥 x128") the default white-space:normal let the value break at its
+       space into two lines, which grew #scoreRow's height and pushed #runTimer
+       (the flex child below) down into the canvas-rendered hyperspeed banner
+       (fixed at y=58+safe+cutout) — causing the timer/banner overlap + apparent
+       position-swapping. nowrap keeps it one line at any digit count, so the row
+       height — and therefore the timer's Y — stays constant. */
+    white-space: nowrap;
   }
   #streakDisplay.visible { opacity: 1; }
 
@@ -3808,8 +3816,26 @@ function getCachedGradient(key, createFn, tctx) {
   if (!gradientCache[key]) gradientCache[key] = createFn(ctx);
   return gradientCache[key];
 }
+// Per-ctx cached gradient store for the hyperspeed visuals (player stack-glow +
+// barrier). getCachedGradient bypasses its cache for any non-#c ctx (a safety
+// guard for the transient per-body pixi canvases); these visuals instead render
+// onto STABLE singletons (the global #c ctx and the persistent pixiPlayerCtx /
+// pixiHyperBarrierCtx), so their gradients are safe to cache per-ctx — killing
+// the per-frame gradient allocation in BOTH render paths. Gradient coords are in
+// LOCAL space (the callers translate to the player each frame); since Canvas
+// gradients are mapped by the CTM at paint time, one cached gradient lands
+// correctly every frame regardless of player position. Keyed by ctx → {key →
+// CanvasGradient}; cleared on resize alongside the main gradient cache.
+const _hyperGradStore = new Map();
+function _hyperGrad(tctx, key, createFn) {
+  let sub = _hyperGradStore.get(tctx);
+  if (!sub) { sub = {}; _hyperGradStore.set(tctx, sub); }
+  if (sub[key] === undefined) sub[key] = createFn(tctx);
+  return sub[key];
+}
 function clearGradientCache() {
   for (const k in gradientCache) delete gradientCache[k];
+  _hyperGradStore.clear();
 }
 // Resize handler — debounced 150ms so a stream of orientation/size events
 // coalesces into a single rebuild. Drops the gradient cache and reseeds the
@@ -7080,7 +7106,7 @@ function _cyan_drawFlashes() {
   ctx.save();
   ctx.font = 'bold 11px Orbitron, monospace';
   ctx.textAlign = 'center';
-  ctx.shadowBlur = 8;
+  ctx.lineJoin = 'round'; // clean thick stroke-halo corners (replaces shadowBlur)
   let i = 0;
   for (const f of _cyan_flashes) {
     const age = now - f.startTime;
@@ -7088,8 +7114,13 @@ function _cyan_drawFlashes() {
     visible.push(f);
     const fade = 1 - age / f.durationMs;
     const y = player.y - 28 - (i * 13) - (age / f.durationMs) * 16;
+    // v1.10.0: dark semi-transparent stroke halo for legibility + bright fill
+    // (replaces the forbidden shadowBlur glow). No blur, no gradient — crisp,
+    // readable text that holds up over the brighter additive effects.
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = `rgba(0,0,0,${(0.5 * fade).toFixed(2)})`;
+    ctx.strokeText(f.text, player.x, y);
     ctx.fillStyle = `rgba(${f.color},${(0.95 * fade).toFixed(2)})`;
-    ctx.shadowColor = `rgba(${f.color},${(0.85 * fade).toFixed(2)})`;
     ctx.fillText(f.text, player.x, y);
     i++;
   }
@@ -7402,7 +7433,7 @@ function _cosmic_drawFlashes() {
   ctx.save();
   ctx.font = 'bold 11px Orbitron, monospace';
   ctx.textAlign = 'center';
-  ctx.shadowBlur = 8;
+  ctx.lineJoin = 'round'; // clean thick stroke-halo corners (replaces shadowBlur)
   let i = 0;
   for (const f of _cosmic_flashes) {
     const age = now - f.startTime;
@@ -7410,8 +7441,13 @@ function _cosmic_drawFlashes() {
     visible.push(f);
     const fade = 1 - age / f.durationMs;
     const y = player.y - 28 - (i * 13) - (age / f.durationMs) * 16;
+    // v1.10.0: dark semi-transparent stroke halo for legibility + bright fill
+    // (replaces the forbidden shadowBlur glow). No blur, no gradient — crisp,
+    // readable text that holds up over the brighter additive effects.
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = `rgba(0,0,0,${(0.5 * fade).toFixed(2)})`;
+    ctx.strokeText(f.text, player.x, y);
     ctx.fillStyle = `rgba(${f.color},${(0.95 * fade).toFixed(2)})`;
-    ctx.shadowColor = `rgba(${f.color},${(0.85 * fade).toFixed(2)})`;
     ctx.fillText(f.text, player.x, y);
     i++;
   }
@@ -7802,7 +7838,7 @@ function _solar_drawFlashes() {
   ctx.save();
   ctx.font = 'bold 11px Orbitron, monospace';
   ctx.textAlign = 'center';
-  ctx.shadowBlur = 8;
+  ctx.lineJoin = 'round'; // clean thick stroke-halo corners (replaces shadowBlur)
   let i = 0;
   for (const f of _solar_flashes) {
     const age = now - f.startTime;
@@ -7810,8 +7846,13 @@ function _solar_drawFlashes() {
     visible.push(f);
     const fade = 1 - age / f.durationMs;
     const y = player.y - 28 - (i * 13) - (age / f.durationMs) * 16;
+    // v1.10.0: dark semi-transparent stroke halo for legibility + bright fill
+    // (replaces the forbidden shadowBlur glow). No blur, no gradient — crisp,
+    // readable text that holds up over the brighter additive effects.
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = `rgba(0,0,0,${(0.5 * fade).toFixed(2)})`;
+    ctx.strokeText(f.text, player.x, y);
     ctx.fillStyle = `rgba(${f.color},${(0.95 * fade).toFixed(2)})`;
-    ctx.shadowColor = `rgba(${f.color},${(0.85 * fade).toFixed(2)})`;
     ctx.fillText(f.text, player.x, y);
     i++;
   }
@@ -7974,7 +8015,7 @@ function _nebula_drawFlashes() {
   ctx.save();
   ctx.font = 'bold 11px Orbitron, monospace';
   ctx.textAlign = 'center';
-  ctx.shadowBlur = 8;
+  ctx.lineJoin = 'round'; // clean thick stroke-halo corners (replaces shadowBlur)
   let i = 0;
   for (const f of _nebula_flashes) {
     const age = now - f.startTime;
@@ -7982,8 +8023,13 @@ function _nebula_drawFlashes() {
     visible.push(f);
     const fade = 1 - age / f.durationMs;
     const y = player.y - 28 - (i * 13) - (age / f.durationMs) * 16;
+    // v1.10.0: dark semi-transparent stroke halo for legibility + bright fill
+    // (replaces the forbidden shadowBlur glow). No blur, no gradient — crisp,
+    // readable text that holds up over the brighter additive effects.
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = `rgba(0,0,0,${(0.5 * fade).toFixed(2)})`;
+    ctx.strokeText(f.text, player.x, y);
     ctx.fillStyle = `rgba(${f.color},${(0.95 * fade).toFixed(2)})`;
-    ctx.shadowColor = `rgba(${f.color},${(0.85 * fade).toFixed(2)})`;
     ctx.fillText(f.text, player.x, y);
     i++;
   }
@@ -8146,7 +8192,7 @@ function _asteroid_drawFlashes() {
   ctx.save();
   ctx.font = 'bold 11px Orbitron, monospace';
   ctx.textAlign = 'center';
-  ctx.shadowBlur = 8;
+  ctx.lineJoin = 'round'; // clean thick stroke-halo corners (replaces shadowBlur)
   let i = 0;
   for (const f of _asteroid_flashes) {
     const age = now - f.startTime;
@@ -8154,8 +8200,13 @@ function _asteroid_drawFlashes() {
     visible.push(f);
     const fade = 1 - age / f.durationMs;
     const y = player.y - 28 - (i * 13) - (age / f.durationMs) * 16;
+    // v1.10.0: dark semi-transparent stroke halo for legibility + bright fill
+    // (replaces the forbidden shadowBlur glow). No blur, no gradient — crisp,
+    // readable text that holds up over the brighter additive effects.
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = `rgba(0,0,0,${(0.5 * fade).toFixed(2)})`;
+    ctx.strokeText(f.text, player.x, y);
     ctx.fillStyle = `rgba(${f.color},${(0.95 * fade).toFixed(2)})`;
-    ctx.shadowColor = `rgba(${f.color},${(0.85 * fade).toFixed(2)})`;
     ctx.fillText(f.text, player.x, y);
     i++;
   }
@@ -10883,7 +10934,7 @@ function _drifterV2_drawFlashes() {
   // ~16px over its lifetime and fades out. Simultaneous flashes stack
   // vertically above (newer below, older above so the upward float
   // separates them naturally).
-  ctx.shadowBlur = 8; // v1.9.0 perf: hoisted out of the loop (constant for all flashes)
+  ctx.lineJoin = 'round'; // clean thick stroke-halo corners (replaces shadowBlur)
   let i = 0;
   for (const f of _drifterV2_flashes) {
     const age = now - f.startTime;
@@ -10893,8 +10944,13 @@ function _drifterV2_drawFlashes() {
     const floatOffset = (age / f.durationMs) * 16;
     const baseY = player.y - 28 - (i * 13);
     const y = baseY - floatOffset;
+    // v1.10.0: dark semi-transparent stroke halo for legibility + bright fill
+    // (replaces the forbidden shadowBlur glow). No blur, no gradient — crisp,
+    // readable text that holds up over the brighter additive effects.
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = `rgba(0,0,0,${(0.5 * fade).toFixed(2)})`;
+    ctx.strokeText(f.text, player.x, y);
     ctx.fillStyle = `rgba(${f.color},${(0.95 * fade).toFixed(2)})`;
-    ctx.shadowColor = `rgba(${f.color},${(0.85 * fade).toFixed(2)})`;
     ctx.fillText(f.text, player.x, y);
     i++;
   }
@@ -12576,7 +12632,7 @@ function _phantomV2_drawFlashes() {
   ctx.save();
   ctx.font = 'bold 11px Orbitron, monospace';
   ctx.textAlign = 'center';
-  ctx.shadowBlur = 6; // v1.9.0 perf: hoisted out of the loop (constant for all flashes)
+  ctx.lineJoin = 'round'; // clean thick stroke-halo corners (replaces shadowBlur)
   let i = 0;
   for (const f of _phantomV2_flashes) {
     const age = now - f.startTime;
@@ -12586,8 +12642,13 @@ function _phantomV2_drawFlashes() {
     const floatOffset = (age / f.durationMs) * 16;
     const baseY = player.y - 28 - (i * 13);
     const y = baseY - floatOffset;
+    // v1.10.0: dark semi-transparent stroke halo for legibility + bright fill
+    // (replaces the forbidden shadowBlur glow). No blur, no gradient — crisp,
+    // readable text that holds up over the brighter additive effects.
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = `rgba(0,0,0,${(0.5 * fade).toFixed(2)})`;
+    ctx.strokeText(f.text, player.x, y);
     ctx.fillStyle = `rgba(${f.color},${(0.95 * fade).toFixed(2)})`;
-    ctx.shadowColor = `rgba(${f.color},${(0.85 * fade).toFixed(2)})`;
     ctx.fillText(f.text, player.x, y);
     i++;
   }
@@ -19743,8 +19804,10 @@ function updatePixiParticleLayer() {
   if (!pixiActive || !pixiParticleLayer) return;
 
   // --- Pickup particles (bucketed) ---
+  // v1.10.0: additive blend → glowing motes (shared recipe).
   const pg = pixiPickupParticlesG;
   pg.clear();
+  pg.blendMode = PIXI.BLEND_MODES.ADD;
   if (pickupParticles.length) {
     const bucketMidAlpha = [0.125, 0.375, 0.625, 0.875];
     const buckets = {}; // "rgb|bi" -> particle[]
@@ -19834,8 +19897,10 @@ function updatePixiParticleLayer() {
   }
 
   // --- Crack fragments (dot + 3-ring gradient approx) ---
+  // v1.10.0: additive blend → glowing fire embers (shared recipe).
   const cfg = pixiCrackFragmentsG;
   cfg.clear();
+  cfg.blendMode = PIXI.BLEND_MODES.ADD;
   if (crackFragments.length) {
     for (const f of crackFragments) {
       const life = Math.max(0, f.life / f.maxLife);
@@ -20042,8 +20107,10 @@ function updatePixiPowerupLayer() {
   if (!pixiActive || !pixiPowerupLayer) return;
 
   // --- Pair tethers ---
+  // v1.10.0: additive blend → glowing energy beam (shared recipe).
   const tg = pixiPairTethersG;
   tg.clear();
+  tg.blendMode = PIXI.BLEND_MODES.ADD;
   if (powerups.length >= 2) {
     const drawn = new Set();
     const pulse = Math.sin(frame * 0.18) * 0.3 + 0.7;
@@ -20212,14 +20279,26 @@ function updatePixiOverlayLayer() {
   _drawPixiNovaRings();
   _updatePixiNovaFlashes();
 
-  // Planet ripples: two stroked rings per entry.
+  // Planet ripples: crisp additive violet shockwave (glow band + bright core
+  // at the real radius + faint trailing accent), matching the EMP/nova ring
+  // recipe. Violet = ghost-contact identity. Was flat non-additive strokes.
   const rg = pixiPlanetRipplesG;
   rg.clear();
-  for (const r of planetRipples) {
-    rg.lineStyle({ width: 1.6, color: 0xDC96FF, alpha: r.life * 0.7 * r.life });
-    rg.drawCircle(r.x, r.y, r.baseR + r.expand);
-    rg.lineStyle({ width: 1, color: 0xDC96FF, alpha: r.life * 0.35 * r.life });
-    rg.drawCircle(r.x, r.y, r.baseR + r.expand * 1.6);
+  if (planetRipples.length) {
+    rg.blendMode = PIXI.BLEND_MODES.ADD;
+    const ripRing = _rgbStrToHex(_BURST_PAL_GHOST.ring);
+    const ripCore = _rgbStrToHex(_BURST_PAL_GHOST.core);
+    for (const r of planetRipples) {
+      const rr = r.baseR + r.expand;
+      if (rr < 1) continue;
+      const life = Math.max(0, Math.min(1, r.life));
+      rg.lineStyle({ width: 7, color: ripRing, alpha: life * 0.22 });
+      rg.drawCircle(r.x, r.y, rr);
+      rg.lineStyle({ width: 1.6, color: ripCore, alpha: Math.min(1, life * 0.9) });
+      rg.drawCircle(r.x, r.y, rr);
+      rg.lineStyle({ width: 1, color: ripRing, alpha: life * 0.18 });
+      rg.drawCircle(r.x, r.y, r.baseR + r.expand * 1.6);
+    }
   }
   rg.lineStyle();
 
@@ -27383,27 +27462,31 @@ function mulberry32(seed) {
   };
 }
 
-// Crack fragments drawn as small glowing discs.
+// Crack fragments drawn as small glowing embers.
 function drawCrackFragments() {
   // Step 5: pixi handles crack fragments via updatePixiParticleLayer (using
   // a multi-ring approximation for the radial-gradient glow).
   if (pixiActive) return;
+  if (!crackFragments.length) return;
+  // v1.10.0: baked fire-bloom blit (additive) + crisp bright core, replacing the
+  // per-frame radial gradient (forbidden). Orange = fire/debris identity. Reuses
+  // the shared _burstBloom.fire texture baked once at load.
+  const fireTex = (_burstBloom && _burstBloom.fire) ? _burstBloom.fire : null;
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
   for (const f of crackFragments) {
     const life = Math.max(0, f.life / f.maxLife);
-    ctx.save();
     const glowR = f.radius * 3.5;
-    const g = ctx.createRadialGradient(f.x, f.y, 0, f.x, f.y, glowR);
-    g.addColorStop(0, 'rgba(255,150,60,0.6)');
-    g.addColorStop(1, 'rgba(255,100,40,0)');
-    ctx.globalAlpha = life * 0.65;
-    ctx.fillStyle = g;
-    ctx.beginPath(); ctx.arc(f.x, f.y, glowR, 0, 6.28); ctx.fill();
+    if (fireTex) {
+      ctx.globalAlpha = life * 0.6;
+      ctx.drawImage(fireTex, f.x - glowR, f.y - glowR, glowR * 2, glowR * 2);
+    }
     ctx.globalAlpha = life;
-    ctx.fillStyle = '#ff8040';
+    ctx.fillStyle = 'rgba(255,180,90,1)';
     ctx.beginPath(); ctx.arc(f.x, f.y, f.radius * (0.7 + 0.3 * life), 0, 6.28); ctx.fill();
-    ctx.restore();
   }
   ctx.globalAlpha = 1;
+  ctx.restore();
 }
 
 // Orb-specific trail particles. Every orb (including cyan) emits behind the
@@ -28392,23 +28475,31 @@ function drawPlayer(tctx = ctx) {
       const pulse1Hz = (rawHits >= 7)
         ? (0.75 + 0.25 * Math.sin(Date.now() * 0.00628)) // ~1Hz brightness pulse
         : 1;
-      ctx.globalAlpha = shieldVis * 0.7 * pulse1Hz;
-      // Outer glow ring at PLAYER_R * 4.2 (matches atlas outer edge).
+      // v1.10.0: Bastion 5/6/7+ escalation as a crisp ADDITIVE glow-band + bright
+      // core ring (was a per-frame shadowBlur halo — a forbidden GPU-blur state).
+      // Cyan = shield identity; saturated blue-white at 6+.
+      const prevBastionOp = ctx.globalCompositeOperation;
+      ctx.globalCompositeOperation = 'lighter';
       const ringR = PLAYER_R * 4.2 + 2;
-      ctx.strokeStyle = rawHits >= 6
-        ? 'rgba(200,250,255,0.95)' // saturated blue-white at 6+
-        : 'rgba(140,230,255,0.85)';
+      const bandRgb = rawHits >= 6 ? '180,240,255' : '140,230,255';
+      const coreRgb = rawHits >= 6 ? '200,250,255' : '170,240,255';
+      // Wide glow band (replaces the shadowBlur bloom — constant thickness, sharp).
+      ctx.globalAlpha = shieldVis * 0.5 * pulse1Hz;
+      ctx.strokeStyle = `rgba(${bandRgb},1)`;
+      ctx.lineWidth = 8 + extra * 2;
+      ctx.beginPath(); ctx.arc(0, 0, ringR, 0, 6.28); ctx.stroke();
+      // Crisp bright core ring on top.
+      ctx.globalAlpha = shieldVis * 0.85 * pulse1Hz;
+      ctx.strokeStyle = `rgba(${coreRgb},1)`;
       ctx.lineWidth = 2 + extra * 0.6;
-      ctx.shadowColor = rawHits >= 6 ? 'rgba(180,240,255,1)' : 'rgba(140,230,255,0.8)';
-      ctx.shadowBlur = 10 + extra * 3;
       ctx.beginPath(); ctx.arc(0, 0, ringR, 0, 6.28); ctx.stroke();
       // Second outer wisp for rank-6/7, thinner.
       if (rawHits >= 6) {
-        ctx.globalAlpha = shieldVis * 0.45 * pulse1Hz;
+        ctx.globalAlpha = shieldVis * 0.4 * pulse1Hz;
         ctx.lineWidth = 1.2;
         ctx.beginPath(); ctx.arc(0, 0, ringR + 5, 0, 6.28); ctx.stroke();
       }
-      ctx.shadowBlur = 0;
+      ctx.globalCompositeOperation = prevBastionOp;
     }
     // Accretion (Collapse T1) absorb window OPEN: pulse an amber ring on the
     // shield as the "now absorbing" cue (v1.9.0). Both render paths share
@@ -28425,14 +28516,20 @@ function drawPlayer(tctx = ctx) {
   // (PHANTOM BLAST ring is drawn on the additive overlay now — see
   // _phantomBlastRings / drawPhantomBlastRing / _drawPixiPhantomBlast.)
 
-  // Ghost wispy aura: 3 concentric pulsing rings out of phase + soft purple halo
+  // Ghost wispy aura: 3 concentric pulsing rings out of phase + soft purple halo.
+  // v1.10.0: now ADDITIVE (shared recipe) so the violet reads as a glowing
+  // spectral haze instead of flat translucent strokes. The halo gradient stays
+  // CACHED (baked once — no per-frame alloc); only the blend mode changed. Crisp
+  // constant-thickness rings. Violet = ghost/phantom identity.
   if (ghosting) {
     const f1 = Math.sin(frame * 0.10)         * 0.5 + 0.5;
     const f2 = Math.sin(frame * 0.10 + 2.094) * 0.5 + 0.5; // +120deg
     const f3 = Math.sin(frame * 0.10 + 4.189) * 0.5 + 0.5; // +240deg
+    const prevGhostOp = ctx.globalCompositeOperation;
+    ctx.globalCompositeOperation = 'lighter';
 
-    // Soft purple gradient halo
-    ctx.globalAlpha = 0.35;
+    // Soft purple halo (cached gradient — baked once, additive).
+    ctx.globalAlpha = 0.32;
     const gg = getCachedGradient('ghost_halo', (c) => {
       const g = c.createRadialGradient(0, 0, PLAYER_R, 0, 0, PLAYER_R * 4.4);
       g.addColorStop(0,   'rgba(190,110,240,0.5)');
@@ -28443,23 +28540,24 @@ function drawPlayer(tctx = ctx) {
     ctx.fillStyle = gg;
     ctx.beginPath(); ctx.arc(0, 0, PLAYER_R * 4.4, 0, 6.28); ctx.fill();
 
-    // Inner ring
-    ctx.globalAlpha = 0.55 + 0.3 * f1;
-    ctx.strokeStyle = 'rgba(210,140,255,0.95)';
+    // Inner ring (bright violet core line).
+    ctx.globalAlpha = 0.5 + 0.28 * f1;
+    ctx.strokeStyle = 'rgba(225,165,255,1)';
     ctx.lineWidth = 1.6;
     ctx.beginPath(); ctx.arc(0, 0, PLAYER_R * (2.0 + f1 * 0.45), 0, 6.28); ctx.stroke();
 
     // Middle ring
-    ctx.globalAlpha = 0.4 + 0.25 * f2;
-    ctx.strokeStyle = 'rgba(185,105,240,0.85)';
+    ctx.globalAlpha = 0.36 + 0.24 * f2;
+    ctx.strokeStyle = 'rgba(200,120,250,1)';
     ctx.lineWidth = 1.3;
     ctx.beginPath(); ctx.arc(0, 0, PLAYER_R * (3.0 + f2 * 0.55), 0, 6.28); ctx.stroke();
 
     // Outer ring
-    ctx.globalAlpha = 0.28 + 0.2 * f3;
-    ctx.strokeStyle = 'rgba(160,80,220,0.75)';
+    ctx.globalAlpha = 0.26 + 0.2 * f3;
+    ctx.strokeStyle = 'rgba(180,100,245,1)';
     ctx.lineWidth = 1;
     ctx.beginPath(); ctx.arc(0, 0, PLAYER_R * (4.0 + f3 * 0.6), 0, 6.28); ctx.stroke();
+    ctx.globalCompositeOperation = prevGhostOp;
   }
 
   if (inGrace) {
@@ -28479,11 +28577,16 @@ function drawPlayer(tctx = ctx) {
     const glowA = 0.55 * intensity * ghostAlpha;
     if (Math.round(glowA * 255) > 0) {
       ctx.globalAlpha = glowA;
-      const hg = ctx.createRadialGradient(0,0,0,0,0,PLAYER_R*3.8);
-      hg.addColorStop(0,   `rgba(${tint.r},${tint.g},${tint.b},0.75)`);
-      hg.addColorStop(0.5, `rgba(${tint.r},${tint.g},${tint.b},0.25)`);
-      hg.addColorStop(1,   `rgba(${tint.r},${tint.g},${tint.b},0)`);
-      ctx.fillStyle = hg;
+      // v1.10.0 (Option A): cached per-tier gradient (was allocated every frame).
+      // Local-space, circular → valid under the player translate/rotate. intensity
+      // lives entirely in globalAlpha, so the baked stops are tier-exact.
+      ctx.fillStyle = _hyperGrad(ctx, 'pglow_' + tint.r + '_' + tint.g + '_' + tint.b, (c) => {
+        const g = c.createRadialGradient(0,0,0,0,0,PLAYER_R*3.8);
+        g.addColorStop(0,   `rgba(${tint.r},${tint.g},${tint.b},0.75)`);
+        g.addColorStop(0.5, `rgba(${tint.r},${tint.g},${tint.b},0.25)`);
+        g.addColorStop(1,   `rgba(${tint.r},${tint.g},${tint.b},0)`);
+        return g;
+      });
       ctx.beginPath(); ctx.arc(0,0,PLAYER_R*3.8,0,6.28); ctx.fill();
     }
     if (tint.white) {
@@ -28491,10 +28594,14 @@ function drawPlayer(tctx = ctx) {
       const whiteA = (0.45 + 0.45 * pulse) * intensity * ghostAlpha;
       if (Math.round(whiteA * 255) > 0) {
         ctx.globalAlpha = whiteA;
-        const wg = ctx.createRadialGradient(0,0,0,0,0,PLAYER_R*1.9);
-        wg.addColorStop(0, 'rgba(255,255,255,0.9)');
-        wg.addColorStop(1, 'rgba(255,255,255,0)');
-        ctx.fillStyle = wg;
+        // v1.10.0 (Option A): cached white-core gradient (was per-frame). Pulse
+        // rides on globalAlpha; the gradient itself is constant.
+        ctx.fillStyle = _hyperGrad(ctx, 'pglow_white', (c) => {
+          const g = c.createRadialGradient(0,0,0,0,0,PLAYER_R*1.9);
+          g.addColorStop(0, 'rgba(255,255,255,0.9)');
+          g.addColorStop(1, 'rgba(255,255,255,0)');
+          return g;
+        });
         ctx.beginPath(); ctx.arc(0,0,PLAYER_R*1.9,0,6.28); ctx.fill();
       }
     }
@@ -28753,6 +28860,9 @@ function drawPairTethers() {
     const pulse = Math.sin(frame * 0.18) * 0.3 + 0.7;
     const segments = 6;
     ctx.save();
+    // v1.10.0: additive blend so the pair beam glows like the rest of the family
+    // (shared recipe). Was flat source-over strokes.
+    ctx.globalCompositeOperation = 'lighter';
     // Outer glow beam
     ctx.globalAlpha = 0.35 * pulse;
     ctx.strokeStyle = `rgba(${mix},0.9)`;
@@ -29040,16 +29150,34 @@ function drawNovaRings() {
 
 function drawPlanetRipples() {
   if (pixiActive) return;
+  // v1.10.0: crisp additive shockwave (shared recipe) — a wide violet glow band
+  // under a bright core line, both at the real expanding radius, plus a faint
+  // additive trailing accent (the old outer ring). Was flat, non-additive thin
+  // strokes. Violet = ghost-contact identity (ripple fires on ghost/wraith kills).
+  if (!planetRipples.length) return;
+  const pal = _BURST_PAL_GHOST;
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
   for (const r of planetRipples) {
-    ctx.globalAlpha = r.life * 0.7;
-    ctx.strokeStyle = `rgba(220,150,255,${r.life})`;
+    const rr = r.baseR + r.expand;
+    if (rr < 1) continue;
+    const life = Math.max(0, Math.min(1, r.life));
+    // Wide glow band (constant thickness — sharp at any radius).
+    ctx.globalAlpha = 1;
+    ctx.lineWidth = 7;
+    ctx.strokeStyle = `rgba(${pal.ring},${(life * 0.22).toFixed(3)})`;
+    ctx.beginPath(); ctx.arc(r.x, r.y, rr, 0, 6.28); ctx.stroke();
+    // Crisp bright core ring at the real radius.
     ctx.lineWidth = 1.6;
-    ctx.beginPath(); ctx.arc(r.x, r.y, r.baseR + r.expand, 0, 6.28); ctx.stroke();
-    ctx.globalAlpha = r.life * 0.35;
+    ctx.strokeStyle = `rgba(${pal.core},${Math.min(1, life * 0.9).toFixed(3)})`;
+    ctx.beginPath(); ctx.arc(r.x, r.y, rr, 0, 6.28); ctx.stroke();
+    // Faint trailing accent (the old second ring), now additive.
     ctx.lineWidth = 1;
+    ctx.strokeStyle = `rgba(${pal.ring},${(life * 0.18).toFixed(3)})`;
     ctx.beginPath(); ctx.arc(r.x, r.y, r.baseR + r.expand * 1.6, 0, 6.28); ctx.stroke();
   }
   ctx.globalAlpha = 1;
+  ctx.restore();
 }
 
 // v1.6.4 Cinder visual pass: more visible burn zone hazard. Brighter
@@ -29336,6 +29464,10 @@ function drawPickupParticles() {
     (buckets[key] || (buckets[key] = [])).push(p);
   }
   const bucketMidAlpha = [0.125, 0.375, 0.625, 0.875];
+  // v1.10.0: additive blend so pickup dust reads as glowing motes (shared
+  // recipe). Was flat source-over fills. Bucket batching is unchanged.
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
   for (const key in buckets) {
     const arr = buckets[key];
     const pipe = key.lastIndexOf('|');
@@ -29352,6 +29484,7 @@ function drawPickupParticles() {
     ctx.fill(path);
   }
   ctx.globalAlpha = 1;
+  ctx.restore();
 }
 
 // --- Powerup timer bar (DOM) ---
@@ -29899,35 +30032,43 @@ function drawHyperspeedBarrier(tctx = ctx) {
   const ctx = tctx;
   if (activeEffects.hyperspeed <= 0 || hyperspeedCurrentMult <= 1.05) return;
   const intensity = Math.min(1, (hyperspeedCurrentMult - 1) / 2); // capped 0..1 (was unbounded)
-  const barrierY = player.y - 60;
   const halfW = hyperBarrierHalfW();   // Bow Shock widens 60 → 90 (Warp Velocity T2)
 
+  // v1.10.0 (Option A): BASE tier tint only — the old per-frame white-mix of
+  // r,g,b (which forced a fresh gradient every frame) is gone; the stack-4 white
+  // pulse is now a separate additive white bloom below. The three fill gradients
+  // (wedge / halo / aura) are therefore static per tier and cached per-ctx via
+  // _hyperGrad → ZERO gradient allocation per frame in both render paths. The
+  // filled wedge + filled 360° aura silhouettes are unchanged (still fills, not
+  // outlines). intensity is reapplied via globalAlpha so the baked stops stay
+  // tier-exact (the wedge keeps its intensity² falloff: 0.6·i in alpha × the old
+  // 0.7·i mid-stop → 0.6·i² × baked-0.7).
   const tint = hyperStackTint(hyperSpeedStacks);
-  let r = tint.r, g = tint.g, b = tint.b;
-  // Stack 4: barrier pulses red ↔ white at ~5hz.
-  if (tint.white) {
-    const pulse = (Math.sin(frame * 0.3) + 1) * 0.5; // 0..1
-    const w = pulse * 0.6;
-    r = Math.round(r + (255 - r) * w);
-    g = Math.round(g + (255 - g) * w);
-    b = Math.round(b + (255 - b) * w);
-  }
+  const r = tint.r, g = tint.g, b = tint.b;
   const eR = tint.edgeR, eG = tint.edgeG, eB = tint.edgeB;
+  const sig = r + '_' + g + '_' + b + '_' + halfW;
 
-  // Glowing wedge/barrier shape
+  // Draw in LOCAL space (origin = player) so the cached, position-fixed
+  // gradients land correctly as the player moves. barrierY = -60 in local coords
+  // (matches the old player.y - 60). The pixi path pre-translates its offscreen
+  // ctx; this extra translate composes correctly (net origin = sprite centre).
   ctx.save();
-  ctx.globalAlpha = 0.6 * intensity;
+  ctx.translate(player.x, player.y);
+  const barrierY = -60;
 
-  // Main barrier glow
-  const grd = ctx.createLinearGradient(player.x, barrierY - 15, player.x, barrierY + 20);
-  grd.addColorStop(0, `rgba(${r},${g},${b},0)`);
-  grd.addColorStop(0.4, `rgba(${r},${g},${b},${0.7 * intensity})`);
-  grd.addColorStop(1, `rgba(${r},${Math.round(g*0.82)},${Math.round(b*0.5)},0)`);
-  ctx.fillStyle = grd;
+  // Main barrier glow (filled wedge — silhouette unchanged).
+  ctx.globalAlpha = 0.6 * intensity * intensity;
+  ctx.fillStyle = _hyperGrad(ctx, 'barrier_wedge_' + sig, (c) => {
+    const grd = c.createLinearGradient(0, barrierY - 15, 0, barrierY + 20);
+    grd.addColorStop(0, `rgba(${r},${g},${b},0)`);
+    grd.addColorStop(0.4, `rgba(${r},${g},${b},0.7)`);
+    grd.addColorStop(1, `rgba(${r},${Math.round(g*0.82)},${Math.round(b*0.5)},0)`);
+    return grd;
+  });
   ctx.beginPath();
-  ctx.moveTo(player.x - halfW, barrierY + 15);
-  ctx.quadraticCurveTo(player.x, barrierY - 18, player.x + halfW, barrierY + 15);
-  ctx.quadraticCurveTo(player.x, barrierY + 5, player.x - halfW, barrierY + 15);
+  ctx.moveTo(-halfW, barrierY + 15);
+  ctx.quadraticCurveTo(0, barrierY - 18, halfW, barrierY + 15);
+  ctx.quadraticCurveTo(0, barrierY + 5, -halfW, barrierY + 15);
   ctx.fill();
 
   // Bright edge line
@@ -29935,20 +30076,22 @@ function drawHyperspeedBarrier(tctx = ctx) {
   ctx.strokeStyle = `rgba(${eR},${eG},${eB},${0.9 * intensity})`;
   ctx.lineWidth = 2.5;
   ctx.beginPath();
-  ctx.moveTo(player.x - halfW, barrierY + 15);
-  ctx.quadraticCurveTo(player.x, barrierY - 18, player.x + halfW, barrierY + 15);
+  ctx.moveTo(-halfW, barrierY + 15);
+  ctx.quadraticCurveTo(0, barrierY - 18, halfW, barrierY + 15);
   ctx.stroke();
 
   // Outer glow halo. v1.6.3 FIX D1: paint the radial gradient through an
   // arc() + fill() rather than a fillRect bounding box (fillRect over a
   // radial gradient previously produced a visible rectangular halo).
   ctx.globalAlpha = 0.25 * intensity;
-  const halo = ctx.createRadialGradient(player.x, barrierY, 0, player.x, barrierY, halfW * 1.5);
-  halo.addColorStop(0, `rgba(${r},${g},${b},0.5)`);
-  halo.addColorStop(1, `rgba(${r},${g},${b},0)`);
-  ctx.fillStyle = halo;
+  ctx.fillStyle = _hyperGrad(ctx, 'barrier_halo_' + sig, (c) => {
+    const halo = c.createRadialGradient(0, barrierY, 0, 0, barrierY, halfW * 1.5);
+    halo.addColorStop(0, `rgba(${r},${g},${b},0.5)`);
+    halo.addColorStop(1, `rgba(${r},${g},${b},0)`);
+    return halo;
+  });
   ctx.beginPath();
-  ctx.arc(player.x, barrierY, halfW * 1.5, 0, 6.28);
+  ctx.arc(0, barrierY, halfW * 1.5, 0, 6.28);
   ctx.fill();
 
   // v1.6.3 visual pass: 360° circular aura around the player so the
@@ -29959,21 +30102,44 @@ function drawHyperspeedBarrier(tctx = ctx) {
   const auraR = halfW;
   const pulse360 = 0.85 + 0.15 * Math.sin(frame * 0.2);
   ctx.globalAlpha = 0.30 * intensity * pulse360;
-  const aura = ctx.createRadialGradient(player.x, player.y, auraR * 0.2, player.x, player.y, auraR);
-  aura.addColorStop(0,   `rgba(${r},${g},${b},0.0)`);
-  aura.addColorStop(0.75, `rgba(${r},${g},${b},0.35)`);
-  aura.addColorStop(1,   `rgba(${r},${Math.round(g*0.75)},${Math.round(b*0.4)},0)`);
-  ctx.fillStyle = aura;
+  ctx.fillStyle = _hyperGrad(ctx, 'barrier_aura_' + sig, (c) => {
+    const aura = c.createRadialGradient(0, 0, auraR * 0.2, 0, 0, auraR);
+    aura.addColorStop(0,   `rgba(${r},${g},${b},0.0)`);
+    aura.addColorStop(0.75, `rgba(${r},${g},${b},0.35)`);
+    aura.addColorStop(1,   `rgba(${r},${Math.round(g*0.75)},${Math.round(b*0.4)},0)`);
+    return aura;
+  });
   ctx.beginPath();
-  ctx.arc(player.x, player.y, auraR, 0, 6.28);
+  ctx.arc(0, 0, auraR, 0, 6.28);
   ctx.fill();
   // Edge highlight
   ctx.globalAlpha = 0.45 * intensity * pulse360;
   ctx.strokeStyle = `rgba(${eR},${eG},${eB},${0.7 * intensity})`;
   ctx.lineWidth = 1.6;
   ctx.beginPath();
-  ctx.arc(player.x, player.y, auraR, 0, 6.28);
+  ctx.arc(0, 0, auraR, 0, 6.28);
   ctx.stroke();
+
+  // Stack-4 white pulse — a separate ADDITIVE white bloom over the barrier
+  // (replaces the old per-frame white-mixing of r,g,b). Pulses the barrier
+  // white-hot at ~5Hz without re-baking any gradient. Cached white radial.
+  if (tint.white) {
+    const pulse = (Math.sin(frame * 0.3) + 1) * 0.5; // 0..1
+    const prevOp = ctx.globalCompositeOperation;
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = 0.5 * intensity * pulse;
+    ctx.fillStyle = _hyperGrad(ctx, 'barrier_white_' + halfW, (c) => {
+      const wb = c.createRadialGradient(0, barrierY, 0, 0, barrierY, halfW * 1.2);
+      wb.addColorStop(0,   'rgba(255,255,255,0.9)');
+      wb.addColorStop(0.5, 'rgba(255,255,255,0.4)');
+      wb.addColorStop(1,   'rgba(255,255,255,0)');
+      return wb;
+    });
+    ctx.beginPath();
+    ctx.arc(0, barrierY, halfW * 1.2, 0, 6.28);
+    ctx.fill();
+    ctx.globalCompositeOperation = prevOp;
+  }
 
   ctx.restore();
   ctx.globalAlpha = 1;
