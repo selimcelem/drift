@@ -3687,6 +3687,7 @@ let pixiDeathShardsG = null;
 let pixiCrackFragmentsG = null;
 let pixiDeathFlashG = null;
 let pixiDestroyEffectsG = null;
+let pixiDestroyEffectsAddG = null; // v1.10.0: additive sibling for the energy/spark/flash destroy kinds (a Graphics has a single blendMode, so additive + source-over kinds need separate Graphics)
 // Powerup layer: pixiPairTethersG rebuilt each frame; per-pickup sprites in
 // pixiPowerupEntries (keyed by the powerup object) with their own offscreen
 // canvases re-rendered via drawSinglePowerup(p, tctx) every frame.
@@ -18882,6 +18883,12 @@ function initPixiStars() {
     // sparks + barrier frags should visually sit over pickup particles).
     pixiDestroyEffectsG = new PIXI.Graphics();
     pixiParticleLayer.addChild(pixiDestroyEffectsG);
+    // v1.10.0: additive sibling, drawn ON TOP of the normal one so energy/light
+    // kinds (flash/shock/spark/scan/afterglow/streak/ghost-ripple) bloom over the
+    // solid debris kinds (frags/compression/wisps stay on the normal Graphics).
+    pixiDestroyEffectsAddG = new PIXI.Graphics();
+    pixiDestroyEffectsAddG.blendMode = PIXI.BLEND_MODES.ADD;
+    pixiParticleLayer.addChild(pixiDestroyEffectsAddG);
     // Step 5b: powerups on their own layer above particles. Pair tethers go
     // first so per-pickup sprites render on top of the beam connecting them.
     pixiPowerupLayer = new PIXI.Container();
@@ -19963,8 +19970,10 @@ function rgbStringToHex(rgb) {
 // pipeline shape.
 function updatePixiDestroyEffectsLayer() {
   if (!pixiActive || !pixiDestroyEffectsG) return;
-  const g = pixiDestroyEffectsG;
+  const g = pixiDestroyEffectsG;        // solid/delicate kinds (source-over)
+  const ga = pixiDestroyEffectsAddG;    // energy/light kinds (additive)
   g.clear();
+  if (ga) ga.clear();
   if (!destroyEffects.length) return;
   const BUCKET_ALPHA = [0.125, 0.375, 0.625, 0.875];
   // Batch accumulators keyed for fragment and scan kinds — grouping by
@@ -19982,18 +19991,20 @@ function updatePixiDestroyEffectsLayer() {
   for (const e of destroyEffects) {
     const t = e.age / e.maxLife;
     if (e.kind === 'novaFlash') {
-      g.beginFill(rgbStringToHex(e.color), 1 - t);
-      g.drawCircle(e.x, e.y, e.r * (0.4 + t * 0.6));
-      g.endFill();
+      // Additive (→ ga), alpha halved (was 1.0) so nova/supernova cascades don't
+      // stack to a white blowout.
+      ga.beginFill(rgbStringToHex(e.color), (1 - t) * 0.5);
+      ga.drawCircle(e.x, e.y, e.r * (0.4 + t * 0.6));
+      ga.endFill();
     } else if (e.kind === 'novaShock') {
       const r = e.maxR * t;
       // e.color is a full rgba(...) string in the original; resolve rough
       // hex by grabbing the raw digits. Fallback to orange if unparseable.
       const m = String(e.color).match(/(\d+)[,\s]+(\d+)[,\s]+(\d+)/);
       const colorInt = m ? (parseInt(m[1],10)<<16)|(parseInt(m[2],10)<<8)|parseInt(m[3],10) : 0xFFA040;
-      g.lineStyle({ width: 2.5, color: colorInt, alpha: (1 - t) * 0.9 });
-      g.drawCircle(e.x, e.y, r);
-      g.lineStyle();
+      ga.lineStyle({ width: 2.5, color: colorInt, alpha: (1 - t) * 0.85 });
+      ga.drawCircle(e.x, e.y, r);
+      ga.lineStyle();
     } else if (e.kind === 'novaFrag' || e.kind === 'barrierFrag') {
       const verts = e.verts;
       if (verts && verts.length >= 2) {
@@ -20029,26 +20040,26 @@ function updatePixiDestroyEffectsLayer() {
         lineX - e.dir * 8, e.y, lineX, e.y,
       ]);
     } else if (e.kind === 'shieldSpark') {
-      g.beginFill(rgbStringToHex(e.color), 1 - t);
-      g.drawCircle(e.x, e.y, 1.4);
-      g.endFill();
+      ga.beginFill(rgbStringToHex(e.color), 1 - t);
+      ga.drawCircle(e.x, e.y, 1.4);
+      ga.endFill();
     } else if (e.kind === 'shieldAfter') {
-      // Radial gradient from rgba(180,240,255,alpha) at 0 to rgba(180,240,255,0)
-      // at e.r. Approximate with 3 concentric rings (same trick as crack
-      // fragment glow in Step 5).
-      const alpha = (1 - t) * 0.55;
+      // Cyan afterglow bloom — 3 concentric rings approximating the radial
+      // gradient. Additive (→ ga); alpha slightly lowered so it glows without
+      // blowing out.
+      const alpha = (1 - t) * 0.5;
       if (alpha > 0) {
-        g.beginFill(0xB4F0FF, alpha * 0.55); g.drawCircle(e.x, e.y, e.r * 0.33); g.endFill();
-        g.beginFill(0xB4F0FF, alpha * 0.32); g.drawCircle(e.x, e.y, e.r * 0.66); g.endFill();
-        g.beginFill(0xB4F0FF, alpha * 0.14); g.drawCircle(e.x, e.y, e.r);          g.endFill();
+        ga.beginFill(0xB4F0FF, alpha * 0.55); ga.drawCircle(e.x, e.y, e.r * 0.33); ga.endFill();
+        ga.beginFill(0xB4F0FF, alpha * 0.32); ga.drawCircle(e.x, e.y, e.r * 0.66); ga.endFill();
+        ga.beginFill(0xB4F0FF, alpha * 0.14); ga.drawCircle(e.x, e.y, e.r);          ga.endFill();
       }
     } else if (e.kind === 'barrierStreak') {
       const dx = Math.cos(e.angle) * e.len;
       const dy = Math.sin(e.angle) * e.len;
-      g.lineStyle({ width: 4, color: BARRIER_STREAK_COLOR, alpha: 1 - t });
-      g.moveTo(e.x - dx * 0.2, e.y - dy * 0.2);
-      g.lineTo(e.x + dx, e.y + dy);
-      g.lineStyle();
+      ga.lineStyle({ width: 4, color: BARRIER_STREAK_COLOR, alpha: 1 - t });
+      ga.moveTo(e.x - dx * 0.2, e.y - dy * 0.2);
+      ga.lineTo(e.x + dx, e.y + dy);
+      ga.lineStyle();
     } else if (e.kind === 'barrierComp') {
       const r = e.maxR * t;
       compEllipses.push({ x: e.x, y: e.y, rx: r * 0.55, ry: r, angle: e.angle });
@@ -20056,10 +20067,12 @@ function updatePixiDestroyEffectsLayer() {
       compCount++;
     } else if (e.kind === 'ghostRipple') {
       const r = e.maxR * t;
-      g.lineStyle({ width: 1.5, color: PURPLE_GHOST_RIP_COLOR, alpha: (1 - t) * 0.35 });
-      g.drawCircle(e.x, e.y, r);
-      g.lineStyle();
+      // Additive violet ring (→ ga).
+      ga.lineStyle({ width: 1.5, color: PURPLE_GHOST_RIP_COLOR, alpha: (1 - t) * 0.4 });
+      ga.drawCircle(e.x, e.y, r);
+      ga.lineStyle();
     } else if (e.kind === 'ghostWisp') {
+      // Soft smoke — stays on the NORMAL (source-over) Graphics.
       g.beginFill(PURPLE_GHOST_WISP_COLOR, (1 - t) * 0.55);
       g.drawCircle(e.x, e.y, e.size);
       g.endFill();
@@ -20074,14 +20087,16 @@ function updatePixiDestroyEffectsLayer() {
   }
   // Flush scan batches — one stroke per bucket. Alpha is the 85%-reduced
   // bucket midpoint to match the #c Canvas 2D math.
+  // Scan lines = cyan energy → additive (ga). Frag + compression batches below
+  // stay on the normal Graphics (g).
   for (const biKey in scanBatches) {
     const bi = +biKey;
     const lines = scanBatches[biKey];
-    g.lineStyle({ width: 1.8, color: CYAN_SCAN_COLOR, alpha: BUCKET_ALPHA[bi] * 0.85 });
+    ga.lineStyle({ width: 1.8, color: CYAN_SCAN_COLOR, alpha: BUCKET_ALPHA[bi] * 0.85 });
     for (const l of lines) {
-      g.moveTo(l[0], l[1]); g.lineTo(l[2], l[3]);
+      ga.moveTo(l[0], l[1]); ga.lineTo(l[2], l[3]);
     }
-    g.lineStyle();
+    ga.lineStyle();
   }
   // Flush comp ellipses — one stroke with averaged alpha. PIXI.Graphics has
   // drawEllipse but not rotated-ellipse; approximate via matrix transform
@@ -21419,13 +21434,19 @@ function drawDestroyEffects() {
     const t = e.age / e.maxLife;
 
     if (e.kind === 'novaFlash') {
-      ctx.globalAlpha = 1 - t;
+      // Additive flash, but alpha HALVED (was 1.0) — a filled disc at full
+      // additive alpha blows out to white when nova/supernova cascades stack
+      // many flashes at once; 0.5 keeps the pop without washing the playfield.
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = (1 - t) * 0.5;
       ctx.fillStyle = `rgba(${e.color},1)`;
       ctx.beginPath(); ctx.arc(e.x, e.y, e.r * (0.4 + t * 0.6), 0, 6.28); ctx.fill();
 
     } else if (e.kind === 'novaShock') {
       const r = e.maxR * t;
-      ctx.globalAlpha = (1 - t) * 0.9;
+      // Additive expanding ring (thin stroke — low blowout risk even stacked).
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = (1 - t) * 0.85;
       ctx.strokeStyle = e.color;
       ctx.lineWidth = 2.5;
       ctx.beginPath(); ctx.arc(e.x, e.y, r, 0, 6.28); ctx.stroke();
@@ -21455,20 +21476,23 @@ function drawDestroyEffects() {
       path.lineTo(lineX, e.y);
 
     } else if (e.kind === 'shieldSpark') {
-      // Physics moved above the pixiActive gate.
+      // Physics moved above the pixiActive gate. Additive spark — tiny (1.4px)
+      // so even dense shield breaks add negligible area; reads as a bright spark.
+      ctx.globalCompositeOperation = 'lighter';
       ctx.globalAlpha = 1 - t;
       ctx.fillStyle = `rgba(${e.color},1)`;
       ctx.beginPath(); ctx.arc(e.x, e.y, 1.4, 0, 6.28); ctx.fill();
 
     } else if (e.kind === 'shieldAfter') {
-      // v1.9.0 perf: cache by integer radius. The fade alpha is moved out of the
-      // gradient's color stop and applied via globalAlpha — globalAlpha × the
-      // gradient's 1.0/0.0 stops reproduces the original (1-t)*0.55 → 0 ramp
-      // exactly, so the gradient itself depends only on radius and caches.
+      // v1.9.0 perf: cache by integer radius (a CACHED gradient — not a per-frame
+      // allocation, so it's recipe-legal). v1.10.0: now ADDITIVE (cyan afterglow
+      // bloom) at a slightly lower alpha so it glows without blowing out; only the
+      // blend + alpha changed, the cached gradient is untouched.
       const rR = Math.round(e.r);
       ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
       ctx.translate(e.x, e.y);
-      ctx.globalAlpha = (1 - t) * 0.55;
+      ctx.globalAlpha = (1 - t) * 0.5;
       ctx.fillStyle = getCachedGradient('shieldAfter_' + rR, (c) => {
         const g = c.createRadialGradient(0, 0, 0, 0, 0, rR);
         g.addColorStop(0, 'rgba(180,240,255,1)');
@@ -21479,6 +21503,8 @@ function drawDestroyEffects() {
       ctx.restore();
 
     } else if (e.kind === 'barrierStreak') {
+      // Additive impact streak (bright gold energy line; 1 per kill, ~83ms).
+      ctx.globalCompositeOperation = 'lighter';
       ctx.globalAlpha = 1 - t;
       ctx.strokeStyle = 'rgba(255,240,180,1)';
       ctx.lineWidth = 4;
@@ -21499,13 +21525,19 @@ function drawDestroyEffects() {
 
     } else if (e.kind === 'ghostRipple') {
       const r = e.maxR * t;
-      ctx.globalAlpha = (1 - t) * 0.35;
+      // Additive violet ghost ring (thin, low alpha — matches the planet-ripple
+      // ghost recipe; negligible blowout).
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = (1 - t) * 0.4;
       ctx.strokeStyle = 'rgba(210,140,255,1)';
       ctx.lineWidth = 1.5;
       ctx.beginPath(); ctx.arc(e.x, e.y, r, 0, 6.28); ctx.stroke();
 
     } else if (e.kind === 'ghostWisp') {
-      // Physics moved above the pixiActive gate.
+      // Physics moved above the pixiActive gate. NON-ADDITIVE on purpose — wisps
+      // read as soft drifting smoke; additive would turn them into glowing dots
+      // and blow out on dense ghost kills. Kept source-over.
+      ctx.globalCompositeOperation = 'source-over';
       ctx.globalAlpha = (1 - t) * 0.55;
       ctx.fillStyle = 'rgba(210,180,255,1)';
       ctx.beginPath(); ctx.arc(e.x, e.y, e.size, 0, 6.28); ctx.fill();
@@ -21513,6 +21545,10 @@ function drawDestroyEffects() {
   }
 
   // Flush batches.
+  // Frags = solid debris → SOURCE-OVER (additive would make the chunks glow and
+  // blow out on dense kills). Scan lines = cyan energy → additive. Compression
+  // ellipses = delicate → source-over (additive distorts the implosion read).
+  ctx.globalCompositeOperation = 'source-over';
   for (const key in fragBatches) {
     const pipe = key.lastIndexOf('|');
     const color = key.slice(0, pipe);
@@ -21525,12 +21561,14 @@ function drawDestroyEffects() {
     ctx.fillStyle = color.indexOf('(') >= 0 ? color : `rgba(${color},1)`;
     ctx.fill(fragBatches[key]);
   }
+  ctx.globalCompositeOperation = 'lighter';
   for (const bi in scanBatches) {
     ctx.globalAlpha = BUCKET_ALPHA[+bi] * 0.85;
     ctx.strokeStyle = 'rgba(180,240,255,1)';
     ctx.lineWidth = 1.8;
     ctx.stroke(scanBatches[bi]);
   }
+  ctx.globalCompositeOperation = 'source-over';
   if (compCount > 0) {
     ctx.globalAlpha = compAlphaSum / compCount;
     ctx.strokeStyle = 'rgba(255,220,100,1)';
@@ -21538,6 +21576,7 @@ function drawDestroyEffects() {
     ctx.stroke(compPath);
   }
   ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = 'source-over'; // restore default for subsequent #c draws
 }
 
 function addDestroyPoints() {
@@ -28737,40 +28776,28 @@ function drawElectricBallOverlay(ctx, cx, cy, radius, opts) {
   const flashAge = t - lastBulwarkEmpFlashTime;
   const flashFactor = (flashAge < 120) ? Math.max(0, 1 - flashAge / 120) : 0;
 
-  // 1) GLOW HALO — radial gradient extending past the orb edge. Pulses ~2 Hz.
+  // 1) GLOW HALO — baked soft bloom sprite (was a per-frame radial gradient).
+  // Source-over (matches the original compositing), pulsing ~2 Hz alpha, tinted
+  // by goldTier. Sizing (haloOuter) preserved exactly.
+  _ensureBulwarkBlooms();
   const haloOuter = radius + (isFragment ? 6 : 18);
-  const haloInner = radius * 0.5;
   const pulseAlpha = 0.38 + 0.14 * Math.sin(t * 0.0125);
   const haloAlpha = pulseAlpha * (goldTier === 2 ? 1.25 : (goldTier === 1 ? 1.10 : 1.0));
-  const halo = ctx.createRadialGradient(cx, cy, haloInner, cx, cy, haloOuter);
-  if (goldTier === 2) {
-    halo.addColorStop(0,    `rgba(255,235,180,${Math.min(1, haloAlpha)})`);
-    halo.addColorStop(0.55, `rgba(230,210,170,${Math.min(1, haloAlpha * 0.55)})`);
-    halo.addColorStop(1,    'rgba(220,200,160,0)');
-  } else if (goldTier === 1) {
-    halo.addColorStop(0,    `rgba(240,225,200,${Math.min(1, haloAlpha)})`);
-    halo.addColorStop(0.55, `rgba(220,215,210,${Math.min(1, haloAlpha * 0.5)})`);
-    halo.addColorStop(1,    'rgba(210,210,210,0)');
-  } else {
-    halo.addColorStop(0,    `rgba(220,220,230,${Math.min(1, haloAlpha)})`);
-    halo.addColorStop(0.55, `rgba(200,200,210,${Math.min(1, haloAlpha * 0.45)})`);
-    halo.addColorStop(1,    'rgba(200,200,210,0)');
-  }
-  ctx.fillStyle = halo;
-  ctx.beginPath(); ctx.arc(cx, cy, haloOuter, 0, 6.28); ctx.fill();
+  ctx.save();
+  ctx.globalAlpha = Math.min(1, haloAlpha);
+  ctx.drawImage(_bulwarkBloom.halo[goldTier], cx - haloOuter, cy - haloOuter, haloOuter * 2, haloOuter * 2);
+  ctx.restore();
 
   if (isFragment) {
     // Fragments stop at halo + bright core dot — interior arcs would be
     // visual noise at small scale and expensive at 5 fragments × per frame.
     const coreR = radius * 0.55;
-    const coreGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, coreR);
-    const coreCol  = goldTier ? '255,250,220' : '245,245,250';
-    coreGrad.addColorStop(0, `rgba(${coreCol},0.95)`);
-    coreGrad.addColorStop(1, `rgba(${coreCol},0)`);
+    // Baked additive core bloom (was a per-frame gradient).
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
-    ctx.fillStyle = coreGrad;
-    ctx.beginPath(); ctx.arc(cx, cy, coreR, 0, 6.28); ctx.fill();
+    ctx.globalAlpha = 0.95;
+    ctx.drawImage(goldTier ? _bulwarkBloom.coreGold : _bulwarkBloom.coreGrey,
+                  cx - coreR, cy - coreR, coreR * 2, coreR * 2);
     ctx.restore();
     return;
   }
@@ -28829,14 +28856,13 @@ function drawElectricBallOverlay(ctx, cx, cy, radius, opts) {
     ctx.stroke();
   }
 
-  // 3) CENTER CORE — bright spot in the middle, the source of the arcs.
+  // 3) CENTER CORE — bright spot in the middle, the source of the arcs. Baked
+  // additive bloom (was a per-frame gradient); still inside the 'lighter' block.
   const coreR = radius * 0.22;
-  const coreCol = goldTier ? '255,250,220' : '245,245,250';
-  const coreGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, coreR);
-  coreGrad.addColorStop(0, `rgba(${coreCol},0.92)`);
-  coreGrad.addColorStop(1, `rgba(${coreCol},0)`);
-  ctx.fillStyle = coreGrad;
-  ctx.beginPath(); ctx.arc(cx, cy, coreR, 0, 6.28); ctx.fill();
+  ctx.globalAlpha = 0.92;
+  ctx.drawImage(goldTier ? _bulwarkBloom.coreGold : _bulwarkBloom.coreGrey,
+                cx - coreR, cy - coreR, coreR * 2, coreR * 2);
+  ctx.globalAlpha = 1;
 
   ctx.globalCompositeOperation = prevComp;
   ctx.restore();
@@ -28845,15 +28871,13 @@ function drawElectricBallOverlay(ctx, cx, cy, radius, opts) {
   // consumed. The flash punches through clipping so it covers the full
   // halo extent, not just the orb interior.
   if (flashFactor > 0) {
+    // Baked additive white flash bloom (was a per-frame gradient).
+    const fA = flashFactor * 0.85;
+    const fR = haloOuter * 1.1;
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
-    const fA = flashFactor * 0.85;
-    const fGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, haloOuter * 1.1);
-    fGrad.addColorStop(0,    `rgba(255,255,255,${fA})`);
-    fGrad.addColorStop(0.55, `rgba(245,245,250,${fA * 0.6})`);
-    fGrad.addColorStop(1,    'rgba(245,245,250,0)');
-    ctx.fillStyle = fGrad;
-    ctx.beginPath(); ctx.arc(cx, cy, haloOuter * 1.1, 0, 6.28); ctx.fill();
+    ctx.globalAlpha = fA;
+    ctx.drawImage(_bulwarkBloom.flash, cx - fR, cy - fR, fR * 2, fR * 2);
     ctx.restore();
   }
 }
@@ -29308,6 +29332,28 @@ function _ensureBurstBlooms() {
   _burstBloom.fire   = _bakeNovaFlash('255,235,180', '255,90,30');   // Inferno fire orange-red
 }
 _ensureBurstBlooms();
+// v1.10.0: Bulwark electric-ball glow sprites (baked once). These replace the
+// per-frame createRadialGradient halo + core + EMP-flash in drawElectricBallOverlay
+// with drawImage blits — position/size/ctx-independent (the overlay renders onto
+// the player offscreen ctx in Pixi mode, #c in fallback, AND the menu orb-preview
+// ctx). Greyish-white → gold tiers preserve the Bulwark identity; the crackling
+// arcs themselves are already crisp additive strokes and are left untouched.
+let _bulwarkBloom = null;
+function _ensureBulwarkBlooms() {
+  if (_bulwarkBloom) return;
+  _bulwarkBloom = {
+    // halo[goldTier]: 0 = grey-white (no shield), 1 = pale gold (shield), 2 = gold (fortress)
+    halo: [
+      _bakeNovaFlash('220,220,230', '200,200,210'),
+      _bakeNovaFlash('240,225,200', '215,210,205'),
+      _bakeNovaFlash('255,235,180', '225,205,165'),
+    ],
+    coreGrey: _bakeNovaFlash('245,245,250', '230,235,245'),
+    coreGold: _bakeNovaFlash('255,250,220', '255,240,190'),
+    flash:    _bakeNovaFlash('255,255,255', '245,245,250'),
+  };
+}
+_ensureBulwarkBlooms();
 // Canvas: blit the bloom (caller is translated to centre + additive). bloomR is
 // a fraction of the burst's max radius so it reads as a centred detonation glow.
 function _burstBloomBlit(c, maxR, fade, key) {
