@@ -3412,11 +3412,21 @@
       <div class="settings-row settings-row-stack">
         <span class="settings-label">FRAME RATE</span>
         <div class="settings-toggle settings-toggle-3" data-setting="fps">
+          <button class="toggle-opt" data-val="30">30</button>
           <button class="toggle-opt" data-val="60">60</button>
           <button class="toggle-opt" data-val="120">120</button>
           <button class="toggle-opt" data-val="0">ADAPT</button>
         </div>
-        <div class="settings-help">60 saves battery. 120 is smoother on capable displays. ADAPT matches your screen.</div>
+        <div class="settings-help">30 is the coolest (battery saver). 60 is the balanced default. 120 is smoother on capable displays. ADAPT matches your screen.</div>
+      </div>
+      <div class="settings-row settings-row-stack">
+        <span class="settings-label">RENDER QUALITY</span>
+        <div class="settings-toggle settings-toggle-3" data-setting="quality">
+          <button class="toggle-opt" data-val="battery">BATTERY</button>
+          <button class="toggle-opt" data-val="balanced">BALANCED</button>
+          <button class="toggle-opt" data-val="high">HIGH</button>
+        </div>
+        <div class="settings-help">Lower quality runs cooler & saves battery. BALANCED is the default — sharp on a phone screen. HIGH renders at full resolution (hottest).</div>
       </div>
       <div class="settings-row">
         <span class="settings-label">STATS</span>
@@ -3858,8 +3868,39 @@ window.addEventListener('resize', () => {
 // dimensions are multiplied by this factor and the 2D ctx is scale()'d once so
 // draw code stays in logical coordinates. Capped at 2 so a 3× DPR display
 // doesn't inflate canvas memory 9× for minimal extra crispness.
+// v1.10.0 Render Quality (heat lever): player-facing DPR cap.
+//   drift_render_quality: 'high' (2.0) / 'balanced' (1.5) / 'battery' (1.0).
+// Default Balanced (1.5) — ~44% fewer shaded fragments AND smaller baked-texture
+// uploads vs 2.0, near-invisible on a phone screen. atlasScale() AND the pixi
+// renderer resolution share this same cap so the baked body/player/effect
+// textures always match the WebGL render buffer's resolution.
+const RENDER_QUALITY_CAPS = { high: 2.0, balanced: 1.5, battery: 1.0 };
+function getRenderQualityCap() {
+  const raw = localStorage.getItem('drift_render_quality');
+  if (raw && RENDER_QUALITY_CAPS[raw] != null) return RENDER_QUALITY_CAPS[raw];
+  return 1.5; // default: Balanced
+}
 function atlasScale() {
-  return Math.min(window.devicePixelRatio || 1, 2);
+  return Math.min(window.devicePixelRatio || 1, getRenderQualityCap());
+}
+// Apply a Render Quality change live: resize the WebGL render buffer to the new
+// DPR cap, then regenerate the scale-dependent baked assets via the SAME rebuild
+// the resize handler runs (gradient caches + star atlases + pixi star textures),
+// so baked textures match the new resolution. Body/player/effect textures rebuild
+// naturally as they respawn/repaint at the new atlasScale(); this does NOT touch
+// the per-frame baseTexture.update() upload path (deferred, crash-sensitive).
+function applyRenderQuality() {
+  const cap = getRenderQualityCap();
+  if (pixiApp && pixiApp.renderer) {
+    const res = Math.min(window.devicePixelRatio || 1, cap);
+    if (pixiApp.renderer.resolution !== res) {
+      pixiApp.renderer.resolution = res;
+      try { pixiApp.renderer.resize(W, H); } catch (err) { console.warn('[render-quality] resize failed', err); }
+    }
+  }
+  clearGradientCache();
+  if (typeof initBgStars === 'function' && bgStars.length) initBgStars();
+  if (typeof syncPixiStarTextures === 'function') syncPixiStarTextures();
 }
 
 // Background vignette canvas cache: the radial-gradient fillRect per bg object
@@ -18792,7 +18833,7 @@ function initPixiStars() {
     // fragments than baseline (perf wall on low-end GPUs). autoDensity:true
     // keeps the canvas CSS size logical (W×H) so layout / hit-testing is
     // unaffected.
-    const pixiResolution = Math.min(window.devicePixelRatio || 1, 2.0);
+    const pixiResolution = Math.min(window.devicePixelRatio || 1, getRenderQualityCap());
     pixiApp = new PIXI.Application({
       view: pixiCanvas,
       width: W,
@@ -30584,9 +30625,11 @@ let dtScale = 1;
 const FPS_TARGET_MENU = 30;
 function getFpsTargetGameplay() {
   const raw = localStorage.getItem('drift_fps_target');
-  if (raw === null) return 60;          // first-launch default
+  if (raw === null) return 60;          // first-launch default (never uncapped)
   const n = parseInt(raw, 10);
-  if (n === 60 || n === 120 || n === 0) return n;
+  // v1.10.0: 30 added as an opt-in battery-saver. 0 (uncapped/adaptive) is only
+  // ever reached by an explicit player choice — never a default or fallback.
+  if (n === 30 || n === 60 || n === 120 || n === 0) return n;
   return 60;
 }
 function getFrameInterval() {
@@ -34269,12 +34312,21 @@ function isOrbPreviewCovered() {
   }
   return false;
 }
+let _orbPreviewLast = 0;
 function orbPreviewLoop() {
+  // Keep the rAF chain alive unconditionally; gate the actual work below.
+  requestAnimationFrame(orbPreviewLoop);
+  // v1.10.0 heat lever: cap the menu orb-preview to ~30 fps. It ran on its own
+  // UNCAPPED rAF (up to the device's 90/120 Hz) animating a 240×240 particle +
+  // gradient canvas while the player idles on the menu — pure heat for a static
+  // screen. 32ms gate ≈ 30 fps (same timestamp-gate pattern as the main loop).
+  const now = performance.now();
+  if (now - _orbPreviewLast < 32) return;
+  _orbPreviewLast = now;
   // v1.6.4 perf: gate on visibility. The preview canvas is hidden during
   // gameplay, the death screen, and behind the skill tree / settings /
   // pause / guide overlays. Drawing it (240×240 canvas with particle
-  // simulation, 2 radial gradients, ~40 fills) at 60 fps when hidden is
-  // pure waste — measured ~2400-3600 Canvas-2D ops/sec.
+  // simulation, 2 radial gradients, ~40 fills) when hidden is pure waste.
   // offsetParent === null catches display:none cases (death screen sets
   // #orbBrowser display:none). isOrbPreviewCovered catches the cases
   // where the orb browser is technically still in layout but a higher
@@ -34283,7 +34335,6 @@ function orbPreviewLoop() {
   if (previewEl && previewEl.offsetParent !== null && !isOrbPreviewCovered()) {
     try { drawOrbPreview(); } catch {}
   }
-  requestAnimationFrame(orbPreviewLoop);
 }
 orbPreviewLoop();
 
@@ -35048,14 +35099,19 @@ function refreshSettingsUI() {
   // normalizes to one of {60, 120, 0}. The toggle's data-val matches
   // those raw integers as strings.
   const fpsVal = String(getFpsTargetGameplay());
+  // v1.10.0: reflect the Render Quality choice. Map the cap back to its key so
+  // the correct button highlights (default Balanced when unset/invalid).
+  const qualCap = getRenderQualityCap();
+  const qualVal = qualCap >= 2.0 ? 'high' : (qualCap <= 1.0 ? 'battery' : 'balanced');
   settingsOverlay.querySelectorAll('.settings-toggle').forEach(group => {
     const setting = group.dataset.setting;
     group.querySelectorAll('.toggle-opt').forEach(btn => {
       let active;
-      if (setting === 'music')      active = (btn.dataset.val === 'on') === musicOn;
-      else if (setting === 'sfx')   active = (btn.dataset.val === 'on') === sfxOn;
-      else if (setting === 'fps')   active = btn.dataset.val === fpsVal;
-      else                          active = false;
+      if (setting === 'music')        active = (btn.dataset.val === 'on') === musicOn;
+      else if (setting === 'sfx')     active = (btn.dataset.val === 'on') === sfxOn;
+      else if (setting === 'fps')     active = btn.dataset.val === fpsVal;
+      else if (setting === 'quality') active = btn.dataset.val === qualVal;
+      else                            active = false;
       btn.classList.toggle('active', active);
     });
   });
@@ -35174,10 +35230,18 @@ settingsOverlay.addEventListener('click', e => {
     SFX.setSfxEnabled(btn.dataset.val === 'on');
   } else if (setting === 'fps') {
     // v1.6.4: persist FPS target. getFrameInterval() reads it on the next
-    // loop tick so the new cap takes effect immediately.
+    // loop tick so the new cap takes effect immediately. v1.10.0: '30' added.
     const v = btn.dataset.val;
-    if (v === '60' || v === '120' || v === '0') {
+    if (v === '30' || v === '60' || v === '120' || v === '0') {
       try { localStorage.setItem('drift_fps_target', v); } catch {}
+    }
+  } else if (setting === 'quality') {
+    // v1.10.0: persist Render Quality + apply it live (resizes the WebGL buffer
+    // and rebuilds scale-dependent baked assets via the resize rebuild path).
+    const v = btn.dataset.val;
+    if (v === 'high' || v === 'balanced' || v === 'battery') {
+      try { localStorage.setItem('drift_render_quality', v); } catch {}
+      try { applyRenderQuality(); } catch (err) { console.warn('[render-quality] apply failed', err); }
     }
   }
   refreshSettingsUI();
