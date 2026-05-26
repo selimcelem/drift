@@ -19401,6 +19401,29 @@ function updatePixiBodyEffectsLayer() {
 // shared offscreen canvas would be screen-sized + a heavy upload. Instead the
 // trail uses a PIXI.Graphics rebuilt each frame, iterating particles and
 // emitting native pixi primitives (drawCircle / moveTo+lineTo / drawPolygon).
+
+// v1.10.0 perf (audit #2): memoized per-object "r,g,b" → components/packed-int
+// parse. The particle & trail draw loops below run every frame; each particle
+// previously re-ran `p.hue.split(',').map(parseInt)` PER FRAME, allocating a
+// throwaway array (plus the map closure) per particle per frame — steady GC
+// churn that scales with on-screen particle count. We instead parse a
+// particle's (immutable) color string ONCE and cache the result on the object
+// itself under `slot`; subsequent frames are pure property reads with zero
+// allocation. The `c.s !== str` guard re-parses only if the source string ever
+// changes (defensive — spawn colors don't mutate). Cache lives & dies with the
+// particle, so there's no unbounded growth. Returns {s,r,g,b,int}.
+function rgbComponents(obj, str, slot) {
+  let c = obj[slot];
+  if (c === undefined || c.s !== str) {
+    const a = str.split(',');
+    const r = parseInt(a[0], 10) | 0;
+    const g = parseInt(a[1], 10) | 0;
+    const b = parseInt(a[2], 10) | 0;
+    c = { s: str, r, g, b, int: (r << 16) | (g << 8) | b };
+    obj[slot] = c;
+  }
+  return c;
+}
 function updatePixiPlayerLayer() {
   if (!pixiActive || !pixiPlayerLayer) return;
   // --- Player composite ---
@@ -19469,8 +19492,7 @@ function updatePixiPlayerLayer() {
         // v1.7.0: per-particle hue (Phantom dense smoke) — falls back to orb.
         let circColor = orbColorInt;
         if (p.hue) {
-          const [hr, hg, hb] = p.hue.split(',').map(n => parseInt(n, 10) | 0);
-          circColor = (hr << 16) | (hg << 8) | hb;
+          circColor = rgbComponents(p, p.hue, '_hueC').int;
         }
         pixiTrailGraphics.beginFill(circColor, a);
         pixiTrailGraphics.drawCircle(p.x, p.y, p.size * (0.5 + 0.5 * p.life));
@@ -19478,8 +19500,7 @@ function updatePixiPlayerLayer() {
       } else if (p.kind === 'fire') {
         // 'fire' uses normal blending (Drifter nova-burst, etc.). Embers
         // route to the additive layer below for the glow read.
-        const [fr, fg, fb] = (p.hue || orbRgb).split(',').map(n => parseInt(n, 10) | 0);
-        const fireInt = (fr << 16) | (fg << 8) | fb;
+        const fireInt = p.hue ? rgbComponents(p, p.hue, '_hueC').int : orbColorInt;
         const flick = 0.85 + Math.sin(p.flicker || 0) * 0.25;
         pixiTrailGraphics.beginFill(fireInt, a);
         pixiTrailGraphics.drawCircle(p.x, p.y, p.size * (0.45 + 0.6 * p.life) * flick);
@@ -19490,10 +19511,12 @@ function updatePixiPlayerLayer() {
         // life drops below 0.3 (was 0.5). `bright: true` skips the 0.6 trail
         // dimming so nova-state flames pop. Same logic as Canvas 2D pass 2.
         let r0, g0, b0;
-        const parts = (p.hue || '255,140,40').split(',');
-        r0 = parseInt(parts[0], 10) | 0;
-        g0 = parseInt(parts[1], 10) | 0;
-        b0 = parseInt(parts[2], 10) | 0;
+        if (p.hue) {
+          const ec = rgbComponents(p, p.hue, '_hueC');
+          r0 = ec.r; g0 = ec.g; b0 = ec.b;
+        } else {
+          r0 = 255; g0 = 140; b0 = 40;
+        }
         if (p.life < 0.3) {
           const t = Math.min(1, (0.3 - p.life) / 0.3);
           r0 = Math.round(r0 * (1 - t) + 220 * t);
@@ -19511,8 +19534,7 @@ function updatePixiPlayerLayer() {
         // CHAOS CYCLE — circle + tangent streak.
         let oColor = orbColorInt;
         if (p.hue) {
-          const [hr, hg, hb] = p.hue.split(',').map(n => parseInt(n, 10) | 0);
-          oColor = (hr << 16) | (hg << 8) | hb;
+          oColor = rgbComponents(p, p.hue, '_hueC').int;
         }
         const r = p.size * (0.6 + 0.4 * p.life);
         pixiTrailGraphics.beginFill(oColor, a);
@@ -19544,8 +19566,7 @@ function updatePixiPlayerLayer() {
         // concentric fading discs (PIXI v7 Graphics has no radial gradient).
         let aColor = orbColorInt;
         if (p.hue) {
-          const [hr, hg, hb] = p.hue.split(',').map(n => parseInt(n, 10) | 0);
-          aColor = (hr << 16) | (hg << 8) | hb;
+          aColor = rgbComponents(p, p.hue, '_hueC').int;
         }
         pixiTrailGraphics.beginFill(aColor, a * 0.45); pixiTrailGraphics.drawCircle(p.x, p.y, p.size * 0.55); pixiTrailGraphics.endFill();
         pixiTrailGraphics.beginFill(aColor, a * 0.18); pixiTrailGraphics.drawCircle(p.x, p.y, p.size * 0.85); pixiTrailGraphics.endFill();
@@ -19553,8 +19574,7 @@ function updatePixiPlayerLayer() {
         // v1.7.0: per-particle hue for Lightspeed chromatic aberration.
         let lineColorInt = orbColorInt;
         if (p.hue) {
-          const [lr, lg, lb] = p.hue.split(',').map(n => parseInt(n, 10) | 0);
-          lineColorInt = (lr << 16) | (lg << 8) | lb;
+          lineColorInt = rgbComponents(p, p.hue, '_hueC').int;
         }
         pixiTrailGraphics.lineStyle({ width: 2, color: lineColorInt, alpha: a, cap: 'round' });
         pixiTrailGraphics.moveTo(p.x, p.y);
@@ -19613,8 +19633,7 @@ function updatePixiPlayerLayer() {
         }
         let fillColor = orbColorInt;
         if (p.hue) {
-          const [hr, hg, hb] = p.hue.split(',').map(n => parseInt(n, 10) | 0);
-          fillColor = (hr << 16) | (hg << 8) | hb;
+          fillColor = rgbComponents(p, p.hue, '_hueC').int;
         }
         pixiTrailGraphics.beginFill(fillColor, a);
         pixiTrailGraphics.drawPolygon(poly);
@@ -19739,8 +19758,9 @@ function updatePixiParticleLayer() {
       const pipe = key.lastIndexOf('|');
       const rgb = key.slice(0, pipe);
       const bi = +key.slice(pipe + 1);
-      const [r8, g8, b8] = rgb.split(',').map(n => parseInt(n, 10) | 0);
-      const colorInt = (r8 << 16) | (g8 << 8) | b8;
+      // Bucket is non-empty by construction; cache the parse on its first
+      // particle (all share this rgb) so the split runs once, not per frame.
+      const colorInt = rgbComponents(arr[0], rgb, '_rgbC').int;
       pg.beginFill(colorInt, bucketMidAlpha[bi]);
       for (const p of arr) {
         const r = Math.max(0.4, p.size * p.life);
@@ -19758,8 +19778,7 @@ function updatePixiParticleLayer() {
       // v1.7.0: orb-tinted RGB captured at spawn (was hardcoded cyan HSL).
       let colorInt;
       if (p.rgb) {
-        const [r8, g8, b8] = p.rgb.split(',').map(n => parseInt(n, 10));
-        colorInt = (r8 << 16) | (g8 << 8) | b8;
+        colorInt = rgbComponents(p, p.rgb, '_rgbC').int;
       } else {
         const hue = 185 + (1 - p.life) * 80;
         colorInt = hslToHex(hue, 100, 72);
@@ -19778,8 +19797,7 @@ function updatePixiParticleLayer() {
       // v1.7.0: orb-tinted shard color (was hardcoded cyan family).
       let colorInt = 0x8CE6FF;
       if (s.rgb) {
-        const [r8, g8, b8] = s.rgb.split(',').map(n => parseInt(n, 10));
-        colorInt = (r8 << 16) | (g8 << 8) | b8;
+        colorInt = rgbComponents(s, s.rgb, '_rgbC').int;
       }
       // Trail
       if (s.trail.length > 1) {
@@ -28294,10 +28312,10 @@ function drawOrbTrailParticles(tctx = ctx) {
     ctx.globalAlpha = a;
     let renderHue = p.hue;
     if (p.life < 0.3) {
-      const parts = p.hue.split(',');
-      const r0 = parseInt(parts[0], 10) | 0;
-      const g0 = parseInt(parts[1], 10) | 0;
-      const b0 = parseInt(parts[2], 10) | 0;
+      const ec = rgbComponents(p, p.hue, '_hueC');
+      const r0 = ec.r;
+      const g0 = ec.g;
+      const b0 = ec.b;
       const t = Math.min(1, (0.3 - p.life) / 0.3);
       const r = Math.round(r0 * (1 - t) + 220 * t);
       const g = Math.round(g0 * (1 - t) + 70  * t);
