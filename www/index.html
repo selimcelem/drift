@@ -3883,14 +3883,25 @@ function getRenderQualityCap() {
 function atlasScale() {
   return Math.min(window.devicePixelRatio || 1, getRenderQualityCap());
 }
-// Apply a Render Quality change live: resize the WebGL render buffer to the new
-// DPR cap, then regenerate the scale-dependent baked assets via the SAME rebuild
-// the resize handler runs (gradient caches + star atlases + pixi star textures),
-// so baked textures match the new resolution. Body/player/effect textures rebuild
-// naturally as they respawn/repaint at the new atlasScale(); this does NOT touch
-// the per-frame baseTexture.update() upload path (deferred, crash-sensitive).
+// Apply a Render Quality change live. atlasScale() and the WebGL render
+// resolution both change, so EVERY scale-dependent baked asset must be rebuilt
+// at the new atlasScale — otherwise an asset baked at the OLD dpr is drawn /
+// scaled with the NEW dpr and the two diverge (the bugs this fixes):
+//   • a body's offscreen canvas keeps its old pixel size while its per-frame
+//     draw transform uses the new dpr → distorted shapes;
+//   • the PLAYER singleton never respawns, so its fixed-size offscreen canvas
+//     (sized at the dpr-at-creation) mismatches the per-frame setTransform(dpr)
+//     + sprite.scale(1/dpr) → the orb is offset (dir flips with dpr) and a stale
+//     uncleared remnant ("pacman") survives in the un-recleared backing region.
+// We therefore: resize the renderer, run the resize rebuild path, release every
+// per-body baked canvas + drop the body sprite entries (so fresh sprites build
+// from new-dpr canvases next frame), explicitly rebuild the player singleton,
+// and clear the other atlasScale-baked caches (shield-ring aura, bg vignette).
+// This does NOT change the per-frame baseTexture.update() upload cadence
+// (deferred, crash-sensitive) — it only invalidates stale-scale baked sources.
 function applyRenderQuality() {
   const cap = getRenderQualityCap();
+  // 1) WebGL render buffer to the new DPR cap.
   if (pixiApp && pixiApp.renderer) {
     const res = Math.min(window.devicePixelRatio || 1, cap);
     if (pixiApp.renderer.resolution !== res) {
@@ -3898,9 +3909,60 @@ function applyRenderQuality() {
       try { pixiApp.renderer.resize(W, H); } catch (err) { console.warn('[render-quality] resize failed', err); }
     }
   }
+  // 2) Gradient + star caches (same as the resize handler).
   clearGradientCache();
   if (typeof initBgStars === 'function' && bgStars.length) initBgStars();
   if (typeof syncPixiStarTextures === 'function') syncPixiStarTextures();
+
+  // 3) EXISTING bodies: release every per-body baked canvas (glow, rings,
+  //    procedural offscreen, per-type) so they re-bake at the new dpr, then drop
+  //    the pixi entries so fresh sprites are built next frame. The procedural
+  //    sprite would rebuild on its own (its source-canvas changes when the
+  //    offscreen canvas is recreated), but the glow/rings entry has NO
+  //    source-canvas check — clearing the maps is what forces it to rebuild.
+  try {
+    if (typeof bodies !== 'undefined' && Array.isArray(bodies)) {
+      for (const b of bodies) releaseBodyCanvases(b);
+    }
+    for (const [, entry] of pixiBodyEntries) {
+      try { pixiBodyLayer && pixiBodyLayer.removeChild(entry.glowSprite); } catch {}
+      try { pixiBodyLayer && pixiBodyLayer.removeChild(entry.ringsSprite); } catch {}
+      try { entry.glowSprite.destroy({ children: false, texture: true, baseTexture: true }); } catch {}
+      try { entry.ringsSprite.destroy({ children: false, texture: true, baseTexture: true }); } catch {}
+    }
+    pixiBodyEntries.clear();
+    for (const [, entry] of pixiBodySpriteEntries) {
+      try { pixiBodySpriteLayer && pixiBodySpriteLayer.removeChild(entry.sprite); } catch {}
+      // Don't destroy the texture of the SHARED blackhole sprite (same guard as
+      // the per-frame cull pass) — only the per-body ones.
+      const shared = !!(planetSpriteCache && planetSpriteCache.blackhole
+                        && entry.sourceCanvas === planetSpriteCache.blackhole.canvas);
+      try { entry.sprite.destroy({ children: false, texture: !shared, baseTexture: !shared }); } catch {}
+    }
+    pixiBodySpriteEntries.clear();
+  } catch (err) { console.warn('[render-quality] body rebuild failed', err); }
+
+  // 4) PLAYER singleton: it never respawns, so explicitly rebuild it. Nulling
+  //    the canvas/ctx + destroying the sprite forces updatePixiPlayerLayer to
+  //    recreate all three at the CURRENT atlasScale next frame — canvas size,
+  //    draw transform, sprite scale and the clearRect extent then all agree, so
+  //    visual == hitbox at every quality and no stale remnant survives.
+  try {
+    if (pixiPlayerSprite) {
+      try { pixiPlayerLayer && pixiPlayerLayer.removeChild(pixiPlayerSprite); } catch {}
+      try { pixiPlayerSprite.destroy({ children: false, texture: true, baseTexture: true }); } catch {}
+    }
+    pixiPlayerSprite = null;
+    pixiPlayerCanvas = null;
+    pixiPlayerCtx = null;
+  } catch (err) { console.warn('[render-quality] player rebuild failed', err); }
+
+  // 5) Other atlasScale-baked singleton caches: the shield-ring player aura
+  //    (getShieldRingCanvas) and the bg vignette. Clear so they re-bake at the
+  //    new dpr. (Nova/burst/electric-ball blooms bake at a FIXED NOVA_TEX_SIZE,
+  //    not atlasScale, so they need no rebuild.)
+  try { for (const k in shieldRingCache) delete shieldRingCache[k]; } catch {}
+  try { for (const k in bgVignetteCache) delete bgVignetteCache[k]; } catch {}
 }
 
 // Background vignette canvas cache: the radial-gradient fillRect per bg object
