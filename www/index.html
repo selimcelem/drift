@@ -13326,7 +13326,11 @@ function _phantomV2_tickWraiths() {
       continue;
     }
     // Orbital phase — wraith lifetime ticks down regardless of ghost state.
-    w.angle += w.angularVel * _phantomV2_wraithSpinMul();
+    // v1.10.0 FPS-fix: orbiting wraiths kill on contact, so orbital sweep speed
+    // is gameplay (kill cadence). Was per-frame (half-rate at the 60fps default);
+    // now dtScale-scaled (120fps-normalized) for the designed rate at any cap.
+    // The dash phase already integrates with dtSec and is left untouched.
+    w.angle += w.angularVel * _phantomV2_wraithSpinMul() * dtScale;
     w.x = player.x + Math.cos(w.angle) * w.orbitR;
     w.y = player.y + Math.sin(w.angle) * w.orbitR;
     const age = now - w.startTime;
@@ -21503,20 +21507,21 @@ function drawDestroyEffects() {
   // Physics pass — advance positions for kinds that move. Always runs so
   // state stays consistent whether pixi owns rendering or #c does.
   for (const e of destroyEffects) {
+    // v1.10.0 FPS-fix (cosmetic): dt-scale motion + gravity, decay() for damping.
     if (e.kind === 'novaFrag') {
-      e.x += e.vx; e.y += e.vy;
-      e.vx *= 0.96;
-      e.vy = e.vy * 0.96 + 0.1;
+      e.x += e.vx * dtScale; e.y += e.vy * dtScale;
+      e.vx *= decay(0.96, dtScale);
+      e.vy = e.vy * decay(0.96, dtScale) + 0.1 * dtScale;
     } else if (e.kind === 'barrierFrag') {
-      e.x += e.vx; e.y += e.vy;
-      e.vx *= 0.95;
-      e.vy = e.vy * 0.95 + 0.1;
+      e.x += e.vx * dtScale; e.y += e.vy * dtScale;
+      e.vx *= decay(0.95, dtScale);
+      e.vy = e.vy * decay(0.95, dtScale) + 0.1 * dtScale;
     } else if (e.kind === 'shieldSpark') {
-      e.x += e.vx; e.y += e.vy;
-      e.vx *= 0.95; e.vy *= 0.95;
+      e.x += e.vx * dtScale; e.y += e.vy * dtScale;
+      e.vx *= decay(0.95, dtScale); e.vy *= decay(0.95, dtScale);
     } else if (e.kind === 'ghostWisp') {
-      e.x += e.vx; e.y += e.vy;
-      e.vx *= 0.97; e.vy *= 0.98;
+      e.x += e.vx * dtScale; e.y += e.vy * dtScale;
+      e.vx *= decay(0.97, dtScale); e.vy *= decay(0.98, dtScale);
     }
   }
 
@@ -23331,7 +23336,13 @@ function _executeBurst_default() {
 function updateBodyTypes(spd) {
   for (const b of bodies) {
     if (b.type === 'toothed') {
-      b.toothAngle += 0.02;
+      // v1.10.0 FPS-fix: the teeth are collision hitboxes (checkHit derives tip
+      // positions from toothAngle), so the spin — and thus hazard difficulty —
+      // must be frame-rate-independent. Was per-frame (half-speed at the 60fps
+      // default). dtScale is 120fps-normalized, so this holds the designed
+      // 120fps-baseline spin at any cap. (Spike extend/retract is a function of
+      // toothAngle, so it becomes dt-correct automatically.)
+      b.toothAngle += 0.02 * dtScale;
       // Subtle grinding loop every 1.5s per on-screen toothed planet
       // (180 frames @ 120fps baseline = 1500ms).
       const onScreen = b.y > -b.radius && b.y < H + b.radius;
@@ -23557,7 +23568,7 @@ function updateCrackFragments(spd) {
     } else {
       f.life--;
     }
-    f.pulse += 0.15;
+    f.pulse += 0.15 * dtScale; // v1.10.0 FPS-fix (cosmetic): dt-scale crack-glow pulse
     if (f.life <= 0 || f.y > H + 50) crackFragments.splice(i, 1);
   }
 }
@@ -24081,7 +24092,7 @@ function _updateCore() {
     // where a body's radial speed exceeded the annulus width in one frame.
     b.prevX = b.x; b.prevY = b.y;
     b.y += spd * dtScale;
-    b.pulse += 0.038;
+    b.pulse += 0.038 * dtScale; // v1.10.0 FPS-fix: dt-scale glow pulse (unifies with the dt-scaled pulse path elsewhere)
     if (gravityWellForce > 0) {
       const dx = player.x - b.x;
       const dy = player.y - b.y;
@@ -24244,7 +24255,7 @@ function _updateCore() {
   const _hbMagnet = (Date.now() < _drifterV2_heartbeatMagnetUntil);
   for (const p of powerups) {
     p.y += powerupScrollSpeed;
-    p.pulse += 0.11;
+    p.pulse += 0.11 * dtScale; // v1.10.0 FPS-fix (cosmetic): dt-scale halo pulse (pickup hitbox uses constant p.radius, verified — purely visual)
     // BUTTERFLY EFFECT (Drifter capstone): roll once per powerup at first sight;
     // butterflied powerups are pulled strongly toward the player (≈ Black Hole).
     if (p.bf === undefined) {
@@ -27649,13 +27660,18 @@ const ORB_TRAIL_CAP = 30;
 // the streak system from r6 which still read as directional and got
 // pulled in the wrong direction during auto-recenter.
 
+let _eternalAfterimageLastMs = 0; // ms-gate for the Eternal-Phantom afterimage spawn (fps-independent cadence)
 function emitOrbTrail() {
   if (state !== 'playing') return;
-  // Throttle emission to every 3rd frame. On Android WebView the per-frame
-  // particle churn (alloc + push + splice) adds up over a long run and shows
-  // up as GC pauses; spacing emits out keeps the trail visible without the
-  // steady allocation drip.
-  if (frame % 3 !== 0) return;
+  // Throttle emission. Was `frame % 3` (every 3rd frame) — frame-counted, so the
+  // trail's particles-per-SECOND scaled with the frame cap (sparse at 30fps,
+  // dense at 120). Now ms-gated (~24ms ≈ every 3rd frame at the 120fps baseline)
+  // so density-per-second is consistent at any cap, while still preserving the
+  // original perf intent (don't churn the pool every frame at high refresh — the
+  // GC-pause mitigation noted below).
+  const _emitNow = performance.now();
+  if (_emitNow - (emitOrbTrail._lastMs || 0) < 24) return;
+  emitOrbTrail._lastMs = _emitNow;
   const orb = activeOrb;
   const pvx = player.vx, pvy = player.vy;
   const moveMag = Math.hypot(pvx, pvy);
@@ -28178,7 +28194,11 @@ function emitOrbTrailUnlocked(orb, intensity, sizeMul, alphaMul, px, py, bx, by,
     // where wraiths orbit and mimic extra souls. Suppress them entirely while
     // Revenant wraiths are active so the orbiting souls stay countable.
     const aiEvery = eternal ? 4 : 10;
-    if (!_phantomV2_hasRevenant() && (frame % aiEvery) === 0) {
+    // v1.10.0 FPS-fix (cosmetic): ms-gated (was `frame % aiEvery`) so afterimage
+    // cadence is fps-independent. aiEvery frames at the 120fps baseline = aiEvery × 8.333ms.
+    const _aiNow = performance.now();
+    if (!_phantomV2_hasRevenant() && (_aiNow - _eternalAfterimageLastMs) >= aiEvery * (1000 / 120)) {
+      _eternalAfterimageLastMs = _aiNow;
       pushCapped(orbTrailParticles, {
         kind: 'afterimage',
         x: player.x, y: player.y,
@@ -28373,18 +28393,20 @@ function updateOrbTrailParticles() {
       if (p.owner !== activeOrb || !stillEquipped) {
         p.life = 0;
       } else {
-        p.angle += p.angularVel;
-        if (p.kind === 'shield-fragment') p.rockAngle += p.spin;
+        // v1.10.0 FPS-fix (cosmetic): dt-scale orbit + spin.
+        p.angle += p.angularVel * dtScale;
+        if (p.kind === 'shield-fragment') p.rockAngle += p.spin * dtScale;
         p.x = player.x + Math.cos(p.angle) * p.orbitR;
         p.y = player.y + Math.sin(p.angle) * p.orbitR;
       }
     } else {
-      p.x += p.vx; p.y += p.vy;
-      if (p.drift) p.x += p.drift;
-      if (p.angle !== undefined) p.angle += p.spin;
+      // v1.10.0 FPS-fix (cosmetic): dt-scale motion/gravity/flicker, decay() damping.
+      p.x += p.vx * dtScale; p.y += p.vy * dtScale;
+      if (p.drift) p.x += p.drift * dtScale;
+      if (p.angle !== undefined) p.angle += p.spin * dtScale;
       if (p.kind === 'fire') {
-        p.vy -= 0.03; // fire curls upward as it fades
-        if (p.flicker !== undefined) p.flicker += 0.3;
+        p.vy -= 0.03 * dtScale; // fire curls upward as it fades
+        if (p.flicker !== undefined) p.flicker += 0.3 * dtScale;
       } else if (p.kind === 'ember') {
         // v1.7.0: pyroclasm embers fall under gravity instead of curling up
         // — distinguishes them from the default Inferno fire trail. Slight
@@ -28393,14 +28415,14 @@ function updateOrbTrailParticles() {
         // get reduced gravity + heavier damping so they hug the orb's edge
         // for their short life instead of dropping like a regular ember.
         if (p.wrap) {
-          p.vy += 0.012;
-          p.vx *= 0.94;
-          p.vy *= 0.94;
+          p.vy += 0.012 * dtScale;
+          p.vx *= decay(0.94, dtScale);
+          p.vy *= decay(0.94, dtScale);
         } else {
-          p.vy += 0.05;
-          p.vx *= 0.985;
+          p.vy += 0.05 * dtScale;
+          p.vx *= decay(0.985, dtScale);
         }
-        if (p.flicker !== undefined) p.flicker += 0.28;
+        if (p.flicker !== undefined) p.flicker += 0.28 * dtScale;
       }
     }
     if (p.startTime !== undefined && p.maxLifeMs) {
@@ -29579,9 +29601,10 @@ function drawSalvageSparkles() {
   const nowSS = Date.now();
   for (const s of salvageSparkles) {
     s.life = Math.max(0, 1 - (nowSS - s.startTime) / s.maxLifeMs);
-    s.x += s.vx;
-    s.y += s.vy;
-    s.vy *= 0.97; // gentle deceleration
+    // v1.10.0 FPS-fix (cosmetic): dt-scale motion, decay() deceleration.
+    s.x += s.vx * dtScale;
+    s.y += s.vy * dtScale;
+    s.vy *= decay(0.97, dtScale); // gentle deceleration
   }
   salvageSparkles = salvageSparkles.filter(s => s.life > 0.05);
   // Renders to #c (z-index 0) above the pixi stage — Canvas 2D draws are
@@ -29614,8 +29637,9 @@ function drawPickupParticles() {
   // Physics pass (always runs so state stays consistent whether pixi owns
   // rendering or #c does).
   for (const p of pickupParticles) {
-    p.x += p.vx; p.y += p.vy;
-    p.vx *= 0.92; p.vy *= 0.92;
+    // v1.10.0 FPS-fix (cosmetic): dt-scale motion, decay() damping.
+    p.x += p.vx * dtScale; p.y += p.vy * dtScale;
+    p.vx *= decay(0.92, dtScale); p.vy *= decay(0.92, dtScale);
   }
   // Step 5: pixi reads from the array directly via updatePixiParticleLayer.
   if (pixiActive) return;
@@ -30460,9 +30484,10 @@ function drawDeathShards() {
   deathShards = deathShards.filter(s => s.age < s.maxLifeMs);
   // Physics + trail update (always runs).
   for (const s of deathShards) {
-    s.x += s.vx; s.y += s.vy;
-    s.vx *= 0.985; s.vy = s.vy * 0.985 + 0.04; // very slight drag + soft gravity
-    s.rot += s.rotSpeed;
+    // v1.10.0 FPS-fix (cosmetic): dt-scale motion/gravity/rotation, decay() drag.
+    s.x += s.vx * dtScale; s.y += s.vy * dtScale;
+    s.vx *= decay(0.985, dtScale); s.vy = s.vy * decay(0.985, dtScale) + 0.04 * dtScale; // very slight drag + soft gravity
+    s.rot += s.rotSpeed * dtScale;
     s.life = 1 - (s.age / s.maxLifeMs);
     s.trail.push({ x: s.x, y: s.y });
     if (s.trail.length > 6) s.trail.shift();
@@ -34027,7 +34052,19 @@ function drawOrbPreview() {
   if (isTeaseOrb(key)) { drawTeaseOrbPreview(cw, ch, TEASE_ORBS[key].color); return; }
   const def = ORB_DEFS[key];
   const color = def.color;
-  const t = performance.now() / 1000;
+  const nowMs = performance.now();
+  const t = nowMs / 1000;
+  // Frame-rate-independent stepping. dtScale = elapsed since last draw / a 60fps
+  // frame, so dtScale == 1 at 60fps and the per-call particle deltas below keep
+  // their original 60fps-tuned speed at ANY draw rate (incl. the 30fps preview
+  // throttle and high-refresh displays). Clamped [0.1, 4] so a first frame or a
+  // tab-return gap can't fling particles across the canvas. (The orb bob is
+  // already wall-clock via `t`, so it is left as-is.)
+  const _prevMs = _orbPreviewPrevMs || (nowMs - 1000 / 60);
+  _orbPreviewPrevMs = nowMs;
+  let dtScale = (nowMs - _prevMs) / (1000 / 60);
+  if (!(dtScale > 0)) dtScale = 1;
+  dtScale = Math.min(Math.max(dtScale, 0.1), 4);
   // Bob sin wave, amplitude 16px in canvas (8px in CSS since backing is 2x), period 2s
   const bob = Math.sin(t * Math.PI) * 16;
   const cx = cw / 2, cy = ch / 2 + bob;
@@ -34043,9 +34080,9 @@ function drawOrbPreview() {
   // Trail particles
   const particles = ensureOrbParticles(key);
   if (useUnlocked) {
-    drawOrbPreviewUnlocked(particles, key, color, cx, cy, t);
+    drawOrbPreviewUnlocked(particles, key, color, cx, cy, t, dtScale);
   } else {
-    if (Math.random() < 0.5) {
+    if (Math.random() < 0.5 * dtScale) {
       if (def.trail === 'cosmic') {
         particles.push({ x: cx + (Math.random() - 0.5) * 30, y: cy + 10 + Math.random() * 15, vx: (Math.random() - 0.5) * 0.5, vy: -1.5 - Math.random(), life: 1, size: 3 + Math.random() * 3 });
       } else if (def.trail === 'solar') {
@@ -34060,9 +34097,9 @@ function drawOrbPreview() {
     }
     for (let i = particles.length - 1; i >= 0; i--) {
       const p = particles[i];
-      p.x += p.vx; p.y += p.vy;
-      p.life -= 0.025;
-      if (p.angle !== undefined) p.angle += p.spin;
+      p.x += p.vx * dtScale; p.y += p.vy * dtScale;
+      p.life -= 0.025 * dtScale;
+      if (p.angle !== undefined) p.angle += p.spin * dtScale;
       if (p.life <= 0) particles.splice(i, 1);
     }
     if (particles.length > 40) particles.splice(0, particles.length - 40);
@@ -34144,14 +34181,18 @@ function drawOrbPreview() {
 // validate they've equipped the right look. Math is simplified relative
 // to gameplay (no per-frame player-tracking) since the preview orb is
 // stationary at (cx, cy) modulo the bob.
-function drawOrbPreviewUnlocked(particles, orbKey, color, cx, cy, t) {
+function drawOrbPreviewUnlocked(particles, orbKey, color, cx, cy, t, dtScale) {
   const ctx = orbPreviewCtx;
+  // dtScale (60fps reference) makes all per-call stepping below frame-rate-
+  // independent so the variant previews animate at their original speed at any
+  // draw rate (incl. the 30fps throttle). Defaults to 1 if a caller omits it.
+  if (!(dtScale > 0)) dtScale = 1;
   const ageDecay = 0.022;
   if (orbKey === 'cyan') {
     // CHAOS CYCLE — keep 4 orbiting particles + occasional drift trail.
     let aliveOrbit = 0;
     for (const p of particles) if (p.kind === 'orbit') aliveOrbit++;
-    if (aliveOrbit < 4 && Math.random() < 0.3) {
+    if (aliveOrbit < 4 && Math.random() < 0.3 * dtScale) {
       const startAngle = aliveOrbit * (Math.PI / 2) + Math.random() * 0.4;
       particles.push({
         kind: 'orbit', angle: startAngle, orbitR: 36 + Math.random() * 8,
@@ -34161,7 +34202,7 @@ function drawOrbPreviewUnlocked(particles, orbKey, color, cx, cy, t) {
       });
     }
   } else if (orbKey === 'cosmic') {
-    if (Math.random() < 0.55) {
+    if (Math.random() < 0.55 * dtScale) {
       particles.push({
         kind: 'wisp', x: cx + (Math.random() - 0.5) * 36,
         y: cy + 14 + Math.random() * 18,
@@ -34172,7 +34213,7 @@ function drawOrbPreviewUnlocked(particles, orbKey, color, cx, cy, t) {
       });
     }
   } else if (orbKey === 'solar') {
-    if (Math.random() < 0.6) {
+    if (Math.random() < 0.6 * dtScale) {
       const r = Math.random();
       const hue = r < 0.30 ? '255,140,40' : r < 0.65 ? '255,90,30' : '180,40,20';
       particles.push({
@@ -34187,7 +34228,7 @@ function drawOrbPreviewUnlocked(particles, orbKey, color, cx, cy, t) {
     // v1.7.0 polish r7: orbital rings preview — soft cyan-blue 'line'
     // particles emitted as the base trail, with the rings themselves
     // drawn after the orb core (see drawOrbPreview below).
-    if (Math.random() < 0.55) {
+    if (Math.random() < 0.55 * dtScale) {
       particles.push({
         x: cx + (Math.random() - 0.5) * 30,
         y: cy + (Math.random() - 0.5) * 30,
@@ -34204,7 +34245,7 @@ function drawOrbPreviewUnlocked(particles, orbKey, color, cx, cy, t) {
     // ring still reads the same.
     let aliveFrag = 0;
     for (const p of particles) if (p.kind === 'shield-fragment') aliveFrag++;
-    if (aliveFrag < 5 && Math.random() < 0.3) {
+    if (aliveFrag < 5 && Math.random() < 0.3 * dtScale) {
       const startAngle = aliveFrag * (Math.PI * 2 / 5) + Math.random() * 0.3;
       particles.push({
         kind: 'shield-fragment', angle: startAngle, orbitR: 32 + Math.random() * 6,
@@ -34220,7 +34261,7 @@ function drawOrbPreviewUnlocked(particles, orbKey, color, cx, cy, t) {
     // so the renderer applies the breathing halo.
     let aliveOrbit = 0;
     for (const p of particles) if (p.kind === 'orbit') aliveOrbit++;
-    if (aliveOrbit < 4 && Math.random() < 0.3) {
+    if (aliveOrbit < 4 && Math.random() < 0.3 * dtScale) {
       const startAngle = aliveOrbit * (Math.PI / 2) + Math.random() * 0.4;
       particles.push({
         kind: 'orbit', angle: startAngle, orbitR: 36 + Math.random() * 8,
@@ -34233,7 +34274,7 @@ function drawOrbPreviewUnlocked(particles, orbKey, color, cx, cy, t) {
   } else if (orbKey === 'phantomV2') {
     // PHANTASM Spectral Wisps preview — denser, brighter wisps than Phantom's,
     // with an occasional bright spark highlight drifting up off the orb.
-    if (Math.random() < 0.7) {
+    if (Math.random() < 0.7 * dtScale) {
       particles.push({
         kind: 'wisp', x: cx + (Math.random() - 0.5) * 40,
         y: cy + 14 + Math.random() * 18,
@@ -34243,7 +34284,7 @@ function drawOrbPreviewUnlocked(particles, orbKey, color, cx, cy, t) {
         hue: color,
       });
     }
-    if (Math.random() < 0.4) {
+    if (Math.random() < 0.4 * dtScale) {
       particles.push({
         kind: 'wisp', x: cx + (Math.random() - 0.5) * 22,
         y: cy + 10 + Math.random() * 14,
@@ -34262,14 +34303,14 @@ function drawOrbPreviewUnlocked(particles, orbKey, color, cx, cy, t) {
   for (let i = particles.length - 1; i >= 0; i--) {
     const p = particles[i];
     if (p.kind === 'orbit' || p.kind === 'shield-fragment') {
-      p.angle += p.angularVel;
-      if (p.kind === 'shield-fragment') p.rockAngle += p.spin;
+      p.angle += p.angularVel * dtScale;
+      if (p.kind === 'shield-fragment') p.rockAngle += p.spin * dtScale;
       p.x = cx + Math.cos(p.angle) * p.orbitR;
       p.y = cy + Math.sin(p.angle) * p.orbitR;
     } else if (p.kind === 'ember') {
-      p.x += p.vx; p.y += p.vy;
-      p.vy += 0.05; p.vx *= 0.985;
-      if (p.flicker !== undefined) p.flicker += 0.28;
+      p.x += p.vx * dtScale; p.y += p.vy * dtScale;
+      p.vy += 0.05 * dtScale; p.vx *= Math.pow(0.985, dtScale);
+      if (p.flicker !== undefined) p.flicker += 0.28 * dtScale;
     } else if (p.kind === 'streamline' || p.kind === 'lightning') {
       // Wall-clock age so the preview cadence matches gameplay. Polylines
       // are baked at spawn, so position never updates. Legacy fallback —
@@ -34278,10 +34319,10 @@ function drawOrbPreviewUnlocked(particles, orbKey, color, cx, cy, t) {
       const age = (nowPrev - p.startTime) / p.maxLifeMs;
       p.life = Math.max(0, 1 - age);
     } else {
-      p.x += p.vx; p.y += p.vy;
-      if (p.drift) p.x += p.drift;
+      p.x += p.vx * dtScale; p.y += p.vy * dtScale;
+      if (p.drift) p.x += p.drift * dtScale;
     }
-    if (p.kind !== 'streamline' && p.kind !== 'lightning') p.life -= ageDecay;
+    if (p.kind !== 'streamline' && p.kind !== 'lightning') p.life -= ageDecay * dtScale;
     if (p.life <= 0) particles.splice(i, 1);
   }
   if (particles.length > 40) particles.splice(0, particles.length - 40);
@@ -34375,6 +34416,7 @@ function isOrbPreviewCovered() {
   return false;
 }
 let _orbPreviewLast = 0;
+let _orbPreviewPrevMs = 0; // last drawOrbPreview() timestamp, for frame-rate-independent particle stepping
 function orbPreviewLoop() {
   // Keep the rAF chain alive unconditionally; gate the actual work below.
   requestAnimationFrame(orbPreviewLoop);
