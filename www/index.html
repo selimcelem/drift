@@ -11272,7 +11272,7 @@ function _drifterV2_threadOnDestroy(body) {
     if (_now - _drifterV2_tensionLastFire >= 5000) {
       pushNovaRingCapped({
         x: body.x, y: body.y, radius: 0, life: 1, prevR: 0,
-        startTime: _now, sizeMult: 0.5,
+        startTime: _now, sizeMult: 0.9, radiusMult: 0.6,
       });
       try { emitNovaSpecks(body.x, body.y); } catch {}
       try { SFX.pickup('nova'); } catch {}
@@ -11596,7 +11596,7 @@ function _drifterV2_maybeFireThreshold75(body) {
   if (now - _drifterV2_threshold75LastFire < 3000) return;
   pushNovaRingCapped({
     x: body.x, y: body.y, radius: 0, life: 1, prevR: 0,
-    startTime: now, sizeMult: 0.5,
+    startTime: now, sizeMult: 0.9, radiusMult: 0.5,
   });
   try { emitNovaSpecks(body.x, body.y); } catch {}
   try { SFX.pickup('nova'); } catch {}
@@ -15079,7 +15079,7 @@ function firebrandProc(bodyX, bodyY) {
   const py = (typeof bodyY === 'number') ? bodyY : player.y;
   pushNovaRingCapped({
     x: px, y: py, radius: 0, life: 1, prevR: 0,
-    startTime: now, sizeMult: 0.5,
+    startTime: now, sizeMult: 0.9, radiusMult: 0.5,
   });
   emitNovaSpecks(px, py);
   // v1.7.0: spawn-site shake removed; kills from this ring drive shake via
@@ -15115,7 +15115,7 @@ function haloNovaProc(bodyX, bodyY) {
   const py = (typeof bodyY === 'number') ? bodyY : player.y;
   pushNovaRingCapped({
     x: px, y: py, radius: 0, life: 1, prevR: 0,
-    startTime: now, sizeMult: 0.5,
+    startTime: now, sizeMult: 0.9, radiusMult: 0.6,
   });
   emitNovaSpecks(px, py);
   SFX.pickup('nova');
@@ -24132,7 +24132,7 @@ function _updateCore() {
       if (bzNow - z.startTime < (z.lifeMs || BURN_ZONE_LIFETIME_MS)) bzAlive.push(z);
       else if (z._backdraft && rankOf('backdraft') > 0) {
         // Backdraft: a tagged zone detonates into a half-size nova on expiry.
-        pushNovaRingCapped({ x: z.x, y: z.y, radius: 0, life: 1, prevR: 0, startTime: bzNow, sizeMult: 0.5 });
+        pushNovaRingCapped({ x: z.x, y: z.y, radius: 0, life: 1, prevR: 0, startTime: bzNow, sizeMult: 0.9, radiusMult: 0.6 });
         emitNovaSpecks(z.x, z.y);
       }
     }
