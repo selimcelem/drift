@@ -8170,8 +8170,8 @@ TREE_DEFS.helios = {
       name: 'SUNDOG',
       nodes: [
         { key: 'helios_sundog', name: 'Sundog', tier: 3, max: 1, costOverride: [7500], pointCost: 5,
-          desc: 'KEYSTONE (5 pts). Two mock-suns orbit you — loading, NOT killing (they will not clear what they merely touch). Every 3s the longest-armed sun flings itself at the nearest planet within 140px and pops a fast nova; the spent sun reforms over 4s. Bright little satellites that do my bidding.',
-          effect: r => r ? '2 orbiting suns auto-launch' : 'Locked' },
+          desc: 'KEYSTONE (5 pts). Two mock-suns CHARGE beside you (spin building over ~3s), then fling at the nearest planet within 140px and pop a fast nova — vanishing to reform for 4s before charging again. About one fling every 3s. They do NOT kill by touch on their own. Bright little satellites that do my bidding.',
+          effect: r => r ? '2 charging suns auto-fling' : 'Locked' },
         { key: 'helios_solarNoon', name: 'Solar Noon', tier: 1, max: 1, costOverride: [4000], pointCost: 2,
           desc: 'The suns fling faster — launch interval 3.0s → 2.2s. Noon does not dawdle.',
           effect: r => r ? 'Launch 3.0s → 2.2s' : 'Locked' },
@@ -8191,8 +8191,8 @@ TREE_DEFS.helios = {
           desc: 'Every 5th launch DOUBLE-STRIKES: the sun detonates, then leaps from that spot to a second nearby planet and detonates AGAIN. One throw, two dead stars.',
           effect: r => r ? 'Every 5th launch → double-strike' : 'Locked' },
         { key: 'helios_zenith', name: 'Zenith', tier: 3, max: 1, costOverride: [10000], pointCost: 5,
-          desc: 'CAPSTONE (5 pts). Fleet +1. When the fleet is full, every 22s ALL of it launches at once — each impact a full SUPERNOVA blast at the nearest planets. The sun at its highest.',
-          effect: r => r ? 'Fleet +1 · 22s supernova barrage' : 'Locked' },
+          desc: 'CAPSTONE (5 pts). Fleet +1. Zenith CHARGES, and on its next fling EACH sun erupts as a full SUPERNOVA instead of a nova. It stays charged until every sun has loosed its super — only THEN does the 22s cooldown begin counting. The sun at its highest.',
+          effect: r => r ? 'Fleet +1 · each next fling = supernova' : 'Locked' },
       ],
     },
     // ---- 2. PROMINENCE (sweeping fire-wedge) ------------------------------
@@ -8218,8 +8218,8 @@ TREE_DEFS.helios = {
           desc: 'The sweep\'s far edge drops fast cinder-pops (~144px) where it shears. The trailing fire bites twice.',
           effect: r => r ? 'Edge drops cinder-pops' : 'Locked' },
         { key: 'helios_coronaStorm', name: 'Corona Storm', tier: 3, max: 1, costOverride: [10000], pointCost: 5,
-          desc: 'CAPSTONE (5 pts). Every 30s a full 360° board-clear sweep erupts at max reach, plus a central SUPERNOVA blast. The whole corona, unleashed.',
-          effect: r => r ? '360° storm + supernova / 30s' : 'Locked' },
+          desc: 'CAPSTONE (5 pts). Every 20s a full 360° board-clear sweep erupts at max reach, plus a central SUPERNOVA blast (a real supernova\'s first ring). The whole corona, unleashed.',
+          effect: r => r ? '360° storm + supernova / 20s' : 'Locked' },
       ],
     },
     // ---- 3. HELIOGRAPH (light / shadow / line-of-sight) -------------------
@@ -8242,8 +8242,8 @@ TREE_DEFS.helios = {
           desc: 'On burst, instantly BANK 5 beams — a full magazine of light to rapid-fire as soon as there are targets.',
           effect: r => r ? 'Burst = bank 5 beams' : 'Locked' },
         { key: 'helios_zenithFlash', name: 'Zenith Flash', tier: 3, max: 1, costOverride: [10000], pointCost: 5,
-          desc: 'CAPSTONE (5 pts). The beam chains +1 extra target (stacks with Refraction). AND every 30s a ZENITH FLASH ignites for 10s — during it, every beam that hits a planet ALSO spawns a regular nova blast at the kill. Noon, weaponised.',
-          effect: r => r ? '+1 chain · beam-novas 10s / 30s' : 'Locked' },
+          desc: 'CAPSTONE (5 pts). The beam chains +1 extra target (stacks with Refraction). And a ZENITH FLASH ignites for 10s — during it, every beam (and Light Sweep) hit ALSO spawns a nova at the kill. The 20s cooldown begins only AFTER the 10s window ends. Noon, weaponised.',
+          effect: r => r ? '+1 chain · 10s beam-novas' : 'Locked' },
       ],
     },
   },
@@ -8695,6 +8695,7 @@ let _heliosBeamFireAt    = 0;    // rapid-fire cadence gate
 let _heliosZenithFlashAt = 0;
 let _heliosZenithFlashUntil = 0; // HELIOGRAPH Zenith Flash 10s window
 let _heliosZenithFiredAt = 0;    // ring "firing" pulse (Sundog Zenith)
+let _heliosZenithActive  = false; // Zenith lockout: active until all orbs discharge their super
 let _heliosStormFiredAt  = 0;    // ring "firing" pulse (Corona Storm)
 let _heliosNovaSfxAt     = 0;
 
@@ -8812,7 +8813,7 @@ OrbHooks.on('onResetGame', () => {
   _heliosFleetLaunchAt = 0; _heliosLaunchCount = 0; _heliosZenithNextAt = 0;
   _heliosPromNextAt = 0; _heliosPromStormAt = 0; _heliosBeamNextAt = 0; _heliosBeamLast = null;
   _heliosBeamBank = 0; _heliosBeamFireAt = 0; _heliosZenithFlashAt = 0; _heliosZenithFlashUntil = 0;
-  _heliosZenithFiredAt = 0; _heliosStormFiredAt = 0;
+  _heliosZenithFiredAt = 0; _heliosStormFiredAt = 0; _heliosZenithActive = false;
 });
 
 // === HELIOS draw dispatcher + small additive helpers ======================
@@ -8879,15 +8880,23 @@ function _heliosTickSundog() {
   const orbitR = 60;   // tighter than the player orb so the suns read as satellites
   const twin = rankOf('helios_parhelion') > 0;
   const globalReady = now - _heliosFleetLaunchAt >= _heliosLaunchGateMs();
-  // Zenith capstone — every 22s it goes ACTIVE: the NEXT launch of EACH orb
-  // becomes a single SUPERNOVA (the suns never all idle at once, so we tag each
-  // orb to upgrade its next fling rather than demand a synchronized barrage).
+  // Zenith capstone — goes ACTIVE and tags each orb so its NEXT fling becomes a
+  // single SUPERNOVA. The 22s cooldown does NOT count during the active phase:
+  // it stays locked-out (primed) until EVERY orb has discharged its super, and
+  // only THEN does the 22s begin. activate → lockout → cooldown → repeat.
   if (rankOf('helios_zenith') > 0) {
-    if (!_heliosZenithNextAt) _heliosZenithNextAt = now + 22000;
-    else if (now >= _heliosZenithNextAt) {
-      _heliosZenithNextAt = now + 22000; _heliosZenithFiredAt = now;
-      for (const f of _heliosFleet) f._zenithPending = true;
-      _helios_flash('zenith', 'ZENITH!', HELIOS_PATH_COLORS.sundog, 0);
+    if (_heliosZenithActive) {
+      if (!_heliosFleet.some(f => f._zenithPending)) {   // all supers delivered
+        _heliosZenithActive = false;
+        _heliosZenithNextAt = now + 22000;               // cooldown starts NOW
+      }
+    } else {
+      if (!_heliosZenithNextAt) _heliosZenithNextAt = now + 22000;
+      else if (now >= _heliosZenithNextAt) {
+        _heliosZenithActive = true; _heliosZenithFiredAt = now;
+        for (const f of _heliosFleet) f._zenithPending = true;
+        _helios_flash('zenith', 'ZENITH!', HELIOS_PATH_COLORS.sundog, 0);
+      }
     }
   }
   for (const fb of _heliosFleet) {
@@ -9086,10 +9095,20 @@ function _heliosTickHeliograph() {
   // CHARGE one beam per interval into the bank (cap 5) — banks instead of wasting.
   if (!_heliosBeamNextAt) _heliosBeamNextAt = now + _heliosBeamIntervalMs();
   else if (now >= _heliosBeamNextAt) { _heliosBeamNextAt = now + _heliosBeamIntervalMs(); _heliosBeamBank = Math.min(HELIOS_BEAM_BANK_CAP, _heliosBeamBank + 1); }
-  // Zenith Flash window — start a FULL 20s interval first (no fire-at-run-start).
+  // Zenith Flash — 10s active window, then a 20s cooldown that begins only AFTER
+  // the window ends (not during it). No fire-at-run-start. Triggers while not
+  // active and the cooldown has elapsed; the cooldown timer is set to
+  // (window-end + 20s) so it never counts down during the active 10s.
   if (rankOf('helios_zenithFlash') > 0) {
-    if (!_heliosZenithFlashAt) _heliosZenithFlashAt = now + 20000;
-    else if (now >= _heliosZenithFlashAt) { _heliosZenithFlashAt = now + 20000; _heliosZenithFlashUntil = now + 10000; _helios_flash('zenithFlash', 'ZENITH FLASH', HELIOS_PATH_COLORS.heliograph, 0); }
+    const flashActive = now < _heliosZenithFlashUntil;
+    if (!flashActive) {
+      if (!_heliosZenithFlashAt) _heliosZenithFlashAt = now + 20000;
+      else if (now >= _heliosZenithFlashAt) {
+        _heliosZenithFlashUntil = now + 10000;                 // 10s active
+        _heliosZenithFlashAt = _heliosZenithFlashUntil + 20000; // 20s cooldown AFTER it ends
+        _helios_flash('zenithFlash', 'ZENITH FLASH', HELIOS_PATH_COLORS.heliograph, 0);
+      }
+    }
   }
   // FIRE from the bank when an origin + a target exist, rapid-firing the backlog.
   if (_heliosBeamBank > 0 && bodies.length && now - _heliosBeamFireAt >= HELIOS_BEAM_RAPID_MS) {
@@ -12273,17 +12292,37 @@ function _drifterV2_threadOnDestroy(body) {
     // v1.9.0 perf: hard cap on thread count. Belt-and-braces alongside the
     // laser-cascade gate above — covers any non-laser scenario that could
     // spawn threads faster than they expire (e.g. rapid pickup+kill chains
-    // at peak apocalypse density). Shift oldest on overflow.
-    if (_drifterV2_threads.length >= DRIFTERV2_THREADS_CAP) _drifterV2_threads.shift();
-    _drifterV2_threads.push({
-      sx: prev.x, sy: prev.y,
-      ex: body.x, ey: body.y,
-      startTime: Date.now(),
-      durationMs: _drifterV2_threadDurationMs(),
-      isLaser: false,
-      tapestryArmed: false,
-      projectileFired: false,
-    });
+    // at peak apocalypse density).
+    // BUGFIX: a plain shift() evicted the OLDEST thread — but freshly-fired
+    // lasers (marked isLaser at meter-fill) ARE the oldest, so consecutive
+    // kills that spawned new threads silently deleted active/firing lasers
+    // before they could shoot. Now: at cap, evict the oldest INACTIVE thread;
+    // never drop a laser still within its fire window or a Tapestry thread that
+    // hasn't loosed its projectile. If every thread is active, drop the NEW one.
+    let canAddThread = true;
+    if (_drifterV2_threads.length >= DRIFTERV2_THREADS_CAP) {
+      const _nowCap = Date.now();
+      let evictIdx = -1;
+      for (let i = 0; i < _drifterV2_threads.length; i++) {
+        const t = _drifterV2_threads[i];
+        const firing = t.isLaser && (_nowCap < t.startTime + t.durationMs);
+        const armed = t.tapestryArmed && !t.projectileFired;
+        if (!firing && !armed) { evictIdx = i; break; }
+      }
+      if (evictIdx >= 0) _drifterV2_threads.splice(evictIdx, 1);
+      else canAddThread = false;   // all threads active/firing → drop the new one
+    }
+    if (canAddThread) {
+      _drifterV2_threads.push({
+        sx: prev.x, sy: prev.y,
+        ex: body.x, ey: body.y,
+        startTime: Date.now(),
+        durationMs: _drifterV2_threadDurationMs(),
+        isLaser: false,
+        tapestryArmed: false,
+        projectileFired: false,
+      });
+    }
   }
   _drifterV2_threadLastPos = { x: body.x, y: body.y };
 
@@ -30870,9 +30909,10 @@ function updateCapstoneCountdowns() {
   // HELIOS — Zenith (Sundog), Corona Storm (Prominence), Zenith Flash (Heliograph).
   {
     const owned = activeOrb === 'helios' && rankOf('helios_zenith') > 0;
-    const progress = (owned && _heliosZenithNextAt > 0) ? Math.max(0, Math.min(1, 1 - (_heliosZenithNextAt - now) / 22000)) : 0;
-    // ACTIVE (primed/glowing) while any orb still owes its Zenith super-launch.
-    const primed = owned && _heliosFleet.some(f => f._zenithPending);
+    // Cooldown only counts when NOT in the active lockout; primed/glowing the
+    // whole time supers are owed (locked out), then the 22s arc fills.
+    const primed = owned && _heliosZenithActive;
+    const progress = (owned && !primed && _heliosZenithNextAt > 0) ? Math.max(0, Math.min(1, 1 - (_heliosZenithNextAt - now) / 22000)) : 0;
     const firing = owned && (now - _heliosZenithFiredAt < 350);
     set('capCdZenith', owned, primed ? 1 : progress, `rgba(${HELIOS_PATH_COLORS.sundog},0.95)`, primed, firing);
   }
