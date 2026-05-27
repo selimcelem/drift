@@ -17016,6 +17016,8 @@ const PGS = (() => {
       // v1.10.0 Stage 3: Sirius reveal / death-3 guaranteed-revive flag. OR-merged
       // like the others so the name reveal can't replay on another device.
       siriusUsed: !!siriusUsed,
+      // Orb-unlock "convo seen / committed" flags, OR-merged per key (true wins).
+      orbUnlockSeen: orbUnlockSeen ? { ...orbUnlockSeen } : {},
       stats: statsSnapshot,
     };
   }
@@ -17317,6 +17319,15 @@ const PGS = (() => {
         siriusUsed = true;
         try { localStorage.setItem('drift_sirius_used', '1'); } catch {}
       }
+    }
+    // Orb-unlock flags: OR-merge per key (a true on either device sticks), then
+    // reconcile so an EARNED built orb that's true here also re-grants ownership.
+    if (payload.orbUnlockSeen && typeof payload.orbUnlockSeen === 'object') {
+      let _ouChanged = false;
+      for (const k of Object.keys(payload.orbUnlockSeen)) {
+        if (payload.orbUnlockSeen[k] && !orbUnlockSeen[k]) { orbUnlockSeen[k] = true; _ouChanged = true; }
+      }
+      if (_ouChanged) { try { localStorage.setItem('drift_orb_unlock_seen', JSON.stringify(orbUnlockSeen)); } catch {} try { _orbUnlockReconcile(); } catch {} }
     }
     // v1.6.6.3: drift_stats — counters/bests/per-orb/difficulty completions
     // and cosmetic-trail unlocks. mergeStats already produced a sanitized,
@@ -19619,6 +19630,134 @@ function saveStats() {
   pgsScheduleWrite();
 }
 loadStats();
+
+// ===========================================================================
+// === ORB UNLOCK via Sirius conversation (gated on base-orb kill threshold) =
+// The 5 enhanced orbs are NOT purchasable in the shop. Each unlocks when the
+// player crosses a per-orb total-kill threshold on the matching BASE orb and
+// then dies WHILE PLAYING that base orb — Sirius narrates the unlock. Ownership
+// commits the moment the convo triggers (survives a mid-convo quit) and is
+// reconciled on load. Tachyon/Leviathan have no playable orb yet → revealing
+// them just flips the shop slot from "???" to "COMING SOON".
+// ===========================================================================
+const ENHANCED_UNLOCK = {
+  drifterV2: { base: 'cyan',     threshold: 2000, tease: false },
+  phantomV2: { base: 'cosmic',   threshold: 3000, tease: false },
+  helios:    { base: 'solar',    threshold: 4000, tease: false },
+  tachyon:   { base: 'nebula',   threshold: 5000, tease: true  },
+  leviathan: { base: 'asteroid', threshold: 6000, tease: true  },
+};
+const BASE_TO_ENHANCED = { cyan: 'drifterV2', cosmic: 'phantomV2', solar: 'helios', nebula: 'tachyon', asteroid: 'leviathan' };
+// Approved rhyming Sirius scripts ([speaker, text] tuples; {player} substituted).
+const ORB_UNLOCK_SCRIPTS = {
+  drifterV2: [
+    ['Sirius', 'Hmm...'],
+    ['Sirius', 'Hmmmmm...'],
+    ['Sirius', "Alright, {player}, let's conjure something new..."],
+    ['Sirius', 'Simsala... Cadabra... ABRA-ROAM-ADABRA-DOO!'],
+    ['Sirius', '...Nothing sparkled? Bah. Just check your shop.'],
+  ],
+  phantomV2: [
+    ['Sirius', 'Two thousand ghosts, {player} — how grim, how grand.'],
+    ['Sirius', 'Let me reach past the veil with my luminous hand...'],
+    ['Sirius', "SPIRITS! WRAITHS! Rise at Sirius' command!"],
+    ['Sirius', '...They whisper just one word to me. Shop.'],
+    ['Sirius', 'I did the séance. You do the spending.'],
+  ],
+  helios: [
+    ['Sirius', 'So many burned, {player}. A spark gone gluttonous and bright.'],
+    ['Sirius', 'Stand back. I shall summon a STAR — a sun, a blinding light!'],
+    ['Sirius', 'BEHOLD the dawn, the corona, the unbearable noon—'],
+    ['Sirius', "...it's in your shop. I summoned a sun into your shop."],
+    ['Sirius', 'A whole star, gift-wrapped and waiting. Go on — bask soon.'],
+  ],
+  tachyon: [
+    ['Sirius', 'Fast, {player}. So fast you nearly tore the light in two.'],
+    ['Sirius', "Beyond mere Warp there lies a paradox — and I'll drag it through."],
+    ['Sirius', 'I bend the hour! I fold the now! Behold what time can do—'],
+    ['Sirius', '...ah. It already arrived. In your shop. Before I even knew.'],
+    ['Sirius', 'Tachyon got there yesterday. Go check your shop. ...Today.'],
+  ],
+  leviathan: [
+    ['Sirius', 'All that armour, {player}. All that turtling, hour on hour.'],
+    ['Sirius', 'The wall was nothing — beneath it sleeps a storm of dreadful power.'],
+    ['Sirius', 'RISE, leviathan! From the black and crushing deep — DEVOUR—'],
+    ['Sirius', '...oh. It rose straight into your shop. How rather dour.'],
+    ['Sirius', 'The storm is caged and yours. Go check your shop, and cower.'],
+  ],
+};
+// Persisted once-per-orb "convo seen / committed" flags (siriusUsed pattern).
+let orbUnlockSeen = {};
+function loadOrbUnlockSeen() {
+  try { const raw = localStorage.getItem('drift_orb_unlock_seen'); orbUnlockSeen = (raw ? JSON.parse(raw) : {}) || {}; }
+  catch { orbUnlockSeen = {}; }
+}
+function saveOrbUnlockSeen() {
+  try { localStorage.setItem('drift_orb_unlock_seen', JSON.stringify(orbUnlockSeen)); } catch {}
+  pgsScheduleWrite();
+}
+// Shop visibility / ownership: base orbs always; the 5 enhanced orbs derive
+// SOLELY from orbUnlockSeen (the convo-earned flag) — NOT from unlockedOrbs. So
+// a cloud union-bounce-back of unlockedOrbs alone can never re-reveal an unearned
+// orb. (The grandfather pass sets the flag for all current owners before first
+// render; reconcile keeps unlockedOrbs in sync for the equip path.)
+function orbRevealed(key) {
+  const spec = ENHANCED_UNLOCK[key];
+  if (!spec) return true;                 // base orbs (and anything not gated)
+  return !!orbUnlockSeen[key];            // built + tease: orbUnlockSeen is the only truth
+}
+// Which enhanced orb (if any) is eligible to unlock on THIS death — only the
+// match for the currently-played base orb can ever qualify (one per death).
+function _orbUnlockPendingKey() {
+  const enh = BASE_TO_ENHANCED[activeOrb];
+  if (!enh) return null;
+  const spec = ENHANCED_UNLOCK[enh];
+  if (!spec) return null;
+  if (orbUnlockSeen[enh]) return null;            // ONLY orbUnlockSeen skips it — owning via
+                                                  // unlockedOrbs alone is NOT enough (grandfather
+                                                  // sets the flag for all current owners, so in
+                                                  // practice no real player hits this branch).
+  const kills = (stats.perOrb[activeOrb] && stats.perOrb[activeOrb].kills) | 0;
+  if (kills < spec.threshold) return null;        // threshold not met
+  return enh;
+}
+// GRANDFATHER (Option A, run-once): existing owners of a built enhanced orb are
+// marked as already-earned (orbUnlockSeen=true) so they keep the orb AND its tree
+// and never see the convo for it. NO refund, NO relock, NO tree reset — fully
+// sync-safe (orbUnlockSeen is grow-only; nothing is ever removed). It ONLY sets
+// the flag for orbs still owned, so it is safe to re-run on accounts the old
+// broken Option-B migration already touched (those kept the orb + got +6000 —
+// this just confirms the flag; it never refunds or removes anything). A FRESH
+// guard key (`drift_orb_unlock_grandfathered`) so the corrected pass runs once on
+// every account, including ones the broken version flagged as `..._migrated`.
+function _orbUnlockGrandfather() {
+  let done = false;
+  try { done = localStorage.getItem('drift_orb_unlock_grandfathered') === '1'; } catch {}
+  if (done) return;
+  let changed = false;
+  for (const enh of Object.keys(ENHANCED_UNLOCK)) {
+    const spec = ENHANCED_UNLOCK[enh];
+    if (spec.tease) continue;                                   // teases were never ownable
+    if (unlockedOrbs.includes(enh) && !orbUnlockSeen[enh]) { orbUnlockSeen[enh] = true; changed = true; }
+  }
+  if (changed) saveOrbUnlockSeen();
+  try { localStorage.setItem('drift_orb_unlock_grandfathered', '1'); } catch {}
+}
+// RECONCILE (desync backstop): re-grant ONLY an EARNED built orb that went
+// missing from unlockedOrbs (convoSeen true but not owned — e.g. cloud OR-merge
+// edge). Never re-grants a relocked orb (convoSeen false stays locked).
+function _orbUnlockReconcile() {
+  let changed = false;
+  for (const enh of Object.keys(ENHANCED_UNLOCK)) {
+    const spec = ENHANCED_UNLOCK[enh];
+    if (spec.tease) continue;
+    if (orbUnlockSeen[enh] && !unlockedOrbs.includes(enh)) { unlockedOrbs.push(enh); changed = true; }
+  }
+  if (changed) saveUnlockedOrbs();
+}
+loadOrbUnlockSeen();
+_orbUnlockGrandfather();
+_orbUnlockReconcile();
 // Pending milestone banners surfaced on the next death screen. Cleared after
 // the run summary renders. Each entry: { kind, title, subtitle? }.
 let pendingMilestones = [];
@@ -26309,6 +26448,15 @@ function triggerDeath() {
   // 1-in-20 revives thereafter. Continues the EXACT same run (no reset).
   // Apocalypse-guarded, post-revive death is final (see siriusReviveEligible).
   // Placed AFTER the Ascension + second-death checks; gated on !ascensionRunActive.
+  // ORB UNLOCK convo — Sirius unlocks the matching enhanced orb when the player
+  // crosses the base-orb kill threshold on a death WHILE PLAYING that base orb.
+  // Priority ABOVE the revive roll + roast (one per death; only the active orb's
+  // match can qualify). Gated on siriusUsed so it never preempts the death-3
+  // reveal. The unlock COMMITS inside _beginOrbUnlockConvo before any dialogue.
+  if (_orbUnlockConvoEligible()) {
+    _beginOrbUnlockConvo();
+    return;
+  }
   if (siriusReviveEligible()) {
     siriusBeginRevive();
     return;
@@ -32081,6 +32229,25 @@ document.getElementById('startBtn').addEventListener('click', ()=>{
     refreshActiveTreeCache();
     console.log('[HELIOSTEST] Helios unlocked + equipped, all trees unlocked, tutorial skipped (TEMPORARY debug cheat)');
   }
+  // DEV cheat: pilot name "ORBUNLOCKTEST" — TEMPORARY. Arms the Sirius orb-unlock
+  // convos for testing: introduces Sirius, pushes every base-orb kill stat past
+  // its threshold, and RELOCKS all 5 enhanced orbs (so they re-earn). Then: pick
+  // any BASE orb (Drifter/Phantom/Inferno/Warp/Bulwark) and DIE — the matching
+  // unlock convo fires. TODO: REMOVE BEFORE RELEASE — grep "ORBUNLOCKTEST".
+  if (getUsername().toUpperCase() === 'ORBUNLOCKTEST') {
+    siriusUsed = true; saveSiriusUsed(true);
+    saveTutorialCompleted(true);
+    for (const enh of Object.keys(ENHANCED_UNLOCK)) {
+      const spec = ENHANCED_UNLOCK[enh];
+      if (!stats.perOrb[spec.base]) stats.perOrb[spec.base] = { kills: 0, runs: 0 };
+      stats.perOrb[spec.base].kills = spec.threshold + 50;   // past the threshold
+      orbUnlockSeen[enh] = false;                            // relocked → re-earn via convo
+      if (!spec.tease) { const i = unlockedOrbs.indexOf(enh); if (i >= 0) unlockedOrbs.splice(i, 1); }
+    }
+    if (!unlockedOrbs.includes(activeOrb)) { activeOrb = 'cyan'; saveOrb(); }
+    saveStats(); saveOrbUnlockSeen(); saveUnlockedOrbs();
+    console.log('[ORBUNLOCKTEST] Sirius armed + kill stats maxed + 5 enhanced orbs relocked. Play a base orb and die to fire its unlock convo. (TEMPORARY)');
+  }
   // DEV cheat: pilot name "DRIFTRESET" (case-insensitive) wipes ALL local
   // progress — crystals, difficulty-beat flags, every orb tree's ranks +
   // capstones, unlocked-orbs set (back to Drifter only), active orb, top-5
@@ -34349,6 +34516,55 @@ function _siriusConvoComplete() {
   _siriusSkipDeathImpact = true;   // route to the normal death screen without re-running impact FX
   try { triggerDeath(); } catch (e) { console.error('[sirius] convo finalize threw', e); }
 }
+// --- ORB UNLOCK convo (mirrors siriusBeginDeathConvo's FX + routing) --------
+function _orbUnlockConvoEligible() {
+  if (apocalypseDeathFlag) return false;            // apocalypse suppresses it (commits on next collision death)
+  if (!tutorialCompleted) return false;
+  if (ascensionRunActive) return false;
+  if (ascensionCutsceneActive || secondDeathActive || siriusReviveActive) return false;
+  if (_siriusSkipDeathImpact) return false;         // re-entry after a beat → not a second beat
+  if (!siriusUsed) return false;                    // never before Sirius is introduced (death-3 reveal)
+  return !!_orbUnlockPendingKey();
+}
+function _beginOrbUnlockConvo() {
+  const enh = _orbUnlockPendingKey();
+  if (!enh) { _siriusSkipDeathImpact = true; try { triggerDeath(); } catch (e) {} return; }
+  const spec = ENHANCED_UNLOCK[enh];
+  // COMMIT FIRST — the orb is unlocked the moment the convo triggers, so a
+  // hard-quit mid-conversation still leaves it owned (built) / revealed (tease).
+  orbUnlockSeen[enh] = true;
+  if (!spec.tease && !unlockedOrbs.includes(enh)) { unlockedOrbs.push(enh); saveUnlockedOrbs(); }
+  saveOrbUnlockSeen();
+  // Death feel + cutscene routing — same as siriusBeginDeathConvo.
+  shakePlayerDeath(lastDeathCause || 'body');
+  triggerHitstop(100);
+  clearResumeState();
+  try { SFX.death(); } catch {}
+  try { SFX.stopAllGameplayTracks(0.2); } catch {}
+  try { SFX.playTrack(null, 0.3); } catch {}
+  pauseBtn.classList.remove('visible');
+  if (typeof AdManager !== 'undefined') try { AdManager.hideBanner(); } catch {}
+  secondDeathClearTransients();
+  spawnDeathShards(player.x, player.y);
+  deathFlashFrames = 1;
+  activeEffects = { shield: 0, hyperspeed: 0, ghost: 0 };
+  shieldEndTime = 0; ghostEndTime = 0; hyperspeedEndTime = 0;
+  hyperSpeedStacks = 0; hyperspeedCurrentMult = 1; hyperspeedTargetSpeed = 0;
+  if (hyperspeedWhooshNodes) { try { hyperspeedWhooshNodes.stop(0.1); } catch {} hyperspeedWhooshNodes = null; }
+  shieldBroken = false; shieldHits = 0; fortressShield = false;
+  activeCombos = {}; lastComboLabel = null;
+  clearPendingNovaTimeouts();
+  if (pendingDeathBurstTimer) { clearTimeout(pendingDeathBurstTimer); pendingDeathBurstTimer = null; }
+  const lines = ORB_UNLOCK_SCRIPTS[enh] || [['Sirius', '...Just check your shop.']];
+  state = 'sirius_predeath';
+  _siriusTimeout(() => {
+    if (state !== 'sirius_predeath') return;
+    state = 'sirius_cutscene';
+    deathParticles = []; deathShards = []; deathFlashFrames = 0;
+    pickupParticles = []; orbTrailParticles = []; destroyEffects = [];
+    dialogueStart(lines, { substitute: siriusSubstitute, onComplete: _siriusConvoComplete });
+  }, SIRIUS_PREDEATH_MS);
+}
 // Orb-dependent resurrect colour — same colour a normal death produces for the
 // current orb (activeOrbColor()). Returns [h,s,l] for convergeReform's hslFn.
 function _siriusOrbHsl() {
@@ -35230,6 +35446,18 @@ function refreshOrbBrowser() {
     `<div class="orb-dot${i === orbBrowserIndex ? ' active' : ''}"></div>`
   ).join('');
 
+  // Convo-gated enhanced orbs are hidden as a "???" locked slot until Sirius
+  // unlocks them — NEVER a crystal-buy. Revealed teases fall through to COMING
+  // SOON below; revealed built orbs fall through to the normal owned/equip path.
+  if (ENHANCED_UNLOCK[key] && !orbRevealed(key)) {
+    document.getElementById('orbName').textContent = '???';
+    document.getElementById('orbDesc').textContent = 'A hidden power, not yet earned. Keep playing...';
+    document.getElementById('orbPreview').classList.add('locked');
+    document.getElementById('orbAction').innerHTML = '<button class="orb-btn unlock" disabled>LOCKED</button>';
+    document.getElementById('orbCrystalBalance').textContent = '💎 ' + formatCrystals(totalCrystals);
+    refreshOrbTrailRow(key, true);
+    return;
+  }
   // v1.9.0 tease orbs: locked, non-purchasable placeholders. Show name + tease +
   // a disabled COMING SOON button where the unlock/equip controls would be, and
   // no trail row (there's no trail to pick on an unreleased orb).
@@ -35454,6 +35682,9 @@ function drawOrbPreview() {
   orbPreviewCtx.clearRect(0, 0, cw, ch);
   const key = menuOrbCycle()[orbBrowserIndex];
   // Tease orbs have no ORB_DEFS entry — render a dim, locked placeholder orb.
+  // "???" locked slot (unrevealed convo-gated orb, built or tease) → neutral grey
+  // placeholder so the orb's real look/colour isn't spoiled before it's earned.
+  if (ENHANCED_UNLOCK[key] && !orbRevealed(key)) { drawTeaseOrbPreview(cw, ch, '150,150,170'); return; }
   if (isTeaseOrb(key)) { drawTeaseOrbPreview(cw, ch, TEASE_ORBS[key].color); return; }
   const def = ORB_DEFS[key];
   const color = def.color;
