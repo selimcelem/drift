@@ -3207,6 +3207,9 @@
       <div class="cap-cd" id="capCdAegis"     data-cap="aegis"><div class="cap-cd-ring"></div><div class="cap-cd-lbl">AEGIS</div></div>
       <div class="cap-cd" id="capCdEventHorizon" data-cap="eventHorizon"><div class="cap-cd-ring"></div><div class="cap-cd-lbl">HORIZON</div></div>
       <div class="cap-cd" id="capCdSingularity" data-cap="singularity"><div class="cap-cd-ring"></div><div class="cap-cd-lbl">RIFT</div></div>
+      <div class="cap-cd" id="capCdZenith" data-cap="zenith"><div class="cap-cd-ring"></div><div class="cap-cd-lbl">ZENITH</div></div>
+      <div class="cap-cd" id="capCdCoronaStorm" data-cap="coronaStorm"><div class="cap-cd-ring"></div><div class="cap-cd-lbl">STORM</div></div>
+      <div class="cap-cd" id="capCdZenithFlash" data-cap="zenithFlash"><div class="cap-cd-ring"></div><div class="cap-cd-lbl">FLASH</div></div>
     </div>
     <!-- v1.7.0: burst replaced with a circular indicator at bottom-right,
          same size/style as a capstone cooldown circle. Fills clockwise as
@@ -5261,11 +5264,11 @@ const ORB_ORDER = ['cyan', 'cosmic', 'solar', 'nebula', 'asteroid'];
 // sees them. They appear ONLY in the orb-browser cycle via menuOrbCycle(), show
 // a name + tease + "COMING SOON", and are not purchasable.
 const TEASE_ORBS = {
-  helios:    { name: 'Helios',    color: '255,170,40',  desc: 'Where Inferno was a spark, Helios is the sun itself.' },
+  // helios promoted to a real enhanced orb (ORB_DEFS.helios / TREE_DEFS.helios below).
   tachyon:   { name: 'Tachyon',   color: '120,220,255', desc: "Beyond Warp's hyperspeed lies a paradox. Tachyon bends time itself." },
   leviathan: { name: 'Leviathan', color: '120,200,180', desc: 'Bulwark was the wall. Leviathan is the storm.' },
 };
-const TEASE_ORB_ORDER = ['helios', 'tachyon', 'leviathan'];
+const TEASE_ORB_ORDER = ['tachyon', 'leviathan'];
 function isTeaseOrb(key) { return Object.prototype.hasOwnProperty.call(TEASE_ORBS, key); }
 // Main-menu-only orb cycle: every real orb (ORB_ORDER, already incl. Roamer +
 // Phantasm by load time) followed by the locked teases. Computed fresh so it
@@ -8142,6 +8145,1029 @@ function _nebula_drawFlashes() {
 }
 OrbHooks.on('onRender', () => { if (activeOrb === 'nebula') _nebula_drawFlashes(); });
 OrbHooks.on('onResetGame', () => { _nebula_flashes = []; _nebula_flashGates = {}; });
+
+// ===========================================================================
+// === HELIOS (enhanced Inferno) — 3 trees: SUNDOG / PROMINENCE / HELIOGRAPH ==
+// White-hot gold sun-orb. Registered exactly like nebula (ActiveBudget pattern).
+// ===========================================================================
+const HELIOS_GOLD = '255,215,120';
+ORB_DEFS.helios = {
+  name: 'Helios',
+  desc: 'Where Inferno was a spark, Helios is the sun itself — orbiting suns, sweeping flares, and lances of light. Three roads into the star.',
+  color: HELIOS_GOLD,        // white-hot gold (distinct from Inferno '251,146,60')
+  cost: 8000,
+  streakCap: 8,
+  trail: 'solar',
+  bias: 'nova',
+};
+
+TREE_DEFS.helios = {
+  name: 'HELIOS',
+  color: HELIOS_GOLD,
+  paths: {
+    // ---- 1. SUNDOG (orbiting fireballs that launch & nova) ----------------
+    sundog: {
+      name: 'SUNDOG',
+      nodes: [
+        { key: 'helios_sundog', name: 'Sundog', tier: 3, max: 1, costOverride: [7500], pointCost: 5,
+          desc: 'KEYSTONE (5 pts). Two mock-suns orbit you — loading, NOT killing (they will not clear what they merely touch). Every 3s the longest-armed sun flings itself at the nearest planet within 140px and pops a fast nova; the spent sun reforms over 4s. Bright little satellites that do my bidding.',
+          effect: r => r ? '2 orbiting suns auto-launch' : 'Locked' },
+        { key: 'helios_solarNoon', name: 'Solar Noon', tier: 1, max: 1, costOverride: [4000], pointCost: 2,
+          desc: 'The suns fling faster — launch interval 3.0s → 2.2s. Noon does not dawdle.',
+          effect: r => r ? 'Launch 3.0s → 2.2s' : 'Locked' },
+        { key: 'helios_heavyLight', name: 'Heavy Light', tier: 2, max: 1, costOverride: [6000], pointCost: 2,
+          desc: 'Heavier suns: impact nova radius ×0.7 → ×0.85 (~196px → ~289px). More mass, more menace.',
+          effect: r => r ? 'Impact nova bigger' : 'Locked' },
+        { key: 'helios_mockSun', name: 'Mock Sun', tier: 2, max: 1, costOverride: [6000], pointCost: 3,
+          desc: '+1 orbiting sun (→3). A constellation answers to me.',
+          effect: r => r ? '+1 sun (→3)' : 'Locked' },
+        { key: 'helios_emberSpark', name: 'Ember Spark', tier: 2, max: 1, costOverride: [4500], pointCost: 2,
+          desc: 'Each impact flings a single ember that drifts for 3s, THEN pops a tiny fast spark-nova (~81px) wherever it ended up. Sparks beget sparks.',
+          effect: r => r ? 'Ember drifts 3s → spark' : 'Locked' },
+        { key: 'helios_scorch', name: 'Photosphere', tier: 1, max: 1, costOverride: [5000], pointCost: 3,
+          desc: 'The orbiting suns become LETHAL: any planet their surface touches is destroyed. What you see is exactly what burns — the kill radius matches the sun you can see. Do not mistake them for harmless.',
+          effect: r => r ? 'Orbiting suns kill on contact' : 'Locked' },
+        { key: 'helios_parhelion', name: 'Parhelion', tier: 2, max: 1, costOverride: [6000], pointCost: 3,
+          desc: 'Every 5th launch DOUBLE-STRIKES: the sun detonates, then leaps from that spot to a second nearby planet and detonates AGAIN. One throw, two dead stars.',
+          effect: r => r ? 'Every 5th launch → double-strike' : 'Locked' },
+        { key: 'helios_zenith', name: 'Zenith', tier: 3, max: 1, costOverride: [10000], pointCost: 5,
+          desc: 'CAPSTONE (5 pts). Fleet +1. When the fleet is full, every 22s ALL of it launches at once — each impact a full SUPERNOVA blast at the nearest planets. The sun at its highest.',
+          effect: r => r ? 'Fleet +1 · 22s supernova barrage' : 'Locked' },
+      ],
+    },
+    // ---- 2. PROMINENCE (sweeping fire-wedge) ------------------------------
+    prominence: {
+      name: 'PROMINENCE',
+      nodes: [
+        { key: 'helios_prominence', name: 'Prominence', tier: 3, max: 1, costOverride: [7500], pointCost: 5,
+          desc: 'KEYSTONE (5 pts). Every 3s an arc of plasma erupts toward the densest cluster of INCOMING planets (above you) — a 90° wedge reaching 300px that SWEEPS across in 0.5s, shearing every planet the leading edge passes, then vanishes. Aimed at the threats bearing down, not a shield.',
+          effect: r => r ? 'Auto fire-wedge every 3s · 300px' : 'Locked' },
+        { key: 'helios_flareCadence', name: 'Flare Cadence', tier: 1, max: 1, costOverride: [4000], pointCost: 2,
+          desc: 'Eruptions come faster — cadence 3s → 2s.',
+          effect: r => r ? 'Cadence 3s → 2s' : 'Locked' },
+        { key: 'helios_wideArc', name: 'Wide Arc', tier: 1, max: 1, costOverride: [4000], pointCost: 2,
+          desc: 'The wedge widens — arc 90° → 140°. A broader scythe.',
+          effect: r => r ? 'Arc 90° → 140°' : 'Locked' },
+        { key: 'helios_longReach', name: 'Long Reach', tier: 2, max: 1, costOverride: [6000], pointCost: 3,
+          desc: 'The eruption reaches farther — 300px → 350px.',
+          effect: r => r ? 'Reach 300 → 350px' : 'Locked' },
+        { key: 'helios_fastSweep', name: 'Fast Sweep', tier: 1, max: 1, costOverride: [4000], pointCost: 2,
+          desc: 'The wedge whips across faster — sweep 0.5s → 0.32s. A snappier shear.',
+          effect: r => r ? 'Sweep 0.5s → 0.32s' : 'Locked' },
+        { key: 'helios_cinderEdge', name: 'Cinder Edge', tier: 2, max: 1, costOverride: [6000], pointCost: 3,
+          desc: 'The sweep\'s far edge drops fast cinder-pops (~144px) where it shears. The trailing fire bites twice.',
+          effect: r => r ? 'Edge drops cinder-pops' : 'Locked' },
+        { key: 'helios_coronaStorm', name: 'Corona Storm', tier: 3, max: 1, costOverride: [10000], pointCost: 5,
+          desc: 'CAPSTONE (5 pts). Every 30s a full 360° board-clear sweep erupts at max reach, plus a central SUPERNOVA blast. The whole corona, unleashed.',
+          effect: r => r ? '360° storm + supernova / 30s' : 'Locked' },
+      ],
+    },
+    // ---- 3. HELIOGRAPH (light / shadow / line-of-sight) -------------------
+    heliograph: {
+      name: 'HELIOGRAPH',
+      nodes: [
+        { key: 'helios_heliograph', name: 'Heliograph', tier: 3, max: 1, costOverride: [7500], pointCost: 5,
+          desc: 'KEYSTONE (5 pts). A beam of light lances from the last planet you passed toward the nearest other planet, destroying everything along its 8px-wide path. Charges one beam every 3s (cap 5). If there is nothing to fire at, beams BANK instead of wasting — then rapid-fire in succession the moment targets reappear. Light, made a blade — and patient.',
+          effect: r => r ? 'Charging beam · banks up to 5' : 'Locked' },
+        { key: 'helios_focus', name: 'Focus', tier: 1, max: 1, costOverride: [4000], pointCost: 2,
+          desc: 'Beams charge faster — interval 3s → 2s. A tighter lens.',
+          effect: r => r ? 'Charge 3s → 2s' : 'Locked' },
+        { key: 'helios_refraction', name: 'Refraction', tier: 2, max: 1, costOverride: [6000], pointCost: 3,
+          desc: 'The beam refracts off its first kill and bends to a second target. Light does not stop at one.',
+          effect: r => r ? 'Beam refracts to a 2nd target' : 'Locked' },
+        { key: 'helios_shadowLine', name: 'Light Sweep', tier: 2, max: 1, costOverride: [6000], pointCost: 3,
+          desc: 'A bright horizontal line of light descends from the top of the screen every 8s, scouring every planet it sweeps past on the way down. (Counts as a beam — Zenith Flash makes its hits nova too.)',
+          effect: r => r ? 'Light line sweeps down / 8s' : 'Locked' },
+        { key: 'helios_solstice', name: 'Solstice', tier: 1, max: 1, costOverride: [4500], pointCost: 2,
+          desc: 'On burst, instantly BANK 5 beams — a full magazine of light to rapid-fire as soon as there are targets.',
+          effect: r => r ? 'Burst = bank 5 beams' : 'Locked' },
+        { key: 'helios_zenithFlash', name: 'Zenith Flash', tier: 3, max: 1, costOverride: [10000], pointCost: 5,
+          desc: 'CAPSTONE (5 pts). The beam chains +1 extra target (stacks with Refraction). AND every 30s a ZENITH FLASH ignites for 10s — during it, every beam that hits a planet ALSO spawns a regular nova blast at the kill. Noon, weaponised.',
+          effect: r => r ? '+1 chain · beam-novas 10s / 30s' : 'Locked' },
+      ],
+    },
+  },
+  capstones: [], // path-endpoint capstones; standard capstones[] array unused
+};
+TREE_UNLOCK_COSTS.helios = 27000;   // above Phantasm's 25000
+ORB_COST_SCALE.helios = 1.0;
+ORB_CAPSTONE_COST_SCALE.helios = 0.70;
+
+const HELIOS_PATH_COLORS = {
+  sundog:      '255,215,120',
+  prominence:  '255,170,60',
+  heliograph:  '255,244,200',
+};
+const HELIOS_KEYSTONES = {
+  sundog:      'helios_sundog',
+  prominence:  'helios_prominence',
+  heliograph:  'helios_heliograph',
+};
+// Every non-keystone node simply requires its tree's keystone (exploratory build).
+const HELIOS_PREREQS = {
+  helios_solarNoon:        { prereq: ['helios_sundog'] },
+  helios_heavyLight:       { prereq: ['helios_sundog'] },
+  helios_mockSun:          { prereq: ['helios_sundog'] },
+  helios_emberSpark:       { prereq: ['helios_sundog'] },
+  helios_scorch:           { prereq: ['helios_sundog'] },
+  helios_parhelion:        { prereq: ['helios_sundog'] },
+  helios_zenith:           { prereq: ['helios_sundog'] },
+  helios_flareCadence:     { prereq: ['helios_prominence'] },
+  helios_wideArc:          { prereq: ['helios_prominence'] },
+  helios_longReach:        { prereq: ['helios_prominence'] },
+  helios_fastSweep:        { prereq: ['helios_prominence'] },
+  helios_cinderEdge:       { prereq: ['helios_prominence'] },
+  helios_coronaStorm:      { prereq: ['helios_prominence'] },
+  helios_focus:            { prereq: ['helios_heliograph'] },
+  helios_refraction:       { prereq: ['helios_heliograph'] },
+  helios_shadowLine:       { prereq: ['helios_heliograph'] },
+  helios_solstice:         { prereq: ['helios_heliograph'] },
+  helios_zenithFlash:      { prereq: ['helios_heliograph'] },
+};
+const HELIOS_TREE_LAYOUTS = {
+  sundog: { name: 'SUNDOG', color: HELIOS_PATH_COLORS.sundog, nodes: {
+    helios_sundog:     { x: 100, y: 50, keystone: true },
+    helios_solarNoon:  { x: 40,  y: 130 },
+    helios_heavyLight: { x: 100, y: 130 },
+    helios_mockSun:    { x: 160, y: 130 },
+    helios_emberSpark: { x: 40,  y: 210 },
+    helios_scorch:     { x: 100, y: 210 },
+    helios_parhelion:  { x: 160, y: 210 },
+    helios_zenith:     { x: 100, y: 330, capstone: true },
+  } },
+  prominence: { name: 'PROMINENCE', color: HELIOS_PATH_COLORS.prominence, nodes: {
+    helios_prominence:   { x: 100, y: 50, keystone: true },
+    helios_flareCadence: { x: 40,  y: 130 },
+    helios_wideArc:      { x: 100, y: 130 },
+    helios_longReach:    { x: 160, y: 130 },
+    helios_fastSweep:    { x: 60,  y: 210 },
+    helios_cinderEdge:   { x: 140, y: 210 },
+    helios_coronaStorm:  { x: 100, y: 330, capstone: true },
+  } },
+  heliograph: { name: 'HELIOGRAPH', color: HELIOS_PATH_COLORS.heliograph, nodes: {
+    helios_heliograph: { x: 100, y: 50, keystone: true },
+    helios_focus:      { x: 40,  y: 130 },
+    helios_refraction: { x: 160, y: 130 },
+    helios_shadowLine: { x: 40,  y: 210 },
+    helios_solstice:   { x: 160, y: 210 },
+    helios_zenithFlash:{ x: 100, y: 330, capstone: true },
+  } },
+};
+ActiveBudget.register('helios', {
+  base: 25, expandMax: 5, expandCost: 2000,
+  bonusKey: 'drift_helios_budget_bonus',
+  keystones: HELIOS_KEYSTONES,
+  prereqs: HELIOS_PREREQS,
+});
+function getHeliosBudgetCap()         { return ActiveBudget.budgetCap('helios'); }
+function getHeliosBudgetBonus()       { return ActiveBudget.budgetBonus('helios'); }
+function purchaseHeliosBudgetExpand() { return ActiveBudget.purchaseExpand('helios'); }
+function isHeliosActive()             { return activeOrb === 'helios'; }
+
+orbTrees.helios = freshOrbTreeState('helios');
+treesUnlocked.helios = false;
+
+ORB_BEHAVIOR.helios = ORB_BEHAVIOR.helios || {};
+ORB_BEHAVIOR.helios.rankOf = function(nodeKey) {
+  if (typeof nodeKey === 'string' && ActiveBudget.resolveNode('helios', nodeKey)) {
+    return ActiveBudget.isActive('helios', nodeKey) ? 1 : 0;
+  }
+  return _rankOf_default(nodeKey);
+};
+ORB_BEHAVIOR.helios.pathPrereqMet = function(state, pathKey, nodeIdx) {
+  if (state !== orbTrees.helios) return _pathPrereqMet_default(state, pathKey, nodeIdx);
+  return ActiveBudget.pathPrereqMet('helios', pathKey, nodeIdx);
+};
+ORB_BEHAVIOR.helios.respecNode = function(orbKey, pathKey, nodeIdx) {
+  const def = TREE_DEFS.helios; const state = orbTrees.helios;
+  if (!def || !state) return false;
+  const node = def.paths[pathKey] && def.paths[pathKey].nodes[nodeIdx];
+  if (!node) return false;
+  const current = state[pathKey][nodeIdx] | 0;
+  if (current <= 0) return false;
+  const invested = nodeCrystalsInvested(orbKey, node, current);
+  const fee = refundFee(invested);
+  if (totalCrystals < fee) return false;
+  totalCrystals = Math.max(0, totalCrystals - fee);
+  totalCrystals += invested;
+  state[pathKey][nodeIdx] = 0;
+  ActiveBudget.deactivate('helios', node.key);
+  saveCrystals(); saveTreeState();
+  if (orbKey === activeOrb) refreshActiveTreeCache();
+  return true;
+};
+ORB_BEHAVIOR.helios.fullTreeRespecCost = function(orbKey) { return refundFee(treeCrystalsInvested(orbKey)); };
+ORB_BEHAVIOR.helios.respecTree = function(orbKey) {
+  const def = TREE_DEFS.helios; const state = orbTrees.helios;
+  if (!def || !state) return false;
+  if (totalRanksInvested(orbKey) <= 0) return false;
+  const invested = treeCrystalsInvested(orbKey);
+  const fee = refundFee(invested);
+  if (totalCrystals < fee) return false;
+  totalCrystals = Math.max(0, totalCrystals - fee);
+  for (const pKey of Object.keys(def.paths)) {
+    const nodes = def.paths[pKey].nodes; const arr = state[pKey];
+    for (let i = 0; i < nodes.length; i++) {
+      totalCrystals += nodeCrystalsInvested(orbKey, nodes[i], arr[i] | 0);
+      arr[i] = 0;
+    }
+  }
+  state.activePoints = {};
+  saveCrystals(); saveTreeState();
+  if (orbKey === activeOrb) refreshActiveTreeCache();
+  return true;
+};
+OrbHooks.on('afterLoadTreeState', () => { ActiveBudget.restoreActivePoints('helios'); });
+
+// === HELIOS flash feedback (gold, throttled) + proc-text labels ============
+let _helios_flashes = [];
+let _helios_flashGates = {};
+function _helios_addFlash(text, color, durationMs) {
+  if (activeOrb !== 'helios') return;
+  _helios_flashes.push({ text: String(text || ''), color: color || HELIOS_GOLD, startTime: Date.now(), durationMs: durationMs || 700 });
+  if (_helios_flashes.length > 6) _helios_flashes.shift();
+}
+function _helios_flash(key, text, color, minMs) {
+  const now = Date.now();
+  if (now - (_helios_flashGates[key] || 0) < (minMs || 0)) return;
+  _helios_flashGates[key] = now;
+  _helios_addFlash(text, color);
+}
+function _helios_drawFlashes() {
+  if (state !== 'playing' && state !== 'paused' && state !== 'apocalypse' && state !== 'devmode') return;
+  if (!_helios_flashes.length) return;
+  if (!player || isNaN(player.x) || isNaN(player.y)) return;
+  const now = Date.now();
+  const visible = [];
+  ctx.save();
+  ctx.font = 'bold 11px Orbitron, monospace';
+  ctx.textAlign = 'center';
+  ctx.lineJoin = 'round';
+  let i = 0;
+  for (const f of _helios_flashes) {
+    const age = now - f.startTime;
+    if (age >= f.durationMs) continue;
+    visible.push(f);
+    const fade = 1 - age / f.durationMs;
+    const y = player.y - 28 - (i * 13) - (age / f.durationMs) * 16;
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = `rgba(0,0,0,${(0.5 * fade).toFixed(2)})`;
+    ctx.strokeText(f.text, player.x, y);
+    ctx.fillStyle = `rgba(${f.color},${(0.95 * fade).toFixed(2)})`;
+    ctx.fillText(f.text, player.x, y);
+    i++;
+  }
+  _helios_flashes = visible;
+  ctx.restore();
+}
+OrbHooks.on('onRender', () => { if (activeOrb === 'helios') _helios_drawFlashes(); });
+OrbHooks.on('onResetGame', () => { _helios_flashes = []; _helios_flashGates = {}; });
+
+// === HELIOS custom tree UI (7 columns, cloned from nebula) =================
+function _helios_nodeState(nodeKey) {
+  const r = ActiveBudget.resolveNode('helios', nodeKey);
+  if (!r) return 'locked';
+  const state = orbTrees.helios;
+  const current = state[r.pathKey][r.nodeIdx] | 0;
+  const prereqOk = pathPrereqMet(state, r.pathKey, r.nodeIdx);
+  if (current > 0 && ActiveBudget.isActive('helios', nodeKey)) return 'active';
+  if (current > 0) return 'owned';
+  if (prereqOk) return 'available';
+  return 'locked';
+}
+function _helios_buildTreeColumn(pathKey) {
+  const layout = HELIOS_TREE_LAYOUTS[pathKey];
+  const col = document.createElement('div');
+  col.className = 'dv2-tree-col';
+  col.style.cssText = 'position:relative; width:200px; height:430px; flex-shrink:0;';
+  const svgNS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(svgNS, 'svg');
+  svg.setAttribute('viewBox', '0 0 200 430');
+  svg.setAttribute('width', '200');
+  svg.setAttribute('height', '430');
+  svg.style.cssText = 'position:absolute; top:0; left:0; pointer-events:none;';
+  for (const nKey of Object.keys(layout.nodes)) {
+    const spec = HELIOS_PREREQS[nKey];
+    if (!spec || !Array.isArray(spec.prereq)) continue;
+    const me = layout.nodes[nKey];
+    for (const parentKey of spec.prereq) {
+      const parent = layout.nodes[parentKey];
+      if (!parent) continue;
+      const bothActive = _helios_nodeState(nKey) === 'active' && _helios_nodeState(parentKey) === 'active';
+      const line = document.createElementNS(svgNS, 'line');
+      line.setAttribute('x1', parent.x); line.setAttribute('y1', parent.y);
+      line.setAttribute('x2', me.x); line.setAttribute('y2', me.y);
+      line.setAttribute('stroke', bothActive ? `rgba(${layout.color},0.9)` : 'rgba(120,120,140,0.35)');
+      line.setAttribute('stroke-width', bothActive ? '3' : '2');
+      svg.appendChild(line);
+    }
+  }
+  col.appendChild(svg);
+  const label = document.createElement('div');
+  label.style.cssText = `position:absolute; bottom:8px; left:0; right:0; text-align:center; font-family:Orbitron,monospace; font-size:11px; letter-spacing:3px; color:rgba(${layout.color},0.85);`;
+  label.textContent = layout.name;
+  col.appendChild(label);
+  for (const nKey of Object.keys(layout.nodes)) {
+    const pos = layout.nodes[nKey];
+    const r = ActiveBudget.resolveNode('helios', nKey);
+    if (!r) continue;
+    const nodeDef = r.node;
+    const nState = _helios_nodeState(nKey);
+    const isCapstone = !!pos.capstone;
+    const isKeystone = !!pos.keystone;
+    const size = isCapstone ? 38 : isKeystone ? 34 : 28;
+    const btn = document.createElement('button');
+    btn.dataset.nodeKey = nKey;
+    btn.style.cssText = `
+      position:absolute; left:${pos.x - size/2}px; top:${pos.y - size/2}px;
+      width:${size}px; height:${size}px;
+      border-radius:${isCapstone ? '8px' : '50%'};
+      border:2px solid rgba(${layout.color},${nState === 'locked' ? 0.18 : nState === 'available' ? 0.45 : 0.9});
+      background:${nState === 'active' ? `rgba(${layout.color},0.85)` : 'rgba(20,14,6,0.85)'};
+      box-shadow:${nState === 'active' ? `0 0 14px rgba(${layout.color},0.7)` : 'none'};
+      color:${nState === 'active' ? 'rgba(0,0,0,0.9)' : `rgba(${layout.color},${nState === 'locked' ? 0.3 : 0.95})`};
+      font-family:Orbitron,monospace; font-size:${isCapstone ? 12 : 10}px; font-weight:bold;
+      cursor:pointer; padding:0; transition: all 0.15s;
+      ${nState === 'locked' ? 'opacity:0.45;' : ''}
+    `;
+    btn.textContent = (nodeDef.pointCost | 0) || 1;
+    const _unitCost = nodeCost(nodeDef.tier, 1, 'helios', nodeDef);
+    btn.title = `${nodeDef.name} — ${(nodeDef.pointCost | 0) || 1} pt · ${formatCrystals(_unitCost)} 💎 (${nState})`;
+    btn.addEventListener('click', () => {
+      SFX.clickSecondary();
+      treeDetailCurrent = { kind: 'node', orbKey: 'helios', pathKey: r.pathKey, nodeIdx: r.nodeIdx };
+      renderTreeDetail();
+      document.getElementById('treeNodeDetail').classList.add('visible');
+    });
+    col.appendChild(btn);
+    if (nState === 'available' || nState === 'locked') {
+      const costLbl = document.createElement('div');
+      const lblW = 56;
+      costLbl.style.cssText = `position:absolute; left:${pos.x - lblW / 2}px; top:${pos.y + size / 2 + 2}px; width:${lblW}px; text-align:center; font-family:Orbitron,monospace; font-size:9px; letter-spacing:0.5px; color:rgba(${layout.color},${nState === 'locked' ? 0.35 : 0.85}); pointer-events:none; line-height:1;`;
+      costLbl.textContent = `${formatCrystals(_unitCost)} 💎`;
+      col.appendChild(costLbl);
+    }
+  }
+  return col;
+}
+function _helios_renderCustomTreeOverlay() {
+  const def = TREE_DEFS.helios;
+  const state = orbTrees.helios;
+  if (!def || !state) return;
+  document.getElementById('treeTitle').textContent = 'HELIOS';
+  document.getElementById('treeTitle').style.color = `rgba(${HELIOS_GOLD},1)`;
+  document.getElementById('treeCrystals').textContent = '💎 ' + formatCrystals(totalCrystals);
+  const pathsEl = document.getElementById('treePaths');
+  pathsEl.innerHTML = '';
+  pathsEl.style.display = 'flex';
+  pathsEl.style.gap = '14px';
+  pathsEl.style.flexWrap = 'nowrap';
+  pathsEl.style.overflowX = 'auto';
+  pathsEl.style.overflowY = 'hidden';
+  pathsEl.style.webkitOverflowScrolling = 'touch';
+  pathsEl.style.padding = '6px 8px 12px';
+  pathsEl.style.maxHeight = '450px';
+  pathsEl.style.justifyContent = 'flex-start';
+  for (const pKey of ['sundog', 'prominence', 'heliograph']) {
+    pathsEl.appendChild(_helios_buildTreeColumn(pKey));
+  }
+  const capsEl = document.getElementById('treeCapstones');
+  capsEl.innerHTML = '';
+  capsEl.style.display = 'flex';
+  capsEl.style.flexDirection = 'column';
+  capsEl.style.alignItems = 'center';
+  capsEl.style.gap = '6px';
+  const total = ActiveBudget.activePointsTotal('helios');
+  const cap = getHeliosBudgetCap();
+  const bonus = getHeliosBudgetBonus();
+  const overBudget = total > cap;
+  const budget = document.createElement('div');
+  budget.style.cssText = `display:flex; align-items:center; gap:10px; padding:10px 8px; font-family:Orbitron,monospace; font-size:13px; letter-spacing:3px; color:rgba(${HELIOS_GOLD},0.85);`;
+  const totalColor = overBudget ? 'rgba(255,90,90,1)' : `rgba(${HELIOS_GOLD},1)`;
+  const label = document.createElement('span');
+  label.innerHTML = `ACTIVE POINTS: <span style="color:${totalColor}; font-weight:bold; font-size:16px;">${total}</span> <span style="opacity:0.6;">/ ${cap}</span>`;
+  budget.appendChild(label);
+  const expandMax = ActiveBudget.expandMaxFor('helios');
+  const expandCost = ActiveBudget.expandCostFor('helios');
+  const expandBtn = document.createElement('button');
+  expandBtn.style.cssText = `background:transparent; border:1px solid rgba(${HELIOS_GOLD},0.55); color:rgba(${HELIOS_GOLD},0.95); font-family:Orbitron,monospace; font-size:12px; letter-spacing:1px; padding:4px 10px; cursor:pointer; border-radius:3px; transition:all 0.18s; min-height:26px; text-transform:uppercase;`;
+  if (bonus >= expandMax) {
+    expandBtn.textContent = 'MAXED';
+    expandBtn.disabled = true;
+    expandBtn.style.opacity = '0.45';
+    expandBtn.style.cursor = 'not-allowed';
+  } else {
+    expandBtn.textContent = '＋';
+    expandBtn.title = `Expand active points capacity by +1 — ${formatCrystals(expandCost)} 💎`;
+    expandBtn.addEventListener('click', () => {
+      SFX.clickSecondary();
+      const remaining = expandMax - bonus;
+      confirmTreeAction(
+        `Expand active points capacity by +1? Cost: ${formatCrystals(expandCost)} 💎. (${remaining} expansion${remaining === 1 ? '' : 's'} remaining)`,
+        () => { if (purchaseHeliosBudgetExpand()) { SFX.clickPrimary(); renderTreeOverlay(); } }
+      );
+    });
+  }
+  budget.appendChild(expandBtn);
+  capsEl.appendChild(budget);
+  const ranks = totalRanksInvested('helios');
+  const full = document.getElementById('treeRespecFullBtn');
+  const _fullFee = fullTreeRespecCost('helios');
+  full.textContent = ranks > 0 ? `REFUND ALL (${formatCrystals(_fullFee)} 💎)` : 'REFUND ALL';
+  full.disabled = ranks === 0 || totalCrystals < _fullFee;
+}
+ORB_BEHAVIOR.helios.renderTreeOverlay = function() { _helios_renderCustomTreeOverlay(); };
+ORB_BEHAVIOR.helios.renderTreeDetail = function() {
+  if (!treeDetailCurrent || treeDetailCurrent.kind !== 'node') return _renderTreeDetail_default();
+  _renderTreeDetail_default();
+  const t = treeDetailCurrent;
+  if (t.orbKey !== 'helios') return;
+  const def = TREE_DEFS.helios;
+  const state = orbTrees.helios;
+  const node = def.paths[t.pathKey].nodes[t.nodeIdx];
+  const current = state[t.pathKey][t.nodeIdx] | 0;
+  const prereqOk = pathPrereqMet(state, t.pathKey, t.nodeIdx);
+  const upBtn = document.getElementById('treeDetailUpgradeBtn');
+  const respecBtn = document.getElementById('treeDetailRespecBtn');
+  if (!upBtn || !respecBtn) return;
+  const isActive = ActiveBudget.isActive('helios', node.key);
+  const pointCost = (node.pointCost | 0) || 1;
+  const total = ActiveBudget.activePointsTotal('helios');
+  if (current <= 0) {
+    upBtn.style.visibility = '';
+    if (!prereqOk) {
+      upBtn.textContent = 'PREREQ MISSING';
+      upBtn.disabled = true;
+    } else {
+      const nextCost = nodeCost(node.tier, 1, t.orbKey, node);
+      upBtn.textContent = `UNLOCK — ${formatCrystals(nextCost)} 💎`;
+      upBtn.disabled = totalCrystals < nextCost;
+      upBtn.onclick = () => {
+        if (purchaseNodeRank(t.orbKey, t.pathKey, t.nodeIdx)) {
+          treeLog('helios unlocked: ' + node.key);
+          SFX.clickPrimary(); renderTreeOverlay(); renderTreeDetail();
+        }
+      };
+    }
+    respecBtn.style.visibility = 'hidden';
+    respecBtn.disabled = true;
+  } else if (!isActive) {
+    upBtn.style.visibility = '';
+    const requiredKs = ActiveBudget.keystoneRequiredFor('helios', node.key);
+    const ksMissing = !!requiredKs && !ActiveBudget.isActive('helios', requiredKs);
+    const fits = total + pointCost <= getHeliosBudgetCap();
+    if (ksMissing) {
+      const ksResolved = ActiveBudget.resolveNode('helios', requiredKs);
+      const ksName = (ksResolved && ksResolved.node && ksResolved.node.name) || 'keystone';
+      upBtn.textContent = `ACTIVATE ${ksName.toUpperCase()} FIRST`;
+      upBtn.disabled = true;
+    } else if (!fits) {
+      upBtn.textContent = 'BUDGET FULL';
+      upBtn.disabled = true;
+    } else {
+      upBtn.textContent = 'ACTIVATE';
+      upBtn.disabled = false;
+    }
+    upBtn.onclick = () => {
+      if (ActiveBudget.activate('helios', node.key)) {
+        treeLog('helios activated: ' + node.key);
+        SFX.clickPrimary(); renderTreeOverlay(); renderTreeDetail();
+      }
+    };
+    respecBtn.style.visibility = '';
+    {
+      const _fee = respecNodeCost(t.orbKey, t.pathKey, t.nodeIdx);
+      respecBtn.disabled = totalCrystals < _fee;
+      respecBtn.textContent = `REFUND (${formatCrystals(_fee)} 💎)`;
+      respecBtn.onclick = () => {
+        confirmTreeAction(`Refund ${node.name}? Costs ${formatCrystals(_fee)} 💎 and returns all spent crystals.`, () => {
+          if (respecNode(t.orbKey, t.pathKey, t.nodeIdx)) { SFX.clickSecondary(); renderTreeOverlay(); closeTreeDetail(); }
+        });
+      };
+    }
+  } else {
+    upBtn.style.visibility = '';
+    upBtn.textContent = 'DEACTIVATE';
+    upBtn.disabled = false;
+    upBtn.onclick = () => {
+      ActiveBudget.deactivate('helios', node.key);
+      SFX.clickPrimary(); renderTreeOverlay(); renderTreeDetail();
+    };
+    respecBtn.style.visibility = '';
+    {
+      const _fee = respecNodeCost(t.orbKey, t.pathKey, t.nodeIdx);
+      respecBtn.disabled = totalCrystals < _fee;
+      respecBtn.textContent = `REFUND (${formatCrystals(_fee)} 💎)`;
+      respecBtn.onclick = () => {
+        confirmTreeAction(`Refund ${node.name}? Costs ${formatCrystals(_fee)} 💎, frees ${pointCost} budget point${pointCost > 1 ? 's' : ''} and returns all spent crystals.`, () => {
+          if (respecNode(t.orbKey, t.pathKey, t.nodeIdx)) { SFX.clickSecondary(); renderTreeOverlay(); closeTreeDetail(); }
+        });
+      };
+    }
+  }
+};
+
+// ===========================================================================
+// === HELIOS mechanics — shared infra, Solar Burst, master dispatchers ======
+// ===========================================================================
+// Hard caps (mobile/Adreno-safe — 7 trees of effects need strict bounds).
+const HELIOS_FLEET_CAP   = 5;
+const HELIOS_EMBER_CAP   = 10;
+const HELIOS_FLARE_CAP   = 2;
+const HELIOS_BEAM_CAP    = 3;
+const HELIOS_WELL_CAP    = 3;
+const HELIOS_VORTEX_CAP  = 2;
+// Transient state (all cleared in onResetGame + listed in the memory watchdog).
+let _heliosFleet      = [];   // SUNDOG orbiting suns
+let _heliosEmbers     = [];   // SUNDOG ember sparks
+let _heliosFlares     = [];   // PROMINENCE sweep wedges
+let _heliosBeams      = [];   // HELIOGRAPH beams (draw tails)
+let _heliosBurstOrbs  = [];   // SOLAR BURST flung orbs
+// Timers / counters.
+let _heliosFleetLaunchAt = 0;
+let _heliosLaunchCount   = 0;
+let _heliosZenithNextAt  = 0;
+let _heliosPromNextAt    = 0;
+let _heliosBeamNextAt    = 0;
+let _heliosBeamLast      = null; // last-passed planet pos for HELIOGRAPH
+let _heliosBeamBank      = 0;    // HELIOGRAPH banked beams (cap 5)
+let _heliosBeamFireAt    = 0;    // rapid-fire cadence gate
+let _heliosZenithFlashAt = 0;
+let _heliosZenithFlashUntil = 0; // HELIOGRAPH Zenith Flash 10s window
+let _heliosZenithFiredAt = 0;    // ring "firing" pulse (Sundog Zenith)
+let _heliosStormFiredAt  = 0;    // ring "firing" pulse (Corona Storm)
+let _heliosNovaSfxAt     = 0;
+
+function _heliosNovaSfx() {
+  const now = Date.now();
+  if (now - _heliosNovaSfxAt < 120) return;
+  _heliosNovaSfxAt = now;
+  try { SFX.planetDestroyed('nova'); } catch {}
+}
+// All Helios novas are FAST (sizeMult 0.9 — no lingering dome). radiusMult = size.
+function _heliosNova(x, y, rm, sn) {
+  pushNovaRingCapped({ x, y, radius: 0, life: 1, prevR: 0, startTime: Date.now(), sizeMult: 0.9, radiusMult: rm || 0.6, supernova: !!sn });
+  try { emitNovaSpecks(x, y); } catch {}
+  _heliosNovaSfx();
+}
+function _heliosNearestBody(x, y, maxD2) {
+  let best = null, bd = (maxD2 != null ? maxD2 : Infinity);
+  for (const b of bodies) {
+    const dx = b.x - x, dy = b.y - y; const d = dx * dx + dy * dy;
+    if (d < bd) { bd = d; best = b; }
+  }
+  return best;
+}
+function _heliosDensestPoint() {
+  if (!bodies.length) return null;
+  let best = bodies[0], bestN = -1;
+  for (const b of bodies) {
+    let n = 0;
+    for (const o of bodies) { const dx = o.x - b.x, dy = o.y - b.y; if (dx * dx + dy * dy < 120 * 120) n++; }
+    if (n > bestN) { bestN = n; best = b; }
+  }
+  return { x: best.x, y: best.y };
+}
+// Destroy a body via a Helios world-position ability (never an orb aura).
+function _heliosKill(b, idx, colorRgb) {
+  emitDestroyBurst(b.x, b.y, colorRgb || '255,200,120');
+  try { emitDestroyEffects(b, 'nova'); } catch {}
+  addDestroyPoints();
+  _heliosNovaSfx();
+  try { releaseBodyCanvases(b); } catch {}
+  bodies.splice(idx, 1);
+  try { checkDestroyProc(b, 'nova'); } catch {}
+}
+
+// SOLAR BURST — the kept custom multi-orb burst: an immediate nova at the player
+// PLUS 4 orbs flung outward that each fly briefly then detonate their OWN nova.
+// (DEFAULT 4 orbs — the distinct Helios burst.) Also fires the active "on burst"
+// keystone effect (Solstice = bank 5 Heliograph beams).
+const HELIOS_BURST_ORBS = 4;
+function _heliosSpawnBurstOrbs(n) {
+  const count = n || HELIOS_BURST_ORBS;
+  const now = Date.now();
+  const base = Math.random() * Math.PI * 2;
+  for (let i = 0; i < count; i++) {
+    if (_heliosBurstOrbs.length >= 12) _heliosBurstOrbs.shift();
+    const a = base + (i / count) * Math.PI * 2;
+    const sp = 5.5 + Math.random() * 1.5;
+    // Fly out, then HANG for ~3s before detonating (the burst is a deliberate beat).
+    _heliosBurstOrbs.push({ x: player.x, y: player.y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, born: now, fuseMs: 3000, r: 8 });
+  }
+}
+function _heliosTickBurstOrbs() {
+  if (!_heliosBurstOrbs.length) return;
+  const now = Date.now();
+  const alive = [];
+  for (const o of _heliosBurstOrbs) {
+    o.x += o.vx * dtScale; o.y += o.vy * dtScale;
+    o.vx *= decay(0.94, dtScale); o.vy *= decay(0.94, dtScale);   // spread then settle
+    if (now - o.born >= o.fuseMs) {
+      // Deliberate rare payoff → SLOWER, longer-lived ring (sizeMult 0.5) rather
+      // than the fast proc novas. ~250px lethal that swells over ~1.2s.
+      pushNovaRingCapped({ x: o.x, y: o.y, radius: 0, life: 1, prevR: 0, startTime: now, sizeMult: 0.5, radiusMult: 0.8 });
+      try { emitNovaSpecks(o.x, o.y); } catch {}
+      _heliosNovaSfx();
+      continue;
+    }
+    alive.push(o);
+  }
+  _heliosBurstOrbs = alive;
+}
+function _heliosDrawBurstOrbs(g) {
+  for (const o of _heliosBurstOrbs) _heliosBlob(g, o.x, o.y, o.r, HELIOS_GOLD, 0.9);
+}
+ORB_BEHAVIOR.helios.executeBurst = function() {
+  activatePowerup('nova', player.x, player.y);   // immediate central nova
+  _heliosSpawnBurstOrbs(HELIOS_BURST_ORBS);       // + 4 orbs that each nova
+  runBurstCount++;
+  addShake(9); triggerHitstop(60);
+  _helios_flash('burst', 'SOLAR BURST', HELIOS_GOLD, 0);
+  try {
+    if (rankOf('helios_solstice') > 0) _heliosDoSolstice(); // bank 5 beams
+  } catch (e) { console.error('[helios] burst hook error', e); }
+  return true;
+};
+
+// Master per-frame update — gated on state + active orb; each tick re-checks
+// its own keystone rank so inactive trees cost nothing.
+OrbHooks.on('onUpdate', () => {
+  if (activeOrb !== 'helios') return;
+  if (state !== 'playing' && state !== 'devmode' && state !== 'apocalypse') return;
+  try { _heliosTickSundog(); } catch (e) {}
+  try { _heliosTickProminence(); } catch (e) {}
+  try { _heliosTickHeliograph(); } catch (e) {}
+  try { _heliosTickEmbers(); } catch (e) {}
+  try { _heliosTickBurstOrbs(); } catch (e) {}
+});
+// Master render — additive gold draws on the 2D overlay (#c covers both paths).
+OrbHooks.on('onRender', () => {
+  if (activeOrb !== 'helios') return;
+  if (state !== 'playing' && state !== 'paused' && state !== 'devmode' && state !== 'apocalypse') return;
+  try { _heliosDraw(); } catch (e) {}
+});
+OrbHooks.on('onResetGame', () => {
+  _heliosFleet = []; _heliosEmbers = []; _heliosFlares = []; _heliosBeams = []; _heliosBurstOrbs = [];
+  _heliosFleetLaunchAt = 0; _heliosLaunchCount = 0; _heliosZenithNextAt = 0;
+  _heliosPromNextAt = 0; _heliosPromStormAt = 0; _heliosBeamNextAt = 0; _heliosBeamLast = null;
+  _heliosBeamBank = 0; _heliosBeamFireAt = 0; _heliosZenithFlashAt = 0; _heliosZenithFlashUntil = 0;
+  _heliosZenithFiredAt = 0; _heliosStormFiredAt = 0;
+});
+
+// === HELIOS draw dispatcher + small additive helpers ======================
+let _heliosPromStormAt = 0;
+function _heliosBlob(g, x, y, r, rgb, a) {
+  g.beginPath(); g.fillStyle = `rgba(${rgb},${(a * 0.45).toFixed(3)})`; g.arc(x, y, r, 0, Math.PI * 2); g.fill();
+  g.beginPath(); g.fillStyle = `rgba(${rgb},${a.toFixed(3)})`; g.arc(x, y, r * 0.5, 0, Math.PI * 2); g.fill();
+}
+function _heliosDraw() {
+  const g = ctx;
+  g.save();
+  g.globalCompositeOperation = 'lighter';
+  try { _heliosDrawSundog(g); } catch (e) {}
+  try { _heliosDrawProminence(g); } catch (e) {}
+  try { _heliosDrawHeliograph(g); } catch (e) {}
+  try { _heliosDrawBurstOrbs(g); } catch (e) {}
+  g.restore();
+}
+
+// === 1. SUNDOG — orbiting suns that launch & nova ==========================
+const HELIOS_SUN_R = 9;   // orbiting-sun visual radius == Photosphere kill radius (honest hitbox)
+function _heliosFleetSize() { return 2 + (rankOf('helios_mockSun') > 0 ? 1 : 0) + (rankOf('helios_zenith') > 0 ? 1 : 0); }
+function _heliosLaunchGateMs() { return rankOf('helios_solarNoon') > 0 ? 2200 : 3000; }
+function _heliosImpactRm() { return rankOf('helios_heavyLight') > 0 ? 0.85 : 0.7; }
+const HELIOS_ARM_MS = 3000;     // visible "arming" charge-up before a sun can fling
+const HELIOS_REFORM_MS = 4000;  // absent (invisible) recharge after a launch
+function _heliosEnsureFleet() {
+  const target = Math.min(_heliosFleetSize(), HELIOS_FLEET_CAP);
+  // New suns appear already ARMING (visible), staggered so they don't fling in unison.
+  while (_heliosFleet.length < target) _heliosFleet.push({ angle: Math.random() * 6.28, phase: 'arm', x: player.x, y: player.y, target: null, reformAt: 0, armStart: Date.now() + _heliosFleet.length * 500 });
+  if (_heliosFleet.length > target) _heliosFleet.length = target;
+}
+// Photosphere (helios_scorch): the sun's SURFACE kills on contact. Kill radius
+// equals the drawn radius exactly, so what you see is what burns.
+function _heliosPhotosphereKill(fb) {
+  if (rankOf('helios_scorch') <= 0) return;
+  for (let i = bodies.length - 1; i >= 0; i--) {
+    const b = bodies[i]; const dx = b.x - fb.x, dy = b.y - fb.y; const rr = HELIOS_SUN_R + b.radius;
+    if (dx * dx + dy * dy < rr * rr) _heliosKill(b, i, HELIOS_PATH_COLORS.sundog);
+  }
+}
+function _heliosFleetImpact(fb, tx, ty) {
+  const zen = !!fb._zenith; fb._zenith = false;
+  _heliosNova(tx, ty, zen ? 1.0 : _heliosImpactRm(), zen);   // Zenith barrage = SUPERNOVA blasts
+  if (zen) { triggerHitstop(45); addShake(9); } else { triggerHitstop(28); addShake(5); }
+  if (rankOf('helios_emberSpark') > 0) _heliosSpawnEmber(tx, ty);
+  if (fb.chainHit) {
+    fb.chainHit = false;
+    const second = _heliosNearestBody(tx, ty);
+    if (second) { fb.x = tx; fb.y = ty; fb.phase = 'launch'; fb.target = second; return; }
+  }
+  fb.phase = 'reform'; fb.reformAt = Date.now() + HELIOS_REFORM_MS; fb.target = null;
+}
+function _heliosLaunch(fb, zenith) {
+  const t = fb.target || _heliosNearestBody(fb.x, fb.y);
+  if (!t) { fb.armStart = Date.now(); fb.phase = 'arm'; return; }   // no target → keep arming
+  fb.phase = 'launch'; fb.target = t; fb._zenith = !!zenith;
+  if (!zenith) _helios_flash('sundog', 'SUNDOG', HELIOS_PATH_COLORS.sundog, 600);
+}
+function _heliosTickSundog() {
+  if (rankOf('helios_sundog') <= 0) { if (_heliosFleet.length) _heliosFleet = []; return; }
+  _heliosEnsureFleet();
+  const now = Date.now();
+  const orbitR = 60;   // tighter than the player orb so the suns read as satellites
+  const twin = rankOf('helios_parhelion') > 0;
+  const globalReady = now - _heliosFleetLaunchAt >= _heliosLaunchGateMs();
+  // Zenith capstone — every 22s it goes ACTIVE: the NEXT launch of EACH orb
+  // becomes a single SUPERNOVA (the suns never all idle at once, so we tag each
+  // orb to upgrade its next fling rather than demand a synchronized barrage).
+  if (rankOf('helios_zenith') > 0) {
+    if (!_heliosZenithNextAt) _heliosZenithNextAt = now + 22000;
+    else if (now >= _heliosZenithNextAt) {
+      _heliosZenithNextAt = now + 22000; _heliosZenithFiredAt = now;
+      for (const f of _heliosFleet) f._zenithPending = true;
+      _helios_flash('zenith', 'ZENITH!', HELIOS_PATH_COLORS.sundog, 0);
+    }
+  }
+  for (const fb of _heliosFleet) {
+    if (fb.phase === 'reform') {
+      // ABSENT (invisible, no kill) until reform completes, then re-arm.
+      if (now >= fb.reformAt) { fb.phase = 'arm'; fb.armStart = now; fb.target = null; }
+      continue;
+    }
+    if (fb.phase === 'arm') {
+      // Visible, orbiting, spin ACCELERATES across the 3s charge-up before flinging.
+      const armProg = Math.min(1, (now - fb.armStart) / HELIOS_ARM_MS);
+      fb.angle += (0.05 + armProg * 0.18) * dtScale;
+      fb.x = player.x + Math.cos(fb.angle) * orbitR;
+      fb.y = player.y + Math.sin(fb.angle) * orbitR;
+      _heliosPhotosphereKill(fb);
+      const armed = armProg >= 1;
+      const near = armed && _heliosNearestBody(fb.x, fb.y, 140 * 140);
+      if (armed && globalReady && near) {
+        _heliosFleetLaunchAt = now;
+        const useZenith = !!fb._zenithPending;   // this orb's one Zenith super-launch
+        if (useZenith) fb._zenithPending = false;
+        else if (twin) { _heliosLaunchCount++; if (_heliosLaunchCount % 5 === 0) fb.chainHit = true; }
+        _heliosLaunch(fb, useZenith);
+      }
+    } else if (fb.phase === 'launch') {
+      const t = fb.target;
+      if (!t || !bodies.includes(t)) { _heliosFleetImpact(fb, fb.x, fb.y); continue; }
+      const dx = t.x - fb.x, dy = t.y - fb.y; const d = Math.hypot(dx, dy) || 1;
+      fb.x += dx / d * 11 * dtScale; fb.y += dy / d * 11 * dtScale;
+      if (d <= Math.max(14, (t.radius || 10))) _heliosFleetImpact(fb, t.x, t.y);
+    }
+  }
+}
+function _heliosSpawnEmber(x, y) {
+  if (_heliosEmbers.length >= HELIOS_EMBER_CAP) _heliosEmbers.shift();
+  const a = Math.random() * Math.PI * 2;
+  const sp = 2.2 + Math.random() * 1.2;
+  // Drifts for 3s, THEN pops a tiny spark-nova where it ends up (no contact pop).
+  _heliosEmbers.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, born: Date.now(), fuseMs: 3000, r: 5 });
+}
+function _heliosTickEmbers() {
+  if (!_heliosEmbers.length) return;
+  const now = Date.now();
+  const alive = [];
+  for (const e of _heliosEmbers) {
+    e.x += e.vx * dtScale; e.y += e.vy * dtScale;
+    e.vx *= decay(0.985, dtScale); e.vy *= decay(0.985, dtScale);
+    if (now - e.born >= e.fuseMs) { _heliosNova(e.x, e.y, 0.45); continue; }
+    alive.push(e);
+  }
+  _heliosEmbers = alive;
+}
+function _heliosDrawSundog(g) {
+  if (rankOf('helios_sundog') <= 0) return;
+  const now = Date.now();
+  const gold = (_burstBloom && _burstBloom.gold) ? _burstBloom.gold : null;
+  const photo = rankOf('helios_scorch') > 0;
+  for (const fb of _heliosFleet) {
+    if (fb.phase === 'reform') continue;   // ABSENT while reforming
+    const launching = fb.phase === 'launch';
+    // Matches the Stellar Collapse fireball fling: baked bloom + hot core,
+    // sinusoidal pulse, 1.25× magnified on launch. White-hot core + rotating
+    // spikes make it read as a fireball/mini-sun, distinct from the solid orb.
+    const r = (HELIOS_SUN_R + 2 * Math.sin(now * 0.03)) * (launching ? 1.25 : 1);
+    const br = r * 1.7;
+    if (gold) { g.globalAlpha = 0.95; g.drawImage(gold, fb.x - br, fb.y - br, br * 2, br * 2); g.globalAlpha = 1; }
+    g.fillStyle = 'rgba(255,252,235,0.95)'; g.beginPath(); g.arc(fb.x, fb.y, r * 0.42, 0, 6.28); g.fill();
+    g.strokeStyle = 'rgba(255,235,170,0.8)'; g.lineWidth = 2;
+    const sa = now * 0.004 + fb.angle;
+    for (let k = 0; k < 4; k++) { const a = sa + k * Math.PI / 2; g.beginPath(); g.moveTo(fb.x + Math.cos(a) * r * 0.6, fb.y + Math.sin(a) * r * 0.6); g.lineTo(fb.x + Math.cos(a) * r * 1.35, fb.y + Math.sin(a) * r * 1.35); g.stroke(); }
+    // Photosphere: crisp rim at exactly the kill radius (honest hitbox) while armed.
+    if (photo && !launching) {
+      g.beginPath(); g.strokeStyle = 'rgba(255,240,200,0.7)'; g.lineWidth = 1.5; g.arc(fb.x, fb.y, HELIOS_SUN_R, 0, Math.PI * 2); g.stroke();
+    }
+  }
+  for (const e of _heliosEmbers) { _heliosBlob(g, e.x, e.y, 4, '255,200,120', 0.75); }
+}
+
+// === 2. PROMINENCE — sweeping fire-wedge (geometric shear) =================
+function _heliosPromCadenceMs() { return rankOf('helios_flareCadence') > 0 ? 2000 : 3000; }
+function _heliosPromArc() { return (rankOf('helios_wideArc') > 0 ? 140 : 90) * Math.PI / 180; }
+function _heliosPromReach() { return rankOf('helios_longReach') > 0 ? 350 : 300; }
+function _heliosPromSweepMs() { return rankOf('helios_fastSweep') > 0 ? 320 : 500; }
+// Aim at the densest cluster of INCOMING planets (above the player) — the
+// threats bearing down — not ones already scrolling past below.
+function _heliosDensestIncoming() {
+  const inc = []; for (const b of bodies) if (b.y < player.y + 20) inc.push(b);
+  const pool = inc.length ? inc : bodies;
+  if (!pool.length) return null;
+  let best = pool[0], bestN = -1;
+  for (const b of pool) { let n = 0; for (const o of pool) { const dx = o.x - b.x, dy = o.y - b.y; if (dx * dx + dy * dy < 120 * 120) n++; } if (n > bestN) { bestN = n; best = b; } }
+  return { x: best.x, y: best.y };
+}
+function _heliosEruptProminence(full) {
+  if (_heliosFlares.length >= HELIOS_FLARE_CAP) _heliosFlares.shift();
+  const dense = _heliosDensestIncoming() || { x: player.x, y: player.y - 120 };
+  const ac = Math.atan2(dense.y - player.y, dense.x - player.x);
+  const arc = full ? Math.PI * 2 : _heliosPromArc();
+  _heliosFlares.push({ cx: player.x, cy: player.y, a0: full ? 0 : ac - arc / 2, arc, reach: _heliosPromReach(), startTime: Date.now(), dur: _heliosPromSweepMs(), cinder: rankOf('helios_cinderEdge') > 0 });
+}
+function _heliosTickProminence() {
+  if (rankOf('helios_prominence') <= 0) { if (_heliosFlares.length) _heliosFlares = []; return; }
+  const now = Date.now();
+  // Corona Storm — start a FULL 20s interval first (fixes fire-at-run-start).
+  // Central blast = radiusMult 1.0 (EXACTLY a regular supernova's first ring:
+  // sizeMult 0.9, radiusMult 1 — same 378px/s growth, same ~400px radius).
+  if (rankOf('helios_coronaStorm') > 0) {
+    if (!_heliosPromStormAt) _heliosPromStormAt = now + 20000;
+    else if (now >= _heliosPromStormAt) { _heliosPromStormAt = now + 20000; _heliosStormFiredAt = now; _heliosEruptProminence(true); _heliosNova(player.x, player.y, 1.0, true); _helios_flash('coronaStorm', 'CORONA STORM', HELIOS_PATH_COLORS.prominence, 0); }
+  }
+  // Regular eruption — also start a full interval first.
+  if (!_heliosPromNextAt) _heliosPromNextAt = now + _heliosPromCadenceMs();
+  else if (now >= _heliosPromNextAt && bodies.length) { _heliosPromNextAt = now + _heliosPromCadenceMs(); _heliosEruptProminence(false); _helios_flash('prominence', 'PROMINENCE', HELIOS_PATH_COLORS.prominence, 400); }
+  const alive = [];
+  for (const fl of _heliosFlares) {
+    const prog = Math.min(1, (now - fl.startTime) / fl.dur);
+    const swept = fl.arc * prog;
+    for (let i = bodies.length - 1; i >= 0; i--) {
+      const b = bodies[i]; const dx = b.x - fl.cx, dy = b.y - fl.cy; const dd = dx * dx + dy * dy;
+      if (dd > fl.reach * fl.reach) continue;
+      let rel = Math.atan2(dy, dx) - fl.a0;
+      while (rel < 0) rel += Math.PI * 2; while (rel > Math.PI * 2) rel -= Math.PI * 2;
+      if (rel <= swept) _heliosKill(b, i, '255,170,60');
+    }
+    if (fl.cinder && prog < 1 && now - (fl._cinderAt || 0) > 90) {
+      fl._cinderAt = now;
+      const edge = fl.a0 + swept;
+      _heliosNova(fl.cx + Math.cos(edge) * fl.reach, fl.cy + Math.sin(edge) * fl.reach, 0.6);
+    }
+    if (prog < 1) alive.push(fl);
+  }
+  _heliosFlares = alive;
+}
+function _heliosDrawProminence(g) {
+  if (!_heliosFlares.length) return;
+  const now = Date.now();
+  for (const fl of _heliosFlares) {
+    const prog = Math.min(1, (now - fl.startTime) / fl.dur);
+    const a0 = fl.a0, a1 = fl.a0 + fl.arc * prog;   // clamped: a1 never exceeds a0+arc
+    // Clean swept sector — fill + rim arc (NO stray radial overshoot line).
+    g.beginPath(); g.moveTo(fl.cx, fl.cy); g.arc(fl.cx, fl.cy, fl.reach, a0, a1); g.closePath();
+    g.fillStyle = `rgba(${HELIOS_PATH_COLORS.prominence},0.16)`; g.fill();
+    g.beginPath(); g.strokeStyle = 'rgba(255,220,150,0.85)'; g.lineWidth = 2.5;
+    g.arc(fl.cx, fl.cy, fl.reach, a0, a1); g.stroke();          // rim arc, links cleanly
+    // bright leading edge (the shear front) only — one radius, exactly at a1
+    g.beginPath(); g.strokeStyle = 'rgba(255,245,210,0.95)'; g.lineWidth = 3;
+    g.moveTo(fl.cx, fl.cy); g.lineTo(fl.cx + Math.cos(a1) * fl.reach, fl.cy + Math.sin(a1) * fl.reach); g.stroke();
+  }
+}
+
+// === 3. HELIOGRAPH — light beam + line-of-sight ignition ===================
+let _heliosShadow = null;     // Shadow Line sweeping bar (placeholder mechanic)
+let _heliosShadowAt = 0;
+OrbHooks.on('onResetGame', () => { _heliosShadow = null; _heliosShadowAt = 0; });
+// Charge interval (Focus speeds it up — SPEED ONLY, no reach change). Reach fixed.
+function _heliosBeamIntervalMs() { return rankOf('helios_focus') > 0 ? 2000 : 3000; }
+function _heliosBeamReach() { return 360; }
+const HELIOS_BEAM_BANK_CAP = 5;     // banked beams cap
+const HELIOS_BEAM_RAPID_MS = 150;   // rapid-fire cadence while emptying the bank
+function _heliosBeamChains() { return (rankOf('helios_refraction') > 0 ? 1 : 0) + (rankOf('helios_zenithFlash') > 0 ? 1 : 0); }
+function _heliosPtSegDist2(px, py, x1, y1, x2, y2) {
+  const dx = x2 - x1, dy = y2 - y1; const l2 = dx * dx + dy * dy || 1;
+  let t = ((px - x1) * dx + (py - y1) * dy) / l2; t = Math.max(0, Math.min(1, t));
+  const cx = x1 + t * dx, cy = y1 + t * dy; const ex = px - cx, ey = py - cy;
+  return ex * ex + ey * ey;
+}
+function _heliosCastBeamRay(ox, oy, ang, reach, refractsLeft) {
+  const ex = ox + Math.cos(ang) * reach, ey = oy + Math.sin(ang) * reach;
+  if (_heliosBeams.length >= HELIOS_BEAM_CAP) _heliosBeams.shift();
+  _heliosBeams.push({ ox, oy, ex, ey, startTime: Date.now(), life: 260 });
+  const flashWin = Date.now() < _heliosZenithFlashUntil;   // Zenith Flash: beam hits also nova
+  let firstKill = null;
+  for (let i = bodies.length - 1; i >= 0; i--) {
+    const b = bodies[i];
+    if (_heliosPtSegDist2(b.x, b.y, ox, oy, ex, ey) < (8 + b.radius) * (8 + b.radius)) {
+      const kx = b.x, ky = b.y;
+      if (!firstKill) firstKill = { x: kx, y: ky };
+      _heliosKill(b, i, '255,244,200');
+      if (flashWin) _heliosNova(kx, ky, 0.6);
+    }
+  }
+  if (refractsLeft > 0 && firstKill) {
+    const t2 = _heliosNearestBody(firstKill.x, firstKill.y, reach * reach);
+    if (t2) _heliosCastBeamRay(firstKill.x, firstKill.y, Math.atan2(t2.y - firstKill.y, t2.x - firstKill.x), reach * 0.7, refractsLeft - 1);
+  }
+}
+// Solstice (burst): instantly bank a full magazine of beams.
+function _heliosDoSolstice() { _heliosBeamBank = HELIOS_BEAM_BANK_CAP; _helios_flash('solstice', 'SOLSTICE +5', HELIOS_PATH_COLORS.heliograph, 0); }
+function _heliosTickHeliograph() {
+  if (rankOf('helios_heliograph') <= 0) { if (_heliosBeams.length) _heliosBeams = []; _heliosBeamBank = 0; return; }
+  const now = Date.now();
+  // track last-passed planet (nearest body below the player) = beam origin
+  let lp = null, lpd = 200 * 200;
+  for (const b of bodies) { if (b.y > player.y) { const dx = b.x - player.x, dy = b.y - player.y, d = dx * dx + dy * dy; if (d < lpd) { lpd = d; lp = b; } } }
+  if (lp) _heliosBeamLast = { x: lp.x, y: lp.y };
+  // CHARGE one beam per interval into the bank (cap 5) — banks instead of wasting.
+  if (!_heliosBeamNextAt) _heliosBeamNextAt = now + _heliosBeamIntervalMs();
+  else if (now >= _heliosBeamNextAt) { _heliosBeamNextAt = now + _heliosBeamIntervalMs(); _heliosBeamBank = Math.min(HELIOS_BEAM_BANK_CAP, _heliosBeamBank + 1); }
+  // Zenith Flash window — start a FULL 20s interval first (no fire-at-run-start).
+  if (rankOf('helios_zenithFlash') > 0) {
+    if (!_heliosZenithFlashAt) _heliosZenithFlashAt = now + 20000;
+    else if (now >= _heliosZenithFlashAt) { _heliosZenithFlashAt = now + 20000; _heliosZenithFlashUntil = now + 10000; _helios_flash('zenithFlash', 'ZENITH FLASH', HELIOS_PATH_COLORS.heliograph, 0); }
+  }
+  // FIRE from the bank when an origin + a target exist, rapid-firing the backlog.
+  if (_heliosBeamBank > 0 && bodies.length && now - _heliosBeamFireAt >= HELIOS_BEAM_RAPID_MS) {
+    let ox = player.x, oy = player.y;
+    if (_heliosBeamLast) { ox = _heliosBeamLast.x; oy = _heliosBeamLast.y; }
+    const reach = _heliosBeamReach();
+    const t = _heliosNearestBody(ox, oy, reach * reach);
+    if (t) {
+      _heliosBeamFireAt = now; _heliosBeamBank--;
+      _heliosCastBeamRay(ox, oy, Math.atan2(t.y - oy, t.x - ox), reach, _heliosBeamChains());
+      _helios_flash('heliograph', 'HELIOGRAPH', HELIOS_PATH_COLORS.heliograph, 400);
+    }
+  }
+  // age beams
+  if (_heliosBeams.length) _heliosBeams = _heliosBeams.filter(b => now - b.startTime < b.life);
+  // Light Sweep (helios_shadowLine): a bright horizontal line of light descends
+  // from the top every 8s, scouring every planet it crosses. Counts as a beam —
+  // Zenith Flash makes its hits nova too.
+  if (rankOf('helios_shadowLine') > 0 && !_heliosShadow) {
+    if (!_heliosShadowAt) _heliosShadowAt = now + 8000;
+    else if (now >= _heliosShadowAt) { _heliosShadow = { y: -20, startTime: now }; _heliosShadowAt = now + 8000; _helios_flash('lightsweep', 'LIGHT SWEEP', HELIOS_PATH_COLORS.heliograph, 0); }
+  }
+  if (_heliosShadow) {
+    _heliosShadow.y += 7 * dtScale;
+    const flashWin = now < _heliosZenithFlashUntil;
+    for (let i = bodies.length - 1; i >= 0; i--) {
+      const b = bodies[i];
+      if (Math.abs(b.y - _heliosShadow.y) < 24) { const kx = b.x, ky = b.y; _heliosKill(b, i, '255,244,200'); if (flashWin) _heliosNova(kx, ky, 0.6); }
+    }
+    if (_heliosShadow.y > (canvas ? canvas.height : 900) + 30) _heliosShadow = null;
+  }
+}
+function _heliosDrawHeliograph(g) {
+  if (rankOf('helios_heliograph') <= 0) return;
+  const now = Date.now();
+  for (const bm of _heliosBeams) {
+    const fade = 1 - (now - bm.startTime) / bm.life;
+    if (fade <= 0) continue;
+    g.strokeStyle = `rgba(255,250,220,${(0.9 * fade).toFixed(3)})`; g.lineWidth = 3;
+    g.beginPath(); g.moveTo(bm.ox, bm.oy); g.lineTo(bm.ex, bm.ey); g.stroke();
+    g.strokeStyle = `rgba(${HELIOS_PATH_COLORS.heliograph},${(0.4 * fade).toFixed(3)})`; g.lineWidth = 8;
+    g.beginPath(); g.moveTo(bm.ox, bm.oy); g.lineTo(bm.ex, bm.ey); g.stroke();
+  }
+  // Light Sweep — bright horizontal light line sweeping down (additive, pulsing).
+  if (_heliosShadow) {
+    const w = canvas ? canvas.width : 600, y = _heliosShadow.y;
+    const pulse = 0.7 + 0.3 * Math.sin(now * 0.02);
+    g.strokeStyle = `rgba(${HELIOS_PATH_COLORS.heliograph},${(0.4 * pulse).toFixed(3)})`; g.lineWidth = 16;
+    g.beginPath(); g.moveTo(0, y); g.lineTo(w, y); g.stroke();
+    g.strokeStyle = 'rgba(255,250,225,0.92)'; g.lineWidth = 3;
+    g.beginPath(); g.moveTo(0, y); g.lineTo(w, y); g.stroke();
+  }
+}
+
+// === HELIOS HUD — bottom-left BEAM-BANK counter (Zenith/Storm/Flash cooldowns
+// use the universal round capstone rings in updateCapstoneCountdowns, matching
+// every other orb's big-cooldown capstones). This text row is the beam magazine,
+// analogous to Phantasm's MARKS counter.
+let _helios_hudEl = null, _helios_hudBeamEl = null;
+function _helios_ensureHud() {
+  if (_helios_hudEl) return _helios_hudEl;
+  const el = document.createElement('div'); el.id = 'heliosHud';
+  el.style.cssText = 'position:absolute; bottom:calc(var(--safe-bottom) + 100px); left:calc(var(--safe-left) + 8px); pointer-events:none; z-index:6; font-family:Orbitron,monospace; font-size:10px; letter-spacing:2px; display:none; flex-direction:column; gap:4px;';
+  const d = document.createElement('div'); d.style.cssText = `color:rgba(${HELIOS_PATH_COLORS.heliograph},0.95); text-shadow:0 0 6px rgba(${HELIOS_PATH_COLORS.heliograph},0.55);`; el.appendChild(d);
+  _helios_hudBeamEl = d;
+  (document.getElementById('gameWrapper') || document.body).appendChild(el);
+  _helios_hudEl = el;
+  return el;
+}
+function _helios_updateHud() {
+  _helios_ensureHud();
+  const playing = activeOrb === 'helios' && (state === 'playing' || state === 'apocalypse');
+  const beam = playing && rankOf('helios_heliograph') > 0;
+  _helios_hudEl.style.display = beam ? 'flex' : 'none';
+  if (beam && _helios_hudBeamEl) _helios_hudBeamEl.textContent = 'BEAMS ' + (_heliosBeamBank | 0) + '/' + HELIOS_BEAM_BANK_CAP;
+}
+OrbHooks.on('onRender', () => { if (activeOrb === 'helios') _helios_updateHud(); });
+OrbHooks.on('onResetGame', () => { if (_helios_hudEl) _helios_hudEl.style.display = 'none'; });
 
 // ===========================================================================
 // === BULWARK / ASTEROID rework (v1.9.0): active-budget tree, cloned pattern =
@@ -11964,6 +12990,7 @@ ORB_DEFS.phantomV2 = {
   bias: 'ghost',
 };
 ORB_ORDER.push('phantomV2');
+ORB_ORDER.push('helios');   // Helios listed AFTER Phantasm in the menu order
 
 TREE_DEFS.phantomV2 = {
   name: 'PHANTASM',
@@ -18481,6 +19508,7 @@ const TRAIL_UNLOCK_THRESHOLDS = {
   // unlock-progress counter never rendered (need=0 hid it). Mirrors Phantom's
   // 1,000-kill threshold (Phantasm shares the cosmic trail render).
   phantomV2: 1000,
+  helios: 3000,
 };
 // Display names for the unlocked alternative trail per orb (shown in the
 // orb-preview dropdown and the unlock banner).
@@ -18492,6 +19520,7 @@ const TRAIL_UNLOCKED_NAMES = {
   asteroid: 'Tectonic',
   drifterV2: 'Prismatic Pulse',
   phantomV2: 'Spectral Wisps',
+  helios: 'Corona Veil',
 };
 // v1.9.0 polish: enumerate ALL ORB_ORDER entries instead of hard-coding the
 // original five. Previously DrifterV2 stats were silently dropped on every
@@ -27833,6 +28862,20 @@ function emitOrbTrail() {
         life: 1, size: (2.5 + Math.random() * 2.5) * sizeMul,
         alphaMul, startTime: nowOt, maxLifeMs: 600,
       }, ORB_TRAIL_CAP);
+    } else if (orb === 'helios') {
+      // Helios: gold fire embers — whiter/more-golden than Inferno's orange so
+      // the orb reads as the SUN, not a spark. Reuses kind:'fire'.
+      pushCapped(orbTrailParticles, {
+        kind: 'fire',
+        x: jx, y: jy,
+        vx: bx * (0.5 + Math.random() * 0.9) + (Math.random() - 0.5) * 0.6,
+        vy: by * (0.5 + Math.random() * 0.9) + (Math.random() - 0.5) * 0.6,
+        life: 1, size: (3 + Math.random() * 3) * sizeMul,
+        hue: Math.random() < 0.45 ? '255,240,170'
+           : (Math.random() < 0.6 ? '255,210,110' : '255,180,70'),
+        flicker: Math.random() * 6.28,
+        alphaMul, startTime: nowOt, maxLifeMs: 320,
+      }, ORB_TRAIL_CAP);
     }
   }
 }
@@ -28222,6 +29265,27 @@ function emitOrbTrailUnlocked(orb, intensity, sizeMul, alphaMul, px, py, bx, by,
         life: 1, size: (PLAYER_R + 2) * sizeMul,
         alphaMul: alphaMul * (eternal ? 0.7 : 0.45), startTime: nowOt, maxLifeMs: eternal ? 800 : 600,
       }, ORB_TRAIL_CAP);
+    }
+  } else if (orb === 'helios') {
+    // CORONA VEIL — a denser, brighter gold ember veil that flares on nova.
+    const lifeMs = novaJustFired ? 460 : 340;
+    const n = novaJustFired ? 3 : 2;
+    for (let i = 0; i < n; i++) {
+      pushCapped(orbTrailParticles, {
+        kind: 'fire',
+        x: px + (Math.random() - 0.5) * 10, y: py + (Math.random() - 0.5) * 10,
+        vx: bx * (0.5 + Math.random() * 0.9) + (Math.random() - 0.5) * 0.8,
+        vy: by * (0.5 + Math.random() * 0.9) + (Math.random() - 0.5) * 0.8,
+        life: 1, size: (3.2 + Math.random() * 3) * sizeMul,
+        hue: Math.random() < 0.5 ? '255,245,190' : (Math.random() < 0.6 ? '255,215,120' : '255,185,80'),
+        flicker: Math.random() * 6.28, alphaMul, startTime: nowOt, maxLifeMs: lifeMs,
+      }, ORB_TRAIL_CAP);
+    }
+    if (novaJustFired) {
+      for (let i = 0; i < 2; i++) {
+        const a = Math.random() * Math.PI * 2;
+        pushCapped(orbTrailParticles, { kind: 'fire', x: player.x, y: player.y, vx: Math.cos(a) * (3.5 + Math.random() * 1.6), vy: Math.sin(a) * (3.5 + Math.random() * 1.6), hue: '255,240,180', life: 1, size: (2 + Math.random() * 1.6) * sizeMul, flicker: Math.random() * 6.28, alphaMul, startTime: nowOt, maxLifeMs: 380 }, ORB_TRAIL_CAP);
+      }
     }
   }
 }
@@ -29803,6 +30867,27 @@ function updateCapstoneCountdowns() {
     const firing = owned && !!nebulaRift && (now - nebulaRift.startTime < 300);
     set('capCdSingularity', owned, progress, 'rgba(150,120,255,0.95)', primed, firing);
   }
+  // HELIOS — Zenith (Sundog), Corona Storm (Prominence), Zenith Flash (Heliograph).
+  {
+    const owned = activeOrb === 'helios' && rankOf('helios_zenith') > 0;
+    const progress = (owned && _heliosZenithNextAt > 0) ? Math.max(0, Math.min(1, 1 - (_heliosZenithNextAt - now) / 22000)) : 0;
+    // ACTIVE (primed/glowing) while any orb still owes its Zenith super-launch.
+    const primed = owned && _heliosFleet.some(f => f._zenithPending);
+    const firing = owned && (now - _heliosZenithFiredAt < 350);
+    set('capCdZenith', owned, primed ? 1 : progress, `rgba(${HELIOS_PATH_COLORS.sundog},0.95)`, primed, firing);
+  }
+  {
+    const owned = activeOrb === 'helios' && rankOf('helios_coronaStorm') > 0;
+    const progress = (owned && _heliosPromStormAt > 0) ? Math.max(0, Math.min(1, 1 - (_heliosPromStormAt - now) / 20000)) : 0;
+    const firing = owned && (now - _heliosStormFiredAt < 350);
+    set('capCdCoronaStorm', owned, progress, `rgba(${HELIOS_PATH_COLORS.prominence},0.95)`, false, firing);
+  }
+  {
+    const owned = activeOrb === 'helios' && rankOf('helios_zenithFlash') > 0;
+    const active = owned && now < _heliosZenithFlashUntil;
+    const progress = active ? 1 : ((owned && _heliosZenithFlashAt > 0) ? Math.max(0, Math.min(1, 1 - (_heliosZenithFlashAt - now) / 20000)) : 0);
+    set('capCdZenithFlash', owned, progress, `rgba(${HELIOS_PATH_COLORS.heliograph},0.95)`, false, active);
+  }
 }
 
 function updateBurstBar() {
@@ -30813,7 +31898,9 @@ function loop() {
       const total = pickupParticles.length + deathParticles.length
                   + novaRings.length + planetRipples.length
                   + destroyEffects.length + deathShards.length
-                  + orbTrailParticles.length + crackFragments.length;
+                  + orbTrailParticles.length + crackFragments.length
+                  + _heliosFleet.length + _heliosEmbers.length + _heliosFlares.length
+                  + _heliosBeams.length + _heliosBurstOrbs.length;
       if (total > 180) {
         console.warn('[loop] memory pressure: clearing', total, 'transient particles');
         pickupParticles = [];
@@ -30825,7 +31912,8 @@ function loop() {
         deathShards = [];
         orbTrailParticles = [];
               crackFragments = [];
-
+        // Helios transient effect arrays.
+        _heliosEmbers = []; _heliosFlares = []; _heliosBeams = []; _heliosBurstOrbs = [];
       }
     }
     // Heap watchdog: every 180 frames (~3s @60fps) read performance.memory on
@@ -30936,6 +32024,22 @@ document.getElementById('startBtn').addEventListener('click', ()=>{
     refreshActiveTreeCache();
     console.log('[TREETEST] Crystals granted, all trees unlocked, tree state reset, tutorial skipped');
     // Fall through — the run starts normally so the tester can play a round.
+  }
+  // DEV cheat: pilot name "HELIOSTEST" — TEMPORARY. Grants crystals, unlocks all
+  // trees, AND unlocks + EQUIPS the new Helios orb so its 7 trees are testable
+  // immediately. TODO: REMOVE BEFORE RELEASE — grep "HELIOSTEST".
+  if (getUsername().toUpperCase() === 'HELIOSTEST') {
+    totalCrystals = Math.max(totalCrystals, 5000000);
+    beatDifficulty.NORMAL = true; beatDifficulty.HARD = true; beatDifficulty.EXTREME = true;
+    for (const orb of Object.keys(orbTrees)) orbTrees[orb] = freshOrbTreeState(orb);
+    for (const k of Object.keys(treesUnlocked)) treesUnlocked[k] = true;
+    if (ORB_DEFS.helios && !unlockedOrbs.includes('helios')) unlockedOrbs.push('helios');
+    activeOrb = 'helios';
+    try { localStorage.setItem('drift_orb', 'helios'); } catch {}
+    saveCrystals(); saveBeatFlags(); saveTreeState(); saveTreesUnlocked();
+    saveUnlockedOrbs(); saveTutorialCompleted(true);
+    refreshActiveTreeCache();
+    console.log('[HELIOSTEST] Helios unlocked + equipped, all trees unlocked, tutorial skipped (TEMPORARY debug cheat)');
   }
   // DEV cheat: pilot name "DRIFTRESET" (case-insensitive) wipes ALL local
   // progress — crystals, difficulty-beat flags, every orb tree's ranks +
@@ -35923,6 +37027,11 @@ const TREE_GLOSSARY = {
   emp: "EMP. A shockwave that knocks the wind out of everything around you. Your shield's angrier little cousin. <b>EMP.</b>",
   streak: "Streak. Destroy planets back-to-back and the points stack up. Hesitate and it's gone — fleeting, like my patience. <b>Streak.</b>",
   stack: "Stacks. Hyperspeed and shields pile up in layers — more stacks, more of the good stuff. Hoard them. <b>Stacks.</b>",
+  // Helios mechanic terms.
+  sundog: "Sundog. Little mock-suns that orbit you doing nothing — until they fling themselves at a planet and pop. Decorative AND deadly. <b>Sundog.</b>",
+  prominence: "Prominence. An arc of fire I throw off myself, sweeping across whatever's bunched up. Aim it at the crowd. <b>Prominence.</b>",
+  heliograph: "Heliograph. Signalling with light, except the message is 'cease to exist'. A beam that lances through planets in a line. <b>Heliograph.</b>",
+  beam: "Beam. A lance of pure light I fire through a line of planets — everything it crosses simply stops existing. Point it at a crowd, not the empty void you keep aiming at. <b>Beam.</b>",
 };
 
 function escTreeHtml(s) {
@@ -35943,11 +37052,15 @@ function treeTermKey(matchLower) {
   if (m === 'emp' || m === 'emps') return 'emp';
   if (m === 'streak' || m === 'streaks') return 'streak';
   if (m === 'stack' || m === 'stacks') return 'stack';
+  if (m === 'sundog' || m === 'sundogs') return 'sundog';
+  if (m === 'prominence') return 'prominence';
+  if (m === 'heliograph') return 'heliograph';
+  if (m === 'beam' || m === 'beams') return 'beam';
   return null;
 }
 // Longest-first alternation so "pair combo" beats "pair", "supernova" beats
 // "nova". Case-insensitive; \b keeps "nova" out of "Supernova" etc.
-const TREE_TERM_RE = /\b(pair combos|pair combo|hyperspeed|supernovas?|powerups?|shields?|bursts?|singles?|pairs?|novas?|ghosts?|streaks?|emps?|stacks?)\b/gi;
+const TREE_TERM_RE = /\b(pair combos|pair combo|hyperspeed|supernovas?|powerups?|shields?|bursts?|singles?|pairs?|novas?|ghosts?|streaks?|emps?|stacks?|sundogs?|prominence|heliograph|beams?)\b/gi;
 // Numbers / math: signed numbers with optional decimals/commas + an optional
 // trailing unit (only units that can't be confused with a word — the (?![A-Za-z])
 // lookahead stops "s" in "shield" from matching), plus standalone → and ×.
