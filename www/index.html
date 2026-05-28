@@ -8227,20 +8227,26 @@ TREE_DEFS.helios = {
       name: 'HELIOGRAPH',
       nodes: [
         { key: 'helios_heliograph', name: 'Heliograph', tier: 3, max: 1, costOverride: [7500], pointCost: 5,
-          desc: 'KEYSTONE (5 pts). A beam of light lances from the last planet you passed toward the nearest other planet, destroying everything along its 8px-wide path. Charges one beam every 3s (cap 5). If there is nothing to fire at, beams BANK instead of wasting — then rapid-fire in succession the moment targets reappear. Light, made a blade — and patient.',
-          effect: r => r ? 'Charging beam · banks up to 5' : 'Locked' },
+          desc: 'KEYSTONE (5 pts). A beam of light lances from the last planet you passed, destroying everything along its 8px-wide path. AUTO-FIRES one beam every 3s into a valid target (never into empty space). PLUS earns +1 banked beam every 10 planet kills (beam-caused kills excluded); the bank collects silently until it hits cap (5) — then the full magazine UNLEASHES in rapid succession, then rebuilds. Light, made a blade — patient and pent.',
+          effect: r => r ? '3s passive + 10-kill bank (cap 5)' : 'Locked' },
         { key: 'helios_focus', name: 'Focus', tier: 1, max: 1, costOverride: [4000], pointCost: 2,
-          desc: 'Beams charge faster — interval 3s → 2s. A tighter lens.',
-          effect: r => r ? 'Charge 3s → 2s' : 'Locked' },
+          desc: 'The passive beam fires faster — interval 3s → 2s. A tighter lens.',
+          effect: r => r ? 'Passive 3s → 2s' : 'Locked' },
+        { key: 'helios_lens', name: 'Lens', tier: 1, max: 1, costOverride: [4000], pointCost: 2,
+          desc: 'Each kill weighs more — beams earn at 7 kills instead of 10. Light, concentrated.',
+          effect: r => r ? '10 kills → 7 per beam' : 'Locked' },
         { key: 'helios_refraction', name: 'Refraction', tier: 2, max: 1, costOverride: [6000], pointCost: 3,
           desc: 'The beam refracts off its first kill and bends to a second target. Light does not stop at one.',
           effect: r => r ? 'Beam refracts to a 2nd target' : 'Locked' },
         { key: 'helios_shadowLine', name: 'Light Sweep', tier: 2, max: 1, costOverride: [6000], pointCost: 3,
           desc: 'A bright horizontal line of light descends from the top of the screen every 8s, scouring every planet it sweeps past on the way down. (Counts as a beam — Zenith Flash makes its hits nova too.)',
           effect: r => r ? 'Light line sweeps down / 8s' : 'Locked' },
+        { key: 'helios_radiance', name: 'Radiance', tier: 2, max: 1, costOverride: [6000], pointCost: 3,
+          desc: 'The magazine doubles — beam-bank cap 5 → 10. The whole sky, held in reserve.',
+          effect: r => r ? 'Beam cap 5 → 10' : 'Locked' },
         { key: 'helios_solstice', name: 'Solstice', tier: 1, max: 1, costOverride: [4500], pointCost: 2,
-          desc: 'On burst, instantly BANK 5 beams — a full magazine of light to rapid-fire as soon as there are targets.',
-          effect: r => r ? 'Burst = bank 5 beams' : 'Locked' },
+          desc: 'On burst, instantly FILL the magazine to its cap — a full bank of light to rapid-fire as soon as there are targets.',
+          effect: r => r ? 'Burst = fill beam bank' : 'Locked' },
         { key: 'helios_zenithFlash', name: 'Zenith Flash', tier: 3, max: 1, costOverride: [10000], pointCost: 5,
           desc: 'CAPSTONE (5 pts). The beam chains +1 extra target (stacks with Refraction). And a ZENITH FLASH ignites for 10s — during it, every beam (and Light Sweep) hit ALSO spawns a nova at the kill. The 20s cooldown begins only AFTER the 10s window ends. Noon, weaponised.',
           effect: r => r ? '+1 chain · 10s beam-novas' : 'Locked' },
@@ -8279,8 +8285,10 @@ const HELIOS_PREREQS = {
   helios_cinderEdge:       { prereq: ['helios_prominence'] },
   helios_coronaStorm:      { prereq: ['helios_prominence'] },
   helios_focus:            { prereq: ['helios_heliograph'] },
+  helios_lens:             { prereq: ['helios_heliograph'] },
   helios_refraction:       { prereq: ['helios_heliograph'] },
   helios_shadowLine:       { prereq: ['helios_heliograph'] },
+  helios_radiance:         { prereq: ['helios_heliograph'] },
   helios_solstice:         { prereq: ['helios_heliograph'] },
   helios_zenithFlash:      { prereq: ['helios_heliograph'] },
 };
@@ -8307,8 +8315,10 @@ const HELIOS_TREE_LAYOUTS = {
   heliograph: { name: 'HELIOGRAPH', color: HELIOS_PATH_COLORS.heliograph, nodes: {
     helios_heliograph: { x: 100, y: 50, keystone: true },
     helios_focus:      { x: 40,  y: 130 },
+    helios_lens:       { x: 100, y: 130 },
     helios_refraction: { x: 160, y: 130 },
     helios_shadowLine: { x: 40,  y: 210 },
+    helios_radiance:   { x: 100, y: 210 },
     helios_solstice:   { x: 160, y: 210 },
     helios_zenithFlash:{ x: 100, y: 330, capstone: true },
   } },
@@ -8688,10 +8698,12 @@ let _heliosFleetLaunchAt = 0;
 let _heliosLaunchCount   = 0;
 let _heliosZenithNextAt  = 0;
 let _heliosPromNextAt    = 0;
-let _heliosBeamNextAt    = 0;
 let _heliosBeamLast      = null; // last-passed planet pos for HELIOGRAPH
-let _heliosBeamBank      = 0;    // HELIOGRAPH banked beams (cap 5)
+let _heliosBeamBank      = 0;    // HELIOGRAPH banked beams (kill-earned)
 let _heliosBeamFireAt    = 0;    // rapid-fire cadence gate
+let _heliosBeamKillCtr   = 0;    // non-beam kills toward next banked beam
+let _heliosBankArmed     = false;// bank is fire-ready (hit cap; dumping)
+let _heliosPassiveBeamAt = 0;    // next passive auto-beam fire time
 let _heliosZenithFlashAt = 0;
 let _heliosZenithFlashUntil = 0; // HELIOGRAPH Zenith Flash 10s window
 let _heliosZenithFiredAt = 0;    // ring "firing" pulse (Sundog Zenith)
@@ -8705,9 +8717,16 @@ function _heliosNovaSfx() {
   _heliosNovaSfxAt = now;
   try { SFX.planetDestroyed('nova'); } catch {}
 }
-// All Helios novas are FAST (sizeMult 0.9 — no lingering dome). radiusMult = size.
-function _heliosNova(x, y, rm, sn) {
-  pushNovaRingCapped({ x, y, radius: 0, life: 1, prevR: 0, startTime: Date.now(), sizeMult: 0.9, radiusMult: rm || 0.6, supernova: !!sn });
+// Default Helios novas are FAST (sizeMult 0.9 — no lingering dome). radiusMult = size.
+// Optional sm overrides sizeMult (e.g. 0.5 for Zenith Flash's slower, longer-lived
+// "real nova" blasts — matches the Solar Burst slow-ring payoff character).
+// Optional src tags the ring so the nova-kill loop can pass that source to
+// checkDestroyProc (used by Zenith Flash to mark beam-spawned nova kills as
+// 'helios-beam', keeping them out of the kill-banked beam earner).
+function _heliosNova(x, y, rm, sn, sm, src) {
+  const ring = { x, y, radius: 0, life: 1, prevR: 0, startTime: Date.now(), sizeMult: (sm || 0.9), radiusMult: rm || 0.6, supernova: !!sn };
+  if (src) ring.source = src;
+  pushNovaRingCapped(ring);
   try { emitNovaSpecks(x, y); } catch {}
   _heliosNovaSfx();
 }
@@ -8730,14 +8749,18 @@ function _heliosDensestPoint() {
   return { x: best.x, y: best.y };
 }
 // Destroy a body via a Helios world-position ability (never an orb aura).
-function _heliosKill(b, idx, colorRgb) {
+// Optional `src` tags the kill in checkDestroyProc — beam-attributable kills
+// (HELIOGRAPH ray, Light Sweep, Zenith-Flash spawned novas) pass 'helios-beam'
+// so the kill-banked beam earner can EXCLUDE them and avoid the
+// beam-kills-earn-beams feedback loop.
+function _heliosKill(b, idx, colorRgb, src) {
   emitDestroyBurst(b.x, b.y, colorRgb || '255,200,120');
   try { emitDestroyEffects(b, 'nova'); } catch {}
   addDestroyPoints();
   _heliosNovaSfx();
   try { releaseBodyCanvases(b); } catch {}
   bodies.splice(idx, 1);
-  try { checkDestroyProc(b, 'nova'); } catch {}
+  try { checkDestroyProc(b, src || 'nova'); } catch {}
 }
 
 // SOLAR BURST — the kept custom multi-orb burst: an immediate nova at the player
@@ -8811,8 +8834,10 @@ OrbHooks.on('onRender', () => {
 OrbHooks.on('onResetGame', () => {
   _heliosFleet = []; _heliosEmbers = []; _heliosFlares = []; _heliosBeams = []; _heliosBurstOrbs = [];
   _heliosFleetLaunchAt = 0; _heliosLaunchCount = 0; _heliosZenithNextAt = 0;
-  _heliosPromNextAt = 0; _heliosPromStormAt = 0; _heliosBeamNextAt = 0; _heliosBeamLast = null;
-  _heliosBeamBank = 0; _heliosBeamFireAt = 0; _heliosZenithFlashAt = 0; _heliosZenithFlashUntil = 0;
+  _heliosPromNextAt = 0; _heliosPromStormAt = 0; _heliosBeamLast = null;
+  _heliosBeamBank = 0; _heliosBeamKillCtr = 0; _heliosBeamFireAt = 0;
+  _heliosBankArmed = false; _heliosPassiveBeamAt = 0;
+  _heliosZenithFlashAt = 0; _heliosZenithFlashUntil = 0;
   _heliosZenithFiredAt = 0; _heliosStormFiredAt = 0; _heliosZenithActive = false;
 });
 
@@ -9051,12 +9076,37 @@ function _heliosDrawProminence(g) {
 let _heliosShadow = null;     // Shadow Line sweeping bar (placeholder mechanic)
 let _heliosShadowAt = 0;
 OrbHooks.on('onResetGame', () => { _heliosShadow = null; _heliosShadowAt = 0; });
-// Charge interval (Focus speeds it up — SPEED ONLY, no reach change). Reach fixed.
-function _heliosBeamIntervalMs() { return rankOf('helios_focus') > 0 ? 2000 : 3000; }
 function _heliosBeamReach() { return 360; }
-const HELIOS_BEAM_BANK_CAP = 5;     // banked beams cap
-const HELIOS_BEAM_RAPID_MS = 150;   // rapid-fire cadence while emptying the bank
-function _heliosBeamChains() { return (rankOf('helios_refraction') > 0 ? 1 : 0) + (rankOf('helios_zenithFlash') > 0 ? 1 : 0); }
+// Three independent beam pathways:
+//   1. PASSIVE: auto-fires every 3s (2s with Focus) into a valid target —
+//      never into empty space. Kills are tagged 'helios-beam' inside
+//      _heliosCastBeamRay so they DO NOT feed the kill-bank.
+//   2. KILL-BANKED MAGAZINE: +1 beam every N non-beam kills (10, or 7 with
+//      Lens), capped (5, or 10 with Radiance). Collects SILENTLY below cap.
+//      When the bank hits cap it ARMS, then rapid-fires the whole magazine
+//      into valid targets, then disarms and starts collecting from 0 again.
+//   3. SOLSTICE on burst: instantly fills to cap (which arms the magazine).
+// Rapid-fire cadence is fixed at 150 ms (Focus governs the passive, not this).
+function _heliosBeamBankCap()      { return rankOf('helios_radiance') > 0 ? 10 : 5; }
+function _heliosKillsPerBeam()     { return rankOf('helios_lens')     > 0 ? 7  : 10; }
+function _heliosPassiveIntervalMs(){ return rankOf('helios_focus')    > 0 ? 2000 : 3000; }
+function _heliosBeamRapidMs()      { return 150; }
+function _heliosBeamChains()       { return (rankOf('helios_refraction') > 0 ? 1 : 0) + (rankOf('helios_zenithFlash') > 0 ? 1 : 0); }
+// Called from checkDestroyProc on any NON-beam kill while Heliograph is owned.
+// Beam rays, Light Sweep, and Zenith-Flash spawned novas tag their kills with
+// source 'helios-beam' so they're filtered out here — preventing the feedback
+// loop where beam-kills earn more beams. Also gated by _heliosBankArmed so
+// the magazine doesn't refill mid-unleash (the build→unleash→rebuild cycle).
+function _heliosOnNonBeamKill() {
+  if (rankOf('helios_heliograph') <= 0) return;
+  if (_heliosBankArmed) return; // dumping — don't accept kills until the bank empties
+  const cap = _heliosBeamBankCap();
+  if (_heliosBeamBank >= cap) { _heliosBeamKillCtr = 0; return; }
+  if (++_heliosBeamKillCtr >= _heliosKillsPerBeam()) {
+    _heliosBeamKillCtr = 0;
+    _heliosBeamBank = Math.min(cap, _heliosBeamBank + 1);
+  }
+}
 function _heliosPtSegDist2(px, py, x1, y1, x2, y2) {
   const dx = x2 - x1, dy = y2 - y1; const l2 = dx * dx + dy * dy || 1;
   let t = ((px - x1) * dx + (py - y1) * dy) / l2; t = Math.max(0, Math.min(1, t));
@@ -9074,8 +9124,15 @@ function _heliosCastBeamRay(ox, oy, ang, reach, refractsLeft) {
     if (_heliosPtSegDist2(b.x, b.y, ox, oy, ex, ey) < (8 + b.radius) * (8 + b.radius)) {
       const kx = b.x, ky = b.y;
       if (!firstKill) firstKill = { x: kx, y: ky };
-      _heliosKill(b, i, '255,244,200');
-      if (flashWin) _heliosNova(kx, ky, 0.6);
+      _heliosKill(b, i, '255,244,200', 'helios-beam');
+      // Zenith Flash: real nova blast at the kill (slow swell, big radius) —
+      // sizeMult 0.5 (~1.6s lifetime, ~210px/s growth) + radiusMult 0.85
+      // (~340px lethal) match the standardized proc-nova presence (Tension/
+      // Halo/Backdraft) at the slower Solar-Burst payoff cadence rather than
+      // the fast flicker the default 0.9/0.6 produced.
+      // Tagged source 'helios-beam' so the kill-banked beam earner ignores
+      // these (beam → nova → kill must not feed back into more beams).
+      if (flashWin) _heliosNova(kx, ky, 0.85, false, 0.5, 'helios-beam');
     }
   }
   if (refractsLeft > 0 && firstKill) {
@@ -9083,18 +9140,40 @@ function _heliosCastBeamRay(ox, oy, ang, reach, refractsLeft) {
     if (t2) _heliosCastBeamRay(firstKill.x, firstKill.y, Math.atan2(t2.y - firstKill.y, t2.x - firstKill.x), reach * 0.7, refractsLeft - 1);
   }
 }
-// Solstice (burst): instantly bank a full magazine of beams.
-function _heliosDoSolstice() { _heliosBeamBank = HELIOS_BEAM_BANK_CAP; _helios_flash('solstice', 'SOLSTICE +5', HELIOS_PATH_COLORS.heliograph, 0); }
+// Solstice (burst): instantly fill the magazine to its current cap. Arms the
+// bank immediately so the full magazine begins unleashing on the next tick.
+function _heliosDoSolstice() {
+  const cap = _heliosBeamBankCap();
+  _heliosBeamBank = cap;
+  _heliosBeamKillCtr = 0;
+  _heliosBankArmed = true;
+  _helios_flash('solstice', 'SOLSTICE +' + cap, HELIOS_PATH_COLORS.heliograph, 0);
+}
+// Shared origin + target lookup for both passive and bank fire paths. Returns
+// { ox, oy, t } if a valid target is in reach, null otherwise.
+function _heliosResolveBeamShot() {
+  let ox = player.x, oy = player.y;
+  if (_heliosBeamLast) { ox = _heliosBeamLast.x; oy = _heliosBeamLast.y; }
+  const reach = _heliosBeamReach();
+  const t = _heliosNearestBody(ox, oy, reach * reach);
+  if (!t) return null;
+  return { ox, oy, t, reach };
+}
 function _heliosTickHeliograph() {
-  if (rankOf('helios_heliograph') <= 0) { if (_heliosBeams.length) _heliosBeams = []; _heliosBeamBank = 0; return; }
+  if (rankOf('helios_heliograph') <= 0) {
+    if (_heliosBeams.length) _heliosBeams = [];
+    _heliosBeamBank = 0; _heliosBeamKillCtr = 0;
+    _heliosBankArmed = false; _heliosPassiveBeamAt = 0;
+    return;
+  }
   const now = Date.now();
   // track last-passed planet (nearest body below the player) = beam origin
   let lp = null, lpd = 200 * 200;
   for (const b of bodies) { if (b.y > player.y) { const dx = b.x - player.x, dy = b.y - player.y, d = dx * dx + dy * dy; if (d < lpd) { lpd = d; lp = b; } } }
   if (lp) _heliosBeamLast = { x: lp.x, y: lp.y };
-  // CHARGE one beam per interval into the bank (cap 5) — banks instead of wasting.
-  if (!_heliosBeamNextAt) _heliosBeamNextAt = now + _heliosBeamIntervalMs();
-  else if (now >= _heliosBeamNextAt) { _heliosBeamNextAt = now + _heliosBeamIntervalMs(); _heliosBeamBank = Math.min(HELIOS_BEAM_BANK_CAP, _heliosBeamBank + 1); }
+  // Re-enforce the cap in case Radiance was unequipped while sitting at 6–10.
+  const cap = _heliosBeamBankCap();
+  if (_heliosBeamBank > cap) _heliosBeamBank = cap;
   // Zenith Flash — 10s active window, then a 20s cooldown that begins only AFTER
   // the window ends (not during it). No fire-at-run-start. Triggers while not
   // active and the cooldown has elapsed; the cooldown timer is set to
@@ -9110,17 +9189,41 @@ function _heliosTickHeliograph() {
       }
     }
   }
-  // FIRE from the bank when an origin + a target exist, rapid-firing the backlog.
-  if (_heliosBeamBank > 0 && bodies.length && now - _heliosBeamFireAt >= HELIOS_BEAM_RAPID_MS) {
-    let ox = player.x, oy = player.y;
-    if (_heliosBeamLast) { ox = _heliosBeamLast.x; oy = _heliosBeamLast.y; }
-    const reach = _heliosBeamReach();
-    const t = _heliosNearestBody(ox, oy, reach * reach);
-    if (t) {
-      _heliosBeamFireAt = now; _heliosBeamBank--;
-      _heliosCastBeamRay(ox, oy, Math.atan2(t.y - oy, t.x - ox), reach, _heliosBeamChains());
+  // PASSIVE beam (the keystone baseline) — auto-fires every 3s (2s with Focus)
+  // into a valid target. Never fires into empty space: when no target is in
+  // reach the schedule HOLDS (don't reschedule, don't reset) so the next valid
+  // target gets the shot immediately. Passive kills tag 'helios-beam' inside
+  // _heliosCastBeamRay → excluded from _heliosOnNonBeamKill. Independent of
+  // the kill-banked magazine below.
+  if (!_heliosPassiveBeamAt) _heliosPassiveBeamAt = now + _heliosPassiveIntervalMs();
+  else if (now >= _heliosPassiveBeamAt) {
+    const shot = _heliosResolveBeamShot();
+    if (shot) {
+      _heliosPassiveBeamAt = now + _heliosPassiveIntervalMs();
+      _heliosCastBeamRay(shot.ox, shot.oy, Math.atan2(shot.t.y - shot.oy, shot.t.x - shot.ox), shot.reach, _heliosBeamChains());
       _helios_flash('heliograph', 'HELIOGRAPH', HELIOS_PATH_COLORS.heliograph, 400);
     }
+    // no target → don't reschedule; wait for one
+  }
+  // BANK MAGAZINE — silently collects from non-beam kills below cap. When the
+  // bank reaches cap, ARMS and rapid-fires into valid targets at 150ms cadence
+  // until empty, then disarms and starts collecting from 0 again. While armed,
+  // _heliosOnNonBeamKill ignores new kills so the dump can't refill itself.
+  if (!_heliosBankArmed && _heliosBeamBank >= cap) {
+    _heliosBankArmed = true;
+    _helios_flash('beamReady', 'BEAMS READY', HELIOS_PATH_COLORS.heliograph, 0);
+  }
+  if (_heliosBankArmed && _heliosBeamBank > 0 && bodies.length && now - _heliosBeamFireAt >= _heliosBeamRapidMs()) {
+    const shot = _heliosResolveBeamShot();
+    if (shot) {
+      _heliosBeamFireAt = now; _heliosBeamBank--;
+      _heliosCastBeamRay(shot.ox, shot.oy, Math.atan2(shot.t.y - shot.oy, shot.t.x - shot.ox), shot.reach, _heliosBeamChains());
+      _helios_flash('heliograph', 'HELIOGRAPH', HELIOS_PATH_COLORS.heliograph, 400);
+    }
+  }
+  if (_heliosBankArmed && _heliosBeamBank <= 0) {
+    _heliosBankArmed = false;
+    _heliosBeamKillCtr = 0; // fresh build cycle
   }
   // age beams
   if (_heliosBeams.length) _heliosBeams = _heliosBeams.filter(b => now - b.startTime < b.life);
@@ -9136,7 +9239,7 @@ function _heliosTickHeliograph() {
     const flashWin = now < _heliosZenithFlashUntil;
     for (let i = bodies.length - 1; i >= 0; i--) {
       const b = bodies[i];
-      if (Math.abs(b.y - _heliosShadow.y) < 24) { const kx = b.x, ky = b.y; _heliosKill(b, i, '255,244,200'); if (flashWin) _heliosNova(kx, ky, 0.6); }
+      if (Math.abs(b.y - _heliosShadow.y) < 24) { const kx = b.x, ky = b.y; _heliosKill(b, i, '255,244,200', 'helios-beam'); if (flashWin) _heliosNova(kx, ky, 0.85, false, 0.5, 'helios-beam'); }
     }
     if (_heliosShadow.y > (canvas ? canvas.height : 900) + 30) _heliosShadow = null;
   }
@@ -9183,7 +9286,7 @@ function _helios_updateHud() {
   const playing = activeOrb === 'helios' && (state === 'playing' || state === 'apocalypse');
   const beam = playing && rankOf('helios_heliograph') > 0;
   _helios_hudEl.style.display = beam ? 'flex' : 'none';
-  if (beam && _helios_hudBeamEl) _helios_hudBeamEl.textContent = 'BEAMS ' + (_heliosBeamBank | 0) + '/' + HELIOS_BEAM_BANK_CAP;
+  if (beam && _helios_hudBeamEl) _helios_hudBeamEl.textContent = 'BEAMS ' + (_heliosBeamBank | 0) + '/' + _heliosBeamBankCap();
 }
 OrbHooks.on('onRender', () => { if (activeOrb === 'helios') _helios_updateHud(); });
 OrbHooks.on('onResetGame', () => { if (_helios_hudEl) _helios_hudEl.style.display = 'none'; });
@@ -16349,6 +16452,14 @@ function tickCapstoneTimers() {
 // PHALANX feedback-loop risk that motivated the original guard.
 function checkDestroyProc(body, source) {
   if (state !== 'playing' && state !== 'devmode') return;
+  // HELIOGRAPH kill-banked beam earner — runs orb-agnostic at the top so it
+  // sees every body-destroyed event, but increments only on NON-beam kills
+  // (beam rays, Light Sweep, and Zenith-Flash spawned novas tag their source
+  // 'helios-beam', which is filtered inside the helper). Prevents the
+  // beam→kill→beam feedback loop.
+  if (activeOrb === 'helios' && source !== 'helios-beam') {
+    try { _heliosOnNonBeamKill(); } catch {}
+  }
   // v1.8.0 Rainbow Orb baseline per-kill burst-CD shave. The named per-kill
   // skills (Salvage / Momentum / Coronal Hold) are excluded during rainbow
   // because they each gate on a different active effect AND stacked into
@@ -19658,7 +19769,7 @@ const ORB_UNLOCK_SCRIPTS = {
     ['Sirius', '...Nothing sparkled? Bah. Just check your shop.'],
   ],
   phantomV2: [
-    ['Sirius', 'Two thousand ghosts, {player} — how grim, how grand.'],
+    ['Sirius', 'Three thousand ghosts, {player} — how grim, how grand.'],
     ['Sirius', 'Let me reach past the veil with my luminous hand...'],
     ['Sirius', "SPIRITS! WRAITHS! Rise at Sirius' command!"],
     ['Sirius', '...They whisper just one word to me. Shop.'],
@@ -25654,7 +25765,7 @@ function _updateCore() {
             _solarStellarKills = 0;
             _solarSpawnFireball();
           }
-          checkDestroyProc(b, 'nova');
+          checkDestroyProc(b, r.source || 'nova');
           novaKillCount++;
           break;
         }
@@ -29052,16 +29163,25 @@ function emitOrbTrail() {
     } else if (orb === 'helios') {
       // Helios: gold fire embers — whiter/more-golden than Inferno's orange so
       // the orb reads as the SUN, not a spark. Reuses kind:'fire'.
+      // Hyperspeed scales ember life like Solar (450 → 600) so the trail
+      // elongates with speed. Phantom Rush (hyperspeed+ghost) shifts hues to
+      // violet to match the central warp-tunnel + barrier colour.
+      const _heliosHyperOn = activeEffects.hyperspeed > 0;
+      const _heliosPhantom = _heliosHyperOn && activeEffects.ghost > 0;
+      const _heliosHue = _heliosPhantom
+        ? (Math.random() < 0.45 ? '230,200,255'
+         : (Math.random() < 0.6 ? '210,160,255' : '180,120,245'))
+        : (Math.random() < 0.45 ? '255,240,170'
+         : (Math.random() < 0.6 ? '255,210,110' : '255,180,70'));
       pushCapped(orbTrailParticles, {
         kind: 'fire',
         x: jx, y: jy,
         vx: bx * (0.5 + Math.random() * 0.9) + (Math.random() - 0.5) * 0.6,
         vy: by * (0.5 + Math.random() * 0.9) + (Math.random() - 0.5) * 0.6,
         life: 1, size: (3 + Math.random() * 3) * sizeMul,
-        hue: Math.random() < 0.45 ? '255,240,170'
-           : (Math.random() < 0.6 ? '255,210,110' : '255,180,70'),
+        hue: _heliosHue,
         flicker: Math.random() * 6.28,
-        alphaMul, startTime: nowOt, maxLifeMs: 320,
+        alphaMul, startTime: nowOt, maxLifeMs: _heliosHyperOn ? 460 : 320,
       }, ORB_TRAIL_CAP);
     }
   }
@@ -29454,24 +29574,77 @@ function emitOrbTrailUnlocked(orb, intensity, sizeMul, alphaMul, px, py, bx, by,
       }, ORB_TRAIL_CAP);
     }
   } else if (orb === 'helios') {
-    // CORONA VEIL — a denser, brighter gold ember veil that flares on nova.
-    const lifeMs = novaJustFired ? 460 : 340;
-    const n = novaJustFired ? 3 : 2;
+    // CORONA VEIL — a denser, brighter gold ember veil that flares on nova
+    // and intensifies under hyperspeed. State-aware like the other unlocked
+    // trails:
+    //   - Default: 2 gold/white-hot embers per cycle (denser than the default
+    //     gold trail, with a wider lateral spread for a "veil" silhouette).
+    //   - Nova just fired: count + life bumped, supernova white-hot.
+    //   - Supernova combo: count tripled, hue white-hot, wider spray.
+    //   - Hyperspeed: ember life extended + count bumped so the corona reads
+    //     as elongated during warp (mirrors Solar's hyperOn ember-life bump
+    //     and Nebula's hyperOn line-count escalation).
+    //   - Phantom Rush (hyperspeed + ghost): hues shift to violet to match
+    //     the central warp-tunnel + barrier tint.
+    //   - Ghost (no hyperspeed): hues cool to pale gold-violet so the corona
+    //     reads as phasing rather than burning.
+    const phantomRush = hyperOn && ghostOn;
+    let baseHueA = '255,245,190', baseHueB = '255,215,120', baseHueC = '255,185,80';
+    let novaHue   = '255,240,180';
+    if (supernovaActive) {
+      baseHueA = '255,250,220'; baseHueB = '255,235,180'; baseHueC = '255,210,140';
+      novaHue  = '255,250,220';
+    } else if (novaJustFired) {
+      baseHueA = '255,235,170'; baseHueB = '255,210,110'; baseHueC = '255,180,70';
+      novaHue  = '255,230,140';
+    }
+    if (phantomRush) {
+      // Phantom Rush violet shift — overrides solar tones entirely.
+      baseHueA = '230,200,255'; baseHueB = '210,160,255'; baseHueC = '180,120,245';
+      novaHue  = '220,180,255';
+    } else if (ghostOn) {
+      // Ghost (no hyper) — cool pale gold tinted toward violet.
+      baseHueA = '240,220,210'; baseHueB = '230,200,220'; baseHueC = '210,180,230';
+    }
+    let lifeMs = novaJustFired ? 480 : 360;
+    if (hyperOn) lifeMs += 140;
+    let n = novaJustFired ? 3 : 2;
+    if (supernovaActive) n += 2;
+    if (hyperOn) n += 1;
+    const spread = supernovaActive ? 18 : 10;
     for (let i = 0; i < n; i++) {
+      const lateral = (Math.random() - 0.5) * spread;
+      const r = Math.random();
+      const hue = r < 0.5 ? baseHueA : (r < 0.8 ? baseHueB : baseHueC);
       pushCapped(orbTrailParticles, {
         kind: 'fire',
-        x: px + (Math.random() - 0.5) * 10, y: py + (Math.random() - 0.5) * 10,
-        vx: bx * (0.5 + Math.random() * 0.9) + (Math.random() - 0.5) * 0.8,
+        x: px + lateral, y: py + (Math.random() - 0.5) * 10,
+        vx: bx * (0.5 + Math.random() * 0.9) + (Math.random() - 0.5) * (supernovaActive ? 1.4 : 0.8),
         vy: by * (0.5 + Math.random() * 0.9) + (Math.random() - 0.5) * 0.8,
         life: 1, size: (3.2 + Math.random() * 3) * sizeMul,
-        hue: Math.random() < 0.5 ? '255,245,190' : (Math.random() < 0.6 ? '255,215,120' : '255,185,80'),
-        flicker: Math.random() * 6.28, alphaMul, startTime: nowOt, maxLifeMs: lifeMs,
+        hue,
+        flicker: Math.random() * 6.28,
+        alphaMul: Math.min(1, alphaMul * (novaJustFired || supernovaActive ? 1.35 : 1)),
+        startTime: nowOt, maxLifeMs: lifeMs,
       }, ORB_TRAIL_CAP);
     }
+    // Nova-just-fired radial burst — 2 embers thrown outward from the player.
+    // Supernova bumps to 4 for a brighter ring of fire.
     if (novaJustFired) {
-      for (let i = 0; i < 2; i++) {
+      const burstN = supernovaActive ? 4 : 2;
+      for (let i = 0; i < burstN; i++) {
         const a = Math.random() * Math.PI * 2;
-        pushCapped(orbTrailParticles, { kind: 'fire', x: player.x, y: player.y, vx: Math.cos(a) * (3.5 + Math.random() * 1.6), vy: Math.sin(a) * (3.5 + Math.random() * 1.6), hue: '255,240,180', life: 1, size: (2 + Math.random() * 1.6) * sizeMul, flicker: Math.random() * 6.28, alphaMul, startTime: nowOt, maxLifeMs: 380 }, ORB_TRAIL_CAP);
+        pushCapped(orbTrailParticles, {
+          kind: 'fire',
+          x: player.x, y: player.y,
+          vx: Math.cos(a) * (3.5 + Math.random() * 1.6),
+          vy: Math.sin(a) * (3.5 + Math.random() * 1.6),
+          hue: novaHue,
+          life: 1, size: (2 + Math.random() * 1.6) * sizeMul,
+          flicker: Math.random() * 6.28,
+          alphaMul: Math.min(1, alphaMul * 1.25),
+          startTime: nowOt, maxLifeMs: 380,
+        }, ORB_TRAIL_CAP);
       }
     }
   }
@@ -37281,6 +37454,8 @@ const TREE_TERM_COLOR = {
   hyperspeed: '255,220,60', ghost: '200,120,255', burst: '125,232,255',
   single: '150,225,255', pair: '150,225,255', powerup: '150,225,255',
   emp: '255,200,120', streak: '255,170,90', stack: '255,220,60',
+  sundog: '255,215,120', prominence: '255,170,60',
+  heliograph: '255,244,200', beam: '255,244,200',
 };
 
 // Glossary copy — wry/mocking "???" narrator voice; the term itself is bolded
