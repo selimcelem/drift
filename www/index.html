@@ -20786,7 +20786,8 @@ function updatePixiBodyEffectsLayer() {
     }
   }
   // Dashed targeting line — only when input is active and there's a target.
-  // v2.1.0: bumped to width 2, alpha 0.65, dash 6-on/4-off for visibility.
+  // v2.1.0: bumped to width 1.5, alpha 0.45, dash 6-on/4-off — visible but not
+  // distracting (second-pass tone-down from initial width 2 / alpha 0.65 bump).
   if (pixiTargetLineGraphics) {
     pixiTargetLineGraphics.clear();
     if ((state === 'playing' || state === 'tutorial') && closestBody && (leftDown || rightDown)) {
@@ -20795,7 +20796,7 @@ function updatePixiBodyEffectsLayer() {
       const dashColor = playerInVoidRange ? '140,60,200' : baseColor;
       const [r8, g8, b8] = dashColor.split(',').map(n => parseInt(n, 10));
       const colorInt = (r8 << 16) | (g8 << 8) | b8;
-      pixiTargetLineGraphics.lineStyle({ width: 2, color: colorInt, alpha: 0.65 });
+      pixiTargetLineGraphics.lineStyle({ width: 1.5, color: colorInt, alpha: 0.45 });
       // Manual dash because PIXI.Graphics doesn't support setLineDash.
       // 6px dash, 4px gap — matches the canvas 2D setLineDash([6,4]).
       const dx = b.x - player.x, dy = b.y - player.y;
@@ -24305,19 +24306,26 @@ function applyForce() {
     //   3. SMOOTH TAPER inside the cone — full strength at perfect vertical,
     //      linearly fading to zero at the cone edge, replacing the previous
     //      binary snap-in/snap-out feel.
-    //   4. PROXIMITY SCALING — closer body = stronger nudge (capped 2×),
+    //   4. PROXIMITY SCALING — closer body = stronger nudge (capped 2.5×;
+    //      v2.1.0 second pass bumped from 2.0× for emergency-dodge headroom),
     //      because a body about to land on you is more urgent than one a body
     //      length away.
     //   5. STALE BASELINE — divisor pinned to literal 1.2 (matches the
     //      speedRatio fix; was DIFFICULTIES.NORMAL.startSpeed which silently
     //      weakened the nudge ~15% after the v2.1 NORMAL.startSpeed bump).
+    //   6. EMERGENCY OVERRIDE — when the body is at imminent-collision range
+    //      (d < body.r + PLAYER_R + 40), bypass the taper entirely so the
+    //      "last-second tap saves me" feel is preserved regardless of how
+    //      partially-aligned the player happens to be. Mid-range dodges keep
+    //      the smooth taper so the feel-pass goal isn't lost.
     let rnx = -nx, rny = -ny;
     if (closestBody.y < player.y) {
       const coneThreshold = 0.15 + (closestBody.radius - 15) * 0.01;
       const absRnx = Math.abs(rnx);
       if (absRnx < coneThreshold) {
-        const taper        = 1 - (absRnx / coneThreshold);
-        const proxMul      = Math.min(2.0, Math.max(1.0, 80 / d));
+        const emergency    = d < (closestBody.radius + PLAYER_R + 40);
+        const taper        = emergency ? 1.0 : (1 - (absRnx / coneThreshold));
+        const proxMul      = Math.min(2.5, Math.max(1.0, 80 / d));
         const baseStrength = Math.min(0.45, 0.15 + (scrollSpeed() / 1.2) * 0.08);
         const nudgeStrength = baseStrength * taper * proxMul;
         const side = player.x - closestBody.x;
@@ -24394,21 +24402,37 @@ function applyForce() {
   // contribution and keeps the diff small.
   player.vy += ay * dtScale;
 
-  player.vx *= decay(dragCoef, dtScale); player.vy *= decay(dragCoef, dtScale);
+  // v2.1.0 second-pass: velocity-aware drag boost. The world-speed dragCoef
+  // (0.91–0.94) is a velocity RETENTION factor — higher value = LESS drag.
+  // When the player's actual speed exceeds 4.5 px/frame (sustained-input or
+  // cap-saturated regime), LOWER dragCoef toward 0.92 so the bleed-off is
+  // faster — trims the post-release coast that caused half-screen overshoot
+  // at high scroll. Ramps linearly across v∈[4.5, 7.5], floored at 0.92.
+  // NOTE: the spec phrased this as "drag 0.96" / "add 0.02"; in this code
+  // dragCoef is a retention factor (higher = less drag), so the sign is
+  // inverted from the spec to match intent ("reduce post-release coast").
+  const _vMagPreDrag = Math.hypot(player.vx, player.vy);
+  let _effDrag = dragCoef;
+  if (_vMagPreDrag > 4.5) {
+    _effDrag = Math.max(0.92, dragCoef - 0.02 * Math.min(1, (_vMagPreDrag - 4.5) / 3));
+  }
+  player.vx *= decay(_effDrag, dtScale); player.vy *= decay(_effDrag, dtScale);
   if (isNaN(player.vx)) player.vx = 0;
   if (isNaN(player.vy)) player.vy = 0;
   const spd = Math.hypot(player.vx, player.vy);
   // EXTREME loosens the floor so players can outrun dense clusters from t=0.
   // v2.1.0: floor is the minimum cap, but the cap also SCALES with scroll
-  // speed via the empirically-playable ratio 1.375 (= old EXTREME player cap
-  // 5.5 ÷ old EXTREME maxSpeed 4.0 — i.e. "always ≥37.5% faster than the
-  // world"). Without this, the v2.1 scroll bumps + IMPOSSIBLE post-cap growth
-  // would leave the player physically unable to cross the canvas in body-
-  // flight-time at scroll > ~5. Floor wins at low speeds (no twitchiness on
-  // NORMAL), scroll-scaled wins at high speeds (HARD/EXTREME max, IMPOSSIBLE
-  // post-cap up to 7.2 → cap 9.9).
+  // speed. The empirically-playable ratio (old EXTREME cap 5.5 ÷ old maxSpeed
+  // 4.0 = 1.375) was the original headroom multiplier; v2.1 second-pass
+  // lowered it to 1.25 because 1.375 left the player with too much sustained-
+  // input coast distance at high scroll (half-screen overshoot after a single
+  // tap). 1.25 still keeps player ≥ 25% faster than the world at every
+  // difficulty, but trims the post-release glide so a clutch dodge doesn't
+  // throw the player halfway across the canvas. Floor wins at low speeds (no
+  // twitchiness on NORMAL); scroll-scaled wins at HARD/EXTREME max and
+  // IMPOSSIBLE post-cap (up to 5.5 → cap 6.875).
   const speedCapFloor = difficulty === 'EXTREME' ? 5.5 : 4.5;
-  const speedCap = Math.max(speedCapFloor, scrollSpeed() * 1.375);
+  const speedCap = Math.max(speedCapFloor, scrollSpeed() * 1.25);
   if (spd > speedCap) { player.vx = player.vx/spd*speedCap; player.vy = player.vy/spd*speedCap; }
 
   player.x += player.vx * dtScale; player.y += player.vy * dtScale;
@@ -27481,9 +27505,9 @@ function drawBodies() {
         // Void proximity warps attract/repel — signal that by overriding the
         // dashed-line color with a dark purple tint.
         const dashRgb = playerInVoidRange ? '140,60,200' : ringRgb;
-        ctx.globalAlpha = 0.65;
+        ctx.globalAlpha = 0.45;
         ctx.strokeStyle = `rgba(${dashRgb},1)`;
-        ctx.lineWidth = 2;
+        ctx.lineWidth = 1.5;
         ctx.setLineDash([6, 4]);
         ctx.beginPath(); ctx.moveTo(player.x, player.y); ctx.lineTo(b.x, b.y); ctx.stroke();
         ctx.setLineDash([]);
@@ -30742,9 +30766,9 @@ function drawPowerups() {
       ctx.lineWidth = 2;
       ctx.beginPath(); ctx.arc(p.x, p.y, ringR, 0, 6.28); ctx.stroke();
       if (inputHeld) {
-        ctx.globalAlpha = 0.65;
+        ctx.globalAlpha = 0.45;
         ctx.strokeStyle = `rgba(${ringRgb},1)`;
-        ctx.lineWidth = 2;
+        ctx.lineWidth = 1.5;
         ctx.setLineDash([6, 4]);
         ctx.beginPath(); ctx.moveTo(player.x, player.y); ctx.lineTo(p.x, p.y); ctx.stroke();
         ctx.setLineDash([]);
