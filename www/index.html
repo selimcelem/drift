@@ -5229,14 +5229,16 @@ const DIFFICULTIES = {
   // the max() in maybeSpawnPowerup, so adjusting powerupFrequency would be a
   // cosmetic no-op. The floor is the actual powerup-density knob.
   NORMAL:     { startSpeed: 1.7, maxSpeed: 3.0, speedCapScore: 60, bodyCapRampStartSec: 60, maxBodies: 3, maxBodiesCap: 5,  bodySpacing: 180, powerupFrequency: 2.0,  pairSpawnChance: 0.13,  minSpawnIntervalMs: 2500, crystalMult: 0.75 },
-  HARD:       { startSpeed: 2.3, maxSpeed: 4.0, speedCapScore: 60, bodyCapRampStartSec: 60, maxBodies: 4, maxBodiesCap: 6,  bodySpacing: 180, powerupFrequency: 1.7,  pairSpawnChance: 0.105, minSpawnIntervalMs: 3125, crystalMult: 1.0 },
-  EXTREME:    { startSpeed: 2.8, maxSpeed: 4.5, speedCapScore: 60, bodyCapRampStartSec: 30, maxBodies: 4, maxBodiesCap: 7,  bodySpacing: 180, powerupFrequency: 1.44, pairSpawnChance: 0.08,  minSpawnIntervalMs: 3750, crystalMult: 1.25 },
+  HARD:       { startSpeed: 2.3, maxSpeed: 3.5, speedCapScore: 60, bodyCapRampStartSec: 60, maxBodies: 4, maxBodiesCap: 6,  bodySpacing: 180, powerupFrequency: 1.7,  pairSpawnChance: 0.105, minSpawnIntervalMs: 3125, crystalMult: 1.0 },
+  EXTREME:    { startSpeed: 2.8, maxSpeed: 4.0, speedCapScore: 60, bodyCapRampStartSec: 30, maxBodies: 4, maxBodiesCap: 7,  bodySpacing: 180, powerupFrequency: 1.44, pairSpawnChance: 0.08,  minSpawnIntervalMs: 3750, crystalMult: 1.25 },
   // v1.6.3 IMPOSSIBLE: Extreme's numbers but cap hit in 60s instead of
-  // 180s, then +5%/min post-cap speed growth (v2.1.0: halved from +10%, plus
-  // a hard cap that's now ≈1.146× maxSpeed = 5.5 px/frame). +1 body every 2 min
-  // post-cap, ceilinged at maxBodiesCap = 10 (v2.1.0: was 7, post-cap growth
-  // climbs to 10 instead of 14). Gated by beatDifficulty.EXTREME in the UI.
-  IMPOSSIBLE: { startSpeed: 2.8, maxSpeed: 4.8, speedCapScore: 60, bodyCapRampStartSec: 30, maxBodies: 4, maxBodiesCap: 10, bodySpacing: 180, powerupFrequency: 1.44, pairSpawnChance: 0.08,  minSpawnIntervalMs: 5000, crystalMult: 1.5 },
+  // 180s, then +5%/min post-cap speed growth (v2.1.0 second-pass: halved
+  // from +10%, plus an absolute post-cap ceiling at 5.0 px/frame — ~1.11×
+  // the new 4.5 maxSpeed, matching the prior pass's ~1.146× headroom
+  // intent). +1 body every 2 min post-cap, ceilinged at maxBodiesCap = 10
+  // (v2.1.0: was 7, post-cap growth climbs to 10 instead of 14). Gated by
+  // beatDifficulty.EXTREME in the UI.
+  IMPOSSIBLE: { startSpeed: 2.8, maxSpeed: 4.5, speedCapScore: 60, bodyCapRampStartSec: 30, maxBodies: 4, maxBodiesCap: 10, bodySpacing: 180, powerupFrequency: 1.44, pairSpawnChance: 0.08,  minSpawnIntervalMs: 5000, crystalMult: 1.5 },
 };
 let difficulty = 'NORMAL';
 if (typeof Sentry !== 'undefined') Sentry.setTag('difficulty', difficulty);
@@ -20136,16 +20138,17 @@ function normalScrollSpeed() {
   let speed = d.startSpeed + (d.maxSpeed - d.startSpeed) * t;
   // v1.6.3 / v2.1.0: IMPOSSIBLE is the only difficulty with post-cap growth.
   // Rate halved from +10%/min → +5% of maxSpeed/min once the ramp finishes
-  // (1:00), AND hard-capped at a TIGHTER post-cap ceiling (v2.1 second pass:
-  // 1.5× maxSpeed = 7.2 → 5.5 absolute, multiplier ≈ 1.146× since maxSpeed
-  // stays 4.8). Time to ceiling = (5.5 - 4.8) / 0.24 ≈ 2.92 min after the
-  // 1:00 ramp finishes → ~3:55 game time. Capped on the base scroll value;
-  // the hyperspeed multiplier in _scrollSpeed_default still scales the
-  // capped value, so hyperspeed isn't neutered.
+  // (1:00), AND hard-capped at an absolute ceiling. v2.1 third pass: ceiling
+  // 5.5 → 5.0 (since IMPOSSIBLE maxSpeed dropped 4.8 → 4.5, keeping similar
+  // ~1.11× post-cap headroom over maxSpeed). Time to ceiling = (5.0 - 4.5)
+  // / (0.05 × 4.5) ≈ 2.22 min after the 1:00 ramp finishes → ~3:13 game
+  // time. Capped on the base scroll value; the hyperspeed multiplier in
+  // _scrollSpeed_default still scales the capped value, so hyperspeed
+  // isn't neutered.
   if (difficulty === 'IMPOSSIBLE' && elapsed > d.speedCapScore) {
     const postMin = (elapsed - d.speedCapScore) / 60;
     speed += d.maxSpeed * 0.05 * postMin;
-    const speedCeiling = 5.5;  // absolute px/frame ceiling on IMPOSSIBLE scroll
+    const speedCeiling = 5.0;  // absolute px/frame ceiling on IMPOSSIBLE scroll
     if (speed > speedCeiling) speed = speedCeiling;
   }
   return speed;
@@ -24160,6 +24163,12 @@ function resetGame(isResume) {
 }
 
 // --- Physics: only closest body matters ---
+// v2.1 third pass: direction-aware hysteresis REMOVED. The prominent
+// color-coded target indicator (cyan attract / red repel / white neutral
+// ring) gives the player clear visual feedback about which body they're
+// targeting, so the algorithmic soft-lock is redundant — and the lock
+// could create its own problems (staying locked on a distant body while a
+// closer one threatens). Closest body always wins, simple scan.
 function findClosest() {
   let best = null, bd = Infinity;
   for (const b of bodies) {
@@ -24178,35 +24187,6 @@ function findClosest() {
     if (d < bd) { bd = d; best = p; }
   }
   // Crack fragments are obstacles, not gravity sources — excluded from targeting.
-
-  // v2.1.0 DIRECTION-AWARE HYSTERESIS: prevent silent target flips that
-  // surprise the player mid-input. If the prior closestBody is still alive,
-  // hold onto it unless a candidate is meaningfully closer (≥ 25%). EXCEPT:
-  // if a closer candidate is dangerously close AND lies along the repel-push
-  // direction (i.e. holding the old target would shove the player into the
-  // new candidate), override the hysteresis and switch to the immediate
-  // threat — staying locked there would be the actual unsafe choice.
-  // Prior closestBody is "still alive" if it's in bodies OR a non-collected powerup.
-  const _priorAlive = closestBody && (
-    bodies.indexOf(closestBody) >= 0 ||
-    (powerups.indexOf(closestBody) >= 0 && !closestBody.collected)
-  );
-  if (_priorAlive && best && best !== closestBody) {
-    const prevD = dist(player, closestBody);
-    if (bd > prevD * 0.75) {
-      const DANGER_DIST = 80;
-      let override = false;
-      if (bd < DANGER_DIST) {
-        // Push direction from the OLD target = (player - oldTarget).
-        const pdx = player.x - closestBody.x, pdy = player.y - closestBody.y;
-        // Candidate offset = (candidate - player).
-        const cdx = best.x - player.x, cdy = best.y - player.y;
-        // Positive dot = candidate sits in the repel-push half-plane.
-        if (pdx * cdx + pdy * cdy > 0) override = true;
-      }
-      if (!override) best = closestBody;
-    }
-  }
   closestBody = best;
 }
 
@@ -24304,8 +24284,11 @@ function applyForce() {
     //      a wider escape window than a 13px star). threshold scales linearly
     //      with body.radius around a 15px pivot.
     //   3. SMOOTH TAPER inside the cone — full strength at perfect vertical,
-    //      linearly fading to zero at the cone edge, replacing the previous
-    //      binary snap-in/snap-out feel.
+    //      linearly fading to a FLOOR of 0.5 at the cone edge (v2.1 third
+    //      pass: bumped from 0 floor → 0.5 floor so partial-alignment dodges
+    //      outside the emergency zone don't get gutted by taper). Replaces
+    //      the previous binary snap-in/snap-out feel without losing the
+    //      "close to perfect = stronger" gradient.
     //   4. PROXIMITY SCALING — closer body = stronger nudge (capped 2.5×;
     //      v2.1.0 second pass bumped from 2.0× for emergency-dodge headroom),
     //      because a body about to land on you is more urgent than one a body
@@ -24324,7 +24307,7 @@ function applyForce() {
       const absRnx = Math.abs(rnx);
       if (absRnx < coneThreshold) {
         const emergency    = d < (closestBody.radius + PLAYER_R + 40);
-        const taper        = emergency ? 1.0 : (1 - (absRnx / coneThreshold));
+        const taper        = emergency ? 1.0 : Math.max(0.5, 1 - (absRnx / coneThreshold));
         const proxMul      = Math.min(2.5, Math.max(1.0, 80 / d));
         const baseStrength = Math.min(0.45, 0.15 + (scrollSpeed() / 1.2) * 0.08);
         const nudgeStrength = baseStrength * taper * proxMul;
@@ -36284,6 +36267,23 @@ function drawOrbPreviewUnlocked(particles, orbKey, color, cx, cy, t, dtScale) {
         drift: (Math.random() - 0.5) * 0.2,
         life: 1, size: 2.2 + Math.random() * 1.8,
         hue: '210,170,255',
+      });
+    }
+  } else if (orbKey === 'helios') {
+    // CORONA VEIL preview — denser, brighter gold ember veil than Solar's
+    // hotter-orange Pyroclasm. White-hot gold palette matches gameplay
+    // (emitOrbTrailUnlocked helios branch, hues 255,245,190 / 215,120 / 185,80).
+    // Uses 'ember' kind because the preview renderer handles ember (gravity +
+    // flicker) but not the gameplay 'fire' kind.
+    if (Math.random() < 0.7 * dtScale) {
+      const r = Math.random();
+      const hue = r < 0.5 ? '255,245,190' : (r < 0.8 ? '255,215,120' : '255,185,80');
+      particles.push({
+        kind: 'ember', x: cx + (Math.random() - 0.5) * 36,
+        y: cy + 18,
+        vx: (Math.random() - 0.5) * 1.1, vy: 1.0 + Math.random() * 1.4,
+        life: 1, size: 3.2 + Math.random() * 2.8,
+        hue, flicker: Math.random() * 6.28,
       });
     }
   }
