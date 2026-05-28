@@ -5199,9 +5199,18 @@ const BODY_SPACING = Math.floor(H / 3.5);
 // Prevents the spawner from dropping a new body on top of or immediately
 // above an existing one — without this, the zone-rotation logic can still
 // clump because consecutive yBase values land inside one screen height of
-// each other. 80 px ≈ 2× the largest body radius; tighter than "visually
-// comfortable" but loose enough not to starve the spawner.
-const MIN_BODY_DISTANCE = 80;
+// each other.
+//
+// v2.1.0 — switched from an axis-AND-box rule (the old MIN_BODY_DISTANCE=80
+// square box) to a HITBOX-AWARE EUCLIDEAN rule: clash iff
+//   ddx² + ddy² < (ob.radius + cand.radius + MIN_EDGE_GAP)²
+// This guarantees a consistent EDGE-TO-EDGE gap regardless of body size,
+// where center-distance alone would let two max planets sit with only 40 px
+// of empty space between them (60 px edge gap = sane minimum clearance for
+// the player ball, with a buffer for reaction). Closes the "vertical wall of
+// bodies" exploit at high difficulty: same-column same-size bodies now need
+// ≥ 2*r + 60 separation, not just ≥ 80.
+const MIN_EDGE_GAP = 60;
 // Round-robin spawn zone (0=left, 1=center, 2=right) so consecutive bodies
 // land in different zones for natural horizontal spread.
 let lastSpawnZone = -1;
@@ -5212,13 +5221,22 @@ const DIFFICULTIES = {
   // v1.8.0: time-to-max speed halved (120 s → 60 s) across NORMAL/HARD/EXTREME.
   // Max-speed VALUES unchanged per difficulty — only the ramp duration shrank.
   // IMPOSSIBLE was already at 60 s (post-cap growth handled separately below).
-  NORMAL:     { startSpeed: 1.2, maxSpeed: 2.5, speedCapScore: 60,  maxBodies: 3, maxBodiesCap: 5, bodySpacing: 180, powerupFrequency: 2.0,  pairSpawnChance: 0.16, minSpawnIntervalMs: 2000, crystalMult: 0.75 },
-  HARD:       { startSpeed: 1.6, maxSpeed: 3.5, speedCapScore: 60,  maxBodies: 4, maxBodiesCap: 6, bodySpacing: 180, powerupFrequency: 1.7,  pairSpawnChance: 0.13, minSpawnIntervalMs: 2500, crystalMult: 1.0 },
-  EXTREME:    { startSpeed: 2.0, maxSpeed: 4.0, speedCapScore: 60,  maxBodies: 4, maxBodiesCap: 7, bodySpacing: 180, powerupFrequency: 1.44, pairSpawnChance: 0.10, minSpawnIntervalMs: 3000, crystalMult: 1.25 },
+  // v2.1.0 tuning: across-the-board start/max speed bump (+42% start, +20% max),
+  // tighter powerup floor + fewer pairs, and per-difficulty bodyCapRampStartSec
+  // (was a global hardcoded 180s) so NORMAL/HARD reach their body cap at 4:00
+  // and EXTREME/IMPOSSIBLE at 5:00 (was 6:00 / 7:30). powerupFrequency
+  // intentionally LEFT UNCHANGED — the minSpawnIntervalMs floor always wins
+  // the max() in maybeSpawnPowerup, so adjusting powerupFrequency would be a
+  // cosmetic no-op. The floor is the actual powerup-density knob.
+  NORMAL:     { startSpeed: 1.7, maxSpeed: 3.0, speedCapScore: 60, bodyCapRampStartSec: 60, maxBodies: 3, maxBodiesCap: 5,  bodySpacing: 180, powerupFrequency: 2.0,  pairSpawnChance: 0.13,  minSpawnIntervalMs: 2500, crystalMult: 0.75 },
+  HARD:       { startSpeed: 2.3, maxSpeed: 4.0, speedCapScore: 60, bodyCapRampStartSec: 60, maxBodies: 4, maxBodiesCap: 6,  bodySpacing: 180, powerupFrequency: 1.7,  pairSpawnChance: 0.105, minSpawnIntervalMs: 3125, crystalMult: 1.0 },
+  EXTREME:    { startSpeed: 2.8, maxSpeed: 4.5, speedCapScore: 60, bodyCapRampStartSec: 30, maxBodies: 4, maxBodiesCap: 7,  bodySpacing: 180, powerupFrequency: 1.44, pairSpawnChance: 0.08,  minSpawnIntervalMs: 3750, crystalMult: 1.25 },
   // v1.6.3 IMPOSSIBLE: Extreme's numbers but cap hit in 60s instead of
-  // 180s, then +10%/min post-cap speed growth and +1 body every 2 min
-  // post-cap. Gated by beatDifficulty.EXTREME in the UI.
-  IMPOSSIBLE: { startSpeed: 2.0, maxSpeed: 4.0, speedCapScore: 60,  maxBodies: 4, maxBodiesCap: 7, bodySpacing: 180, powerupFrequency: 1.44, pairSpawnChance: 0.10, minSpawnIntervalMs: 4000, crystalMult: 1.5 },
+  // 180s, then +5%/min post-cap speed growth (v2.1.0: halved from +10%, plus
+  // a hard cap that's now ≈1.146× maxSpeed = 5.5 px/frame). +1 body every 2 min
+  // post-cap, ceilinged at maxBodiesCap = 10 (v2.1.0: was 7, post-cap growth
+  // climbs to 10 instead of 14). Gated by beatDifficulty.EXTREME in the UI.
+  IMPOSSIBLE: { startSpeed: 2.8, maxSpeed: 4.8, speedCapScore: 60, bodyCapRampStartSec: 30, maxBodies: 4, maxBodiesCap: 10, bodySpacing: 180, powerupFrequency: 1.44, pairSpawnChance: 0.08,  minSpawnIntervalMs: 5000, crystalMult: 1.5 },
 };
 let difficulty = 'NORMAL';
 if (typeof Sentry !== 'undefined') Sentry.setTag('difficulty', difficulty);
@@ -20116,11 +20134,19 @@ function normalScrollSpeed() {
   const elapsed = elapsedRunSeconds();
   const t = Math.min(elapsed / d.speedCapScore, 1);
   let speed = d.startSpeed + (d.maxSpeed - d.startSpeed) * t;
-  // v1.6.3: IMPOSSIBLE is the only difficulty with post-cap growth.
-  // +10 % per minute of maxSpeed once the ramp has finished (1:00).
+  // v1.6.3 / v2.1.0: IMPOSSIBLE is the only difficulty with post-cap growth.
+  // Rate halved from +10%/min → +5% of maxSpeed/min once the ramp finishes
+  // (1:00), AND hard-capped at a TIGHTER post-cap ceiling (v2.1 second pass:
+  // 1.5× maxSpeed = 7.2 → 5.5 absolute, multiplier ≈ 1.146× since maxSpeed
+  // stays 4.8). Time to ceiling = (5.5 - 4.8) / 0.24 ≈ 2.92 min after the
+  // 1:00 ramp finishes → ~3:55 game time. Capped on the base scroll value;
+  // the hyperspeed multiplier in _scrollSpeed_default still scales the
+  // capped value, so hyperspeed isn't neutered.
   if (difficulty === 'IMPOSSIBLE' && elapsed > d.speedCapScore) {
     const postMin = (elapsed - d.speedCapScore) / 60;
-    speed += d.maxSpeed * 0.10 * postMin;
+    speed += d.maxSpeed * 0.05 * postMin;
+    const speedCeiling = 5.5;  // absolute px/frame ceiling on IMPOSSIBLE scroll
+    if (speed > speedCeiling) speed = speedCeiling;
   }
   return speed;
 }
@@ -20575,17 +20601,19 @@ function updatePixiBodyLayer() {
     }
     const pulse = Math.sin(b.pulse) * 0.3 + 0.7;
     const glowR = b.radius * (2.6 + Math.sin(b.pulse) * 0.35);
+    // v2.1.0 preview-strip: fade glow + rings as the body crosses y=-100 → 0.
+    const previewAlpha = b.y < 0 ? Math.max(0, 1 + b.y / 100) : 1;
     // Glow + rings canvases are DPR-scaled; their PIXI.Sprite base size is
     // the full texture pixel size (dpr × logical). Divide the scale factor by
     // dpr so the displayed CSS dimensions match the original logical canvas.
     const dprInv = 1 / atlasScale();
     entry.glowSprite.x = b.x;
     entry.glowSprite.y = b.y;
-    entry.glowSprite.alpha = 0.32 * pulse;
+    entry.glowSprite.alpha = 0.32 * pulse * previewAlpha;
     entry.glowSprite.scale.set((b.cachedMaxGlowR > 0 ? glowR / b.cachedMaxGlowR : 1) * dprInv);
     entry.ringsSprite.x = b.x;
     entry.ringsSprite.y = b.y;
-    entry.ringsSprite.alpha = Math.max(0, 0.05 + 0.03 * Math.sin(b.pulse * 1.4));
+    entry.ringsSprite.alpha = Math.max(0, 0.05 + 0.03 * Math.sin(b.pulse * 1.4)) * previewAlpha;
     entry.ringsSprite.scale.set(dprInv);
   }
   if (pixiBodyEntries.size > live.size) {
@@ -20702,6 +20730,8 @@ function updatePixiBodySpriteLayer() {
     entry.sprite.y = b.y;
     entry.sprite.width = displaySize;
     entry.sprite.height = displaySize;
+    // v2.1.0 preview-strip: fade the body sprite as it crosses y=-100 → 0.
+    entry.sprite.alpha = b.y < 0 ? Math.max(0, 1 + b.y / 100) : 1;
     // Procedural types repaint their canvas every frame; force GPU re-upload.
     if (isProcedural && entry.sprite.texture && entry.sprite.texture.baseTexture) {
       try { entry.sprite.texture.baseTexture.update(); } catch {}
@@ -20733,46 +20763,49 @@ function updatePixiBodyEffectsLayer() {
     // v1.6.4: tutorial steps 2/3 demonstrate ATTRACT/REPEL — the player
     // needs to see the target ring around the spawned planet to recognize
     // the targeting feedback they'll see in real gameplay.
+    // v2.1.0 Option-B: neutral=white 60% (no pulse), input=cyan/red 90% with
+    // 5Hz pulse. Width 2, ring +8 outside body with ±3 sine breathe.
     if ((state === 'playing' || state === 'tutorial') && closestBody) {
       const b = closestBody;
-      const orbRgb = getOrbBonus().color;
-      const lineColor = leftDown ? '80,200,255' : rightDown ? '255,120,80' : orbRgb;
+      const inputHeld = leftDown || rightDown;
+      const ringRgb = leftDown ? '80,200,255' : rightDown ? '255,120,80' : '230,235,245';
+      const baseAlpha = inputHeld ? 0.9 : 0.6;
+      const pulseAlpha = inputHeld ? (baseAlpha - 0.15 + 0.15 * Math.sin(frame * 0.52)) : baseAlpha;
       const isPowerup = POWERUP_COLORS && POWERUP_COLORS[b.type];
       let ringR;
       if (isPowerup) {
         const rPulsed = b.radius * (0.95 + Math.sin(b.pulse) * 0.18);
-        ringR = rPulsed * 1.55 + 5 + Math.sin(frame * 0.18) * 2;
+        ringR = rPulsed * 1.55 + 8 + (inputHeld ? Math.sin(frame * 0.52) * 3 : 0);
       } else {
-        ringR = b.radius + 5 + Math.sin(frame * 0.18) * 2;
+        ringR = b.radius + 8 + (inputHeld ? Math.sin(frame * 0.52) * 3 : 0);
       }
-      const a = 0.55 + 0.25 * Math.sin(frame * 0.18);
-      const [r8, g8, b8] = lineColor.split(',').map(n => parseInt(n, 10));
+      const [r8, g8, b8] = ringRgb.split(',').map(n => parseInt(n, 10));
       const colorInt = (r8 << 16) | (g8 << 8) | b8;
-      pixiTargetRingGraphics.lineStyle({ width: 1.5, color: colorInt, alpha: a * 0.7 });
+      pixiTargetRingGraphics.lineStyle({ width: 2, color: colorInt, alpha: pulseAlpha });
       pixiTargetRingGraphics.drawCircle(b.x, b.y, ringR);
     }
   }
   // Dashed targeting line — only when input is active and there's a target.
+  // v2.1.0: bumped to width 2, alpha 0.65, dash 6-on/4-off for visibility.
   if (pixiTargetLineGraphics) {
     pixiTargetLineGraphics.clear();
     if ((state === 'playing' || state === 'tutorial') && closestBody && (leftDown || rightDown)) {
       const b = closestBody;
-      const orbRgb = getOrbBonus().color;
-      const baseColor = leftDown ? '80,200,255' : rightDown ? '255,120,80' : orbRgb;
+      const baseColor = leftDown ? '80,200,255' : rightDown ? '255,120,80' : '230,235,245';
       const dashColor = playerInVoidRange ? '140,60,200' : baseColor;
       const [r8, g8, b8] = dashColor.split(',').map(n => parseInt(n, 10));
       const colorInt = (r8 << 16) | (g8 << 8) | b8;
-      pixiTargetLineGraphics.lineStyle({ width: 1, color: colorInt, alpha: 0.3 * 0.8 });
+      pixiTargetLineGraphics.lineStyle({ width: 2, color: colorInt, alpha: 0.65 });
       // Manual dash because PIXI.Graphics doesn't support setLineDash.
-      // 5px dash, 5px gap — matches the original ctx.setLineDash([5,5]).
+      // 6px dash, 4px gap — matches the canvas 2D setLineDash([6,4]).
       const dx = b.x - player.x, dy = b.y - player.y;
       const len = Math.hypot(dx, dy);
       if (len > 0.5) {
         const ux = dx / len, uy = dy / len;
-        const seg = 5;
         let cur = 0;
         let drawing = true;
         while (cur < len) {
+          const seg = drawing ? 6 : 4;
           const next = Math.min(cur + seg, len);
           if (drawing) {
             pixiTargetLineGraphics.moveTo(player.x + ux * cur, player.y + uy * cur);
@@ -21961,7 +21994,9 @@ function spawnBody(yBase, opts) {
     const hue = Math.random() < 0.5 ? 42 : 200;
     color = `hsl(${hue},100%,80%)`; glowColor = `hsl(${hue},100%,65%)`;
   } else if (type === 'planet') {
-    radius = 17 + Math.random() * 13;
+    // v2.1.0 max-R clamp: 30 → 23. Max-size passive planets were lane-blockers
+    // (occupying ~85% of an average lane width at PLAYER_R=6 hit radius).
+    radius = 17 + Math.random() * 6;
     const hue = 100 + Math.random() * 220;
     color = `hsl(${hue},55%,50%)`; glowColor = `hsl(${hue},80%,58%)`;
   } else if (type === 'blackhole') {
@@ -21993,7 +22028,9 @@ function spawnBody(yBase, opts) {
     radius = 14 + Math.random() * 5;
     color = '#222'; glowColor = 'rgba(255,255,255,0.5)';
   } else if (type === 'skull') {
-    radius = 20 + Math.random() * 10;
+    // v2.1.0 max-R clamp: 30 → 25. Skulls were tied with planets as the largest
+    // lane-blockers; clamped for the same skill-vs-size reason.
+    radius = 20 + Math.random() * 5;
     color = '#0d0d0d'; glowColor = 'rgba(200,200,200,0.6)';
   } else {
     radius = 16; color = '#888'; glowColor = 'rgba(255,255,255,0.5)';
@@ -22006,10 +22043,11 @@ function spawnBody(yBase, opts) {
   // 70% chance to pick a horizontal zone different from the previous spawn
   // (spreads bodies across the screen). 30% chance to pick a fully random
   // x — keeps spawn variety so the player can't lock onto a strict pattern.
-  // v1.7.4: candidate x is re-rolled up to 5 times if it lands within
-  // MIN_BODY_DISTANCE (both axes) of any existing body. If every attempt
-  // clashes, spawnBody returns null and the caller skips the spawn this
-  // frame — next frame's refill retries after bodies have scrolled further.
+  // v1.7.4 / v2.1.0: candidate x is re-rolled up to 5 times if it lands
+  // inside the hitbox-aware clash zone of any existing body (Euclidean,
+  // ob.r + cand.r + MIN_EDGE_GAP). If every attempt clashes, spawnBody
+  // returns null and the caller skips the spawn this frame — next frame's
+  // refill retries after bodies have scrolled further.
   let x;
   if (opts && typeof opts.x === 'number') {
     x = opts.x;
@@ -22042,8 +22080,10 @@ function spawnBody(yBase, opts) {
       const cand = pickCandidateX();
       let clash = false;
       for (const ob of bodies) {
-        if (Math.abs(ob.x - cand.x) < MIN_BODY_DISTANCE &&
-            Math.abs(ob.y - yBase) < MIN_BODY_DISTANCE) {
+        const ddx = ob.x - cand.x;
+        const ddy = ob.y - yBase;
+        const reqDist = ob.radius + radius + MIN_EDGE_GAP;
+        if (ddx * ddx + ddy * ddy < reqDist * reqDist) {
           clash = true; break;
         }
       }
@@ -22166,7 +22206,12 @@ function effectiveMaxBodies() {
   // v1.7.4 tuning: ramp starts at 3:00 (was 2:00) and steps every 90s (was
   // 60s). Caps are unchanged. Gives the player a full minute of steady
   // density after the main speed cap hits before the board starts to thicken.
-  const ramped = d.maxBodies + Math.max(0, Math.floor((elapsedProgressionSeconds() - 180) / 90));
+  // v2.1.0: ramp-start is now per-difficulty via bodyCapRampStartSec
+  // (NORMAL/HARD = 60s, EXTREME/IMPOSSIBLE = 30s; default 180 preserves the
+  // pre-v2.1 behaviour for any difficulty without the field). Step interval
+  // stays a literal 90s.
+  const rampStartSec = (typeof d.bodyCapRampStartSec === 'number') ? d.bodyCapRampStartSec : 180;
+  const ramped = d.maxBodies + Math.max(0, Math.floor((elapsedProgressionSeconds() - rampStartSec) / 90));
   let capped = Math.min(ramped, d.maxBodiesCap);
   // v1.6.3 IMPOSSIBLE post-cap body growth: +1 every 120 s after 1:00.
   // Bypasses maxBodiesCap — density keeps climbing alongside speed.
@@ -22192,9 +22237,10 @@ function initBodies() {
   bodies = [];
   const max = effectiveMaxBodies();
   for (let i = 0; i < max; i++) {
-    // spawnBody may return null if MIN_BODY_DISTANCE rejects every candidate
-    // across 5 retries. BODY_SPACING (H/3.5) is well above MIN_BODY_DISTANCE
-    // so clashes are rare here, but guard anyway — never push null.
+    // spawnBody may return null if the hitbox-aware clash check rejects every
+    // candidate across 5 retries. BODY_SPACING (H/3.5) is well above the
+    // typical reqDist so clashes are rare here, but guard anyway — never
+    // push null.
     const b = spawnBody(H * 0.05 - i * BODY_SPACING);
     if (b) bodies.push(b);
   }
@@ -24131,6 +24177,35 @@ function findClosest() {
     if (d < bd) { bd = d; best = p; }
   }
   // Crack fragments are obstacles, not gravity sources — excluded from targeting.
+
+  // v2.1.0 DIRECTION-AWARE HYSTERESIS: prevent silent target flips that
+  // surprise the player mid-input. If the prior closestBody is still alive,
+  // hold onto it unless a candidate is meaningfully closer (≥ 25%). EXCEPT:
+  // if a closer candidate is dangerously close AND lies along the repel-push
+  // direction (i.e. holding the old target would shove the player into the
+  // new candidate), override the hysteresis and switch to the immediate
+  // threat — staying locked there would be the actual unsafe choice.
+  // Prior closestBody is "still alive" if it's in bodies OR a non-collected powerup.
+  const _priorAlive = closestBody && (
+    bodies.indexOf(closestBody) >= 0 ||
+    (powerups.indexOf(closestBody) >= 0 && !closestBody.collected)
+  );
+  if (_priorAlive && best && best !== closestBody) {
+    const prevD = dist(player, closestBody);
+    if (bd > prevD * 0.75) {
+      const DANGER_DIST = 80;
+      let override = false;
+      if (bd < DANGER_DIST) {
+        // Push direction from the OLD target = (player - oldTarget).
+        const pdx = player.x - closestBody.x, pdy = player.y - closestBody.y;
+        // Candidate offset = (candidate - player).
+        const cdx = best.x - player.x, cdy = best.y - player.y;
+        // Positive dot = candidate sits in the repel-push half-plane.
+        if (pdx * cdx + pdy * cdy > 0) override = true;
+      }
+      if (!override) best = closestBody;
+    }
+  }
   closestBody = best;
 }
 
@@ -24150,11 +24225,19 @@ function applyEnvironmentForces() {
         player.vy += ny * 0.15 * dtScale;
       }
     } else if (b.type === 'void') {
+      // v2.1.0 void overhaul: field radius × 4 → × 6 (wider influence zone),
+      // strength gets a slow sin "breath" so the void feels alive instead of
+      // constant. Linear falloff kept (per design). A visual field-boundary
+      // ring is drawn by drawVoid using b.voidRepellingPlayer + b.voidFieldR.
+      const fieldR = b.radius * 6;
       const dx = player.x - b.x, dy = player.y - b.y;
       const d = Math.hypot(dx, dy);
-      if (d < b.radius * 4 && d > 0.5) {
-        // Gentle repel away from the void, strongest at the center.
-        const repelStrength = 0.25 * (1 - d / (b.radius * 4));
+      b.voidFieldR = fieldR;     // exposed for the boundary-ring renderer
+      if (d < fieldR && d > 0.5) {
+        // Slow ~0.7 Hz breath: ±15% around the base strength so the field
+        // pulses without becoming jittery.
+        const breath = 1 + 0.15 * Math.sin(Date.now() * 0.0044);
+        const repelStrength = 0.25 * (1 - d / fieldR) * breath;
         player.vx += (dx / d) * repelStrength * dtScale;
         player.vy += (dy / d) * repelStrength * dtScale;
         nearVoid = true;
@@ -24184,12 +24267,16 @@ function applyForce() {
   const influence = Math.min(140 / d, 1.8);
 
   // Scale player responsiveness with current scroll speed so the controls
-  // don't feel sluggish when the world is screaming past. NORMAL.startSpeed
-  // (1.2) is the baseline — at that speed the multiplier is exactly 1.0 and
-  // the feel is identical to the original tuning. EXTREME max (6.0) gives
-  // ratio 5.0. The 0.4 factor keeps scaling sub-linear so it never goes
-  // twitchy. Clamped at >=1 so slow-mo doesn't reduce baseline responsiveness.
-  const speedRatio = Math.max(1, scrollSpeed() / DIFFICULTIES.NORMAL.startSpeed);
+  // don't feel sluggish when the world is screaming past. The baseline is a
+  // LITERAL 1.2 — the pre-v2.1 NORMAL.startSpeed — because that's the speed
+  // the original force/drag curves were calibrated against. (Tying the
+  // baseline to live NORMAL.startSpeed silently weakened forceMult by ~30%
+  // when v2.1 raised NORMAL.startSpeed to 1.7, so this is now pinned to
+  // the design intent.) At scroll 1.2 the multiplier is exactly 1.0 and the
+  // feel matches the original tuning. The 0.4 factor keeps scaling sub-
+  // linear so it never goes twitchy. Clamped at >=1 so slow-mo doesn't
+  // reduce baseline responsiveness.
+  const speedRatio = Math.max(1, scrollSpeed() / 1.2);
   const forceMult  = 1 + (speedRatio - 1) * 0.4;
   // Drag eases from 0.91 → 0.94 as speed ratio climbs from 1 → 5, letting
   // the player glide further per input at higher speeds.
@@ -24204,19 +24291,43 @@ function applyForce() {
 
   if (leftDown)  { player.vx += nx*f*dtScale; player.vy += ny*f*dtScale; }
   if (rightDown) {
-    // Dead zone fix: when planet is directly above and repel vector is nearly
-    // vertical, nudge it horizontally based on actual relative position. Nudge
-    // strength scales with scroll speed — faster world, less reaction time.
+    // Dead zone fix: when a body is above the player and the repel vector is
+    // nearly vertical (would otherwise just shove the player straight down),
+    // bend the direction horizontally so they actually escape sideways.
+    //
+    // v2.1.0 feel pass — five changes:
+    //   1. CENTER-OF-SCREEN DEFAULT when player is exactly aligned with the
+    //      body (side === 0): pick whichever direction points toward W/2 so
+    //      the nudge never shoves a wall-hugging player INTO the wall.
+    //   2. BODY-SIZE CONE — wider cone for bigger bodies (a 30px planet needs
+    //      a wider escape window than a 13px star). threshold scales linearly
+    //      with body.radius around a 15px pivot.
+    //   3. SMOOTH TAPER inside the cone — full strength at perfect vertical,
+    //      linearly fading to zero at the cone edge, replacing the previous
+    //      binary snap-in/snap-out feel.
+    //   4. PROXIMITY SCALING — closer body = stronger nudge (capped 2×),
+    //      because a body about to land on you is more urgent than one a body
+    //      length away.
+    //   5. STALE BASELINE — divisor pinned to literal 1.2 (matches the
+    //      speedRatio fix; was DIFFICULTIES.NORMAL.startSpeed which silently
+    //      weakened the nudge ~15% after the v2.1 NORMAL.startSpeed bump).
     let rnx = -nx, rny = -ny;
-    if (closestBody.y < player.y && Math.abs(rnx) < 0.15) {
-      const nudgeStrength = Math.min(
-        0.45,
-        0.15 + (scrollSpeed() / DIFFICULTIES.NORMAL.startSpeed) * 0.08
-      );
-      const side = player.x - closestBody.x;
-      rnx = (side === 0 ? -1 : Math.sign(side)) * nudgeStrength;
-      const mag = Math.sqrt(rnx * rnx + rny * rny);
-      rnx /= mag; rny /= mag;
+    if (closestBody.y < player.y) {
+      const coneThreshold = 0.15 + (closestBody.radius - 15) * 0.01;
+      const absRnx = Math.abs(rnx);
+      if (absRnx < coneThreshold) {
+        const taper        = 1 - (absRnx / coneThreshold);
+        const proxMul      = Math.min(2.0, Math.max(1.0, 80 / d));
+        const baseStrength = Math.min(0.45, 0.15 + (scrollSpeed() / 1.2) * 0.08);
+        const nudgeStrength = baseStrength * taper * proxMul;
+        const side = player.x - closestBody.x;
+        const sideSign = (side === 0)
+          ? (Math.sign((W / 2) - player.x) || -1)
+          : Math.sign(side);
+        rnx = sideSign * nudgeStrength;
+        const mag = Math.sqrt(rnx * rnx + rny * rny);
+        rnx /= mag; rny /= mag;
+      }
     }
     player.vx += rnx*f*dtScale; player.vy += rny*f*dtScale;
   }
@@ -24287,8 +24398,17 @@ function applyForce() {
   if (isNaN(player.vx)) player.vx = 0;
   if (isNaN(player.vy)) player.vy = 0;
   const spd = Math.hypot(player.vx, player.vy);
-  // EXTREME loosens the cap so players can actually outrun dense clusters
-  const speedCap = difficulty === 'EXTREME' ? 5.5 : 4.5;
+  // EXTREME loosens the floor so players can outrun dense clusters from t=0.
+  // v2.1.0: floor is the minimum cap, but the cap also SCALES with scroll
+  // speed via the empirically-playable ratio 1.375 (= old EXTREME player cap
+  // 5.5 ÷ old EXTREME maxSpeed 4.0 — i.e. "always ≥37.5% faster than the
+  // world"). Without this, the v2.1 scroll bumps + IMPOSSIBLE post-cap growth
+  // would leave the player physically unable to cross the canvas in body-
+  // flight-time at scroll > ~5. Floor wins at low speeds (no twitchiness on
+  // NORMAL), scroll-scaled wins at high speeds (HARD/EXTREME max, IMPOSSIBLE
+  // post-cap up to 7.2 → cap 9.9).
+  const speedCapFloor = difficulty === 'EXTREME' ? 5.5 : 4.5;
+  const speedCap = Math.max(speedCapFloor, scrollSpeed() * 1.375);
   if (spd > speedCap) { player.vx = player.vx/spd*speedCap; player.vy = player.vy/spd*speedCap; }
 
   player.x += player.vx * dtScale; player.y += player.vy * dtScale;
@@ -25520,15 +25640,17 @@ function _updateCore() {
       if (topY < 0) {
         yBase = topY - refillSpacing - Math.random() * 50;
       } else {
-        // All current bodies are on-screen; force the new one above the
-        // screen so nothing pops in mid-frame.
-        yBase = -50 - Math.random() * 100;
+        // All current bodies are on-screen; force the new one ≥ 100 px above
+        // so the v2.1.0 preview-strip fade-in (drawBodies / updatePixiBody*)
+        // has the full 100 px ramp before the body becomes fully visible.
+        yBase = -100 - Math.random() * 100;
       }
     }
     if (isNaN(yBase)) yBase = -100;
-    // v1.7.4: spawnBody returns null if MIN_BODY_DISTANCE rejects every
-    // candidate x for this yBase. Break out of the refill loop so the next
-    // frame retries — bodies will have scrolled slightly, opening new
+    // v1.7.4: spawnBody returns null if the hitbox-aware clash check
+    // rejects every candidate x for this yBase. Break out of the refill
+    // loop so the next frame retries — bodies will have scrolled slightly,
+    // opening new
     // positions. Prevents an infinite loop if the board is currently
     // oversaturated.
     const b = spawnBody(yBase);
@@ -27284,6 +27406,14 @@ function drawBodies() {
   // still owns full Canvas 2D rendering when pixi failed to init.
   if (pixiActive) return;
   for (const b of bodies) {
+    // v2.1.0 preview-strip: bodies with y<0 fade in linearly from y=-100 to
+    // y=0 (opacity 0→1) so the player sees a fading silhouette emerge from
+    // above the playfield BEFORE the body becomes an active threat. Beyond
+    // y=-100 the body is fully invisible (skip entirely). Below y=0 it's
+    // rendered as a simple outline+glow, no per-type detail — the detailed
+    // sprite kicks in once the body is fully on-screen.
+    const previewAlpha = b.y < 0 ? Math.max(0, 1 + b.y / 100) : 1;
+    if (previewAlpha <= 0.01) continue;
     const isTarget = b === closestBody && (state === 'playing' || state === 'tutorial');
     const pulse = Math.sin(b.pulse)*0.3+0.7;
     const glowR = b.radius * (2.6+Math.sin(b.pulse)*0.35);
@@ -27295,10 +27425,22 @@ function drawBodies() {
     if (!pixiActive) {
       ctx.save();
       ctx.translate(b.x, b.y);
-      ctx.globalAlpha = 0.32 * pulse;
+      ctx.globalAlpha = 0.32 * pulse * previewAlpha;
       ctx.fillStyle = b.cachedGlow;
       ctx.beginPath(); ctx.arc(0, 0, glowR, 0, 6.28); ctx.fill();
       ctx.restore();
+    }
+
+    if (previewAlpha < 1) {
+      // Preview mode: simplified outline only, skip per-type detail to keep
+      // the silhouette quiet (and to avoid e.g. an eye blinking at the player
+      // while still in preview).
+      ctx.globalAlpha = previewAlpha;
+      ctx.strokeStyle = b.glowColor;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(b.x, b.y, b.radius, 0, 6.28); ctx.stroke();
+      ctx.globalAlpha = 1;
+      continue;
     }
 
     // Body
@@ -27316,25 +27458,34 @@ function drawBodies() {
     else if (b.type === 'mirror')      safeDrawBody(b, drawMirror);
     else if (b.type === 'skull')       safeDrawBody(b, drawSkull);
 
-    // Target indicator: bright ring + line to player when active.
+    // Target indicator: prominent ring + line to player when active.
+    // v2.1.0 Option-B feel pass: neutral=white at 60% opacity (always on, no
+    // pulse), input=cyan/red at 90% with a 5Hz pulse (visible verb confirmation).
+    // Width 2px, ring sits +8px outside body with ±3px sine breathe. Used in
+    // play AND tutorial — applyForce/render path is shared; tutorial uses the
+    // same findClosest target.
     // Step 3c: pixi handles both via updatePixiBodyEffectsLayer.
     if (isTarget && !pixiActive) {
-      const orbRgb = getOrbBonus().color;
-      const lineColor = leftDown ? 'rgba(80,200,255,' : rightDown ? 'rgba(255,120,80,' : `rgba(${orbRgb},`;
-      ctx.globalAlpha = 0.55 + 0.25*Math.sin(frame*0.18);
-      ctx.strokeStyle = lineColor+'0.7)';
-      ctx.lineWidth = 1.5;
-      ctx.beginPath(); ctx.arc(b.x,b.y,b.radius+5+Math.sin(frame*0.18)*2,0,6.28); ctx.stroke();
+      const inputHeld = leftDown || rightDown;
+      const ringRgb = leftDown ? '80,200,255' : rightDown ? '255,120,80' : '230,235,245';
+      const baseAlpha = inputHeld ? 0.9 : 0.6;
+      // 5Hz pulse on input: frame * 0.52 ≈ 5 cycles/sec at 60fps. Neutral = no pulse.
+      const pulseAlpha = inputHeld ? (baseAlpha - 0.15 + 0.15 * Math.sin(frame * 0.52)) : baseAlpha;
+      const ringR = b.radius + 8 + (inputHeld ? Math.sin(frame * 0.52) * 3 : 0);
+      ctx.globalAlpha = pulseAlpha;
+      ctx.strokeStyle = `rgba(${ringRgb},1)`;
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(b.x, b.y, ringR, 0, 6.28); ctx.stroke();
 
-      if (leftDown || rightDown) {
+      if (inputHeld) {
         // Void proximity warps attract/repel — signal that by overriding the
         // dashed-line color with a dark purple tint.
-        const dashColor = playerInVoidRange ? 'rgba(140,60,200,' : lineColor;
-        ctx.globalAlpha = 0.3;
-        ctx.strokeStyle = dashColor+'0.8)';
-        ctx.lineWidth = 1;
-        ctx.setLineDash([5,5]);
-        ctx.beginPath(); ctx.moveTo(player.x,player.y); ctx.lineTo(b.x,b.y); ctx.stroke();
+        const dashRgb = playerInVoidRange ? '140,60,200' : ringRgb;
+        ctx.globalAlpha = 0.65;
+        ctx.strokeStyle = `rgba(${dashRgb},1)`;
+        ctx.lineWidth = 2;
+        ctx.setLineDash([6, 4]);
+        ctx.beginPath(); ctx.moveTo(player.x, player.y); ctx.lineTo(b.x, b.y); ctx.stroke();
         ctx.setLineDash([]);
       }
     }
@@ -28450,14 +28601,18 @@ function drawScreaming(b, tctx = ctx) {
 function drawVoid(b, tctx = ctx) {
   const ctx = tctx;
   ctx.save();
-  // Dashed boundary at the exact repel-zone edge (radius*4). Rotates slowly
-  // so the edge reads as an active force field.
+  // Dashed boundary at the exact repel-zone edge. v2.1.0: field radius is
+  // now ×6 (was ×4) — sourced from b.voidFieldR (set in applyEnvironmentForces).
+  // The boundary brightens when the player is actively inside the field so it
+  // reads as a hot "force boundary" not just a decorative circle.
   ctx.save();
-  ctx.strokeStyle = 'rgba(100,0,180,0.3)';
-  ctx.lineWidth = 1.4;
+  const _voidFieldR = b.voidFieldR || (b.radius * 6);
+  const _voidActive = !!b.voidRepellingPlayer;
+  ctx.strokeStyle = _voidActive ? 'rgba(150,80,220,0.75)' : 'rgba(100,0,180,0.3)';
+  ctx.lineWidth = _voidActive ? 2 : 1.4;
   ctx.setLineDash([8, 8]);
   ctx.lineDashOffset = -b.voidPulse * 10; // voidPulse advances each frame
-  ctx.beginPath(); ctx.arc(b.x, b.y, b.radius * 4, 0, 6.28); ctx.stroke();
+  ctx.beginPath(); ctx.arc(b.x, b.y, _voidFieldR, 0, 6.28); ctx.stroke();
   ctx.restore();
   // Expanding sonar-style pulse rings inside the boundary. 3 concentric
   // rings at 120deg phase offsets, oscillating between radius*1.5 and *3.5.
@@ -30575,19 +30730,23 @@ function drawPowerups() {
 
     // Target indicator when powerup is closest body. v1.6.4: include
     // tutorial so the ring/dashed-line shows during powerup pickup steps.
+    // v2.1.0 Option-B match — same prominent indicator as the body path.
     if (p === closestBody && (state === 'playing' || state === 'tutorial')) {
-      const orbRgb = getOrbBonus().color;
-      const lineColor = leftDown ? 'rgba(80,200,255,' : rightDown ? 'rgba(255,120,80,' : `rgba(${orbRgb},`;
-      ctx.globalAlpha = 0.55 + 0.25*Math.sin(frame*0.18);
-      ctx.strokeStyle = lineColor+'0.7)';
-      ctx.lineWidth = 1.5;
-      ctx.beginPath(); ctx.arc(p.x,p.y,r*1.55+5+Math.sin(frame*0.18)*2,0,6.28); ctx.stroke();
-      if (leftDown || rightDown) {
-        ctx.globalAlpha = 0.3;
-        ctx.strokeStyle = lineColor+'0.8)';
-        ctx.lineWidth = 1;
-        ctx.setLineDash([5,5]);
-        ctx.beginPath(); ctx.moveTo(player.x,player.y); ctx.lineTo(p.x,p.y); ctx.stroke();
+      const inputHeld = leftDown || rightDown;
+      const ringRgb = leftDown ? '80,200,255' : rightDown ? '255,120,80' : '230,235,245';
+      const baseAlpha = inputHeld ? 0.9 : 0.6;
+      const pulseAlpha = inputHeld ? (baseAlpha - 0.15 + 0.15 * Math.sin(frame * 0.52)) : baseAlpha;
+      const ringR = r * 1.55 + 8 + (inputHeld ? Math.sin(frame * 0.52) * 3 : 0);
+      ctx.globalAlpha = pulseAlpha;
+      ctx.strokeStyle = `rgba(${ringRgb},1)`;
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(p.x, p.y, ringR, 0, 6.28); ctx.stroke();
+      if (inputHeld) {
+        ctx.globalAlpha = 0.65;
+        ctx.strokeStyle = `rgba(${ringRgb},1)`;
+        ctx.lineWidth = 2;
+        ctx.setLineDash([6, 4]);
+        ctx.beginPath(); ctx.moveTo(player.x, player.y); ctx.lineTo(p.x, p.y); ctx.stroke();
         ctx.setLineDash([]);
       }
     }
@@ -38682,7 +38841,7 @@ function dmSpawnBodyOfType(type) {
   if (devmodeRadiusMode === 'min' && range) opts.radius = range[0];
   else if (devmodeRadiusMode === 'max' && range) opts.radius = range[1];
   // 'rand' → leave opts.radius unset; spawnBody uses its built-in random range.
-  // v1.7.4: MIN_BODY_DISTANCE rejection can return null — guard the push.
+  // v1.7.4: hitbox-aware clash rejection can return null — guard the push.
   // Devmode user can tap again if the first click lands on a crowded area.
   const b = spawnBody(yBase, opts);
   if (b) bodies.push(b);
