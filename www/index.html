@@ -23433,8 +23433,17 @@ function _activateCombo_default(key, x, y) {
       // path — hyperspeed uses HYPERSPEED_COMBO_DURATION, no syncComboDurations
       // extension to shield's 6s. Keeps re-casts at the same cadence as
       // fresh casts.
-      if (activeEffects.hyperspeed <= 0) activateHyperspeed(HYPERSPEED_COMBO_DURATION);
-      if (activeEffects.shield <= 0) { shieldEndTime = Date.now() + SHIELD_DURATION(); activeEffects.shield = SHIELD_DURATION(); shieldBroken = false; bastion2BonusMs = 0; }
+      // v2.1.0 (Bug A): unconditionally refresh BOTH halves so re-grabbing the
+      // JUGGERNAUT pair (or a single half that routes here) EXTENDS a live
+      // combo instead of no-op'ing while both halves still have time. The old
+      // `<= 0` guards meant a fresh pickup did nothing unless a half had
+      // already expired. Mirrors the v1.9.0 ghost_shield fix: hyperspeed via
+      // activateHyperspeed (already forward-only — never shrinks the timer),
+      // shield moved forward-only so a longer Fortress timer isn't downgraded.
+      activateHyperspeed(HYPERSPEED_COMBO_DURATION);
+      const _now = Date.now();
+      const _sd = SHIELD_DURATION();
+      if (_now + _sd > shieldEndTime) { shieldEndTime = _now + _sd; activeEffects.shield = _sd; shieldBroken = false; bastion2BonusMs = 0; }
     } else if (key === 'ghost_shield') {
       // v1.9.0 (Bug B): unconditionally refresh BOTH halves so re-grabbing the
       // WRAITH pair (or a single shield/ghost that routes here) EXTENDS a live
@@ -23605,8 +23614,13 @@ function _activateCombo_default(key, x, y) {
     // call stretched hyperspeed up to shield's 6s baseline, making the
     // combo feel ~70% longer than the other two. Signature mechanic (the
     // juggernautPendingShieldRefresh post-landing refresh) is preserved.
-    if (activeEffects.hyperspeed <= 0) activateHyperspeed(HYPERSPEED_COMBO_DURATION);
-    if (activeEffects.shield <= 0) { shieldEndTime = Date.now() + SHIELD_DURATION(); activeEffects.shield = SHIELD_DURATION(); shieldBroken = false; bastion2BonusMs = 0; }
+    // v2.1.0 (Bug A): unconditionally refresh BOTH halves (was `<= 0` no-op
+    // guards that silently did nothing mid-active). Hyperspeed via
+    // activateHyperspeed (forward-only), shield moved forward-only so a longer
+    // Fortress timer isn't downgraded. Mirrors the v1.9.0 ghost_shield fix.
+    activateHyperspeed(HYPERSPEED_COMBO_DURATION);
+    { const _now = Date.now(); const _sd = SHIELD_DURATION();
+      if (_now + _sd > shieldEndTime) { shieldEndTime = _now + _sd; activeEffects.shield = _sd; shieldBroken = false; bastion2BonusMs = 0; } }
     juggernautPendingShieldRefresh = true;
     // v1.7.0: armored ram needs more weight on activation. Barrier kills
     // are already shake-covered via shakeMassDestroy in the barrier sweep.
@@ -23614,8 +23628,15 @@ function _activateCombo_default(key, x, y) {
     activeCombos[key] = { def, deps: ['hyperspeed'] };
   } else if (key === 'ghost_shield') {
     // WRAITH: during ghost destroy on contact; when ghost ends, shield absorbs 1 hit
-    if (activeEffects.ghost <= 0) { ghostEndTime = Date.now() + GHOST_DURATION(); activeEffects.ghost = GHOST_DURATION(); }
-    if (activeEffects.shield <= 0) { shieldEndTime = Date.now() + SHIELD_DURATION(); activeEffects.shield = SHIELD_DURATION(); shieldBroken = false; bastion2BonusMs = 0; }
+    // v2.1.0 (Bug A consistency): unconditionally refresh BOTH halves (was
+    // `<= 0` no-op guards that silently did nothing mid-active), forward-only
+    // so a longer Eternal Phantom ghost / Fortress shield isn't downgraded.
+    // Matches this combo's REFRESH path + the hyperspeed_shield fix.
+    { const _now = Date.now();
+      const _gd = GHOST_DURATION();
+      if (_now + _gd > ghostEndTime) { ghostEndTime = _now + _gd; activeEffects.ghost = _gd; }
+      const _sd = SHIELD_DURATION();
+      if (_now + _sd > shieldEndTime) { shieldEndTime = _now + _sd; activeEffects.shield = _sd; shieldBroken = false; bastion2BonusMs = 0; } }
     syncComboDurations('ghost', 'shield');
     activeCombos[key] = { def, deps: ['ghost'] };
   } else if (key === 'ghost_ghost') {
@@ -23679,7 +23700,10 @@ function activatePair(a, b) {
 
   // Both effects were gained simultaneously — identical timestamp triggers
   // Rule 3 (random tie-break) on the next single pickup.
-  lastGainedEffects = [a.type, b.type];
+  // v2.1.0 (Bug B): carry forward still-active prior effects instead of
+  // overwriting, so a partner picked up two grabs ago can still combo. Newest
+  // first, dedup the two just-gained, drop expired, cap at 4 for sane Rule-3.
+  lastGainedEffects = [a.type, b.type, ...lastGainedEffects.filter(t => t !== a.type && t !== b.type && effectActive(t))].slice(0, 4);
   lastGainedTimestamp = frame;
   // BUTTERFLY EFFECT (v1.9.0): no longer duplicates on pickup — it now pulls
   // butterflied powerups toward the player at spawn (see the powerup update loop).
@@ -24169,7 +24193,10 @@ function activatePowerup(type, x, y) {
   if (key) activateCombo(key, x, y);
 
   // Record this pickup as the most-recently-gained event.
-  lastGainedEffects = [type];
+  // v2.1.0 (Bug B): carry forward still-active prior effects (newest first,
+  // dedup self, drop expired, cap at 4) instead of overwriting history — lets
+  // an effect gained a couple pickups ago still be a valid combo partner.
+  lastGainedEffects = [type, ...lastGainedEffects.filter(t => t !== type && effectActive(t))].slice(0, 4);
   lastGainedTimestamp = frame;
   // Fortune Favors (Drifter Chance T2) timestamp tracking — used by the
   // reworked natural-spawn bias to find the longest-expired type.
