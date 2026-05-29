@@ -17633,7 +17633,7 @@ let runStats = { totalPassed: 0, totalDestroyed: 0, pointsFromPassing: 0, points
 // Example: TIME_DILATION = 60 → 1 real second = 60 in-game seconds for
 // progression, apocalypse triggers in ~10 real seconds.
 const TIME_DILATION = 1;
-const GAME_VERSION = '2.0.0';
+const GAME_VERSION = '2.1.0';
 try {
   const vl = document.getElementById('versionLabel');
   if (vl) vl.textContent = 'v' + GAME_VERSION;
@@ -22030,14 +22030,6 @@ function resetEventState() {
   eventWarnings = [];
 }
 
-// TEMPORARY DEBUG CHEAT — REMOVE BEFORE RELEASE (grep: EVENTTEST_CHEAT).
-// Pilot name "EVENTTEST" forces every eligible event to fire immediately at
-// phase entry (overrides the random rolls), so all four events can be seen in
-// a single run without RNG luck. Phase 3 forces BOTH events sequentially.
-function _eventTestCheatActive() {
-  try { return getUsername().toUpperCase() === 'EVENTTEST'; } catch { return false; } // EVENTTEST_CHEAT
-}
-
 // Mark an event fired (once-per-run) and queue it. startAt is in progression-
 // sec; the warning fires EVENT_WARNING_LEAD_SEC earlier.
 function _scheduleEvent(key, startAt) {
@@ -22059,18 +22051,10 @@ function _rollEventChance(key) {
 // event(s) at a random offset chosen so warning + 30s lock complete inside the
 // phase window (P2 = 120s, P3 = 120s, P4 open-ended until apocalypse).
 function _onEventPhaseEntry(phase, es) {
-  const cheat = _eventTestCheatActive();   // EVENTTEST_CHEAT
   if (phase === 2) {
-    if (cheat) { _scheduleEvent('meteor', es + EVENT_WARNING_LEAD_SEC); return; }   // EVENTTEST_CHEAT
     if (eventState.fired.meteor) return;
     if (_rollEventChance('meteor')) _scheduleEvent('meteor', es + 5 + Math.random() * 75);
   } else if (phase === 3) {
-    if (cheat) {                                                                    // EVENTTEST_CHEAT
-      const t1 = es + EVENT_WARNING_LEAD_SEC;                                       // EVENTTEST_CHEAT
-      _scheduleEvent('scream', t1);                                                 // EVENTTEST_CHEAT
-      _scheduleEvent('tentacle', t1 + EVENT_DURATION_SEC + EVENT_PHASE3_GAP_SEC);   // EVENTTEST_CHEAT
-      return;                                                                       // EVENTTEST_CHEAT
-    }
     const wantScream = !eventState.fired.scream && _rollEventChance('scream');
     const wantTentacle = !eventState.fired.tentacle && _rollEventChance('tentacle');
     if (wantScream && wantTentacle) {
@@ -22084,7 +22068,6 @@ function _onEventPhaseEntry(phase, es) {
       _scheduleEvent('tentacle', es + 5 + Math.random() * 75);
     }
   } else if (phase === 4) {
-    if (cheat) { _scheduleEvent('mirror', es + EVENT_WARNING_LEAD_SEC); return; }   // EVENTTEST_CHEAT
     if (eventState.fired.mirror) return;
     if (_rollEventChance('mirror')) _scheduleEvent('mirror', es + 5 + Math.random() * 85);
   }
@@ -32805,41 +32788,6 @@ document.getElementById('startBtn').addEventListener('click', ()=>{
     refreshActiveTreeCache();
     console.log('[TREETEST] Crystals granted, all trees unlocked, tree state reset, tutorial skipped');
     // Fall through — the run starts normally so the tester can play a round.
-  }
-  // DEV cheat: pilot name "HELIOSTEST" — TEMPORARY. Grants crystals, unlocks all
-  // trees, AND unlocks + EQUIPS the new Helios orb so its 7 trees are testable
-  // immediately. TODO: REMOVE BEFORE RELEASE — grep "HELIOSTEST".
-  if (getUsername().toUpperCase() === 'HELIOSTEST') {
-    totalCrystals = Math.max(totalCrystals, 5000000);
-    beatDifficulty.NORMAL = true; beatDifficulty.HARD = true; beatDifficulty.EXTREME = true;
-    for (const orb of Object.keys(orbTrees)) orbTrees[orb] = freshOrbTreeState(orb);
-    for (const k of Object.keys(treesUnlocked)) treesUnlocked[k] = true;
-    if (ORB_DEFS.helios && !unlockedOrbs.includes('helios')) unlockedOrbs.push('helios');
-    activeOrb = 'helios';
-    try { localStorage.setItem('drift_orb', 'helios'); } catch {}
-    saveCrystals(); saveBeatFlags(); saveTreeState(); saveTreesUnlocked();
-    saveUnlockedOrbs(); saveTutorialCompleted(true);
-    refreshActiveTreeCache();
-    console.log('[HELIOSTEST] Helios unlocked + equipped, all trees unlocked, tutorial skipped (TEMPORARY debug cheat)');
-  }
-  // DEV cheat: pilot name "ORBUNLOCKTEST" — TEMPORARY. Arms the Sirius orb-unlock
-  // convos for testing: introduces Sirius, pushes every base-orb kill stat past
-  // its threshold, and RELOCKS all 5 enhanced orbs (so they re-earn). Then: pick
-  // any BASE orb (Drifter/Phantom/Inferno/Warp/Bulwark) and DIE — the matching
-  // unlock convo fires. TODO: REMOVE BEFORE RELEASE — grep "ORBUNLOCKTEST".
-  if (getUsername().toUpperCase() === 'ORBUNLOCKTEST') {
-    siriusUsed = true; saveSiriusUsed(true);
-    saveTutorialCompleted(true);
-    for (const enh of Object.keys(ENHANCED_UNLOCK)) {
-      const spec = ENHANCED_UNLOCK[enh];
-      if (!stats.perOrb[spec.base]) stats.perOrb[spec.base] = { kills: 0, runs: 0 };
-      stats.perOrb[spec.base].kills = spec.threshold + 50;   // past the threshold
-      orbUnlockSeen[enh] = false;                            // relocked → re-earn via convo
-      if (!spec.tease) { const i = unlockedOrbs.indexOf(enh); if (i >= 0) unlockedOrbs.splice(i, 1); }
-    }
-    if (!unlockedOrbs.includes(activeOrb)) { activeOrb = 'cyan'; saveOrb(); }
-    saveStats(); saveOrbUnlockSeen(); saveUnlockedOrbs();
-    console.log('[ORBUNLOCKTEST] Sirius armed + kill stats maxed + 5 enhanced orbs relocked. Play a base orb and die to fire its unlock convo. (TEMPORARY)');
   }
   // DEV cheat: pilot name "DRIFTRESET" (case-insensitive) wipes ALL local
   // progress — crystals, difficulty-beat flags, every orb tree's ranks +
