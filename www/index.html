@@ -23416,10 +23416,9 @@ function _activateCombo_default(key, x, y) {
     } else if (key === 'nova_shield') {
       // Refresh shield duration but leave pulsarNextNovaTime alone so the
       // auto-nova cadence continues uninterrupted.
-      shieldEndTime = Date.now() + SHIELD_DURATION();
-      activeEffects.shield = SHIELD_DURATION();
-      shieldBroken = false;
-      bastion2BonusMs = 0;
+      // v2.1.0 (forward-only): don't downgrade a longer-active Fortress shield.
+      { const _now = Date.now(); const _sd = SHIELD_DURATION();
+        if (_now + _sd > shieldEndTime) { shieldEndTime = _now + _sd; activeEffects.shield = _sd; shieldBroken = false; bastion2BonusMs = 0; } }
     } else if (key === 'hyperspeed_ghost') {
       activateHyperspeed(HYPERSPEED_COMBO_DURATION, 2);
       // Don't downgrade ghost if Eternal Phantom's longer timer is running.
@@ -23484,9 +23483,11 @@ function _activateCombo_default(key, x, y) {
     } else if (key === 'nova_ghost') {
       // Phantom Blast refresh: reset the damage aura and the ghost half so
       // neither expires mid-combo.
-      ghostEndTime = Date.now() + GHOST_DURATION();
-      activeEffects.ghost = GHOST_DURATION();
-      phantomBlastEndTime = Date.now() + GHOST_DURATION();
+      // v2.1.0 (forward-only): don't downgrade a longer-active Eternal Phantom
+      // ghost. The phantom-blast aura always refreshes (combo's own mechanic).
+      { const _now = Date.now(); const _gd = GHOST_DURATION();
+        if (_now + _gd > ghostEndTime) { ghostEndTime = _now + _gd; activeEffects.ghost = _gd; }
+        phantomBlastEndTime = _now + _gd; }
     }
     // Eternal Phantom takes precedence over Spectral Rush for the label — its
     // ghost timer is longer and defines the dominant effect.
@@ -23582,16 +23583,19 @@ function _activateCombo_default(key, x, y) {
     activeCombos[key] = { def, deps: ['hyperspeed'] };
   } else if (key === 'nova_ghost') {
     // PHANTOM BLAST: 8s damage aura
-    ghostEndTime = Date.now() + GHOST_DURATION();
-    activeEffects.ghost = GHOST_DURATION();
-    phantomBlastEndTime = Date.now() + GHOST_DURATION();
+    // v2.1.0 (forward-only): don't downgrade a longer-active Eternal Phantom
+    // ghost. The phantom-blast aura always refreshes (combo's own mechanic).
+    { const _now = Date.now(); const _gd = GHOST_DURATION();
+      if (_now + _gd > ghostEndTime) { ghostEndTime = _now + _gd; activeEffects.ghost = _gd; }
+      phantomBlastEndTime = _now + _gd; }
     activeCombos[key] = { def, deps: ['ghost'] };
   } else if (key === 'nova_shield') {
     // PULSAR: full shield + auto nova every 4s
-    shieldEndTime = Date.now() + SHIELD_DURATION();
-    activeEffects.shield = SHIELD_DURATION();
-    shieldBroken = false;
-    bastion2BonusMs = 0;
+    // v2.1.0 (forward-only): don't downgrade a longer-active Fortress shield.
+    // Pulsar cadence + bookkeeping below stay unconditional so the combo still
+    // fires even when the shield half is left at its longer timer.
+    { const _now = Date.now(); const _sd = SHIELD_DURATION();
+      if (_now + _sd > shieldEndTime) { shieldEndTime = _now + _sd; activeEffects.shield = _sd; shieldBroken = false; bastion2BonusMs = 0; } }
     pulsarNextNovaTime = Date.now();
     // endTime: real Pulsar lifetime, used to expire it if a Dead Star golden
     // shield is holding the shield proxy perpetually (see combo bookkeeping).
