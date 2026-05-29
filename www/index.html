@@ -17266,6 +17266,12 @@ const PGS = (() => {
         treesUnlocked: mergeTreesUnlocked(local.treesUnlocked, remote.treesUnlocked),
         tutorialCompleted: !!(local.tutorialCompleted || remote.tutorialCompleted),
         rainbowOrbUsed: !!(local.rainbowOrbUsed || remote.rainbowOrbUsed),
+        // v2.1.2: one-time cutscene + orb-unlock flags must be carried through
+        // merge (OR), or a reinstall replays Ascension / second-death / Sirius
+        // and re-arms enhanced-orb unlocks, then the re-upload wipes the cloud copy.
+        secondDeathUsed: !!(local.secondDeathUsed || remote.secondDeathUsed),
+        siriusUsed: !!(local.siriusUsed || remote.siriusUsed),
+        orbUnlockSeen: mergeOrbUnlockSeen(local.orbUnlockSeen, remote.orbUnlockSeen),
         stats: mergeStats(local.stats, remote.stats),
       };
     }
@@ -17280,6 +17286,15 @@ const PGS = (() => {
       beatDifficulty: mergeBeat(local.beatDifficulty, remote.beatDifficulty),
       treesUnlocked: mergeTreesUnlocked(local.treesUnlocked, remote.treesUnlocked),
       tutorialCompleted: !!(local.tutorialCompleted || remote.tutorialCompleted),
+      // v2.1.2: one-time cutscene + orb-unlock flags — OR-merged so they survive
+      // reinstall / cross-device sign-in. This is the always-used path
+      // (SAVE_VERSION is a constant, so same-version installs hit this branch);
+      // omitting them here is what replayed the Ascension cutscene after a
+      // reinstall and erased the flags from the cloud on the next upload.
+      rainbowOrbUsed: !!(local.rainbowOrbUsed || remote.rainbowOrbUsed),
+      secondDeathUsed: !!(local.secondDeathUsed || remote.secondDeathUsed),
+      siriusUsed: !!(local.siriusUsed || remote.siriusUsed),
+      orbUnlockSeen: mergeOrbUnlockSeen(local.orbUnlockSeen, remote.orbUnlockSeen),
       stats: mergeStats(local.stats, remote.stats),
     };
   }
@@ -17423,6 +17438,17 @@ const PGS = (() => {
     const out = {};
     const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
     for (const k of keys) out[k] = Math.max(a[k] | 0, b[k] | 0);
+    return out;
+  }
+  // v2.1.2: orb-unlock "convo seen / committed" merge — per-key OR (a true on
+  // either device sticks, grow-only). Without carrying this through merge, a
+  // reinstall lost every enhanced-orb's earned-unlock state and the Sirius
+  // unlock convos re-armed; see also the cutscene one-time flags below.
+  function mergeOrbUnlockSeen(a, b) {
+    a = a || {}; b = b || {};
+    const out = {};
+    const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+    for (const k of keys) if (a[k] || b[k]) out[k] = true;
     return out;
   }
   // Beat-difficulty merge: OR across devices (either device unlocking counts).
@@ -17737,7 +17763,7 @@ let runStats = { totalPassed: 0, totalDestroyed: 0, pointsFromPassing: 0, points
 // Example: TIME_DILATION = 60 → 1 real second = 60 in-game seconds for
 // progression, apocalypse triggers in ~10 real seconds.
 const TIME_DILATION = 1;
-const GAME_VERSION = '2.1.1';
+const GAME_VERSION = '2.1.2';
 try {
   const vl = document.getElementById('versionLabel');
   if (vl) vl.textContent = 'v' + GAME_VERSION;
