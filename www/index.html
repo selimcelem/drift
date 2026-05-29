@@ -5212,6 +5212,25 @@ const BODY_SPACING = Math.floor(H / 3.5);
 // the "vertical wall of bodies" exploit at high difficulty: same-column
 // same-size bodies now need ≥ 2*r + 80 separation.
 const MIN_EDGE_GAP = 80;
+// v2.1.0 — hazard-aware effective spacing radius (Option A). The clash check
+// above uses CORE radius, but two body types carry a dynamic hitbox that
+// reaches well past their core disc, so two of them could spawn at a "legal"
+// 80px core-edge gap while their extended hitboxes leave a near-zero
+// player-passable corridor (worst observed: THE WRITHING DEEP, all-tentacle
+// field). This helper returns the radius to feed the SPAWN clash check so the
+// 80px gap is guaranteed between HAZARD edges, not core edges. It governs
+// spawn PLACEMENT only — bodyHits() hit detection is unchanged. Extend here if
+// another type ever grows an extended hitbox.
+//   tentacle: arm tip reaches b.radius + b.radius*1.2 = 2.2*r (bodyHits), plus
+//             the segment hit threshold (8 + PLAYER_R - 2 = 12px) → 2.2r + 12.
+//   toothed:  spike tip reaches r + spikeLen*(0.75..1.0), spikeLen = 0.6r, so
+//             max 1.6r, plus the tip hit threshold (PLAYER_R + 6 = 12px) → 1.6r + 12.
+function effectiveSpacingRadius(b) {
+  if (!b) return 0;
+  if (b.type === 'tentacle') return b.radius * 2.2 + 12;
+  if (b.type === 'toothed')  return b.radius * 1.6 + 12;
+  return b.radius;
+}
 // Round-robin spawn zone (0=left, 1=center, 2=right) so consecutive bodies
 // land in different zones for natural horizontal spread.
 let lastSpawnZone = -1;
@@ -22121,11 +22140,22 @@ function drawEventWarnings() {
   ctx.save();
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
+  // Fit-to-viewport: 36px is the ideal/max, but long names ("THE WRITHING
+  // DEEP") overflow narrow phones. Measure the real Orbitron metrics at 36px
+  // and, if the string would exceed the safe width (viewport − 16px each
+  // side) even at peak pulse, scale the base size down proportionally. Short
+  // names stay at the full 36px. Pulse/fade/color behavior is unchanged.
+  const PULSE_MAX = 1.08;
+  const maxW = W - 32;
   for (const w of eventWarnings) {
     const age = now - w.startTime;
     const fade = 1 - age / w.durationMs;          // 1 → 0
     const pulse = 1 + 0.08 * Math.sin(age * 0.012);
-    const fontPx = Math.round(36 * pulse);
+    ctx.font = `900 36px "Orbitron", monospace`;
+    const w36 = ctx.measureText(w.text).width || 1;
+    let basePx = 36;
+    if (w36 * PULSE_MAX > maxW) basePx = 36 * (maxW / (w36 * PULSE_MAX));
+    const fontPx = Math.max(12, Math.round(basePx * pulse));
     ctx.font = `900 ${fontPx}px "Orbitron", monospace`;
     const x = W * 0.5, y = H * 0.35;
     ctx.lineWidth = 4;
@@ -22265,13 +22295,17 @@ function spawnBody(yBase, opts) {
       return { x: cx, zone: Math.min(2, Math.floor(cx / (W / 3))) };
     };
     let picked = null;
+    // Hazard-aware spacing (Option A): use the effective (extended-hitbox)
+    // radius for both bodies so tentacle/toothed pairs keep a true 80px gap
+    // between hazard edges. Candidate's effR is constant across attempts.
+    const candEffR = effectiveSpacingRadius({ type, radius });
     for (let attempt = 0; attempt < 5; attempt++) {
       const cand = pickCandidateX();
       let clash = false;
       for (const ob of bodies) {
         const ddx = ob.x - cand.x;
         const ddy = ob.y - yBase;
-        const reqDist = ob.radius + radius + MIN_EDGE_GAP;
+        const reqDist = effectiveSpacingRadius(ob) + candEffR + MIN_EDGE_GAP;
         if (ddx * ddx + ddy * ddy < reqDist * reqDist) {
           clash = true; break;
         }
