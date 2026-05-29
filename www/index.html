@@ -5229,9 +5229,9 @@ const DIFFICULTIES = {
   // intentionally LEFT UNCHANGED — the minSpawnIntervalMs floor always wins
   // the max() in maybeSpawnPowerup, so adjusting powerupFrequency would be a
   // cosmetic no-op. The floor is the actual powerup-density knob.
-  NORMAL:     { startSpeed: 1.7, maxSpeed: 3.0, speedCapScore: 60, bodyCapRampStartSec: 60, maxBodies: 3, maxBodiesCap: 4,  bodySpacing: 180, powerupFrequency: 2.0,  pairSpawnChance: 0.13,  minSpawnIntervalMs: 2500, crystalMult: 0.75 },
-  HARD:       { startSpeed: 2.3, maxSpeed: 3.5, speedCapScore: 60, bodyCapRampStartSec: 60, maxBodies: 4, maxBodiesCap: 5,  bodySpacing: 180, powerupFrequency: 1.7,  pairSpawnChance: 0.105, minSpawnIntervalMs: 3125, crystalMult: 1.0 },
-  EXTREME:    { startSpeed: 2.8, maxSpeed: 4.0, speedCapScore: 60, bodyCapRampStartSec: 30, maxBodies: 4, maxBodiesCap: 6,  bodySpacing: 180, powerupFrequency: 1.44, pairSpawnChance: 0.08,  minSpawnIntervalMs: 3750, crystalMult: 1.25 },
+  NORMAL:     { startSpeed: 1.7, maxSpeed: 3.2, speedCapScore: 60, bodyCapRampStartSec: 60, maxBodies: 3, maxBodiesCap: 5,  bodySpacing: 180, powerupFrequency: 2.0,  pairSpawnChance: 0.13,  minSpawnIntervalMs: 2500, crystalMult: 0.75 },
+  HARD:       { startSpeed: 2.3, maxSpeed: 3.7, speedCapScore: 60, bodyCapRampStartSec: 60, maxBodies: 4, maxBodiesCap: 6,  bodySpacing: 180, powerupFrequency: 1.7,  pairSpawnChance: 0.105, minSpawnIntervalMs: 3125, crystalMult: 1.0 },
+  EXTREME:    { startSpeed: 2.8, maxSpeed: 4.2, speedCapScore: 60, bodyCapRampStartSec: 30, maxBodies: 4, maxBodiesCap: 7,  bodySpacing: 180, powerupFrequency: 1.44, pairSpawnChance: 0.08,  minSpawnIntervalMs: 3750, crystalMult: 1.25 },
   // v1.6.3 IMPOSSIBLE: Extreme's numbers but cap hit in 60s instead of
   // 180s, then +5%/min post-cap speed growth (v2.1.0 second-pass: halved
   // from +10%, plus an absolute post-cap ceiling at 5.0 px/frame — ~1.11×
@@ -5240,7 +5240,7 @@ const DIFFICULTIES = {
   // (v2.1 third pass: was 10 → 14 via the old +10 hardcoded ceiling; now
   // ceilings at maxBodiesCap so the climb mechanic stops at 8 instead of 14).
   // Gated by beatDifficulty.EXTREME in the UI.
-  IMPOSSIBLE: { startSpeed: 2.8, maxSpeed: 4.5, speedCapScore: 60, bodyCapRampStartSec: 30, maxBodies: 4, maxBodiesCap: 8,  bodySpacing: 180, powerupFrequency: 1.44, pairSpawnChance: 0.08,  minSpawnIntervalMs: 5000, crystalMult: 1.5 },
+  IMPOSSIBLE: { startSpeed: 2.8, maxSpeed: 4.5, speedCapScore: 60, bodyCapRampStartSec: 30, maxBodies: 4, maxBodiesCap: 9,  bodySpacing: 180, powerupFrequency: 1.44, pairSpawnChance: 0.08,  minSpawnIntervalMs: 5000, crystalMult: 1.5 },
 };
 let difficulty = 'NORMAL';
 if (typeof Sentry !== 'undefined') Sentry.setTag('difficulty', difficulty);
@@ -18171,9 +18171,10 @@ const SFX = (function() {
     mirror:            './assets/SFX/MIRROR.mp3',
     lotd:              './assets/SFX/LOTD.mp3',
     rift:              './assets/SFX/RIFT.mp3',
+    alarm:             './assets/SFX/ALARM.mp3',
   };
-  const sfxBuffers = { shieldDestroy: null, novaDestroy: null, hyperspeedBarrier: null, scream: null, toothed: null, eruption: null, tentacle: null, heartbeat: null, mirror: null, lotd: null, rift: null };
-  const sfxLoading = { shieldDestroy: null, novaDestroy: null, hyperspeedBarrier: null, scream: null, toothed: null, eruption: null, tentacle: null, heartbeat: null, mirror: null, lotd: null, rift: null };
+  const sfxBuffers = { shieldDestroy: null, novaDestroy: null, hyperspeedBarrier: null, scream: null, toothed: null, eruption: null, tentacle: null, heartbeat: null, mirror: null, lotd: null, rift: null, alarm: null };
+  const sfxLoading = { shieldDestroy: null, novaDestroy: null, hyperspeedBarrier: null, scream: null, toothed: null, eruption: null, tentacle: null, heartbeat: null, mirror: null, lotd: null, rift: null, alarm: null };
   let currentTrackName = null;       // null = no track playing
   let currentMusicSource = null;     // active AudioBufferSourceNode
   let currentMusicSourceGain = null; // per-source gain (used for crossfades)
@@ -19084,15 +19085,16 @@ const SFX = (function() {
   // Screaming planet cue: prefer the SCREAM.mp3 clip if loaded, else fall
   // back to the synthesized 800→200hz sweep so the game still works offline
   // or before the asset finishes decoding.
-  function screamShriek() {
+  function screamShriek(volMul) {
+    const m = (typeof volMul === 'number') ? volMul : 1; // event-attenuation hook
     if (sfxBuffers.scream) {
-      playSfxBuffer('scream', 0.2);
+      playSfxBuffer('scream', 0.2 * m);
       return;
     }
     // Kick off a background load so subsequent cues can use the file.
     if (!sfxLoading.scream) loadSfxBuffer('scream').catch(() => {});
     safeSfx(t => {
-      chipSweep('sine', 800, 200, t, 0.3, 0.2);
+      chipSweep('sine', 800, 200, t, 0.3, 0.2 * m);
     });
   }
 
@@ -21958,6 +21960,183 @@ const PHASE_POOLS = {
   3: ['toothed','eye','cracked','tentacle','screaming','void','tentacle','screaming'],
   4: ['tentacle','screaming','void','heart','mirror','skull','heart','mirror'],
 };
+
+// =====================================================================
+// CUSTOM IN-RUN EVENTS  (v2.1.0)
+// =====================================================================
+// Rare per-run events that LOCK the spawn pool to a single body type for
+// EVENT_DURATION_SEC, fronted by a flashy center-screen warning banner +
+// ALARM sfx. Each event fires at most ONCE per run; never two at the same
+// time; the normal phase pool resumes verbatim afterward. Events touch ONLY
+// the body-type pool — cap, spacing, scroll speed, and powerups are
+// untouched. All timing uses elapsedProgressionSeconds() (the phase clock)
+// so events stay aligned with phase windows under TIME_DILATION / ascension.
+const EVENT_WARNING_LEAD_SEC = 2.5;   // warning text + alarm precede the lock
+const EVENT_DURATION_SEC     = 30;    // pool-lock duration
+const EVENT_PHASE3_GAP_SEC   = 15;    // min gap between the two phase-3 events
+const EVENT_SFX_ATTENUATION  = 0.4;   // per-body proximity sfx multiplier during a matching event
+
+// Per-event: theatrical name, locked body type, eligible phase, warning RGB
+// (matched to the body's color identity), and per-difficulty trigger chance
+// (higher difficulty = more frequent). Tentacle is held to ~half scream's
+// chance per the "tentacles are harder" constraint.
+const EVENT_DEFS = {
+  meteor:   { name: 'METEOR SHOWER',     bodyType: 'cracked',   phase: 2, color: '255,120,40',  chance: { NORMAL: 0.30, HARD: 0.40, EXTREME: 0.50, IMPOSSIBLE: 0.60 } },
+  scream:   { name: 'WAILING CHORUS',    bodyType: 'screaming', phase: 3, color: '255,60,60',   chance: { NORMAL: 0.25, HARD: 0.35, EXTREME: 0.45, IMPOSSIBLE: 0.55 } },
+  tentacle: { name: 'THE WRITHING DEEP', bodyType: 'tentacle',  phase: 3, color: '170,80,220',  chance: { NORMAL: 0.12, HARD: 0.18, EXTREME: 0.25, IMPOSSIBLE: 0.32 } },
+  mirror:   { name: 'HALL OF MIRRORS',   bodyType: 'mirror',    phase: 4, color: '220,240,255', chance: { NORMAL: 0.30, HARD: 0.40, EXTREME: 0.50, IMPOSSIBLE: 0.60 } },
+};
+// Read-time spawn override pools. While an event is active, spawnBody() draws
+// from the matching single-type pool instead of PHASE_POOLS — PHASE_POOLS is
+// NEVER mutated, so the normal pool resumes automatically when the event ends.
+const EVENT_SINGLE_POOLS = {
+  cracked:   ['cracked'],
+  screaming: ['screaming'],
+  tentacle:  ['tentacle'],
+  mirror:    ['mirror'],
+};
+
+// In-memory ONLY — never persisted. Re-created fresh by resetEventState() on
+// every run (called from resetGame). eventWarnings is the visual banner queue,
+// drawn by drawEventWarnings() each frame (wall-clock timed for smooth fade).
+let eventState = null;
+let eventWarnings = [];
+function resetEventState() {
+  eventState = {
+    fired: { meteor: false, scream: false, tentacle: false, mirror: false }, // once-per-run guards
+    active: null,        // { key, bodyType, color, name, endsAt }  endsAt in progression-sec
+    scheduled: [],       // [{ key, bodyType, color, name, warnAt, startAt, warned }]
+    lastPhaseSeen: 0,    // for "first frame in phase N" detection
+  };
+  eventWarnings = [];
+}
+
+// TEMPORARY DEBUG CHEAT — REMOVE BEFORE RELEASE (grep: EVENTTEST_CHEAT).
+// Pilot name "EVENTTEST" forces every eligible event to fire immediately at
+// phase entry (overrides the random rolls), so all four events can be seen in
+// a single run without RNG luck. Phase 3 forces BOTH events sequentially.
+function _eventTestCheatActive() {
+  try { return getUsername().toUpperCase() === 'EVENTTEST'; } catch { return false; } // EVENTTEST_CHEAT
+}
+
+// Mark an event fired (once-per-run) and queue it. startAt is in progression-
+// sec; the warning fires EVENT_WARNING_LEAD_SEC earlier.
+function _scheduleEvent(key, startAt) {
+  const def = EVENT_DEFS[key];
+  eventState.fired[key] = true;
+  eventState.scheduled.push({
+    key, bodyType: def.bodyType, color: def.color, name: def.name,
+    warnAt: startAt - EVENT_WARNING_LEAD_SEC, startAt, warned: false,
+  });
+}
+
+function _rollEventChance(key) {
+  const def = EVENT_DEFS[key];
+  const c = (def.chance[difficulty] != null) ? def.chance[difficulty] : 0;
+  return Math.random() < c;
+}
+
+// Fired once, the first frame the run enters an eligible phase. Schedules the
+// event(s) at a random offset chosen so warning + 30s lock complete inside the
+// phase window (P2 = 120s, P3 = 120s, P4 open-ended until apocalypse).
+function _onEventPhaseEntry(phase, es) {
+  const cheat = _eventTestCheatActive();   // EVENTTEST_CHEAT
+  if (phase === 2) {
+    if (cheat) { _scheduleEvent('meteor', es + EVENT_WARNING_LEAD_SEC); return; }   // EVENTTEST_CHEAT
+    if (eventState.fired.meteor) return;
+    if (_rollEventChance('meteor')) _scheduleEvent('meteor', es + 5 + Math.random() * 75);
+  } else if (phase === 3) {
+    if (cheat) {                                                                    // EVENTTEST_CHEAT
+      const t1 = es + EVENT_WARNING_LEAD_SEC;                                       // EVENTTEST_CHEAT
+      _scheduleEvent('scream', t1);                                                 // EVENTTEST_CHEAT
+      _scheduleEvent('tentacle', t1 + EVENT_DURATION_SEC + EVENT_PHASE3_GAP_SEC);   // EVENTTEST_CHEAT
+      return;                                                                       // EVENTTEST_CHEAT
+    }
+    const wantScream = !eventState.fired.scream && _rollEventChance('scream');
+    const wantTentacle = !eventState.fired.tentacle && _rollEventChance('tentacle');
+    if (wantScream && wantTentacle) {
+      // Both fire sequentially: scream first (weighted), tentacle after the gap.
+      const t1 = es + 5 + Math.random() * 10;
+      _scheduleEvent('scream', t1);
+      _scheduleEvent('tentacle', t1 + EVENT_DURATION_SEC + EVENT_PHASE3_GAP_SEC + Math.random() * 10);
+    } else if (wantScream) {
+      _scheduleEvent('scream', es + 5 + Math.random() * 75);
+    } else if (wantTentacle) {
+      _scheduleEvent('tentacle', es + 5 + Math.random() * 75);
+    }
+  } else if (phase === 4) {
+    if (cheat) { _scheduleEvent('mirror', es + EVENT_WARNING_LEAD_SEC); return; }   // EVENTTEST_CHEAT
+    if (eventState.fired.mirror) return;
+    if (_rollEventChance('mirror')) _scheduleEvent('mirror', es + 5 + Math.random() * 85);
+  }
+}
+
+// Per-frame driver, called from _updateCore() while state === 'playing'.
+// Detects phase entry, fires warnings, activates/expires the pool lock.
+function tickEventSystem() {
+  if (!eventState) return;
+  const es = elapsedProgressionSeconds();
+  const phase = phaseForElapsed(es);
+  if (phase !== eventState.lastPhaseSeen) {
+    eventState.lastPhaseSeen = phase;
+    _onEventPhaseEntry(phase, es);
+  }
+  // Expire the active event → normal phase pool resumes on the next spawn.
+  if (eventState.active && es >= eventState.active.endsAt) eventState.active = null;
+  // Fire warnings + activate scheduled events.
+  for (let i = eventState.scheduled.length - 1; i >= 0; i--) {
+    const ev = eventState.scheduled[i];
+    if (!ev.warned && es >= ev.warnAt) {
+      ev.warned = true;
+      _pushEventWarning(ev.name, ev.color);
+      try { SFX.playSfxBuffer('alarm', 0.5); } catch {}
+    }
+    // Activate only when nothing else is active → guarantees never-two-at-once.
+    if (es >= ev.startAt && !eventState.active) {
+      eventState.active = { key: ev.key, bodyType: ev.bodyType, color: ev.color, name: ev.name, endsAt: es + EVENT_DURATION_SEC };
+      eventState.scheduled.splice(i, 1);
+    }
+  }
+}
+
+// Per-body proximity SFX attenuation: EVENT_SFX_ATTENUATION while an event
+// matching this body type is active, else 1. Per-body sfx callers multiply
+// their volume by this so a single-type swarm doesn't become an audio wall.
+function eventSfxVol(bodyType) {
+  return (eventState && eventState.active && eventState.active.bodyType === bodyType) ? EVENT_SFX_ATTENUATION : 1;
+}
+
+// --- Warning banner (visual) ---
+// Large screen-centered Orbitron flash with a dark stroke-halo + colored fill
+// (same fade recipe as the per-orb proc flashes, no shadowBlur per v1.10.0),
+// plus a gentle 1.0→1.08 sine pulse during the lead-in.
+function _pushEventWarning(text, color) {
+  eventWarnings.push({ text, color, startTime: Date.now(), durationMs: 2600 });
+}
+function drawEventWarnings() {
+  if (!eventWarnings.length) return;
+  const now = Date.now();
+  eventWarnings = eventWarnings.filter(w => now - w.startTime < w.durationMs);
+  if (!eventWarnings.length) return;
+  ctx.save();
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  for (const w of eventWarnings) {
+    const age = now - w.startTime;
+    const fade = 1 - age / w.durationMs;          // 1 → 0
+    const pulse = 1 + 0.08 * Math.sin(age * 0.012);
+    const fontPx = Math.round(36 * pulse);
+    ctx.font = `900 ${fontPx}px "Orbitron", monospace`;
+    const x = W * 0.5, y = H * 0.35;
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = `rgba(0,0,0,${(0.6 * fade).toFixed(3)})`;
+    ctx.strokeText(w.text, x, y);
+    ctx.fillStyle = `rgba(${w.color},${(0.95 * fade).toFixed(3)})`;
+    ctx.fillText(w.text, x, y);
+  }
+  ctx.restore();
+}
+
 // Forced to phase 1 immediately after resetGame(); spawnBody() clears it once
 // the first body lands so live phase selection can resume. Prevents stale
 // elapsed time from spawning wrong-phase creatures during the reset window.
@@ -21988,7 +22167,12 @@ function spawnBody(yBase, opts) {
   if (opts && opts.type) {
     type = opts.type;
   } else {
-    const pool = PHASE_POOLS[phaseForElapsed(elapsedProgressionSeconds())];
+    // Custom-event override: while an event is active, lock the pool to its
+    // single body type. Falls back to the normal phase pool otherwise (and if
+    // the override pool is somehow missing). PHASE_POOLS is never mutated.
+    const pool = (eventState && eventState.active && EVENT_SINGLE_POOLS[eventState.active.bodyType])
+      ? EVENT_SINGLE_POOLS[eventState.active.bodyType]
+      : PHASE_POOLS[phaseForElapsed(elapsedProgressionSeconds())];
     type = pool[Math.floor(Math.random() * pool.length)];
   }
   let radius, color, glowColor;
@@ -24079,6 +24263,9 @@ function resetGame(isResume) {
   // read stale elapsed time from the previous run.
   runStartTime = Date.now();
   forcePhase1 = true;
+  // Custom in-run events: fresh per-run state (in-memory only, never persisted)
+  // BEFORE initBodies so the first spawns can't read a stale event lock.
+  resetEventState();
   initBodies();
   score = 0; frame = 0; planetsPassed = 0;
   closestBody = null;
@@ -24838,7 +25025,7 @@ function updateBodyTypes(spd) {
         }
         b.nextEruptFrame = 1500 + Math.random() * 500;
         b.eruptFlash = 10;
-        SFX.playSfxBuffer('eruption', 0.3);
+        SFX.playSfxBuffer('eruption', 0.3 * eventSfxVol('cracked')); // attenuate during METEOR SHOWER
       }
     } else if (b.type === 'tentacle') {
       // Track whether any tentacle just wrapped from retract→extend (phase 0
@@ -24859,7 +25046,7 @@ function updateBodyTypes(spd) {
         if (b.lastTentacleSound === undefined || Date.now() - b.lastTentacleSound > 500) {
           const onScreen = b.y > -b.radius && b.y < H + b.radius;
           if (onScreen) {
-            SFX.playSfxBuffer('tentacle', 0.2);
+            SFX.playSfxBuffer('tentacle', 0.2 * eventSfxVol('tentacle')); // attenuate during THE WRITHING DEEP
             b.lastTentacleSound = Date.now();
           }
         }
@@ -24872,7 +25059,7 @@ function updateBodyTypes(spd) {
       const wasScreaming = b.screamActive;
       b.screamActive = (p >= 4.5 && p < 5.5);
       if (b.screamActive && !wasScreaming) {
-        SFX.screamShriek();
+        SFX.screamShriek(eventSfxVol('screaming')); // attenuate during WAILING CHORUS
         b.screamSurgeFrames = 400; // 400ms — was 48 frames @ 120fps baseline
         // Fire a visible shockwave ripple emanating from the body.
         b.shockwaves.push({ age: 0, maxLife: 28 });
@@ -24976,7 +25163,7 @@ function updateBodyTypes(spd) {
         if (b.lastMirrorSound === undefined || Date.now() - b.lastMirrorSound > 500) {
           const onScreen = b.y > -b.radius && b.y < H + b.radius;
           if (onScreen) {
-            SFX.playSfxBuffer('mirror', 0.15);
+            SFX.playSfxBuffer('mirror', 0.15 * eventSfxVol('mirror')); // attenuate during HALL OF MIRRORS
             b.lastMirrorSound = Date.now();
           }
         }
@@ -25181,6 +25368,8 @@ function _updateCore() {
   frame++;
   // Phase-based gameplay music crossfade — only during active play.
   if (state === 'playing') checkGameplayPhase();
+  // Custom in-run events: phase-entry rolls, warnings, pool-lock activation.
+  if (state === 'playing') tickEventSystem();
   // Single-point world-scroll gate: zeroing spd here propagates through every
   // downstream site (b.y, p.y, f.y+spd, r.y, star atlases). Crack fragments
   // keep their f.vy eruption velocity since that's an internal animation,
@@ -26269,6 +26458,10 @@ function startApocalypse() {
   state = 'apocalypse';
   if (typeof AdManager !== 'undefined') AdManager.hideBanner();
   apocalypseStart = Date.now();
+  // Custom events: apocalypse hard-overrides everything. Kill any active or
+  // queued event + warning banner so no stale pool-lock or text survives.
+  if (eventState) { eventState.active = null; eventState.scheduled.length = 0; }
+  eventWarnings.length = 0;
   apocalypseImpactTriggered = false;
   apocalypseImpactStart = 0;
   apocalypseSun = null;
@@ -32228,6 +32421,7 @@ function render() {
     drawSalvageSparkles();
     drawTwilightEchoVisuals();
     drawButterflyEffectVisuals();
+    drawEventWarnings();
     drawPhantomBlades();
     drawGhostlightBursts();
     drawBeyondAfterimage();
