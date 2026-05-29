@@ -6,6 +6,98 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Each version header links to its GitHub release; see the release notes for full
 detail beyond the summaries here.
 
+## v2.1.0 — Helios, custom events, Sirius orb-unlocks & a controls/feel pass
+
+A content + feel release. **Helios** — the eighth orb — joins the roster, a
+once-per-run **custom events** system reshapes the mid-run spawn pool, the
+**Sirius** narrator now drives the enhanced-orb unlock conversations, and a
+broad controls / spawn / difficulty pass retunes how the game plays. Rounding
+it out: a combo-handling robustness sweep that kills the JUGGERNAUT / WRAITH
+over-fire.
+
+### Highlights
+- **Helios — the 8th orb** — a sun-themed orb unlocked through Sirius (4 000
+  Inferno kills). Gold trail + Corona Veil, a four-orb burst that launches
+  mock-suns on a launch/arm/reform lifecycle, three capstones on round-ring
+  cooldowns (including Corona Storm, matched to the supernova visual), and a
+  reworked **Heliograph** beam — kill-based banking, bank-at-cap activates the
+  burst, passive 3 s beam restored. Zenith / Zenith Flash per-orb supernova plus
+  cooldown-lockout timing fixes.
+- **Custom in-run events** — eligible phases can roll a once-per-run scripted
+  event that locks the spawn pool to a single themed body for 30 s, with an
+  ALARM warning + flashy pre-text: **METEOR SHOWER** (phase 2), **WAILING
+  CHORUS** / **THE WRITHING DEEP** (phase 3), and **HALL OF MIRRORS** (phase 4).
+  Per-difficulty trigger odds, per-body SFX attenuation, sequential phase-3
+  scheduling, and a dynamic warning-text fit that won't overflow on narrow
+  viewports.
+- **Sirius orb-unlock conversations** — the enhanced orbs (Roamer / Phantasm /
+  Helios) now unlock through Sirius dialogue at per-base-orb kill thresholds,
+  behind a sync-safe grandfather migration (Option A — no refund / relock;
+  `orbUnlockSeen` is the single source of truth across all five enhanced orbs).
+- **Controls / feel pass** — an Option B colour-coded **target indicator**
+  (shows the active body *and* which input you're giving), toned-down
+  attract/repel lines, an **off-screen body preview** (top fade strip), a
+  reworked nudge feel (body-size cone, centre-default, emergency override +
+  2.5× proximity, taper floor 0.5), speed cap pinned to scroll × 1.25, and
+  velocity-aware drag above v = 4.5. Direction-aware hysteresis was dropped in
+  favour of indicator-based signalling.
+- **Spawn + difficulty retune** — spawn spacing widened (MIN_EDGE_GAP 60 → 80,
+  now hazard-aware for extended-hitbox bodies like tentacle and toothed so the
+  ~80 px corridor is measured edge-to-edge). Body caps and high-tier max speeds
+  retuned (maxBodiesCap 5 / 6 / 7 / 9 and maxSpeed 3.2 / 3.7 / 4.2 / 4.5 across
+  Normal / Hard / Extreme / Impossible), body max radii trimmed (planet 23,
+  skull 25), and IMPOSSIBLE's post-cap body climb now ceilings at 9 instead of
+  ramping unbounded toward 14. Void field ×6 with breath + active boundary.
+
+### Helios detail
+- Distinct mock-sun visuals with a launch / arm / reform lifecycle; the burst
+  fires four orbs with delayed slow rings.
+- Three capstones, all on round-ring cooldowns; Corona Storm matched to the
+  supernova visual, Light Sweep reworked to be light-based.
+- Heliograph reworked from a flat passive to **kill-based banking**: banking at
+  cap activates the burst, with the passive 3 s beam restored (Focus reverted).
+- Zenith locks out until all orbs discharge; Zenith Flash takes its cooldown
+  after a 10 s active window; per-orb supernova fix.
+- Menu order places Helios after Phantasm; four stale node descriptions
+  corrected.
+
+### Custom events detail
+- A 30 s body-pool lock swaps the phase spawn pool for a single themed body
+  (cracked / screaming / tentacle / mirror) for the event's duration, then
+  restores normally.
+- Pre-event ALARM.mp3 warning + flashy on-screen text; per-difficulty trigger
+  probability; per-body SFX attenuation so the themed swarm doesn't overwhelm.
+- Phase 3 can schedule both of its events sequentially.
+
+### Combo handling — robustness sweep
+- **JUGGERNAUT silent no-op fixed** — `hyperspeed_shield` no longer no-ops on a
+  refresh; both activation paths now apply consistently with forward-only
+  protection.
+- **lastGainedEffects reverted to overwrite-on-pickup** — combo detection is
+  recency-based by design. An interim carry-forward history attempt was reverted
+  because it let long-lived effects re-fire combos (the JUGGERNAUT / WRAITH
+  over-fire). Older still-active effects now layer in the background without
+  re-forming combos.
+- **Forward-only protection on every downgradeable timed half** —
+  `hyperspeed_shield`, `ghost_shield` (FRESH path made consistent with REFRESH),
+  `nova_ghost`, and `nova_shield` can no longer shorten a longer-running half, so
+  Eternal Phantom / Fortress Shield don't get downgraded. All 12 pair-combo
+  paths are now uniform: no silent no-ops, forward-only on every downgradeable
+  half.
+
+### Other fixes & polish
+- **Helios Corona Veil preview** — the orb-browser / off-screen preview branch
+  renders Helios's Corona Veil correctly.
+- **Proc-nova tuning** — slow proc-nova expansion standardised to the pickup-ring
+  benchmark (sizeMult 0.9) with tiered radii (Roamer Tension / Threshold,
+  Firebrand, Halo, Backdraft); impact radii bumped (Tension / Halo / Backdraft
+  0.85, Threshold-60 0.80, Firebrand 0.75) for substantial-but-sub-pickup pops.
+- **Roamer thread-cap fix** — cap eviction now scans for the oldest *inactive*
+  thread; active firing lasers are never evicted mid-fire (was: an index-0 shift
+  could kill in-progress lasers).
+- **Release prep** — temporary debug cheats (EVENTTEST / HELIOSTEST /
+  ORBUNLOCKTEST) removed; version bumped to 2.1.0 (versionCode 43).
+
 ## v2.0.0 — Sirius narrator, full visual overhaul, tutorial rebuild & performance settings
 
 A major release. The death-narrator system is complete (**Sirius**), every effect
