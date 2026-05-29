@@ -6992,6 +6992,16 @@ const ActiveBudget = (() => {
     saveCrystals();
     return true;
   }
+  // v2.1.1: set the purchased budget bonus directly (clamped to [0, expandMax])
+  // and persist the per-orb key. Used by the PGS budget-bonus merge restore and
+  // the over-budget self-heal — neither of which should charge crystals like
+  // purchaseExpand does. Never lowers via the heal path (callers pass a max).
+  function setBonus(orbKey, n) {
+    const c = configs[orbKey]; if (!c) return;
+    const v = Math.max(0, Math.min(c.expandMax, n | 0));
+    bonus[orbKey] = v;
+    try { localStorage.setItem(c.bonusKey, String(v)); } catch {}
+  }
   function ensureActiveMap(orbKey) {
     const st = orbTrees[orbKey]; if (!st) return null;
     if (!st.activePoints || typeof st.activePoints !== 'object') st.activePoints = {};
@@ -7095,6 +7105,7 @@ const ActiveBudget = (() => {
     register, has, budgetCap, budgetBonus, expandMaxFor, expandCostFor, purchaseExpand,
     ensureActiveMap, resolveNode, rankByKey, isActive, pointCostFor, activePointsTotal,
     keystoneRequiredFor, pathPrereqMet, activate, deactivate, clearActiveMap, restoreActivePoints,
+    setBonus,
   };
 })();
 
@@ -16116,6 +16127,47 @@ _validateOrbState();
 // defaults to cyan so it will be safe even before any real equip happens.
 loadTreeState();
 
+// v2.1.1 self-heal — recover a budget cap that lost its purchased expansion.
+// The budget bonus is local-only (per-orb drift_<orb>_budget_bonus keys); a
+// localStorage reset on update could drop it to base while the cloud-restored
+// activePoints stayed active (the "25/20 in red" over-budget bug). If the
+// active allocation exceeds the current cap, the player demonstrably earned
+// that cap, so raise the bonus (clamped to expandMax) until the cap covers it.
+// Idempotent and grow-only: it never lowers a cap, and re-running is a no-op
+// once cap >= spent. Also invoked from applyToLocal after a cloud merge.
+function _healBudgetCaps() {
+  for (const orb of ['cyan', 'cosmic', 'solar', 'nebula', 'asteroid', 'helios']) {
+    if (!ActiveBudget.has(orb)) continue;
+    let guard = 0;
+    while (ActiveBudget.activePointsTotal(orb) > ActiveBudget.budgetCap(orb)
+        && ActiveBudget.budgetBonus(orb) < ActiveBudget.expandMaxFor(orb)
+        && guard++ < 64) {
+      ActiveBudget.setBonus(orb, ActiveBudget.budgetBonus(orb) + 1);
+    }
+  }
+  // Legacy drifterV2 (Roamer) budget system.
+  if (typeof _drifterV2_activePointsTotal === 'function') {
+    let guard = 0;
+    while (_drifterV2_activePointsTotal() > getDrifterV2BudgetCap()
+        && _drifterV2_budgetBonus < DRIFTERV2_BUDGET_EXPAND_MAX
+        && guard++ < 64) {
+      _drifterV2_budgetBonus = Math.min(DRIFTERV2_BUDGET_EXPAND_MAX, _drifterV2_budgetBonus + 1);
+      try { localStorage.setItem(DRIFTERV2_BUDGET_BONUS_KEY, String(_drifterV2_budgetBonus)); } catch {}
+    }
+  }
+  // Legacy phantomV2 (Phantasm) budget system.
+  if (typeof _phantomV2_activePointsTotal === 'function') {
+    let guard = 0;
+    while (_phantomV2_activePointsTotal() > getPhantomV2BudgetCap()
+        && _phantomV2_budgetBonus < PHANTOMV2_BUDGET_EXPAND_MAX
+        && guard++ < 64) {
+      _phantomV2_budgetBonus = Math.min(PHANTOMV2_BUDGET_EXPAND_MAX, _phantomV2_budgetBonus + 1);
+      try { localStorage.setItem(PHANTOMV2_BUDGET_BONUS_KEY, String(_phantomV2_budgetBonus)); } catch {}
+    }
+  }
+}
+_healBudgetCaps();
+
 // --- Skill-tree destroy-proc family (Siphon / Soulbound / Firebrand / Slipstream / Bastion II) ---
 // Shared mechanic: on body destroyed, chance per rank to grant a powerup.
 // Rank chance table (shared by all 5 nodes): 2% / 4% / 6% / 8% / 10%.
@@ -17170,6 +17222,22 @@ const PGS = (() => {
       siriusUsed: !!siriusUsed,
       // Orb-unlock "convo seen / committed" flags, OR-merged per key (true wins).
       orbUnlockSeen: orbUnlockSeen ? { ...orbUnlockSeen } : {},
+      // v2.1.1: purchased active-point budget expansions ("budget bonus") per orb.
+      // Previously LOCAL-ONLY (per-orb drift_<orb>_budget_bonus keys) and absent
+      // from the cloud, so a localStorage reset on update dropped the cap to base
+      // while the cloud-restored activePoints stayed (the "25/20 in red" bug).
+      // Now synced (grow-only max) across both budget systems — the 6 ActiveBudget
+      // orbs plus the legacy drifterV2/phantomV2 globals.
+      budgetBonus: {
+        cyan:      ActiveBudget.budgetBonus('cyan'),
+        cosmic:    ActiveBudget.budgetBonus('cosmic'),
+        solar:     ActiveBudget.budgetBonus('solar'),
+        nebula:    ActiveBudget.budgetBonus('nebula'),
+        asteroid:  ActiveBudget.budgetBonus('asteroid'),
+        helios:    ActiveBudget.budgetBonus('helios'),
+        drifterV2: _drifterV2_budgetBonus | 0,
+        phantomV2: _phantomV2_budgetBonus | 0,
+      },
       stats: statsSnapshot,
     };
   }
@@ -17193,6 +17261,7 @@ const PGS = (() => {
         unlockedOrbs: mergeOrbs(local.unlockedOrbs, remote.unlockedOrbs),
         scores: mergeScores(local.scores, remote.scores),
         orbTrees: mergeTrees(local.orbTrees, remote.orbTrees),
+        budgetBonus: mergeBudgetBonus(local.budgetBonus, remote.budgetBonus),
         beatDifficulty: mergeBeat(local.beatDifficulty, remote.beatDifficulty),
         treesUnlocked: mergeTreesUnlocked(local.treesUnlocked, remote.treesUnlocked),
         tutorialCompleted: !!(local.tutorialCompleted || remote.tutorialCompleted),
@@ -17207,6 +17276,7 @@ const PGS = (() => {
       unlockedOrbs: mergeOrbs(local.unlockedOrbs, remote.unlockedOrbs),
       scores: mergeScores(local.scores, remote.scores),
       orbTrees: mergeTrees(local.orbTrees, remote.orbTrees),
+      budgetBonus: mergeBudgetBonus(local.budgetBonus, remote.budgetBonus),
       beatDifficulty: mergeBeat(local.beatDifficulty, remote.beatDifficulty),
       treesUnlocked: mergeTreesUnlocked(local.treesUnlocked, remote.treesUnlocked),
       tutorialCompleted: !!(local.tutorialCompleted || remote.tutorialCompleted),
@@ -17346,6 +17416,15 @@ const PGS = (() => {
     }
     return out;
   }
+  // v2.1.1: budget-bonus merge — per-orb MAX across devices (grow-only, mirrors
+  // crystals/ranks). Union of keys so a new orb present on only one side carries.
+  function mergeBudgetBonus(a, b) {
+    a = a || {}; b = b || {};
+    const out = {};
+    const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+    for (const k of keys) out[k] = Math.max(a[k] | 0, b[k] | 0);
+    return out;
+  }
   // Beat-difficulty merge: OR across devices (either device unlocking counts).
   function mergeBeat(a, b) {
     a = a || {}; b = b || {};
@@ -17481,6 +17560,26 @@ const PGS = (() => {
       }
       if (_ouChanged) { try { localStorage.setItem('drift_orb_unlock_seen', JSON.stringify(orbUnlockSeen)); } catch {} try { _orbUnlockReconcile(); } catch {} }
     }
+    // v2.1.1: restore merged budget bonuses (grow-only) into BOTH budget systems
+    // and re-persist their per-orb local keys, so a cap expansion survives a
+    // localStorage reset now that the cloud carries it. Max against the current
+    // in-memory value too, so this can only ever grow a cap, never shrink it.
+    if (payload.budgetBonus && typeof payload.budgetBonus === 'object') {
+      const bb = payload.budgetBonus;
+      for (const orb of ['cyan', 'cosmic', 'solar', 'nebula', 'asteroid', 'helios']) {
+        if (bb[orb] != null && ActiveBudget.has(orb)) {
+          ActiveBudget.setBonus(orb, Math.max(ActiveBudget.budgetBonus(orb), bb[orb] | 0));
+        }
+      }
+      if (bb.drifterV2 != null) {
+        _drifterV2_budgetBonus = Math.min(DRIFTERV2_BUDGET_EXPAND_MAX, Math.max(_drifterV2_budgetBonus | 0, bb.drifterV2 | 0));
+        try { localStorage.setItem(DRIFTERV2_BUDGET_BONUS_KEY, String(_drifterV2_budgetBonus)); } catch {}
+      }
+      if (bb.phantomV2 != null) {
+        _phantomV2_budgetBonus = Math.min(PHANTOMV2_BUDGET_EXPAND_MAX, Math.max(_phantomV2_budgetBonus | 0, bb.phantomV2 | 0));
+        try { localStorage.setItem(PHANTOMV2_BUDGET_BONUS_KEY, String(_phantomV2_budgetBonus)); } catch {}
+      }
+    }
     // v1.6.6.3: drift_stats — counters/bests/per-orb/difficulty completions
     // and cosmetic-trail unlocks. mergeStats already produced a sanitized,
     // element-wise-max-merged shape, so we replace `stats` directly and
@@ -17490,6 +17589,11 @@ const PGS = (() => {
       stats = payload.stats;
       try { localStorage.setItem('drift_stats', JSON.stringify(stats)); } catch {}
     }
+    // v2.1.1: after a cloud merge the activePoints set may have grown (restored
+    // from remote) while a pre-v2.1.1 cloud save carries no budgetBonus — leaving
+    // the cap below the restored allocation. Re-run the over-budget self-heal so
+    // the cap recovers to cover what's active. Idempotent; never lowers a cap.
+    try { _healBudgetCaps(); } catch {}
     // activeOrb intentionally NOT applied from remote.
     // equippedTrails intentionally NOT applied from remote (mergeStats picks
     // the local copy, so even though stats are written above, the equipped-
@@ -17633,7 +17737,7 @@ let runStats = { totalPassed: 0, totalDestroyed: 0, pointsFromPassing: 0, points
 // Example: TIME_DILATION = 60 → 1 real second = 60 in-game seconds for
 // progression, apocalypse triggers in ~10 real seconds.
 const TIME_DILATION = 1;
-const GAME_VERSION = '2.1.0';
+const GAME_VERSION = '2.1.1';
 try {
   const vl = document.getElementById('versionLabel');
   if (vl) vl.textContent = 'v' + GAME_VERSION;
