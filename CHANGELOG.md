@@ -6,6 +6,45 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Each version header links to its GitHub release; see the release notes for full
 detail beyond the summaries here.
 
+## v2.1.2 — Hotfix: cloud-save one-time flags & orb unlocks survive reinstall
+
+A PGS cloud-save sync fix. The save **merge** was dropping the one-time cutscene
+flags and the enhanced-orb unlock state, so reinstalling (or signing in on a new
+device) replayed cutscenes and re-armed orb unlocks — then the post-sync re-upload
+wrote the gap back, erasing those flags from the cloud too.
+
+### Fixes
+- **One-time cutscenes no longer replay after reinstall** — `merge()` now carries
+  the Ascension (`rainbowOrbUsed`), second-death fake-out (`secondDeathUsed`), and
+  Sirius-reveal (`siriusUsed`) flags through the merged payload (OR-merge, grow-only)
+  in **both** version branches. The always-used equal-version branch had omitted
+  them, so a fresh install never read the cloud's `true` and the "wake up" Ascension
+  cutscene fired again on first death.
+- **Enhanced-orb unlocks persist across reinstall** — `orbUnlockSeen` is now
+  OR-merged per orb (new `mergeOrbUnlockSeen` helper), so Roamer / Phantasm / Helios
+  stay earned and their Sirius unlock conversations don't re-arm after a reinstall.
+- **No more cloud erasure** — because the merged save now contains these flags, the
+  post-sync re-upload preserves them instead of stripping them from the cloud.
+
+## v2.1.1 — Hotfix: active-point budget cap survives update
+
+A PGS cloud-save sync fix. The purchased active-point **budget expansion** (the cap
+above each orb's base) was the only progression field stored local-only — it was
+never in the cloud payload — so a localStorage reset on update dropped the cap to
+base while the cloud-restored allocation stayed, showing as an over-budget "25/20"
+in red with no way to recover the lost cap.
+
+### Fixes
+- **Budget bonus is now cloud-synced** — added a `budgetBonus` field to the save
+  payload (grow-only per-orb max merge) covering both budget systems: the six
+  ActiveBudget orbs (Drifter / Phantom / Inferno / Warp / Bulwark / Helios) and the
+  legacy Roamer / Phantasm globals. Restored into memory and re-persisted on merge.
+- **One-time self-heal for already-affected players** — on load (and after a cloud
+  merge), if an orb's active allocation exceeds its current cap, the cap is raised to
+  cover it (clamped to the expansion max). The over-budget state itself proves the
+  player earned that cap, so no refund math or cloud history is needed. Idempotent;
+  never lowers a cap.
+
 ## v2.1.0 — Helios, custom events, Sirius orb-unlocks & a controls/feel pass
 
 A content + feel release. **Helios** — the eighth orb — joins the roster, a
