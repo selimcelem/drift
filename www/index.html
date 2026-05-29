@@ -5206,11 +5206,12 @@ const BODY_SPACING = Math.floor(H / 3.5);
 //   ddx² + ddy² < (ob.radius + cand.radius + MIN_EDGE_GAP)²
 // This guarantees a consistent EDGE-TO-EDGE gap regardless of body size,
 // where center-distance alone would let two max planets sit with only 40 px
-// of empty space between them (60 px edge gap = sane minimum clearance for
-// the player ball, with a buffer for reaction). Closes the "vertical wall of
-// bodies" exploit at high difficulty: same-column same-size bodies now need
-// ≥ 2*r + 60 separation, not just ≥ 80.
-const MIN_EDGE_GAP = 60;
+// of empty space between them. v2.1 third pass: 60 → 80 px so the floor
+// has more breathing room for the player ball, especially when paired with
+// the lower bodyCap ceilings (smaller boards = wider expected gaps). Closes
+// the "vertical wall of bodies" exploit at high difficulty: same-column
+// same-size bodies now need ≥ 2*r + 80 separation.
+const MIN_EDGE_GAP = 80;
 // Round-robin spawn zone (0=left, 1=center, 2=right) so consecutive bodies
 // land in different zones for natural horizontal spread.
 let lastSpawnZone = -1;
@@ -5228,17 +5229,18 @@ const DIFFICULTIES = {
   // intentionally LEFT UNCHANGED — the minSpawnIntervalMs floor always wins
   // the max() in maybeSpawnPowerup, so adjusting powerupFrequency would be a
   // cosmetic no-op. The floor is the actual powerup-density knob.
-  NORMAL:     { startSpeed: 1.7, maxSpeed: 3.0, speedCapScore: 60, bodyCapRampStartSec: 60, maxBodies: 3, maxBodiesCap: 5,  bodySpacing: 180, powerupFrequency: 2.0,  pairSpawnChance: 0.13,  minSpawnIntervalMs: 2500, crystalMult: 0.75 },
-  HARD:       { startSpeed: 2.3, maxSpeed: 3.5, speedCapScore: 60, bodyCapRampStartSec: 60, maxBodies: 4, maxBodiesCap: 6,  bodySpacing: 180, powerupFrequency: 1.7,  pairSpawnChance: 0.105, minSpawnIntervalMs: 3125, crystalMult: 1.0 },
-  EXTREME:    { startSpeed: 2.8, maxSpeed: 4.0, speedCapScore: 60, bodyCapRampStartSec: 30, maxBodies: 4, maxBodiesCap: 7,  bodySpacing: 180, powerupFrequency: 1.44, pairSpawnChance: 0.08,  minSpawnIntervalMs: 3750, crystalMult: 1.25 },
+  NORMAL:     { startSpeed: 1.7, maxSpeed: 3.0, speedCapScore: 60, bodyCapRampStartSec: 60, maxBodies: 3, maxBodiesCap: 4,  bodySpacing: 180, powerupFrequency: 2.0,  pairSpawnChance: 0.13,  minSpawnIntervalMs: 2500, crystalMult: 0.75 },
+  HARD:       { startSpeed: 2.3, maxSpeed: 3.5, speedCapScore: 60, bodyCapRampStartSec: 60, maxBodies: 4, maxBodiesCap: 5,  bodySpacing: 180, powerupFrequency: 1.7,  pairSpawnChance: 0.105, minSpawnIntervalMs: 3125, crystalMult: 1.0 },
+  EXTREME:    { startSpeed: 2.8, maxSpeed: 4.0, speedCapScore: 60, bodyCapRampStartSec: 30, maxBodies: 4, maxBodiesCap: 6,  bodySpacing: 180, powerupFrequency: 1.44, pairSpawnChance: 0.08,  minSpawnIntervalMs: 3750, crystalMult: 1.25 },
   // v1.6.3 IMPOSSIBLE: Extreme's numbers but cap hit in 60s instead of
   // 180s, then +5%/min post-cap speed growth (v2.1.0 second-pass: halved
   // from +10%, plus an absolute post-cap ceiling at 5.0 px/frame — ~1.11×
   // the new 4.5 maxSpeed, matching the prior pass's ~1.146× headroom
-  // intent). +1 body every 2 min post-cap, ceilinged at maxBodiesCap = 10
-  // (v2.1.0: was 7, post-cap growth climbs to 10 instead of 14). Gated by
-  // beatDifficulty.EXTREME in the UI.
-  IMPOSSIBLE: { startSpeed: 2.8, maxSpeed: 4.5, speedCapScore: 60, bodyCapRampStartSec: 30, maxBodies: 4, maxBodiesCap: 10, bodySpacing: 180, powerupFrequency: 1.44, pairSpawnChance: 0.08,  minSpawnIntervalMs: 5000, crystalMult: 1.5 },
+  // intent). +1 body every 2 min post-cap, NOW ceilinged at maxBodiesCap = 8
+  // (v2.1 third pass: was 10 → 14 via the old +10 hardcoded ceiling; now
+  // ceilings at maxBodiesCap so the climb mechanic stops at 8 instead of 14).
+  // Gated by beatDifficulty.EXTREME in the UI.
+  IMPOSSIBLE: { startSpeed: 2.8, maxSpeed: 4.5, speedCapScore: 60, bodyCapRampStartSec: 30, maxBodies: 4, maxBodiesCap: 8,  bodySpacing: 180, powerupFrequency: 1.44, pairSpawnChance: 0.08,  minSpawnIntervalMs: 5000, crystalMult: 1.5 },
 };
 let difficulty = 'NORMAL';
 if (typeof Sentry !== 'undefined') Sentry.setTag('difficulty', difficulty);
@@ -21993,48 +21995,47 @@ function spawnBody(yBase, opts) {
 
   // Base sizing + palette per type. Custom-drawn types still carry color/glow
   // so the glow gradient and target indicator have something to work with.
+  // v2.1 third pass: every body type's MAX radius reduced by 2 (across-the-
+  // board size clamp). Combined with the lower bodyCap ceilings, gives the
+  // player more dodge room on smaller boards. Min radii unchanged.
   if (type === 'star') {
-    radius = 13 + Math.random() * 9;
+    radius = 13 + Math.random() * 7;     // 13–20 (was 13–22)
     const hue = Math.random() < 0.5 ? 42 : 200;
     color = `hsl(${hue},100%,80%)`; glowColor = `hsl(${hue},100%,65%)`;
   } else if (type === 'planet') {
-    // v2.1.0 max-R clamp: 30 → 23. Max-size passive planets were lane-blockers
-    // (occupying ~85% of an average lane width at PLAYER_R=6 hit radius).
-    radius = 17 + Math.random() * 6;
+    radius = 17 + Math.random() * 4;     // 17–21 (was 17–23; original 17–30 clamped to 17–23 in prior pass)
     const hue = 100 + Math.random() * 220;
     color = `hsl(${hue},55%,50%)`; glowColor = `hsl(${hue},80%,58%)`;
   } else if (type === 'blackhole') {
-    radius = 11 + Math.random() * 7;
+    radius = 11 + Math.random() * 5;     // 11–16 (was 11–18)
     color = '#080808'; glowColor = 'rgba(170,70,255,0.9)';
   } else if (type === 'toothed') {
-    radius = 16 + Math.random() * 6;
+    radius = 16 + Math.random() * 4;     // 16–20 (was 16–22)
     color = '#8b0000'; glowColor = 'rgba(220,30,30,0.9)';
   } else if (type === 'eye') {
-    radius = 18 + Math.random() * 5;
+    radius = 18 + Math.random() * 3;     // 18–21 (was 18–23)
     color = '#f6efd6'; glowColor = 'rgba(255,220,160,0.7)';
   } else if (type === 'cracked') {
-    radius = 17 + Math.random() * 7;
+    radius = 17 + Math.random() * 5;     // 17–22 (was 17–24)
     color = '#5a2b16'; glowColor = 'rgba(255,120,40,0.85)';
   } else if (type === 'tentacle') {
     // Tentacles add extra reach so the base disc is extra-small.
-    radius = 16 + Math.random() * 4;
+    radius = 16 + Math.random() * 2;     // 16–18 (was 16–20)
     color = '#4a0080'; glowColor = 'rgba(140,40,200,0.85)';
   } else if (type === 'screaming') {
-    radius = 17 + Math.random() * 6;
+    radius = 17 + Math.random() * 4;     // 17–21 (was 17–23)
     color = '#4a4040'; glowColor = 'rgba(80,20,20,0.3)';
   } else if (type === 'void') {
-    radius = 14 + Math.random() * 5;
+    radius = 14 + Math.random() * 3;     // 14–17 (was 14–19)
     color = '#000'; glowColor = 'rgba(180,240,255,0.6)';
   } else if (type === 'heart') {
-    radius = 17 + Math.random() * 4;
+    radius = 17 + Math.random() * 2;     // 17–19 (was 17–21)
     color = '#cc0000'; glowColor = 'rgba(255,40,40,0.85)';
   } else if (type === 'mirror') {
-    radius = 14 + Math.random() * 5;
+    radius = 14 + Math.random() * 3;     // 14–17 (was 14–19)
     color = '#222'; glowColor = 'rgba(255,255,255,0.5)';
   } else if (type === 'skull') {
-    // v2.1.0 max-R clamp: 30 → 25. Skulls were tied with planets as the largest
-    // lane-blockers; clamped for the same skill-vs-size reason.
-    radius = 20 + Math.random() * 5;
+    radius = 20 + Math.random() * 3;     // 20–23 (was 20–25; original 20–30 clamped to 20–25 in prior pass)
     color = '#0d0d0d'; glowColor = 'rgba(200,200,200,0.6)';
   } else {
     radius = 16; color = '#888'; glowColor = 'rgba(255,255,255,0.5)';
@@ -22216,16 +22217,16 @@ function effectiveMaxBodies() {
   // stays a literal 90s.
   const rampStartSec = (typeof d.bodyCapRampStartSec === 'number') ? d.bodyCapRampStartSec : 180;
   const ramped = d.maxBodies + Math.max(0, Math.floor((elapsedProgressionSeconds() - rampStartSec) / 90));
-  let capped = Math.min(ramped, d.maxBodiesCap);
-  // v1.6.3 IMPOSSIBLE post-cap body growth: +1 every 120 s after 1:00.
-  // Bypasses maxBodiesCap — density keeps climbing alongside speed.
-  if (difficulty === 'IMPOSSIBLE') {
-    const elapsed = elapsedProgressionSeconds();
-    if (elapsed > d.speedCapScore) {
-      const extra = Math.floor((elapsed - d.speedCapScore) / 120);
-      capped = Math.max(capped, Math.min(d.maxBodiesCap + extra, d.maxBodies + 10));
-    }
-  }
+  const capped = Math.min(ramped, d.maxBodiesCap);
+  // v2.1 third pass: IMPOSSIBLE post-cap body growth REMOVED. Previously a
+  // +1/120s climb after 1:00 pushed IMPOSSIBLE past its standard cap (up to
+  // a hard ceiling of maxBodies + 10 = 14, later capped at maxBodiesCap=8
+  // which effectively forced a 4→8 jump at t=1:00). With the v2.1 tuning
+  // pass IMPOSSIBLE's maxBodiesCap (8) is already the intended density
+  // ceiling, so the post-cap mechanic is no longer needed. IMPOSSIBLE now
+  // uses the standard ramp like the other difficulties — its only bodyCap
+  // differentiator is the higher maxBodiesCap (8 vs EXTREME's 6). Speed
+  // post-cap growth and ceiling live separately in normalScrollSpeed().
   return capped;
 }
 
