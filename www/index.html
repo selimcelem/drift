@@ -3210,6 +3210,9 @@
       <div class="cap-cd" id="capCdZenith" data-cap="zenith"><div class="cap-cd-ring"></div><div class="cap-cd-lbl">ZENITH</div></div>
       <div class="cap-cd" id="capCdCoronaStorm" data-cap="coronaStorm"><div class="cap-cd-ring"></div><div class="cap-cd-lbl">STORM</div></div>
       <div class="cap-cd" id="capCdZenithFlash" data-cap="zenithFlash"><div class="cap-cd-ring"></div><div class="cap-cd-lbl">FLASH</div></div>
+      <div class="cap-cd" id="capCdTWake" data-cap="tachyon_eternalWake"><div class="cap-cd-ring"></div><div class="cap-cd-lbl">WAKE</div></div>
+      <div class="cap-cd" id="capCdTFan" data-cap="tachyon_allTimelines"><div class="cap-cd-ring"></div><div class="cap-cd-lbl">FAN</div></div>
+      <div class="cap-cd" id="capCdTSyzygy" data-cap="tachyon_syzygy"><div class="cap-cd-ring"></div><div class="cap-cd-lbl">QUASAR</div></div>
     </div>
     <!-- v1.7.0: burst replaced with a circular indicator at bottom-right,
          same size/style as a capstone cooldown circle. Fills clockwise as
@@ -3797,6 +3800,7 @@ try {
 let safeAreaTop = 0;
 let safeAreaBottom = 0;
 let cutoutTop = 0;
+let _hyperStackAnchorY = 0;   // measured "Nx HYPERSPEED" banner anchor (canvas px); 0 = use fallback
 function refreshSafeAreaInsets() {
   try {
     const cs = getComputedStyle(document.documentElement);
@@ -3807,10 +3811,34 @@ function refreshSafeAreaInsets() {
     if (Number.isFinite(b)) safeAreaBottom = b;
     if (Number.isFinite(c)) cutoutTop = c;
   } catch {}
+  _hyperStackAnchorY = 0;   // invalidate the measured banner anchor; re-measured lazily next draw
 }
 refreshSafeAreaInsets();
 window.addEventListener('resize', refreshSafeAreaInsets);
 window.addEventListener('orientationchange', refreshSafeAreaInsets);
+// "Nx HYPERSPEED" banner anchor (SHARED by ALL orbs). Was a hardcoded y = 58
+// (+safe/cutout) that assumed the DOM top-stack (#topStack: score row + timer)
+// ends at ~58 — on some devices/safe-areas the stack is taller, so the canvas-drawn
+// banner landed BETWEEN the timer and score (seen on Inferno). Robust fix: measure
+// the REAL bottom of #topStack and convert CSS-px → canvas-px with the SAME scale
+// the input handler uses (W / canvas client width). Cached; invalidated on
+// resize/orientation above. Falls back to the legacy 58+safe+cutout if the element
+// or measurement is unavailable, so behaviour is identical on failure (no regression).
+function measureHyperStackAnchorY() {
+  try {
+    const el = document.getElementById('topStack');
+    const crect = (typeof canvas !== 'undefined' && canvas) ? canvas.getBoundingClientRect() : null;
+    if (!el || !crect || !crect.width) { _hyperStackAnchorY = 0; return; }
+    const scale = W / crect.width;                                          // CSS px → canvas px
+    const y = (el.getBoundingClientRect().bottom - crect.top) * scale + 6;  // 6px gap below the stack
+    _hyperStackAnchorY = (y > 10 && y < H * 0.5) ? y : 0;                   // sanity-guard else fall back
+  } catch (e) { _hyperStackAnchorY = 0; }
+}
+// Final screen-Y for the banner top: measured top-stack bottom, else the legacy value.
+function hyperStackDrawY() {
+  if (_hyperStackAnchorY <= 0 && state === 'playing') measureHyperStackAnchorY();
+  return _hyperStackAnchorY > 0 ? _hyperStackAnchorY : (58 + safeAreaTop + cutoutTop);
+}
 
 // Gradient cache: createRadialGradient/createLinearGradient shows up hot on
 // mobile profiles when many identical gradients are rebuilt each frame. Keys
@@ -5305,11 +5333,11 @@ const ORB_ORDER = ['cyan', 'cosmic', 'solar', 'nebula', 'asteroid'];
 // sees them. They appear ONLY in the orb-browser cycle via menuOrbCycle(), show
 // a name + tease + "COMING SOON", and are not purchasable.
 const TEASE_ORBS = {
-  // helios promoted to a real enhanced orb (ORB_DEFS.helios / TREE_DEFS.helios below).
-  tachyon:   { name: 'Tachyon',   color: '120,220,255', desc: "Beyond Warp's hyperspeed lies a paradox. Tachyon bends time itself." },
+  // helios + tachyon promoted to real enhanced orbs (ORB_DEFS/TREE_DEFS below); only leviathan
+  // remains a tease. isTeaseOrb() keys off THIS map, so tachyon must be absent here once shipped.
   leviathan: { name: 'Leviathan', color: '120,200,180', desc: 'Bulwark was the wall. Leviathan is the storm.' },
 };
-const TEASE_ORB_ORDER = ['tachyon', 'leviathan'];
+const TEASE_ORB_ORDER = ['leviathan'];
 function isTeaseOrb(key) { return Object.prototype.hasOwnProperty.call(TEASE_ORBS, key); }
 // Main-menu-only orb cycle: every real orb (ORB_ORDER, already incl. Roamer +
 // Phantasm by load time) followed by the locked teases. Computed fresh so it
@@ -6003,7 +6031,7 @@ const TREE_DEFS = {
             desc: 'Your gravity pull is +50% stronger, and pulls harder the closer a body gets.',
             effect: r => r ? '+50% pull · ramps with closeness' : 'Locked' },
           { key: 'blackHole', name: 'Dead Star', tier: 3, max: 1, costOverride: [9000], pointCost: 5,
-            desc: 'CAPSTONE. Every 30 shield stacks you lose, IMPLODE: space collapses inward, dragging every planet on screen into you and crushing them into a glowing GOLDEN SHIELD (10 hits). You are invulnerable through the whole collapse.',
+            desc: 'CAPSTONE. Every 15 shield stacks you lose, IMPLODE: space collapses inward, dragging every planet on screen into you and crushing them into a glowing GOLDEN SHIELD (10 hits). You are invulnerable through the whole collapse.',
             effect: r => r ? '30 stacks lost → implode + golden shield' : 'Locked' },
         ],
       },
@@ -7257,7 +7285,7 @@ function _cyan_flash(key, text, color, minMs) {
   _cyan_addFlash(text, color);
 }
 function _cyan_drawFlashes() {
-  if (state !== 'playing' && state !== 'paused' && state !== 'apocalypse') return;
+  if (state !== 'playing' && state !== 'paused' && state !== 'apocalypse' && state !== 'devmode') return;   // 6b: include devmode (match Helios/Tachyon)
   if (!_cyan_flashes.length) return;
   if (!player || isNaN(player.x) || isNaN(player.y)) return;
   const now = Date.now();
@@ -7584,7 +7612,7 @@ function _cosmic_flash(key, text, color, minMs) {
   _cosmic_addFlash(text, color);
 }
 function _cosmic_drawFlashes() {
-  if (state !== 'playing' && state !== 'paused' && state !== 'apocalypse') return;
+  if (state !== 'playing' && state !== 'paused' && state !== 'apocalypse' && state !== 'devmode') return;   // 6b: include devmode (match Helios/Tachyon)
   if (!_cosmic_flashes.length) return;
   if (!player || isNaN(player.x) || isNaN(player.y)) return;
   const now = Date.now();
@@ -7989,7 +8017,7 @@ function _solar_flash(key, text, color, minMs) {
   _solar_addFlash(text, color);
 }
 function _solar_drawFlashes() {
-  if (state !== 'playing' && state !== 'paused' && state !== 'apocalypse') return;
+  if (state !== 'playing' && state !== 'paused' && state !== 'apocalypse' && state !== 'devmode') return;   // 6b: include devmode (match Helios/Tachyon)
   if (!_solar_flashes.length) return;
   if (!player || isNaN(player.x) || isNaN(player.y)) return;
   const now = Date.now();
@@ -8166,7 +8194,7 @@ function _nebula_flash(key, text, color, minMs) {
   _nebula_addFlash(text, color);
 }
 function _nebula_drawFlashes() {
-  if (state !== 'playing' && state !== 'paused' && state !== 'apocalypse') return;
+  if (state !== 'playing' && state !== 'paused' && state !== 'apocalypse' && state !== 'devmode') return;   // 6b: include devmode (match Helios/Tachyon)
   if (!_nebula_flashes.length) return;
   if (!player || isNaN(player.x) || isNaN(player.y)) return;
   const now = Date.now();
@@ -8441,6 +8469,1148 @@ ORB_BEHAVIOR.helios.respecTree = function(orbKey) {
 };
 OrbHooks.on('afterLoadTreeState', () => { ActiveBudget.restoreActivePoints('helios'); });
 
+// =====================================================================
+// TACHYON (enhanced WARP) — PLAYTEST BUILD (TEMPORAL ECHOES)
+// ---------------------------------------------------------------------
+// Identity: hyperspeed sheds copies of you across time — PAST selves that
+// faithfully replay your recent movement+state (incl. the hyperspeed barrier),
+// plus DIVERGENCE escort-clones that fly in V-formation. Echoes DETONATE /
+// strike; they never touch-kill on the player's behalf (player still dies on
+// body contact). PLAYTEST scope: mechanics + functional feedback (flash text,
+// cap-cd rings). Visuals are PLACEHOLDER additive blobs + the shared nova pool;
+// the full bespoke overhaul (silhouette art, twin VPs, white-out) is deferred.
+// Kept OFF real progression: tease flow untouched; access via TACHYONTEST.
+// =====================================================================
+const TACHYON_CORE = '120,220,255';
+const TACHYON_PATH_COLORS = {
+  recurrence:  '120,220,255',  // cherenkov blue-white (past)
+  divergence:  '170,150,255',  // violet (future)
+  convergence: '210,180,255',  // bright violet-white (collapse)
+};
+const TACHYON_HISTORY_LEN = 128;  // ~2.1s @60fps position+state ring buffer
+// Shared echo cap 30. After the baseline trim, echoes come from Recurrence
+// (faithful past-echoes paced ~1 per 0.9–1.3s) + up to 4 Divergence escorts —
+// well under 30 in practice; the cap is the crash-safety ceiling. Draw cost:
+// each echo/escort is ONE additive blob (2 arcs) + at most one cheap translucent
+// barrier ring — no per-echo trails, no PIXI offscreen per echo. 30 echoes ≈ 60
+// arc fills + ≤30 ring strokes per frame, far under the ~538-draw-call crash
+// ceiling this project hit. 30 is the defended ceiling; past it we shift oldest.
+const TACHYON_ECHO_CAP    = 30;   // hard concurrent echo cap (oldest-shift)
+
+ORB_DEFS.tachyon = {
+  name: 'Tachyon',
+  desc: 'Hyperspeed sheds echoes of you across time — past selves and escorts.',
+  color: TACHYON_CORE, cost: 6000, streakCap: 8, trail: 'nebula', bias: 'hyperspeed',
+};
+
+TREE_DEFS.tachyon = {
+  name: 'TACHYON',
+  color: TACHYON_CORE,
+  paths: {
+    // ---- 1. RECURRENCE (past selves that replay your path & detonate) ----
+    recurrence: {
+      name: 'RECURRENCE',
+      nodes: [
+        { key: 'tachyon_recurrence', name: 'Recurrence', tier: 3, max: 1, costOverride: [7500], pointCost: 5,
+          desc: 'KEYSTONE. While hyperspeeding, every 1.3s shed a FAITHFUL past-echo that replays your last 1.6s of movement and state — including your hyperspeed barrier — then detonates a nova.',
+          effect: r => r ? 'Faithful past-echo shed' : 'Locked' },
+        { key: 'tachyon_afterself', name: 'Afterself', tier: 1, max: 1, costOverride: [2500], pointCost: 2,
+          desc: 'Faithful past-echoes shed faster — shed timer 1.3s → 0.9s.',
+          effect: r => r ? 'Shed 1.3s → 0.9s' : 'Locked' },
+        { key: 'tachyon_rewindCadence', name: 'Echo Loop', tier: 1, max: 1, costOverride: [2500], pointCost: 2,
+          desc: 'Past-echoes that finish replaying LOOP and keep retracing your wake while you hyperspeed — building a visible train of your past selves (max 6; oldest detonates on overflow). They detonate when hyperspeed ends or you Temporal Snap.',
+          effect: r => r ? 'Echoes loop into a train (max 6)' : 'Locked' },
+        { key: 'tachyon_wakeDamage', name: 'Wake Damage', tier: 1, max: 1, costOverride: [2500], pointCost: 2,
+          desc: 'Past-echoes detonate into MEDIUM novas instead of small ones.',
+          effect: r => r ? 'Past-echo → medium nova' : 'Locked' },
+        { key: 'tachyon_longMemory', name: 'Long Memory', tier: 2, max: 1, costOverride: [5000], pointCost: 3,
+          desc: 'Replay window 1.6s → 1.8s — longer, farther-reaching echoes.',
+          effect: r => r ? 'Replay 1.6s → 1.8s' : 'Locked' },
+        { key: 'tachyon_photonDebt', name: 'Temporal Snap', tier: 1, max: 1, costOverride: [2500], pointCost: 2,
+          desc: 'When you BURST or hyperspeed ends, your whole train collapses inward and detonates in a chain along your wake — the longer the train, the bigger the implosion. Each blast feeds Eternal Wake.',
+          effect: r => r ? 'Burst / end → collapse the train' : 'Locked' },
+        { key: 'tachyon_eternalWake', name: 'Eternal Wake', tier: 3, max: 1, costOverride: [10000], pointCost: 5,
+          desc: 'CAPSTONE. Every 100 kills by past-echoes, your max hyperspeed cap rises +1 for the rest of the run (toward 20). The past compounds.',
+          effect: r => r ? '100 past-echo kills → +1 max cap' : 'Locked' },
+      ],
+    },
+    // ---- 2. DIVERGENCE (future selves flung ahead, no new tech) ----------
+    divergence: {
+      name: 'DIVERGENCE',
+      nodes: [
+        { key: 'tachyon_divergence', name: 'Divergence', tier: 3, max: 1, costOverride: [7500], pointCost: 5,
+          desc: 'KEYSTONE. While hyperspeeding, 2 ESCORT-clones fly in a V beside you, blurred and lagging ~0.8s so they feel alive. They kill what they touch via their own hyperspeed barrier and by body-slamming, plus forward strikes. Your own hitbox is never shielded.',
+          effect: r => r ? 'Escort V-formation while hyperspeeding' : 'Locked' },
+        { key: 'tachyon_forkedPath', name: 'Forked Path', tier: 1, max: 1, costOverride: [2500], pointCost: 2,
+          desc: '+1 escort joining the V-formation (sits left-and-back of the line).',
+          effect: r => r ? '+1 escort (V left)' : 'Locked' },
+        { key: 'tachyon_causalLead', name: 'Causal Lead', tier: 1, max: 1, costOverride: [2500], pointCost: 2,
+          desc: 'When hyperspeed ENDS, your escorts race off to the top of the screen at full speed, destroying everything in their path (and procing their other skills), then vanish.',
+          effect: r => r ? 'Escorts race out on hyperspeed end' : 'Locked' },
+        { key: 'tachyon_manyWorlds', name: 'Wide Formation', tier: 1, max: 1, costOverride: [2500], pointCost: 2,
+          desc: '+1 escort on the right side of the V (mirror of Forked Path).',
+          effect: r => r ? '+1 escort (V right)' : 'Locked' },
+        { key: 'tachyon_probabilitySplit', name: 'Probability Split', tier: 2, max: 1, costOverride: [5000], pointCost: 3,
+          desc: 'When an escort kills a body — by muzzle-strike OR its hyperspeed barrier — detonate a small nova (1s cooldown per escort).',
+          effect: r => r ? 'Escort kill → nova (1s/escort)' : 'Locked' },
+        { key: 'tachyon_quantumTunnel', name: 'Causal Cascade', tier: 1, max: 1, costOverride: [2500], pointCost: 2,
+          desc: 'Requires Causal Lead. While hyperspeeding your escorts don\'t wait for the end — they RACE off the top in a streak, destroying everything in their path, then a fresh formation appears and does it again (~2 waves per blaze).',
+          effect: r => r ? 'Escorts streak off & respawn (~2 waves)' : 'Locked' },
+        { key: 'tachyon_allTimelines', name: 'All Timelines', tier: 3, max: 1, costOverride: [10000], pointCost: 5,
+          desc: 'CAPSTONE. Every 100 kills made by escort-clones, your max hyperspeed cap rises +1 for the rest of the run (toward 20).',
+          effect: r => r ? '100 escort kills → +1 max cap' : 'Locked' },
+      ],
+    },
+    // ---- 3. MAELSTROM (gravity WELLS — Tachyon's own implosion, NOT Warp's rift)
+    convergence: {
+      name: 'MAELSTROM',
+      nodes: [
+        { key: 'tachyon_convergence', name: 'Collapsar', tier: 3, max: 1, costOverride: [7500], pointCost: 5,
+          desc: 'KEYSTONE. While hyperspeeding, every ~3s collapse a GRAVITY WELL at the densest cluster — it drags nearby bodies inward, then implodes them in a crush. Fires off your hyperspeed; needs no echoes. Your own hitbox is never pulled.',
+          effect: r => r ? 'Gravity wells while hyperspeeding' : 'Locked' },
+        { key: 'tachyon_implosion', name: 'Implosion', tier: 1, max: 1, costOverride: [2500], pointCost: 2,
+          desc: 'The crush at a well\'s core is bigger — a wider kill radius and a larger implosion nova.',
+          effect: r => r ? '+ crush radius' : 'Locked' },
+        { key: 'tachyon_lockstep', name: 'Deep Well', tier: 1, max: 1, costOverride: [2500], pointCost: 2,
+          desc: 'Wells reach farther and linger longer, dragging bodies in from a wider field before they implode.',
+          effect: r => r ? '+ pull range & duration' : 'Locked' },
+        { key: 'tachyon_synchrony', name: 'Accretion', tier: 1, max: 1, costOverride: [2500], pointCost: 2,
+          desc: 'Each body a well crushes feeds the next one — wells grow stronger and pull wider as the run goes on (capped).',
+          effect: r => r ? 'Crushes feed the next well' : 'Locked' },
+        { key: 'tachyon_gather', name: 'Tidal Pull', tier: 2, max: 1, costOverride: [5000], pointCost: 3,
+          desc: 'Your wells become true TIDES: they pull from a far wider field, and each implosion fires an AFTERSHOCK that crushes the whole gathered region at once. (Also drags your escorts/past-echoes into the crush.)',
+          effect: r => r ? 'Wider pull + aftershock crush' : 'Locked' },
+        { key: 'tachyon_overcharge', name: 'Resonant Collapse', tier: 1, max: 1, costOverride: [2500], pointCost: 2,
+          desc: 'A well that crushes 3+ bodies refunds its cooldown — the next well collapses sooner (1.5s internal cooldown).',
+          effect: r => r ? 'Big crush → next well sooner' : 'Locked' },
+        { key: 'tachyon_syzygy', name: 'Quasar', tier: 3, max: 1, costOverride: [10000], pointCost: 5,
+          desc: 'CAPSTONE. At 5+ hyperspeed stacks, every ~20s tear open a QUASAR at the densest cluster — a huge, long-lived well that drags in and annihilates a wide area.',
+          effect: r => r ? 'Black hole at 5+ stacks / 20s' : 'Locked' },
+      ],
+    },
+  },
+  capstones: [],
+};
+if (typeof TREE_UNLOCK_COSTS !== 'undefined') TREE_UNLOCK_COSTS.tachyon = 30000;
+if (typeof ORB_COST_SCALE !== 'undefined') ORB_COST_SCALE.tachyon = 1.0;
+if (typeof ORB_CAPSTONE_COST_SCALE !== 'undefined') ORB_CAPSTONE_COST_SCALE.tachyon = 0.70;
+
+const TACHYON_KEYSTONES = {
+  recurrence:  'tachyon_recurrence',
+  divergence:  'tachyon_divergence',
+  convergence: 'tachyon_convergence',
+};
+const TACHYON_PREREQS = {
+  tachyon_afterself:         { prereq: ['tachyon_recurrence'] },
+  tachyon_rewindCadence:     { prereq: ['tachyon_recurrence'] },
+  tachyon_wakeDamage:        { prereq: ['tachyon_recurrence'] },
+  tachyon_longMemory:        { prereq: ['tachyon_recurrence'] },
+  tachyon_photonDebt:        { prereq: ['tachyon_recurrence'] },
+  tachyon_eternalWake:       { prereq: ['tachyon_recurrence'] },
+  tachyon_forkedPath:        { prereq: ['tachyon_divergence'] },
+  tachyon_causalLead:        { prereq: ['tachyon_divergence'] },
+  tachyon_manyWorlds:        { prereq: ['tachyon_divergence'] },
+  tachyon_probabilitySplit:  { prereq: ['tachyon_divergence'] },
+  tachyon_quantumTunnel:     { prereq: ['tachyon_causalLead'], requiresActive: ['tachyon_causalLead'] },
+  tachyon_allTimelines:      { prereq: ['tachyon_divergence'] },
+  tachyon_implosion:         { prereq: ['tachyon_convergence'] },
+  tachyon_lockstep:          { prereq: ['tachyon_convergence'] },
+  tachyon_synchrony:         { prereq: ['tachyon_convergence'] },
+  tachyon_gather:            { prereq: ['tachyon_convergence'] },
+  tachyon_overcharge:        { prereq: ['tachyon_convergence'] },
+  tachyon_syzygy:            { prereq: ['tachyon_convergence'] },
+};
+const TACHYON_TREE_LAYOUTS = {
+  recurrence: { name: 'RECURRENCE', color: TACHYON_PATH_COLORS.recurrence, nodes: {
+    tachyon_recurrence:    { x: 100, y: 50, keystone: true },
+    tachyon_afterself:     { x: 40,  y: 130 },
+    tachyon_rewindCadence: { x: 100, y: 130 },
+    tachyon_wakeDamage:    { x: 160, y: 130 },
+    tachyon_longMemory:    { x: 60,  y: 210 },
+    tachyon_photonDebt:    { x: 140, y: 210 },
+    tachyon_eternalWake:   { x: 100, y: 330, capstone: true },
+  } },
+  divergence: { name: 'DIVERGENCE', color: TACHYON_PATH_COLORS.divergence, nodes: {
+    tachyon_divergence:       { x: 100, y: 50, keystone: true },
+    tachyon_forkedPath:       { x: 40,  y: 130 },
+    tachyon_causalLead:       { x: 100, y: 130 },
+    tachyon_manyWorlds:       { x: 160, y: 130 },
+    tachyon_probabilitySplit: { x: 60,  y: 210 },
+    tachyon_quantumTunnel:    { x: 140, y: 210 },
+    tachyon_allTimelines:     { x: 100, y: 330, capstone: true },
+  } },
+  convergence: { name: 'MAELSTROM', color: TACHYON_PATH_COLORS.convergence, nodes: {
+    tachyon_convergence: { x: 100, y: 50, keystone: true },
+    tachyon_implosion:   { x: 40,  y: 130 },
+    tachyon_lockstep:    { x: 100, y: 130 },
+    tachyon_synchrony:   { x: 160, y: 130 },
+    tachyon_gather:      { x: 60,  y: 210 },
+    tachyon_overcharge:  { x: 140, y: 210 },
+    tachyon_syzygy:      { x: 100, y: 330, capstone: true },
+  } },
+};
+ActiveBudget.register('tachyon', {
+  base: 25, expandMax: 5, expandCost: 2000,
+  bonusKey: 'drift_tachyon_budget_bonus',
+  keystones: TACHYON_KEYSTONES,
+  prereqs: TACHYON_PREREQS,
+});
+function getTachyonBudgetCap()         { return ActiveBudget.budgetCap('tachyon'); }
+function getTachyonBudgetBonus()       { return ActiveBudget.budgetBonus('tachyon'); }
+function purchaseTachyonBudgetExpand() { return ActiveBudget.purchaseExpand('tachyon'); }
+function isTachyonActive()             { return activeOrb === 'tachyon'; }
+
+orbTrees.tachyon = freshOrbTreeState('tachyon');
+treesUnlocked.tachyon = false;
+
+ORB_BEHAVIOR.tachyon = ORB_BEHAVIOR.tachyon || {};
+ORB_BEHAVIOR.tachyon.rankOf = function(nodeKey) {
+  if (typeof nodeKey === 'string' && ActiveBudget.resolveNode('tachyon', nodeKey)) {
+    return ActiveBudget.isActive('tachyon', nodeKey) ? 1 : 0;
+  }
+  return _rankOf_default(nodeKey);
+};
+ORB_BEHAVIOR.tachyon.pathPrereqMet = function(state, pathKey, nodeIdx) {
+  if (state !== orbTrees.tachyon) return _pathPrereqMet_default(state, pathKey, nodeIdx);
+  return ActiveBudget.pathPrereqMet('tachyon', pathKey, nodeIdx);
+};
+ORB_BEHAVIOR.tachyon.respecNode = function(orbKey, pathKey, nodeIdx) {
+  const def = TREE_DEFS.tachyon; const state = orbTrees.tachyon;
+  if (!def || !state) return false;
+  const node = def.paths[pathKey] && def.paths[pathKey].nodes[nodeIdx];
+  if (!node) return false;
+  const current = state[pathKey][nodeIdx] | 0;
+  if (current <= 0) return false;
+  const invested = nodeCrystalsInvested(orbKey, node, current);
+  const fee = refundFee(invested);
+  if (totalCrystals < fee) return false;
+  totalCrystals = Math.max(0, totalCrystals - fee);
+  totalCrystals += invested;
+  state[pathKey][nodeIdx] = 0;
+  ActiveBudget.deactivate('tachyon', node.key);
+  saveCrystals(); saveTreeState();
+  if (orbKey === activeOrb) refreshActiveTreeCache();
+  return true;
+};
+ORB_BEHAVIOR.tachyon.fullTreeRespecCost = function(orbKey) { return refundFee(treeCrystalsInvested(orbKey)); };
+ORB_BEHAVIOR.tachyon.respecTree = function(orbKey) {
+  const def = TREE_DEFS.tachyon; const state = orbTrees.tachyon;
+  if (!def || !state) return false;
+  if (totalRanksInvested(orbKey) <= 0) return false;
+  const invested = treeCrystalsInvested(orbKey);
+  const fee = refundFee(invested);
+  if (totalCrystals < fee) return false;
+  totalCrystals = Math.max(0, totalCrystals - fee);
+  for (const pKey of Object.keys(def.paths)) {
+    const nodes = def.paths[pKey].nodes; const arr = state[pKey];
+    for (let i = 0; i < nodes.length; i++) {
+      totalCrystals += nodeCrystalsInvested(orbKey, nodes[i], arr[i] | 0);
+      arr[i] = 0;
+    }
+  }
+  state.activePoints = {};
+  saveCrystals(); saveTreeState();
+  if (orbKey === activeOrb) refreshActiveTreeCache();
+  return true;
+};
+// Tachyon hyperspeed cap: BASE 8 (vs Warp's lower base), grown during the run
+// by the two kill-milestone capstones (Eternal Wake / All Timelines) up to a
+// hard ceiling of 20. _tachyonCapBonus is per-run, reset in onResetGame.
+let _tachyonCapBonus = 0;
+const TACHYON_BASE_MAX_STACKS = 8;
+const TACHYON_MAX_STACKS_CEILING = 20;
+ORB_BEHAVIOR.tachyon.hyperspeedMaxStacks = function() {
+  return Math.min(TACHYON_MAX_STACKS_CEILING, TACHYON_BASE_MAX_STACKS + (_tachyonCapBonus | 0));
+};
+ORB_BEHAVIOR.tachyon.burstCooldown = function() { return 18000; };
+OrbHooks.on('afterLoadTreeState', () => { ActiveBudget.restoreActivePoints('tachyon'); });
+
+// === TACHYON flash feedback (cloned from _helios flash helpers) ============
+let _tachyon_flashes = [];
+let _tachyon_flashGates = {};
+function _tachyon_addFlash(text, color, durationMs) {
+  if (activeOrb !== 'tachyon') return;
+  _tachyon_flashes.push({ text: String(text || ''), color: color || TACHYON_CORE, startTime: Date.now(), durationMs: durationMs || 750 });
+  if (_tachyon_flashes.length > 6) _tachyon_flashes.shift();
+}
+function _tachyon_flash(key, text, color, minMs) {
+  const now = Date.now();
+  if (now - (_tachyon_flashGates[key] || 0) < (minMs || 0)) return;
+  _tachyon_flashGates[key] = now;
+  _tachyon_addFlash(text, color);
+}
+function _tachyon_drawFlashes() {
+  // FLASH-SIZING FIX (Pass 1): match the house format exactly — cloned from
+  // _helios_drawFlashes (bold 11px + dark stroke halo + offsets 28/13/16).
+  if (state !== 'playing' && state !== 'paused' && state !== 'apocalypse' && state !== 'devmode') return;
+  if (!_tachyon_flashes.length) return;
+  if (!player || isNaN(player.x) || isNaN(player.y)) return;
+  const now = Date.now();
+  const visible = [];
+  ctx.save();
+  ctx.font = 'bold 11px Orbitron, monospace';
+  ctx.textAlign = 'center';
+  ctx.lineJoin = 'round';
+  let i = 0;
+  for (const f of _tachyon_flashes) {
+    const age = now - f.startTime;
+    if (age >= f.durationMs) continue;
+    visible.push(f);
+    const fade = 1 - age / f.durationMs;
+    const y = player.y - 28 - (i * 13) - (age / f.durationMs) * 16;
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = `rgba(0,0,0,${(0.5 * fade).toFixed(2)})`;
+    ctx.strokeText(f.text, player.x, y);
+    ctx.fillStyle = `rgba(${f.color},${(0.95 * fade).toFixed(2)})`;
+    ctx.fillText(f.text, player.x, y);
+    i++;
+  }
+  _tachyon_flashes = visible;
+  ctx.restore();
+}
+
+// === TACHYON echo system + position-history buffer (placeholder visuals) ====
+let _tachyonEchoes = [];
+const _tachyonHistX = new Float32Array(TACHYON_HISTORY_LEN);
+const _tachyonHistY = new Float32Array(TACHYON_HISTORY_LEN);
+const _tachyonHistBar = new Uint8Array(TACHYON_HISTORY_LEN);    // hyperspeeding at capture (faithful barrier)
+const _tachyonHistStk = new Uint8Array(TACHYON_HISTORY_LEN);    // stacks at capture (state-faithful barrier size)
+// RECURRENCE action-replay (Option A): per-sample ACTION events. Each slot holds
+// null or a small event obj { burst?, combo?, kills? } recorded at the matching
+// frame, so a faithful past-echo can re-perform WHAT THE PLAYER DID on its delay.
+const _tachyonHistEvt = new Array(TACHYON_HISTORY_LEN).fill(null);
+let _tachyonHistWriteSlot = 0;   // the slot the current frame writes into
+let _tachyonHistHead = 0, _tachyonHistFilled = 0;
+function _tachyonRecordEvt(ev) {
+  if (activeOrb !== 'tachyon') return;
+  const slot = _tachyonHistWriteSlot;
+  const cur = _tachyonHistEvt[slot];
+  if (cur) Object.assign(cur, ev); else _tachyonHistEvt[slot] = Object.assign({}, ev);
+}
+let _tachyonRecurAt = 0, _tachyonSyzygyAt = 0;
+let _tachyonOverchargeAt = 0;
+let _tachyonCascadeAt = 0;   // Causal Cascade: delayed wave-2 fire time after hyperspeed end (0 = none)
+// MAELSTROM gravity wells (own ephemeral pool — no echo-cap pressure) + Accretion
+// growth + TEMPORAL SNAP chain queue.
+let _tachyonWells = [], _tachyonWellAt = 0, _tachyonAccretion = 0;
+let _tachyonSnapQueue = [], _tachyonSnapAt = 0;
+let _tachyonTimersInit = false;
+// Kill-milestone capstone counters (Eternal Wake / All Timelines) → cap growth.
+let _tachyonPastEchoKills = 0, _tachyonEscortKills = 0;
+let _tachyonWakeNext = 100, _tachyonAllNext = 100;
+let _tachyonPrevHyper = false;   // edge-detect hyperspeed end (Causal Lead)
+function _tachyonBlob(g, x, y, r, rgb, a) {
+  g.beginPath(); g.fillStyle = `rgba(${rgb},${(a * 0.4).toFixed(3)})`; g.arc(x, y, r, 0, 6.2832); g.fill();
+  g.beginPath(); g.fillStyle = `rgba(${rgb},${a.toFixed(3)})`; g.arc(x, y, r * 0.5, 0, 6.2832); g.fill();
+}
+function _tachyonDrawEchoes() {
+  if (!_tachyonEchoes.length) return;
+  if (state !== 'playing' && state !== 'paused' && state !== 'apocalypse' && state !== 'devmode') return;
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  // GHOST TRAIN line: connect looping past-echoes so the train reads as one chain.
+  const _loop = _tachyonEchoes.filter(e => e.kind === 'past' && e.isLooping);
+  if (_loop.length >= 2) {
+    ctx.strokeStyle = `rgba(${TACHYON_PATH_COLORS.recurrence},0.18)`; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(_loop[0].x, _loop[0].y);
+    for (let i = 1; i < _loop.length; i++) ctx.lineTo(_loop[i].x, _loop[i].y);
+    ctx.stroke();
+  }
+  for (const e of _tachyonEchoes) {
+    if (e.kind === 'escort' || e.kind === 'streak') {
+      // Escorts read as MORE blurred/distorted than the player: a doubled
+      // offset blob (motion smear) + a faint, more-transparent barrier ring.
+      const col = TACHYON_PATH_COLORS.divergence;
+      _tachyonBlob(ctx, e.x, e.y, (e.r || 8) + 2, col, 0.30);
+      _tachyonBlob(ctx, e.x + 4, e.y + 4, e.r || 8, col, 0.20);   // heavier smear
+      ctx.strokeStyle = `rgba(${col},0.16)`; ctx.lineWidth = 2;     // transparent barrier
+      ctx.beginPath(); ctx.arc(e.x, e.y, 30, 0, 6.2832); ctx.stroke();
+    } else {
+      // Faithful past-echo: blob + (replaying barrier) a stack-scaled cherenkov ring.
+      const col = TACHYON_PATH_COLORS.recurrence;
+      _tachyonBlob(ctx, e.x, e.y, e.r || 9, col, 0.5);
+      const s = e.path && e.path[e.idx];
+      if (s && s.bar) { ctx.strokeStyle = `rgba(${col},0.22)`; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(e.x, e.y, 36 + Math.min(24, (s.stk || 1) * 3), 0, 6.2832); ctx.stroke(); }
+    }
+  }
+  ctx.restore();
+}
+function _tachyonPush(e) {
+  if (_tachyonEchoes.length >= TACHYON_ECHO_CAP) _tachyonEchoes.shift();
+  _tachyonEchoes.push(e);
+}
+// Spawn a PAST-echo replaying the recorded path + state (barrier). Replay
+// window: 1.6s (≈96 samples) default, 1.8s with Long Memory. The echo carries
+// `hadBarrier` per sample so it faithfully replays your hyperspeed barrier.
+function _tachyonSpawnPast() {
+  const len = Math.min(_tachyonHistFilled, TACHYON_HISTORY_LEN);
+  if (len < 8) return;   // not enough history yet (no future-clone fallback)
+  const winSamples = (rankOf('tachyon_longMemory') > 0) ? 108 : 96;  // 1.8s vs 1.6s
+  const useLen = Math.min(len, winSamples);
+  const path = new Array(useLen);
+  for (let i = 0; i < useLen; i++) {
+    const idx = ((_tachyonHistHead - useLen + i) % TACHYON_HISTORY_LEN + TACHYON_HISTORY_LEN) % TACHYON_HISTORY_LEN;
+    path[i] = { x: _tachyonHistX[idx], y: _tachyonHistY[idx], bar: _tachyonHistBar[idx], stk: _tachyonHistStk[idx], evt: _tachyonHistEvt[idx] };
+  }
+  _tachyonPush({ kind: 'past', path, idx: 0, x: path[0].x, y: path[0].y, r: 9, lastBarAt: 0, lastEvtAt: 0 });
+}
+// (Baseline trim removed the orb-wide _tachyonSpawnSimple shed; the old Quantum
+// Tunnel node removed _tachyonSpawnEscortPast. tachyon_quantumTunnel is now
+// "Causal Cascade" — see the escort streak-cycle in onUpdate.)
+// Direct radius kill (precise attribution for the kill-milestone capstones).
+function _tachyonRadiusKill(x, y, radius, who) {
+  let k = 0;
+  for (let i = bodies.length - 1; i >= 0; i--) {
+    const b = bodies[i];
+    const dx = b.x - x, dy = b.y - y, rr = radius + (b.radius || 12);
+    if (dx * dx + dy * dy <= rr * rr) { _tachyonKillBody(b, i); k++; }
+  }
+  if (k > 0) {
+    if (who === 'past') { _tachyonPastEchoKills += k; _tachyonCheckWake(); }
+    else if (who === 'escort') { _tachyonEscortKills += k; _tachyonCheckAllTimelines(); }
+  }
+  return k;
+}
+// (Slipstream Echo removed — tachyon_photonDebt is now Temporal Snap; the payoff
+// is _tachyonTemporalSnap, not a burst-CD shave.)
+// Eternal Wake: every 100 past-echo kills → +1 max hyperspeed cap (≤20).
+function _tachyonCheckWake() {
+  if (rankOf('tachyon_eternalWake') <= 0) return;
+  while (_tachyonPastEchoKills >= _tachyonWakeNext && (TACHYON_BASE_MAX_STACKS + _tachyonCapBonus) < TACHYON_MAX_STACKS_CEILING) {
+    _tachyonCapBonus++;
+    _tachyonWakeNext += 100;
+    _tachyon_flash('eternalWake', 'ETERNAL WAKE +CAP', TACHYON_PATH_COLORS.recurrence, 0);
+  }
+}
+// All Timelines: every 100 escort kills → +1 max hyperspeed cap (≤20).
+function _tachyonCheckAllTimelines() {
+  if (rankOf('tachyon_allTimelines') <= 0) return;
+  while (_tachyonEscortKills >= _tachyonAllNext && (TACHYON_BASE_MAX_STACKS + _tachyonCapBonus) < TACHYON_MAX_STACKS_CEILING) {
+    _tachyonCapBonus++;
+    _tachyonAllNext += 100;
+    _tachyon_flash('allTimelines', 'ALL TIMELINES +CAP', TACHYON_PATH_COLORS.divergence, 0);
+  }
+}
+function _tachyonDetonate(x, y, pathKey, sizeMult) {
+  const now = Date.now();
+  let rm = 0.6;
+  if (pathKey === 'recurrence' && rankOf('tachyon_wakeDamage') > 0) rm += 0.3;   // Wake Damage → MEDIUM nova
+  if (pathKey === 'convergence') { if (rankOf('tachyon_implosion') > 0) rm += 0.3; if (rankOf('tachyon_synchrony') > 0) rm += 0.2; }
+  const sm = (typeof sizeMult === 'number') ? sizeMult : 0.6;
+  // tcol:1 marks this as a TACHYON SKILL nova → rendered blue/blue-white (not the
+  // standard gold). Powerup-pickup novas don't set it, so they stay gold.
+  pushNovaRingCapped({ x, y, radius: 0, life: 1, prevR: 0, startTime: now, sizeMult: sm, radiusMult: rm, tcol: 1 });
+  try { emitNovaSpecks(x, y); } catch (e) {}
+}
+// V-FORMATION offsets by slot. 0/1 = base pair (left/right); 2 = left-and-back
+// (Forked Path); 3 = right-and-back (Wide Formation) — a proper V. Spacing
+// widened so escorts are visibly separated (was ±40/±74).
+function _tachyonEscortOffset(slot) {
+  switch (slot) {
+    case 0:  return { x: -68, y: 30 };
+    case 1:  return { x:  68, y: 30 };
+    case 2:  return { x: -116, y: 72 };
+    default: return { x:  116, y: 72 };
+  }
+}
+// === MAELSTROM — gravity WELLS (Tachyon's OWN implosion field) ==============
+// Replaces the old CONVERGENCE lance subsystem. The well functions live just past
+// _tachyonKillBody (below), which is SHARED with _tachyonRadiusKill and is kept.
+// Destroy a body through the standard pipeline (mirrors _heliosKill, :9545).
+function _tachyonKillBody(b, idx) {
+  try { emitDestroyBurst(b.x, b.y, TACHYON_PATH_COLORS.convergence); } catch (e) {}
+  try { emitDestroyEffects(b, 'nova'); } catch (e) {}
+  try { addDestroyPoints(); } catch (e) {}
+  try { releaseBodyCanvases(b); } catch (e) {}
+  bodies.splice(idx, 1);
+  try { checkDestroyProc(b, 'nova'); } catch (e) {}
+}
+// Spawn a gravity WELL. FIXED placement: the target is LOCKED now (densest
+// cluster → closest body → ahead of player) and the well NEVER tracks the live
+// cluster or drifts onto the player. `big` = Quasar capstone.
+function _tachyonSpawnWell(big) {
+  // PLACEMENT FIX: the old code used _heliosDensestPoint(), which picks the GLOBAL
+  // densest body among ALL bodies — including ones below the player or scrolling off
+  // the bottom — so wells formed in dead zones (sometimes near-offscreen). Instead
+  // pick the densest cluster among INCOMING bodies (on-screen, from the top down to
+  // just past the player), then CLAMP to the active playfield. Bias toward bodies ahead.
+  let cx = player.x, cy = player.y - 180;
+  const yTop = H * 0.10, yBot = Math.min(H * 0.9, player.y + 40);   // incoming zone; excludes dead zones
+  let best = null, bestN = -1;
+  for (const b of bodies) {
+    if (b.y < yTop || b.y > yBot || b.x < 0 || b.x > W) continue;  // skip off-screen / leaving bodies
+    let n = 0;
+    for (const o of bodies) { const dx = o.x - b.x, dy = o.y - b.y; if (dx * dx + dy * dy < 130 * 130) n++; }
+    if (n > bestN) { bestN = n; best = b; }
+  }
+  if (best) { cx = best.x; cy = best.y; }
+  else if (closestBody && closestBody.y >= yTop && closestBody.y <= yBot) { cx = closestBody.x; cy = closestBody.y; }
+  cx = Math.max(W * 0.08, Math.min(W * 0.92, cx));                 // clamp to active playfield
+  cy = Math.max(yTop, Math.min(yBot, cy));
+  const deep = rankOf('tachyon_lockstep') > 0;                          // Deep Well: wider + longer
+  let pullR = 150 + (deep ? 50 : 0) + Math.min(80, _tachyonAccretion);  // BUFF: 130→150, accretion cap 60→80
+  let killR = 46 + (rankOf('tachyon_implosion') > 0 ? 16 : 0);          // BUFF: base 38→46, Implosion +14→+16
+  killR = Math.min(70, killR);                                          // BUFF: cap 60→70
+  let life = deep ? 1600 : 1100;                                        // BUFF: 1000→1100 / 1500→1600
+  if (big) { pullR = 240; killR = 80; life = 1700; }                    // Quasar: huge/wide/long
+  if (rankOf('tachyon_gather') > 0) pullR = Math.min(300, Math.round(pullR * 1.5));  // TIDAL PULL: far wider tide (self-sufficient)
+  _tachyonWells.push({ x: cx, y: cy, born: Date.now(), life, pullR, killR, big: !!big, coreAt: 0 });
+  _tachyon_flash(big ? 'quasar' : 'maelstrom', big ? 'QUASAR' : 'MAELSTROM', TACHYON_PATH_COLORS.convergence, big ? 0 : 250);
+}
+// Tachyon's OWN pull-math (NOT a copy of Warp's rift): proximity-ACCELERATED +
+// time-RAMPED, so bodies fall inward faster as they near the core and as the well
+// matures ("spaghettification") — vs Warp's single fixed top-screen vortex pulling
+// at a constant capped step. Pulls toward the LOCKED centre only, never the player.
+function _tachyonWellPull(w) {
+  const now = Date.now();
+  const ramp = 0.4 + (now - w.born) / w.life;                 // strengthens over the well's life
+  for (let i = 0; i < bodies.length; i++) {
+    const b = bodies[i];
+    const dx = w.x - b.x, dy = w.y - b.y;
+    const d2 = dx * dx + dy * dy;
+    if (d2 > w.pullR * w.pullR) continue;
+    const dd = Math.sqrt(d2) || 1;
+    const grav = (1.5 + 90 / dd) * ramp * dtScale;             // BUFF: stronger pull (1.0→1.5, 70→90)
+    const step = Math.min(dd, grav);
+    b.x += (dx / dd) * step; b.y += (dy / dd) * step;
+  }
+  // BUFF: continuous CORE crush — bodies dragged to the centre are shredded as they
+  // arrive (not just one pop at end-of-life), throttled ~70ms. At the well, never the player.
+  if (now - (w.coreAt || 0) >= 70) {
+    w.coreAt = now;
+    const core = Math.min(28, w.killR * 0.5);
+    if (_tachyonRadiusKill(w.x, w.y, core, 'collapse') > 0) _tachyonDetonate(w.x, w.y, 'convergence', w.big ? 0.6 : 0.35);
+  }
+}
+// IMPLOSION crush at end-of-life: annihilate the gathered cluster AT THE WELL
+// (never the player). Accretion feeds the next well; Resonant Collapse shortens
+// the next well's cooldown; Tidal Pull pops your own echoes caught in the field.
+function _tachyonWellCrush(w) {
+  const now = Date.now();
+  const k = _tachyonRadiusKill(w.x, w.y, w.killR, 'collapse');
+  _tachyonDetonate(w.x, w.y, 'convergence', w.big ? 1.6 : (rankOf('tachyon_implosion') > 0 ? 1.05 : 0.8));   // BUFF nova size
+  if (k > 0 && rankOf('tachyon_synchrony') > 0) _tachyonAccretion = Math.min(80, _tachyonAccretion + k * 5);   // Accretion (BUFF cap 60→80, +4→+5)
+  if (k >= 3 && rankOf('tachyon_overcharge') > 0 && now - _tachyonOverchargeAt > 1500) {                        // Resonant Collapse
+    _tachyonOverchargeAt = now;
+    _tachyonWellAt = Math.min(_tachyonWellAt, now - 2200);    // next well ~0.8s sooner
+  }
+  if (rankOf('tachyon_gather') > 0) {                          // TIDAL PULL (reworked, Part 3)
+    // SELF (works for a pure-MAELSTROM build, zero echoes): an AFTERSHOCK — a wider
+    // second crush annihilates the whole tided-in region as the well implodes.
+    _tachyonRadiusKill(w.x, w.y, Math.min(110, w.killR * 1.6), 'collapse');
+    _tachyonDetonate(w.x, w.y, 'convergence', w.big ? 1.0 : 0.7);
+    // SECONDARY (cross-tree bonus): also pop your own escorts/past-echoes in the field.
+    for (const e of _tachyonEchoes) {
+      const ex = e.x - w.x, ey = e.y - w.y;
+      if (ex * ex + ey * ey <= w.pullR * w.pullR) { _tachyonRadiusKill(e.x, e.y, 34, 'collapse'); _tachyonDetonate(e.x, e.y, 'convergence', 0.5); }
+    }
+  }
+}
+// Wells live in their OWN pool (no echo-cap pressure) and only while hyperspeeding
+// — on hyperspeed end they crush immediately (no lingering lane-clear).
+function _tachyonTickWells() {
+  if (!_tachyonWells.length) return;
+  const now = Date.now();
+  const blazing = activeEffects.hyperspeed > 0;
+  const alive = [];
+  for (const w of _tachyonWells) {
+    if (!blazing || now - w.born >= w.life) { _tachyonWellCrush(w); continue; }
+    _tachyonWellPull(w);
+    alive.push(w);
+  }
+  _tachyonWells = alive;
+}
+// Well visual (own look, NOT Warp's rift vortex): an accretion ring that SHRINKS
+// inward as the well matures + a brightening hot core; the implosion nova is the
+// shared tachyon nova on crush.
+function _tachyonDrawWells() {
+  if (!_tachyonWells.length) return;
+  if (state !== 'playing' && state !== 'paused' && state !== 'apocalypse' && state !== 'devmode') return;
+  const now = Date.now();
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  const col = TACHYON_PATH_COLORS.convergence;
+  for (const w of _tachyonWells) {
+    const t = Math.min(1, (now - w.born) / w.life);
+    const ring = w.pullR * (1 - 0.75 * t);                     // ring collapses inward
+    ctx.strokeStyle = `rgba(${col},${((w.big ? 0.20 : 0.10) + 0.25 * t).toFixed(3)})`;
+    ctx.lineWidth = (w.big ? 4 : 2) + 3 * t;
+    ctx.beginPath(); ctx.arc(w.x, w.y, Math.max(2, ring), 0, 6.2832); ctx.stroke();
+    if (w.big) {   // QUASAR capstone reads distinct from regular wells: a 2nd white halo + brighter core
+      ctx.strokeStyle = `rgba(255,235,255,${(0.18 + 0.30 * t).toFixed(3)})`;
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(w.x, w.y, Math.max(2, ring * 0.6), 0, 6.2832); ctx.stroke();
+    }
+    _tachyonBlob(ctx, w.x, w.y, w.killR * (0.5 + t) * (w.big ? 1.3 : 1), col, (w.big ? 0.40 : 0.25) + 0.4 * t);
+  }
+  ctx.restore();
+}
+// Detonate one past-echo at its PAST position (credits Eternal Wake). Shared by
+// end-of-replay, Echo Loop overflow, and Temporal Snap.
+function _tachyonDetonatePast(e, full) {
+  _tachyonRadiusKill(e.x, e.y, full ? 60 : 44, 'past');
+  _tachyonDetonate(e.x, e.y, 'recurrence', full ? 1.0 : 0.6);
+}
+// TEMPORAL SNAP: collapse the whole living train and detonate it in a CHAIN along
+// your wake (farthest-from-you first → the wave marches toward you). Bigger train =
+// bigger implosion. HARD RULE: each blast fires at the echo's PAST position.
+function _tachyonTemporalSnap() {
+  const train = _tachyonEchoes.filter(e => e.kind === 'past');
+  if (!train.length) return;
+  const full = rankOf('tachyon_wakeDamage') > 0;
+  const scale = 1 + Math.min(0.6, train.length * 0.06);
+  train.sort((a, b) => ((b.x - player.x) * (b.x - player.x) + (b.y - player.y) * (b.y - player.y)) - ((a.x - player.x) * (a.x - player.x) + (a.y - player.y) * (a.y - player.y)));
+  for (const e of train) _tachyonSnapQueue.push({ x: e.x, y: e.y, full, scale });
+  _tachyonEchoes = _tachyonEchoes.filter(e => e.kind !== 'past');
+  _tachyon_flash('snap', 'TEMPORAL SNAP', TACHYON_PATH_COLORS.recurrence, 0);
+  try { addShake(5); } catch (e) {}
+}
+// GHOST TRAIN length tick: small pips above the player, one per looping echo.
+function _tachyonDrawTrainHud() {
+  if (rankOf('tachyon_rewindCadence') <= 0 || !player || isNaN(player.x)) return;
+  let n = 0;
+  for (const e of _tachyonEchoes) if (e.kind === 'past' && e.isLooping) n++;
+  if (n <= 0) return;
+  const col = TACHYON_PATH_COLORS.recurrence, gap = 7, total = (n - 1) * gap, y = player.y - 42;
+  ctx.save();
+  for (let i = 0; i < n; i++) {
+    ctx.beginPath(); ctx.fillStyle = `rgba(${col},0.9)`;
+    ctx.arc(player.x - total / 2 + i * gap, y, 2.4, 0, 6.2832); ctx.fill();
+  }
+  ctx.restore();
+}
+// Shared ESCORT KILL — used by BOTH muzzle-strike AND the escort's own
+// hyperspeed barrier / body-slam, AND by Causal Lead / Causal Cascade streak
+// kills. Every escort kill routes here so Probability Split procs consistently.
+// HARD RULE: this kills at the ESCORT's position / its forward strike point,
+// never on the player's behalf — the player's own hitbox stays mortal.
+function _tachyonEscortKill(e, x, y, radius) {
+  const now = Date.now();
+  const k = _tachyonRadiusKill(x, y, radius, 'escort');
+  if (k > 0) {
+    // Probability Split: a small nova on any escort kill (muzzle OR barrier OR
+    // streak), 1s cooldown per escort.
+    if (rankOf('tachyon_probabilitySplit') > 0 && now - (e.splitAt || 0) > 1000) {
+      e.splitAt = now;
+      _tachyonDetonate(x, y, 'divergence', 0.45);
+    }
+  }
+  return k;
+}
+// Escort forward muzzle-strike (short-range, ahead of the escort). HARD RULE:
+// kills at the escort's forward strike point, never on the player's behalf.
+function _tachyonEscortStrike(e) {
+  let ang = -Math.PI / 2;                          // forward (up) by default
+  if (closestBody) ang = Math.atan2(closestBody.y - e.y, closestBody.x - e.x);
+  const reach = 40;
+  _tachyonEscortKill(e, e.x + Math.cos(ang) * reach, e.y + Math.sin(ang) * reach, 26);
+}
+// Convert all live escorts into Causal-Lead streaks (race to the top, kill in their
+// path, then vanish). Shared by Causal Lead (hyperspeed-end) and Causal Cascade (periodic).
+function _tachyonStreakEscorts() {
+  let n = 0;
+  for (const e of _tachyonEchoes) if (e.kind === 'escort') { e.kind = 'streak'; e.spd = 6 + hyperSpeedStacks * 0.6; n++; }
+  return n;
+}
+function _tachyonTickEchoes() {
+  if (!_tachyonEchoes.length) return;
+  const now = Date.now();
+  const blazing = activeEffects.hyperspeed > 0;
+  const alive = [];
+  for (const e of _tachyonEchoes) {
+    if (e.kind === 'past') {
+      // Faithful past-echo (ACTION-REPLAY): replays movement + barrier + actions.
+      const full = rankOf('tachyon_wakeDamage') > 0;   // Wake Damage → full-size novas
+      // ECHO LOOP forces a clean collapse when hyperspeed ends (no lingering).
+      if (e._collapse) { _tachyonDetonatePast(e, full); continue; }
+      e.idx += Math.max(1, Math.round(dtScale));
+      if (e.idx >= e.path.length) {
+        // ECHO LOOP: while hyperspeeding, a finished echo LOOPS and keeps retracing
+        // your wake (builds the train) instead of detonating. Hard-capped post-loop.
+        if (rankOf('tachyon_rewindCadence') > 0 && blazing) {
+          e.isLooping = true; e.idx = 0; e.loops = (e.loops || 0) + 1;
+          alive.push(e); continue;
+        }
+        _tachyonDetonatePast(e, full);
+        continue;
+      }
+      const s = e.path[e.idx]; e.x = s.x; e.y = s.y;
+      // RE-PERFORM the recorded action at the PAST position (attribution 'past',
+      // throttled 30ms). HARD RULE: fires at the echo's past position, not the player.
+      if (s.evt && now - (e.lastEvtAt || 0) >= 30) {
+        e.lastEvtAt = now;
+        _tachyonRadiusKill(e.x, e.y, full ? 60 : 44, 'past');
+        _tachyonDetonate(e.x, e.y, 'recurrence', full ? 1.0 : 0.7);
+      }
+      // FAITHFUL BARRIER replay at the PAST position (stack-scaled, throttled 40ms).
+      // Never centered on the live player — the player's own hitbox stays mortal.
+      if (s.bar && now - (e.lastBarAt || 0) >= 40) {
+        e.lastBarAt = now;
+        _tachyonRadiusKill(e.x, e.y, 36 + Math.min(24, (s.stk || 1) * 3), 'past');
+      }
+    } else if (e.kind === 'escort') {
+      // DIVERGENCE escort: LAG-FOLLOW the V slot (smoothed → ~0.8s settle).
+      // Lives only while hyperspeeding (unless Causal Lead made it a streak).
+      if (!blazing) continue;
+      const off = _tachyonEscortOffset(e.slot);
+      const tx = player.x + off.x, ty = player.y + off.y;
+      e.x += (tx - e.x) * Math.min(1, 0.07 * dtScale);   // ~0.8s lag (was 0.12 ≈ 0.5s)
+      e.y += (ty - e.y) * Math.min(1, 0.07 * dtScale);
+      // KILL TWO WAYS: (a) hyperspeed BARRIER / BODY-SLAM — a kill-zone on the
+      // escort itself (routed through the shared escort-kill so Probability Split
+      // procs on barrier kills too); (b) forward muzzle-strike.
+      _tachyonEscortKill(e, e.x, e.y, 32);
+      if (now >= (e.nextStrikeAt || 0)) { e.nextStrikeAt = now + 600; _tachyonEscortStrike(e); }
+    } else if (e.kind === 'streak') {
+      // Causal Lead / Causal Cascade: escort races to the top at hyperspeed.
+      // Streak kills route through the shared escort-kill so they ALSO proc
+      // Probability Split.
+      e.y -= (16 + e.spd) * dtScale;
+      _tachyonEscortKill(e, e.x, e.y, 30);
+      if (e.y < -40) continue;
+    }
+    alive.push(e);
+  }
+  // ECHO LOOP hard cap: at most 6 loopers; oldest overflow detonates (no buildup).
+  const loopers = alive.filter(e => e.kind === 'past' && e.isLooping);
+  if (loopers.length > 6) {
+    let toKill = loopers.length - 6;
+    const keep = [];
+    for (const e of alive) {
+      if (toKill > 0 && e.kind === 'past' && e.isLooping) { _tachyonDetonatePast(e, rankOf('tachyon_wakeDamage') > 0); toKill--; continue; }
+      keep.push(e);
+    }
+    _tachyonEchoes = keep;
+  } else {
+    _tachyonEchoes = alive;
+  }
+  // PLAYTEST GUARD: warn if the echo pool nears the 30 cap (Echo Loop pressure).
+  if (rankOf('tachyon_rewindCadence') > 0 && _tachyonEchoes.length > 15) { try { console.warn('[tachyon] echo pool high:', _tachyonEchoes.length); } catch (e) {} }
+}
+OrbHooks.on('onUpdate', () => {
+  if (activeOrb !== 'tachyon') return;
+  const now = Date.now();
+  if (!_tachyonTimersInit) { _tachyonRecurAt = _tachyonSyzygyAt = _tachyonWellAt = now; _tachyonTimersInit = true; }
+  const hyperNow = activeEffects.hyperspeed > 0;
+  // Position+STATE history ring buffer — one write per physics frame; onUpdate
+  // only fires inside the playing/devmode physics gate → pause-safe. The barrier
+  // bit makes past-echoes replay the hyperspeed barrier faithfully.
+  // Action-replay: this frame's events record into the slot we're about to
+  // write; clear any stale event left in it from a prior lap of the ring.
+  _tachyonHistWriteSlot = _tachyonHistHead;
+  _tachyonHistEvt[_tachyonHistHead] = null;
+  _tachyonHistX[_tachyonHistHead] = player.x;
+  _tachyonHistY[_tachyonHistHead] = player.y;
+  // FAITHFUL BARRIER FIX: record the barrier for the WHOLE time you were
+  // hyperspeeding (hyperNow), not only while hyperspeedCurrentMult>1.05 — the
+  // mult decays within ~1s, so the old gate left most replay samples bar=0 and
+  // the echo "didn't replicate the barrier". hyperNow gives a full barrier replay.
+  _tachyonHistBar[_tachyonHistHead] = hyperNow ? 1 : 0;
+  _tachyonHistStk[_tachyonHistHead] = Math.min(255, hyperSpeedStacks | 0);
+  _tachyonHistHead = (_tachyonHistHead + 1) % TACHYON_HISTORY_LEN;
+  if (_tachyonHistFilled < TACHYON_HISTORY_LEN) _tachyonHistFilled++;
+  // (Baseline trim: the orb-wide auto echo-shed on hyperspeed stack-rise was
+  // removed. Echoes now come from Recurrence/Divergence nodes, not passively.)
+  // CAUSAL LEAD: when hyperspeed ENDS, escorts streak off to the top at
+  // hyperspeed, killing in their path, then vanish.
+  if (_tachyonPrevHyper && !hyperNow && rankOf('tachyon_causalLead') > 0) {
+    // WAVE 1: Causal Lead streaks the live escorts off on hyperspeed-END.
+    if (_tachyonStreakEscorts() > 0) _tachyon_flash('causalLead', 'CAUSAL LEAD', TACHYON_PATH_COLORS.divergence, 0);
+    // CAUSAL CASCADE (tachyon_quantumTunnel): schedule a SEPARATE, delayed WAVE 2
+    // ~1s later (respawn the formation + streak it off again) — released below. This
+    // replaces the old rapid back-to-back double-fire so the two waves read distinctly.
+    if (rankOf('tachyon_quantumTunnel') > 0) _tachyonCascadeAt = now + 1000;
+  }
+  // GHOST TRAIN: on hyperspeed END the train must collapse (loopers can't linger).
+  if (_tachyonPrevHyper && !hyperNow && rankOf('tachyon_recurrence') > 0) {
+    if (rankOf('tachyon_photonDebt') > 0) _tachyonTemporalSnap();
+    else for (const e of _tachyonEchoes) if (e.kind === 'past' && e.isLooping) e._collapse = true;
+  }
+  // Re-entering hyperspeed cancels a pending Cascade wave-2 (it's an after-END event).
+  if (!_tachyonPrevHyper && hyperNow) _tachyonCascadeAt = 0;
+  _tachyonPrevHyper = hyperNow;
+  // DIVERGENCE: maintain the ESCORT V-FORMATION while hyperspeeding. Slots:
+  // 0/1 base pair, 2 = Forked Path (left-back), 3 = Wide Formation (right-back).
+  // Escorts have NO contact hitbox (HARD RULE) — they kill only via their
+  // triggered forward muzzle-strikes. They vanish when hyperspeed ends (unless
+  // Causal Lead converts them to streaks).
+  if (rankOf('tachyon_divergence') > 0 && hyperNow) {
+    const wantSlots = [0, 1];
+    if (rankOf('tachyon_forkedPath') > 0) wantSlots.push(2);
+    if (rankOf('tachyon_manyWorlds') > 0) wantSlots.push(3);
+    const have = {};
+    for (const e of _tachyonEchoes) if (e.kind === 'escort') have[e.slot] = true;
+    for (const slot of wantSlots) {
+      if (!have[slot] && _tachyonEchoes.length < TACHYON_ECHO_CAP) {
+        const off = _tachyonEscortOffset(slot);
+        _tachyonPush({ kind: 'escort', slot, x: player.x + off.x, y: player.y + off.y, nextStrikeAt: now + 300, r: 8 });
+        _tachyon_flash('divergence', 'DIVERGENCE', TACHYON_PATH_COLORS.divergence, 300);
+      }
+    }
+  }
+  // CAUSAL CASCADE wave 2 (tachyon_quantumTunnel): ~1s AFTER hyperspeed ended (and
+  // after Causal Lead's wave 1), respawn the V-formation and immediately streak it
+  // off AGAIN — a distinct, separated second wave. Runs while NOT hyperspeeding, so
+  // it spawns the escorts already as streaks (race to the top, kill in path, vanish).
+  if (_tachyonCascadeAt > 0 && now >= _tachyonCascadeAt) {
+    _tachyonCascadeAt = 0;
+    const cSlots = [0, 1];
+    if (rankOf('tachyon_forkedPath') > 0) cSlots.push(2);
+    if (rankOf('tachyon_manyWorlds') > 0) cSlots.push(3);
+    let cN = 0;
+    for (const slot of cSlots) {
+      if (_tachyonEchoes.length >= TACHYON_ECHO_CAP) break;
+      const off = _tachyonEscortOffset(slot);
+      _tachyonPush({ kind: 'streak', slot, x: player.x + off.x, y: player.y + off.y, spd: 12, r: 8 });
+      cN++;
+    }
+    if (cN > 0) {
+      _tachyon_flash('cascade', 'CAUSAL CASCADE', TACHYON_PATH_COLORS.divergence, 0);
+      try { addShake(4); } catch (e) {}
+      try { triggerHitstop(45); } catch (e) {}
+    }
+  }
+  // RECURRENCE keystone — a SEPARATE, ADDITIONAL faithful shed layered on top
+  // of the orb-wide burst echoes: while hyperspeeding, shed 1 FAITHFUL past-echo
+  // every 1.3s (Afterself → 0.9s). Faithful = replays movement + barrier state.
+  if (rankOf('tachyon_recurrence') > 0 && hyperNow) {
+    const cad = (rankOf('tachyon_afterself') > 0) ? 900 : 1300;
+    if (now - _tachyonRecurAt >= cad) { _tachyonRecurAt = now; _tachyonSpawnPast(); }
+  }
+  // MAELSTROM keystone: while hyperspeeding, every ~2.2s collapse a GRAVITY WELL at
+  // the LOCKED densest cluster — it drags bodies in, then implodes. No echoes needed.
+  if (rankOf('tachyon_convergence') > 0 && hyperNow && now - _tachyonWellAt >= 2200) {   // BUFF cadence 3000→2200
+    _tachyonWellAt = now;
+    _tachyonSpawnWell(false);
+  }
+  // CAPSTONES Eternal Wake (Recurrence) & All Timelines (Divergence) are now
+  // KILL-MILESTONE driven (cap growth in _tachyonRadiusKill attribution) — no
+  // time-based fire here.
+  // CAPSTONE — Quasar (Maelstrom). Gated >=5 stacks, ~20s CD: tear open a huge,
+  // long-lived well at the densest cluster (own ephemeral pool — no echo-cap cost).
+  if (rankOf('tachyon_syzygy') > 0 && hyperSpeedStacks >= 5 && now - _tachyonSyzygyAt >= 20000) {
+    // Part 1 diagnosis: the >=5 gate IS reached in normal play (the burst slams to the
+    // max cap, 8+, ~every 20s ≈ this CD), so it fires — but the Quasar well looked
+    // identical to a regular well (just bigger) and fired amid burst chaos → "no felt
+    // difference". Cause = indistinctness, not the gate. Fix = distinct render + a beat.
+    _tachyonSyzygyAt = now;
+    _tachyonSpawnWell(true);
+    try { addShake(6); } catch (e) {}
+  }
+  _tachyonTickEchoes();
+  _tachyonTickWells();
+  // TEMPORAL SNAP chain release (~45ms apart): detonate along the collapsed wake.
+  if (_tachyonSnapQueue.length && now - _tachyonSnapAt >= 45) {
+    _tachyonSnapAt = now;
+    const sq = _tachyonSnapQueue.shift();
+    _tachyonRadiusKill(sq.x, sq.y, sq.full ? 60 : 44, 'past');
+    _tachyonDetonate(sq.x, sq.y, 'recurrence', (sq.full ? 1.0 : 0.6) * (sq.scale || 1));
+  }
+});
+OrbHooks.on('onCombo', (key) => {
+  if (activeOrb !== 'tachyon') return;
+  // Action-replay: record WHICH combo, so a faithful past-echo re-performs it.
+  _tachyonRecordEvt({ combo: key });
+});
+OrbHooks.on('onRender', () => { if (activeOrb === 'tachyon') { _tachyonDrawWells(); _tachyonDrawEchoes(); _tachyonDrawTrainHud(); _tachyon_drawFlashes(); } });
+OrbHooks.on('onResetGame', () => {
+  _tachyon_flashes = []; _tachyon_flashGates = {};
+  _tachyonEchoes = []; _tachyonWells = [];
+  _tachyonHistHead = 0; _tachyonHistFilled = 0;
+  _tachyonWellAt = 0; _tachyonAccretion = 0;
+  _tachyonSnapQueue = []; _tachyonSnapAt = 0;
+  _tachyonRecurAt = 0; _tachyonSyzygyAt = 0;
+  _tachyonOverchargeAt = 0;
+  _tachyonCascadeAt = 0;
+  _tachyonTimersInit = false;
+  _tachyonPastEchoKills = 0; _tachyonEscortKills = 0;
+  _tachyonWakeNext = 100; _tachyonAllNext = 100;
+  _tachyonCapBonus = 0; _tachyonPrevHyper = false;
+  _tachyonHistWriteSlot = 0;
+  for (let i = 0; i < TACHYON_HISTORY_LEN; i++) { _tachyonHistBar[i] = 0; _tachyonHistStk[i] = 0; _tachyonHistEvt[i] = null; }
+});
+
+// === TACHYON bespoke burst — TEMPORAL FRACTURE =============================
+ORB_BEHAVIOR.tachyon.executeBurst = function() {
+  // The burst SLAMS hyperspeed to the CURRENT max cap (8 early, up to 20 late).
+  // The per-stack hyperspeed DURATION buff applies naturally as the stacks rise,
+  // so that instant max-cap slam IS the burst's payoff. NO echo shed (Recurrence's
+  // own faithful echoes are separate and still shed on their own timer); no
+  // off-screen orbs; no invuln — the hitbox stays mortal.
+  const cap = HYPERSPEED_MAX_STACKS();
+  let guard = 0;
+  while (hyperSpeedStacks < cap && guard++ < 30) activateHyperspeed();
+  _tachyonRecordEvt({ burst: 1 });   // action-replay: Recurrence's past-echoes re-perform the burst
+  if (rankOf('tachyon_photonDebt') > 0) _tachyonTemporalSnap();   // Temporal Snap: collapse the train
+  runBurstCount++;
+  try { addShake(9); } catch (e) {}
+  try { triggerHitstop(60); } catch (e) {}
+  _tachyon_flash('burst', 'TEMPORAL FRACTURE', TACHYON_CORE, 0);
+  return true;
+};
+
+// === TACHYON custom tree UI (cloned from the nebula branching layout) ======
+function _tachyon_nodeState(nodeKey) {
+  const r = ActiveBudget.resolveNode('tachyon', nodeKey);
+  if (!r) return 'locked';
+  const state = orbTrees.tachyon;
+  const current = state[r.pathKey][r.nodeIdx] | 0;
+  const prereqOk = pathPrereqMet(state, r.pathKey, r.nodeIdx);
+  if (current > 0 && ActiveBudget.isActive('tachyon', nodeKey)) return 'active';
+  if (current > 0) return 'owned';
+  if (prereqOk) return 'available';
+  return 'locked';
+}
+function _tachyon_buildTreeColumn(pathKey) {
+  const layout = TACHYON_TREE_LAYOUTS[pathKey];
+  const col = document.createElement('div');
+  col.className = 'dv2-tree-col';
+  col.style.cssText = 'position:relative; width:200px; height:430px; flex-shrink:0;';
+  const svgNS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(svgNS, 'svg');
+  svg.setAttribute('viewBox', '0 0 200 430');
+  svg.setAttribute('width', '200');
+  svg.setAttribute('height', '430');
+  svg.style.cssText = 'position:absolute; top:0; left:0; pointer-events:none;';
+  for (const nKey of Object.keys(layout.nodes)) {
+    const spec = TACHYON_PREREQS[nKey];
+    if (!spec || !Array.isArray(spec.prereq)) continue;
+    const me = layout.nodes[nKey];
+    for (const parentKey of spec.prereq) {
+      const parent = layout.nodes[parentKey];
+      if (!parent) continue;
+      const bothActive = _tachyon_nodeState(nKey) === 'active' && _tachyon_nodeState(parentKey) === 'active';
+      const line = document.createElementNS(svgNS, 'line');
+      line.setAttribute('x1', parent.x); line.setAttribute('y1', parent.y);
+      line.setAttribute('x2', me.x); line.setAttribute('y2', me.y);
+      line.setAttribute('stroke', bothActive ? `rgba(${layout.color},0.9)` : 'rgba(120,120,140,0.35)');
+      line.setAttribute('stroke-width', bothActive ? '3' : '2');
+      if (bothActive) line.setAttribute('filter', 'drop-shadow(0 0 4px rgba(' + layout.color + ',0.6))');  // 6a: match other orbs' active connectors
+      svg.appendChild(line);
+    }
+  }
+  col.appendChild(svg);
+  const label = document.createElement('div');
+  label.style.cssText = `position:absolute; bottom:8px; left:0; right:0; text-align:center; font-family:Orbitron,monospace; font-size:11px; letter-spacing:3px; color:rgba(${layout.color},0.85);`;
+  label.textContent = layout.name;
+  col.appendChild(label);
+  for (const nKey of Object.keys(layout.nodes)) {
+    const pos = layout.nodes[nKey];
+    const r = ActiveBudget.resolveNode('tachyon', nKey);
+    if (!r) continue;
+    const nodeDef = r.node;
+    const nState = _tachyon_nodeState(nKey);
+    const isCapstone = !!pos.capstone;
+    const isKeystone = !!pos.keystone;
+    const size = isCapstone ? 38 : isKeystone ? 34 : 28;
+    const btn = document.createElement('button');
+    btn.dataset.nodeKey = nKey;
+    btn.style.cssText = `
+      position:absolute; left:${pos.x - size/2}px; top:${pos.y - size/2}px;
+      width:${size}px; height:${size}px;
+      border-radius:${isCapstone ? '8px' : '50%'};
+      border:2px solid rgba(${layout.color},${nState === 'locked' ? 0.18 : nState === 'available' ? 0.45 : 0.9});
+      background:${nState === 'active' ? `rgba(${layout.color},0.85)` : 'rgba(8,16,26,0.85)'};
+      box-shadow:${nState === 'active' ? `0 0 14px rgba(${layout.color},0.7)` : 'none'};
+      color:${nState === 'active' ? 'rgba(0,0,0,0.9)' : `rgba(${layout.color},${nState === 'locked' ? 0.3 : 0.95})`};
+      font-family:Orbitron,monospace; font-size:${isCapstone ? 12 : 10}px; font-weight:bold;
+      cursor:pointer; padding:0; transition: all 0.15s;
+      ${nState === 'locked' ? 'opacity:0.45;' : ''}
+    `;
+    btn.textContent = (nodeDef.pointCost | 0) || 1;
+    const _unitCost = nodeCost(nodeDef.tier, 1, 'tachyon', nodeDef);
+    btn.title = `${nodeDef.name} — ${(nodeDef.pointCost | 0) || 1} pt · ${formatCrystals(_unitCost)} 💎 (${nState})`;
+    btn.addEventListener('click', () => {
+      SFX.clickSecondary();
+      treeDetailCurrent = { kind: 'node', orbKey: 'tachyon', pathKey: r.pathKey, nodeIdx: r.nodeIdx };
+      renderTreeDetail();
+      document.getElementById('treeNodeDetail').classList.add('visible');
+    });
+    col.appendChild(btn);
+    if (nState === 'available' || nState === 'locked') {
+      const costLbl = document.createElement('div');
+      const lblW = 56;
+      costLbl.style.cssText = `position:absolute; left:${pos.x - lblW / 2}px; top:${pos.y + size / 2 + 2}px; width:${lblW}px; text-align:center; font-family:Orbitron,monospace; font-size:9px; letter-spacing:0.5px; color:rgba(${layout.color},${nState === 'locked' ? 0.35 : 0.85}); pointer-events:none; line-height:1;`;
+      costLbl.textContent = `${formatCrystals(_unitCost)} 💎`;
+      col.appendChild(costLbl);
+    }
+  }
+  return col;
+}
+function _tachyon_renderCustomTreeOverlay() {
+  const def = TREE_DEFS.tachyon;
+  const state = orbTrees.tachyon;
+  if (!def || !state) return;
+  document.getElementById('treeTitle').textContent = 'TACHYON';
+  document.getElementById('treeTitle').style.color = `rgba(${TACHYON_CORE},1)`;
+  document.getElementById('treeCrystals').textContent = '💎 ' + formatCrystals(totalCrystals);
+  const pathsEl = document.getElementById('treePaths');
+  pathsEl.innerHTML = '';
+  pathsEl.style.display = 'flex';
+  pathsEl.style.gap = '14px';
+  pathsEl.style.flexWrap = 'nowrap';
+  pathsEl.style.overflowX = 'auto';
+  pathsEl.style.overflowY = 'hidden';
+  pathsEl.style.webkitOverflowScrolling = 'touch';
+  pathsEl.style.padding = '6px 8px 12px';
+  pathsEl.style.maxHeight = '450px';
+  pathsEl.style.justifyContent = 'flex-start';
+  for (const pKey of ['recurrence', 'divergence', 'convergence']) {
+    pathsEl.appendChild(_tachyon_buildTreeColumn(pKey));
+  }
+  const capsEl = document.getElementById('treeCapstones');
+  capsEl.innerHTML = '';
+  capsEl.style.display = 'flex';
+  capsEl.style.flexDirection = 'column';
+  capsEl.style.alignItems = 'center';
+  capsEl.style.gap = '6px';
+  const total = ActiveBudget.activePointsTotal('tachyon');
+  const cap = getTachyonBudgetCap();
+  const bonus = getTachyonBudgetBonus();
+  const overBudget = total > cap;
+  const budget = document.createElement('div');
+  budget.style.cssText = `display:flex; align-items:center; gap:10px; padding:10px 8px; font-family:Orbitron,monospace; font-size:13px; letter-spacing:3px; color:rgba(${TACHYON_CORE},0.85);`;
+  const totalColor = overBudget ? 'rgba(255,90,90,1)' : `rgba(${TACHYON_CORE},1)`;
+  const label = document.createElement('span');
+  label.innerHTML = `ACTIVE POINTS: <span style="color:${totalColor}; font-weight:bold; font-size:16px;">${total}</span> <span style="opacity:0.6;">/ ${cap}</span>`;
+  budget.appendChild(label);
+  const expandMax = ActiveBudget.expandMaxFor('tachyon');
+  const expandCost = ActiveBudget.expandCostFor('tachyon');
+  const expandBtn = document.createElement('button');
+  expandBtn.style.cssText = `background:transparent; border:1px solid rgba(${TACHYON_CORE},0.55); color:rgba(${TACHYON_CORE},0.95); font-family:Orbitron,monospace; font-size:12px; letter-spacing:1px; padding:4px 10px; cursor:pointer; border-radius:3px; transition:all 0.18s; min-height:26px; text-transform:uppercase;`;
+  if (bonus >= expandMax) {
+    expandBtn.textContent = 'MAXED';
+    expandBtn.disabled = true;
+    expandBtn.style.opacity = '0.45';
+    expandBtn.style.cursor = 'not-allowed';
+  } else {
+    expandBtn.textContent = '＋';
+    expandBtn.title = `Expand active points capacity by +1 — ${formatCrystals(expandCost)} 💎`;
+    expandBtn.addEventListener('click', () => {
+      SFX.clickSecondary();
+      const remaining = expandMax - bonus;
+      confirmTreeAction(
+        `Expand active points capacity by +1? Cost: ${formatCrystals(expandCost)} 💎. (${remaining} expansion${remaining === 1 ? '' : 's'} remaining)`,
+        () => { if (purchaseTachyonBudgetExpand()) { SFX.clickPrimary(); renderTreeOverlay(); } }
+      );
+    });
+  }
+  budget.appendChild(expandBtn);
+  capsEl.appendChild(budget);
+  const ranks = totalRanksInvested('tachyon');
+  const full = document.getElementById('treeRespecFullBtn');
+  const _fullFee = fullTreeRespecCost('tachyon');
+  full.textContent = ranks > 0 ? `REFUND ALL (${formatCrystals(_fullFee)} 💎)` : 'REFUND ALL';
+  full.disabled = ranks === 0 || totalCrystals < _fullFee;
+}
+ORB_BEHAVIOR.tachyon.renderTreeOverlay = function() { _tachyon_renderCustomTreeOverlay(); };
+ORB_BEHAVIOR.tachyon.renderTreeDetail = function() {
+  if (!treeDetailCurrent || treeDetailCurrent.kind !== 'node') return _renderTreeDetail_default();
+  _renderTreeDetail_default();
+  const t = treeDetailCurrent;
+  const def = TREE_DEFS.tachyon;
+  const state = orbTrees.tachyon;
+  const node = def.paths[t.pathKey].nodes[t.nodeIdx];
+  const current = state[t.pathKey][t.nodeIdx] | 0;
+  const prereqOk = pathPrereqMet(state, t.pathKey, t.nodeIdx);
+  const upBtn = document.getElementById('treeDetailUpgradeBtn');
+  const respecBtn = document.getElementById('treeDetailRespecBtn');
+  if (!upBtn || !respecBtn) return;
+  const isActive = ActiveBudget.isActive('tachyon', node.key);
+  const pointCost = (node.pointCost | 0) || 1;
+  const total = ActiveBudget.activePointsTotal('tachyon');
+  if (current <= 0) {
+    upBtn.style.visibility = '';
+    if (!prereqOk) {
+      upBtn.textContent = 'PREREQ MISSING';
+      upBtn.disabled = true;
+    } else {
+      const nextCost = nodeCost(node.tier, 1, t.orbKey, node);
+      upBtn.textContent = `UNLOCK — ${formatCrystals(nextCost)} 💎`;
+      upBtn.disabled = totalCrystals < nextCost;
+      upBtn.onclick = () => {
+        if (purchaseNodeRank(t.orbKey, t.pathKey, t.nodeIdx)) {
+          SFX.clickPrimary(); renderTreeOverlay(); renderTreeDetail();
+        }
+      };
+    }
+    respecBtn.style.visibility = 'hidden';
+    respecBtn.disabled = true;
+  } else if (!isActive) {
+    upBtn.style.visibility = '';
+    const requiredKs = ActiveBudget.keystoneRequiredFor('tachyon', node.key);
+    const ksMissing = !!requiredKs && !ActiveBudget.isActive('tachyon', requiredKs);
+    const fits = total + pointCost <= getTachyonBudgetCap();
+    if (ksMissing) {
+      const ksResolved = ActiveBudget.resolveNode('tachyon', requiredKs);
+      const ksName = (ksResolved && ksResolved.node && ksResolved.node.name) || 'keystone';
+      upBtn.textContent = `ACTIVATE ${ksName.toUpperCase()} FIRST`;
+      upBtn.disabled = true;
+    } else if (!fits) {
+      upBtn.textContent = 'BUDGET FULL';
+      upBtn.disabled = true;
+    } else {
+      upBtn.textContent = 'ACTIVATE';
+      upBtn.disabled = false;
+    }
+    upBtn.onclick = () => {
+      if (ActiveBudget.activate('tachyon', node.key)) {
+        SFX.clickPrimary(); renderTreeOverlay(); renderTreeDetail();
+      }
+    };
+    respecBtn.style.visibility = '';
+    {
+      const _fee = respecNodeCost(t.orbKey, t.pathKey, t.nodeIdx);
+      respecBtn.disabled = totalCrystals < _fee;
+      respecBtn.textContent = `REFUND (${formatCrystals(_fee)} 💎)`;
+      respecBtn.onclick = () => {
+        confirmTreeAction(`Refund ${node.name}? Costs ${formatCrystals(_fee)} 💎 and returns all spent crystals.`, () => {
+          if (respecNode(t.orbKey, t.pathKey, t.nodeIdx)) { SFX.clickSecondary(); renderTreeOverlay(); closeTreeDetail(); }
+        });
+      };
+    }
+  } else {
+    upBtn.style.visibility = '';
+    upBtn.textContent = 'DEACTIVATE';
+    upBtn.disabled = false;
+    upBtn.onclick = () => {
+      ActiveBudget.deactivate('tachyon', node.key);
+      SFX.clickPrimary(); renderTreeOverlay(); renderTreeDetail();
+    };
+    respecBtn.style.visibility = '';
+    {
+      const _fee = respecNodeCost(t.orbKey, t.pathKey, t.nodeIdx);
+      respecBtn.disabled = totalCrystals < _fee;
+      respecBtn.textContent = `REFUND (${formatCrystals(_fee)} 💎)`;
+      respecBtn.onclick = () => {
+        confirmTreeAction(`Refund ${node.name}? Costs ${formatCrystals(_fee)} 💎, frees ${pointCost} budget point${pointCost > 1 ? 's' : ''} and returns all spent crystals.`, () => {
+          if (respecNode(t.orbKey, t.pathKey, t.nodeIdx)) { SFX.clickSecondary(); renderTreeOverlay(); closeTreeDetail(); }
+        });
+      };
+    }
+  }
+};
+// === TACHYON: high-cap "cherenkov" hyperspeed tier (extends the tier ramp) ==
+// Drop-in brighter ramp used by hyperTierColor when Tachyon is active. Pure
+// additive reuse of the existing FX — no new render tech. Extended to 12/14/20x
+// so high cap reads as visibly more extreme (cherenkov violet → white-hot).
+function _tachyonHyperTierColor(stacks) {
+  if (stacks <= 2) return [150, 225, 255];
+  if (stacks <= 4) return [190, 210, 255];
+  if (stacks <= 6) return [210, 195, 255];
+  if (stacks <= 8) return [200, 150, 255];   // cherenkov violet-white
+  if (stacks <= 11) return [220, 130, 255];  // 9–11 deeper cherenkov violet
+  if (stacks <= 14) return [240, 160, 255];  // 12–14 hot magenta-white
+  return [255, 235, 255];                     // 15–20 white-hot overdrive
+}
+// High-cap intensity boost (12x+) — nudges the existing additive streak/tunnel
+// alpha up so 12/14/20x look wilder than 8x without new render tech. Read by the
+// hyperspeed FX (multiplies the capped 0..1 intensity). Bounded to +40%.
+function _tachyonHyperIntensityBoost(stacks) {
+  if (stacks <= 8) return 1;
+  return Math.min(1.4, 1 + (stacks - 8) * 0.035);
+}
+
 // === HELIOS flash feedback (gold, throttled) + proc-text labels ============
 let _helios_flashes = [];
 let _helios_flashGates = {};
@@ -8521,6 +9691,7 @@ function _helios_buildTreeColumn(pathKey) {
       line.setAttribute('x2', me.x); line.setAttribute('y2', me.y);
       line.setAttribute('stroke', bothActive ? `rgba(${layout.color},0.9)` : 'rgba(120,120,140,0.35)');
       line.setAttribute('stroke-width', bothActive ? '3' : '2');
+      if (bothActive) line.setAttribute('filter', 'drop-shadow(0 0 4px rgba(' + layout.color + ',0.6))');  // 6a: match other orbs' active connectors
       svg.appendChild(line);
     }
   }
@@ -9488,7 +10659,7 @@ function _asteroid_flash(key, text, color, minMs) {
   _asteroid_addFlash(text, color);
 }
 function _asteroid_drawFlashes() {
-  if (state !== 'playing' && state !== 'paused' && state !== 'apocalypse') return;
+  if (state !== 'playing' && state !== 'paused' && state !== 'apocalypse' && state !== 'devmode') return;   // 6b: include devmode (match Helios/Tachyon)
   if (!_asteroid_flashes.length) return;
   if (!player || isNaN(player.x) || isNaN(player.y)) return;
   const now = Date.now();
@@ -12226,7 +13397,7 @@ function _drifterV2_addFlash(text, color, durationMs) {
   if (_drifterV2_flashes.length > 6) _drifterV2_flashes.shift();
 }
 function _drifterV2_drawFlashes() {
-  if (state !== 'playing' && state !== 'paused' && state !== 'apocalypse') return;
+  if (state !== 'playing' && state !== 'paused' && state !== 'apocalypse' && state !== 'devmode') return;   // 6b: include devmode (match Helios/Tachyon)
   if (!_drifterV2_flashes.length) return;
   if (!player || isNaN(player.x) || isNaN(player.y)) return;
   const now = Date.now();
@@ -12981,6 +14152,7 @@ let _drifterV2_hudEl = null;
 let _drifterV2_hudThreadEl = null;
 let _drifterV2_hudPressureEl = null;
 let _drifterV2_hudHeartbeatEl = null;
+let _drifterV2_hudDrumrollEl = null;   // Audit 5b: Drumroll every-4th-burst counter
 function _drifterV2_ensureHud() {
   if (_drifterV2_hudEl) return _drifterV2_hudEl;
   const el = document.createElement('div');
@@ -12998,6 +14170,10 @@ function _drifterV2_ensureHud() {
   heartbeat.style.cssText = 'color:rgba(125,232,255,0.95); text-shadow:0 0 6px rgba(125,232,255,0.6);';
   heartbeat.textContent = '0/3';
   el.appendChild(heartbeat);
+  const drum = document.createElement('div'); drum.id = 'dv2HudDrumroll';
+  drum.style.cssText = 'color:rgba(255,210,120,0.95); text-shadow:0 0 6px rgba(255,210,120,0.6);';
+  drum.textContent = '0/4';
+  el.appendChild(drum);
   // Append inside #gameWrapper, not document.body. On browser the wrapper is a
   // centered, phone-sized box (≤430×932) while body spans the full viewport —
   // appending to body put this absolutely-positioned HUD in the letterbox
@@ -13009,6 +14185,7 @@ function _drifterV2_ensureHud() {
   _drifterV2_hudThreadEl = thread;
   _drifterV2_hudPressureEl = pressure;
   _drifterV2_hudHeartbeatEl = heartbeat;
+  _drifterV2_hudDrumrollEl = drum;
   return el;
 }
 function _drifterV2_updateHud() {
@@ -13034,6 +14211,12 @@ function _drifterV2_updateHud() {
     _drifterV2_hudHeartbeatEl.style.display = show ? 'block' : 'none';
     const _hbMag = Date.now() < _drifterV2_heartbeatMagnetUntil;
     _drifterV2_hudHeartbeatEl.textContent = _hbMag ? '♥ MAGNET' : ('♥ ' + _drifterV2_heartbeatStacks + '/3');
+  }
+  if (_drifterV2_hudDrumrollEl) {   // Audit 5b: Drumroll every-4th-burst progress
+    const showDr = _drifterV2_hasPulse() && rankOf('drifterV2_drumroll') >= 1;
+    _drifterV2_hudDrumrollEl.style.display = showDr ? 'block' : 'none';
+    const _dr = _drifterV2_burstCounter % 4;
+    _drifterV2_hudDrumrollEl.textContent = (_drifterV2_burstCounter > 0 && _dr === 0) ? '≡ DRUMROLL' : ('≡ ' + _dr + '/4');
   }
 }
 
@@ -13185,6 +14368,7 @@ ORB_DEFS.phantomV2 = {
 };
 ORB_ORDER.push('phantomV2');
 ORB_ORDER.push('helios');   // Helios listed AFTER Phantasm in the menu order
+ORB_ORDER.push('tachyon');  // v2.2.0: Tachyon shipped as a real enhanced orb (enhanced Warp)
 
 TREE_DEFS.phantomV2 = {
   name: 'PHANTASM',
@@ -13626,7 +14810,7 @@ function _phantomV2_nodeState(nodeKey) {
 function _phantomV2_buildTreeColumn(pathKey) {
   const layout = PHANTOMV2_TREE_LAYOUTS[pathKey];
   const col = document.createElement('div');
-  col.className = 'pv2-tree-col';
+  col.className = 'dv2-tree-col';   // 6c: normalized from 'pv2-tree-col' (no CSS rule keys off either; pure marker)
   col.style.cssText = 'position:relative; width:200px; height:430px; flex-shrink:0;';
   const svgNS = 'http://www.w3.org/2000/svg';
   const svg = document.createElementNS(svgNS, 'svg');
@@ -13949,7 +15133,7 @@ function _phantomV2_addFlash(text, color, durationMs) {
   if (_phantomV2_flashes.length > 6) _phantomV2_flashes.shift();
 }
 function _phantomV2_drawFlashes() {
-  if (state !== 'playing' && state !== 'paused' && state !== 'apocalypse') return;
+  if (state !== 'playing' && state !== 'paused' && state !== 'apocalypse' && state !== 'devmode') return;   // 6b: include devmode (match Helios/Tachyon)
   if (!_phantomV2_flashes.length) return;
   if (!player || isNaN(player.x) || isNaN(player.y)) return;
   const now = Date.now();
@@ -16136,7 +17320,7 @@ loadTreeState();
 // Idempotent and grow-only: it never lowers a cap, and re-running is a no-op
 // once cap >= spent. Also invoked from applyToLocal after a cloud merge.
 function _healBudgetCaps() {
-  for (const orb of ['cyan', 'cosmic', 'solar', 'nebula', 'asteroid', 'helios']) {
+  for (const orb of ['cyan', 'cosmic', 'solar', 'nebula', 'asteroid', 'helios', 'tachyon']) {
     if (!ActiveBudget.has(orb)) continue;
     let guard = 0;
     while (ActiveBudget.activePointsTotal(orb) > ActiveBudget.budgetCap(orb)
@@ -16709,7 +17893,7 @@ let deadStarStackCounter = 0;
 let goldenShieldActive = false;
 let goldenShieldHits = 0;
 const GOLDEN_SHIELD_HITS = 10;
-const DEAD_STAR_TRIGGER = 20;            // shield stacks lost per implode (v1.9.0: 20 → 30; v1.10.x: back to 20)
+const DEAD_STAR_TRIGGER = 15;            // shield stacks lost per implode (was 20; lowered to 15 → fires 3–4×/run, audit Part 2 #2)
 // Implode animation state: null when idle, else { startTime, dragged: [...] }.
 let deadStarImplode = null;
 const DEAD_STAR_IMPLODE_MS = 1600;       // total animation (invulnerable throughout)
@@ -17235,6 +18419,7 @@ const PGS = (() => {
         nebula:    ActiveBudget.budgetBonus('nebula'),
         asteroid:  ActiveBudget.budgetBonus('asteroid'),
         helios:    ActiveBudget.budgetBonus('helios'),
+        tachyon:   ActiveBudget.budgetBonus('tachyon'),
         drifterV2: _drifterV2_budgetBonus | 0,
         phantomV2: _phantomV2_budgetBonus | 0,
       },
@@ -17592,7 +18777,7 @@ const PGS = (() => {
     // in-memory value too, so this can only ever grow a cap, never shrink it.
     if (payload.budgetBonus && typeof payload.budgetBonus === 'object') {
       const bb = payload.budgetBonus;
-      for (const orb of ['cyan', 'cosmic', 'solar', 'nebula', 'asteroid', 'helios']) {
+      for (const orb of ['cyan', 'cosmic', 'solar', 'nebula', 'asteroid', 'helios', 'tachyon']) {
         if (bb[orb] != null && ActiveBudget.has(orb)) {
           ActiveBudget.setBonus(orb, Math.max(ActiveBudget.budgetBonus(orb), bb[orb] | 0));
         }
@@ -17763,7 +18948,7 @@ let runStats = { totalPassed: 0, totalDestroyed: 0, pointsFromPassing: 0, points
 // Example: TIME_DILATION = 60 → 1 real second = 60 in-game seconds for
 // progression, apocalypse triggers in ~10 real seconds.
 const TIME_DILATION = 1;
-const GAME_VERSION = '2.1.2';
+const GAME_VERSION = '2.2.0';
 try {
   const vl = document.getElementById('versionLabel');
   if (vl) vl.textContent = 'v' + GAME_VERSION;
@@ -19928,7 +21113,7 @@ const ENHANCED_UNLOCK = {
   drifterV2: { base: 'cyan',     threshold: 2000, tease: false },
   phantomV2: { base: 'cosmic',   threshold: 3000, tease: false },
   helios:    { base: 'solar',    threshold: 4000, tease: false },
-  tachyon:   { base: 'nebula',   threshold: 5000, tease: true  },
+  tachyon:   { base: 'nebula',   threshold: 5000, tease: false },
   leviathan: { base: 'asteroid', threshold: 6000, tease: true  },
 };
 const BASE_TO_ENHANCED = { cyan: 'drifterV2', cosmic: 'phantomV2', solar: 'helios', nebula: 'tachyon', asteroid: 'leviathan' };
@@ -22041,13 +23226,12 @@ function updatePixiOverlayLayer() {
     ofx.save();
     ofx.setTransform(1, 0, 0, 1, 0, 0);
     ofx.clearRect(0, 0, PIXI_HYPER_STACK_W, PIXI_HYPER_STACK_H);
-    // drawHyperStackText draws at (W/2, 50 + safeAreaTop + cutoutTop)
-    // absolute — bias so it lands at canvas (W/2, 0) inside the stack
-    // canvas. cutoutTop matches the DOM top stack's `--cutout-top` offset
-    // so the banner stays anchored to row 3 (below the timer) instead of
-    // bleeding into the score/timer rows when the WebView paints under a
-    // camera punch-hole.
-    const hyperStackTopY = 50 + safeAreaTop + cutoutTop;
+    // drawHyperStackText draws at (W/2, hyperStackDrawY()) absolute — the MEASURED
+    // bottom of the DOM top-stack (or the 58+safe+cutout fallback). Bias the offscreen
+    // translate by 8 so the text lands ~8px down inside the 60px stack canvas (glow
+    // headroom); the sprite is then placed so the text ends up at the measured screen
+    // Y. Shared by every orb; matches the canvas-2D path exactly.
+    const hyperStackTopY = hyperStackDrawY() - 8;
     ofx.translate(PIXI_HYPER_STACK_W / 2 - W / 2, -hyperStackTopY);
     try { drawHyperStackText(ofx); } catch (err) { console.error('[pixi-overlay] stack text threw', err); }
     ofx.restore();
@@ -23718,6 +24902,9 @@ function _activateCombo_default(key, x, y) {
     // If Eternal Phantom is running, its longer ghost timer wins — don't
     // collapse it to Spectral Rush's 8s.
     activateHyperspeed(HYPERSPEED_COMBO_DURATION, 2);
+    // TACHYON min potency (item 1): hyperspeed combos grant ≥2 stacks on tachyon
+    // (this normally grants 1 → 2). Gated; no leak to other orbs.
+    if (activeOrb === 'tachyon') activateHyperspeed(HYPERSPEED_COMBO_DURATION, 2);
     if (activeEffects.ghost < HYPERSPEED_COMBO_DURATION) {
       ghostEndTime = Date.now() + HYPERSPEED_COMBO_DURATION;
       activeEffects.ghost = HYPERSPEED_COMBO_DURATION;
@@ -23736,6 +24923,9 @@ function _activateCombo_default(key, x, y) {
     // activateHyperspeed (forward-only), shield moved forward-only so a longer
     // Fortress timer isn't downgraded. Mirrors the v1.9.0 ghost_shield fix.
     activateHyperspeed(HYPERSPEED_COMBO_DURATION);
+    // TACHYON min potency (item 1): hyperspeed combos grant ≥2 stacks on tachyon
+    // (this normally grants 1 → 2). Gated; no leak to other orbs.
+    if (activeOrb === 'tachyon') activateHyperspeed(HYPERSPEED_COMBO_DURATION);
     { const _now = Date.now(); const _sd = SHIELD_DURATION();
       if (_now + _sd > shieldEndTime) { shieldEndTime = _now + _sd; activeEffects.shield = _sd; shieldBroken = false; bastion2BonusMs = 0; } }
     juggernautPendingShieldRefresh = true;
@@ -23857,6 +25047,9 @@ function rawActivate(type, x, y) {
     // a stack is already held). Burst stays 2× via executeBurst.
     activateHyperspeed(undefined, undefined, 'natural');
     if (activeOrb === 'nebula') activateHyperspeed(undefined, undefined, 'natural');
+    // TACHYON minimum potency (item 1): a hyperspeed pickup grants ≥2 stacks
+    // (like Warp's identity). Gated to tachyon so it never leaks to other orbs.
+    if (activeOrb === 'tachyon') activateHyperspeed(undefined, undefined, 'natural');
   } else if (type === 'ghost') {
     // Shadow Regen (Phantom Veil T1) v1.6.6 rework: take the larger of
     // {default reset, additive stack} so the node is strictly non-detrimental.
@@ -24164,6 +25357,9 @@ function computeHyperspeedPeakMult(stacks, peakScale) {
   if (activeOrb === 'nebula') {
     thrustMult += 0.40 * rankOf('thrust');
   }
+  // (Tachyon's old always-on +0.25 peak coefficient was removed in the baseline
+  // trim — Tachyon's per-stack peak now uses the normal model. Its signature vs
+  // Warp is the 8× starting cap + the burst's instant max-cap slam, not raw peak.)
   let basePeak = Math.max(3.5 * thrustMult * s, (6.0 * thrustMult * s) / Math.max(normSpd, 0.01));
   if (activeOrb === 'nebula') {
     const cap = HYPERSPEED_MAX_STACKS();
@@ -24186,7 +25382,11 @@ function computeHyperspeedPeakMult(stacks, peakScale) {
 // `source` (optional, default 'natural') classifies the activation so
 // Infinite Gate can gate on natural pickups only.
 function activateHyperspeed(durationOverride, peakScale, source) {
-  const durationMs = durationOverride || HYPERSPEED_DURATION();
+  let durationMs = durationOverride || HYPERSPEED_DURATION();
+  // TACHYON per-stack duration (item 3): each hyperspeed stack extends the
+  // duration, so higher stacks = longer hyperspeed, compounding the speed
+  // identity. Uses stacks+1 (this call's stack lands just below). TUNABLE 200ms.
+  if (activeOrb === 'tachyon') durationMs += 200 * Math.max(1, hyperSpeedStacks + 1);
   const now = Date.now();
   const newEnd = now + durationMs;
   const cap = HYPERSPEED_MAX_STACKS();
@@ -24305,6 +25505,8 @@ function activatePowerup(type, x, y) {
   rawActivate(type, x, y);
   if (type === 'hyperspeed') SFX.pickup('hyperspeed', { stacks: hyperSpeedStacks });
   if (key) activateCombo(key, x, y);
+  // Tachyon (and any future orb) can react to combos via this hook.
+  if (key) { try { OrbHooks.emit('onCombo', key); } catch (e) {} }
 
   // Record this pickup as the most-recently-gained event.
   lastGainedEffects = [type];
@@ -24624,10 +25826,23 @@ function applyForce() {
   const dragCoef   = 0.91 + Math.min((speedRatio - 1) / 4, 1) * 0.03;
 
   // Hyperspeed makes the world fly past — full input force feels chaotic and
-  // uncontrollable. Damp to 40% so steering still works without throwing the
-  // player around. Landing pull and boundaries are handled separately below.
+  // uncontrollable. forceMult ALREADY balloons with scrollSpeed (which is
+  // multiplied by hyperspeedCurrentMult during hyperspeed), so a FLAT damp let a
+  // single tap fling the player into a wall harder and harder as the cap/mult
+  // climbed (≈6× the impulse at 8×, ≈16× at 20×). Instead, LOCK steering harder
+  // the faster hyperspeed goes: scale the damp DOWN by the live mult so the net
+  // per-tap impulse stays ~constant (committed turning, not twitchy) instead of
+  // growing with speed. At mult ≤ HS_STEER_REF the feel matches the old flat 0.4
+  // (Warp's normal low-stack feel is unchanged); above it the damp falls ~REF/mult,
+  // self-stabilising the net force (forceMult ∝ mult, damp ∝ 1/mult → net flat),
+  // floored so steering never dies at extreme caps. TUNABLE: base 0.4, ref 6, floor 0.03.
   const inHyperspeedInput = activeEffects.hyperspeed > 0;
-  const inputDamp = inHyperspeedInput ? 0.4 : 1;
+  let inputDamp = 1;
+  if (inHyperspeedInput) {
+    const HS_STEER_BASE = 0.4, HS_STEER_REF = 6, HS_STEER_FLOOR = 0.03;
+    const m = Math.max(1, hyperspeedCurrentMult || 1);
+    inputDamp = Math.max(HS_STEER_FLOOR, Math.min(HS_STEER_BASE, HS_STEER_BASE * HS_STEER_REF / m));
+  }
   const f = FORCE * influence * forceMult * inputDamp;
 
   if (leftDown)  { player.vx += nx*f*dtScale; player.vy += ny*f*dtScale; }
@@ -31144,7 +32359,7 @@ function drawPowerups() {
 // origin, derived from the ring's own startTime (no new state/arrays).
 const NOVA_TEX_SIZE = 256;     // baked flash texture resolution (one-time)
 const NOVA_FLASH_MS = 220;     // detonation-flash bloom duration per ring
-let novaFlashCanvas = { orange: null, red: null };
+let novaFlashCanvas = { orange: null, red: null, blue: null };
 // Per-ring stroke palette: [glow-band rgb, bright crisp core rgb]. Vivid/saturated.
 function _novaStrokeCols(sn) {
   return sn
@@ -31175,6 +32390,8 @@ function _ensureNovaTextures() {
   if (novaFlashCanvas.orange) return; // baked once
   novaFlashCanvas.orange = _bakeNovaFlash('255,245,190', '255,160,40'); // white-hot → vivid orange
   novaFlashCanvas.red    = _bakeNovaFlash('255,225,190', '255,70,55');  // hot → vivid red
+  // Tachyon skill-nova flash: white-hot → cherenkov blue (same bake recipe).
+  novaFlashCanvas.blue   = _bakeNovaFlash('220,240,255', '90,170,255');
 }
 _ensureNovaTextures(); // bake at load — ready before the first nova fires
 
@@ -31182,7 +32399,7 @@ _ensureNovaTextures(); // bake at load — ready before the first nova fires
 function _pixiNovaTex(key) {
   if (_pixiNovaTexCache[key]) return _pixiNovaTexCache[key];
   _ensureNovaTextures();
-  const t = PIXI.Texture.from(key === 'flashRed' ? novaFlashCanvas.red : novaFlashCanvas.orange);
+  const t = PIXI.Texture.from(key === 'flashRed' ? novaFlashCanvas.red : key === 'flashBlue' ? novaFlashCanvas.blue : novaFlashCanvas.orange);
   _pixiNovaTexCache[key] = t;
   return t;
 }
@@ -31196,7 +32413,8 @@ function _drawPixiNovaRings() {
     const drawR = r.radius * (r.radiusMult || 1);
     if (drawR < 1) continue;
     const life = Math.max(0, Math.min(1, r.life));
-    const cols = _novaStrokeCols(r.supernova);
+    // Tachyon skill novas (tcol) render blue/blue-white (same additive recipe).
+    const cols = r.tcol ? ['120,200,255', '220,240,255'] : _novaStrokeCols(r.supernova);
     const glow = _rgbStrToHex(cols[0]), core = _rgbStrToHex(cols[1]);
     // Wide additive glow band (solid colour = crisp edges, constant thickness).
     ng.lineStyle({ width: 14, color: glow, alpha: life * 0.32 });
@@ -31221,7 +32439,7 @@ function _updatePixiNovaFlashes() {
     if (flashAge >= NOVA_FLASH_MS) continue;
     const sm = r.sizeMult || 1;
     const fl = 1 - flashAge / NOVA_FLASH_MS;
-    const tex = _pixiNovaTex(r.supernova ? 'flashRed' : 'flashOrange');
+    const tex = _pixiNovaTex(r.tcol ? 'flashBlue' : r.supernova ? 'flashRed' : 'flashOrange');
     let fp = pixiNovaFlashPool[fi];
     if (!fp) {
       fp = new PIXI.Sprite(tex);
@@ -31256,7 +32474,8 @@ function drawNovaRings() {
     const sn = r.supernova;
     const sm = r.sizeMult || 1;
     const life = Math.max(0, Math.min(1, r.life));
-    const cols = _novaStrokeCols(sn);
+    // Tachyon skill novas (tcol) render blue/blue-white (same additive recipe).
+    const cols = r.tcol ? ['120,200,255', '220,240,255'] : _novaStrokeCols(sn);
     const glow = cols[0], core = cols[1];
     // Wide additive glow band.
     ctx.globalAlpha = 1;
@@ -31275,7 +32494,7 @@ function drawNovaRings() {
     const flashAge = now - (r.startTime || now);
     if (flashAge < NOVA_FLASH_MS) {
       const fl = 1 - flashAge / NOVA_FLASH_MS;
-      const flash = sn ? novaFlashCanvas.red : novaFlashCanvas.orange;
+      const flash = r.tcol ? novaFlashCanvas.blue : sn ? novaFlashCanvas.red : novaFlashCanvas.orange;
       const fr = (95 * sm) * (0.55 + 0.7 * fl);
       ctx.globalAlpha = 0.9 * fl;
       ctx.drawImage(flash, r.x - fr, r.y - fr, fr * 2, fr * 2);
@@ -31766,7 +32985,10 @@ function updateCapstoneCountdowns() {
     // whole time supers are owed (locked out), then the 22s arc fills.
     const primed = owned && _heliosZenithActive;
     const progress = (owned && !primed && _heliosZenithNextAt > 0) ? Math.max(0, Math.min(1, 1 - (_heliosZenithNextAt - now) / 22000)) : 0;
-    const firing = owned && (now - _heliosZenithFiredAt < 350);
+    // Audit 5a: while LOCKED OUT (fleet-suns still owe their supers) the 22s CD is
+    // PAUSED. Pulse the ring (firing) for the whole discharge window so it reads as an
+    // ACTIVE "discharging/waiting" state, not a frozen/ready one; the arc fills once CD starts.
+    const firing = owned && (_heliosZenithActive || now - _heliosZenithFiredAt < 350);
     set('capCdZenith', owned, primed ? 1 : progress, `rgba(${HELIOS_PATH_COLORS.sundog},0.95)`, primed, firing);
   }
   {
@@ -31780,6 +33002,28 @@ function updateCapstoneCountdowns() {
     const active = owned && now < _heliosZenithFlashUntil;
     const progress = active ? 1 : ((owned && _heliosZenithFlashAt > 0) ? Math.max(0, Math.min(1, 1 - (_heliosZenithFlashAt - now) / 20000)) : 0);
     set('capCdZenithFlash', owned, progress, `rgba(${HELIOS_PATH_COLORS.heliograph},0.95)`, false, active);
+  }
+  // TACHYON capstone rings (playtest). Eternal Wake / All Timelines are now
+  // KILL-MILESTONE capstones — the ring fills toward the next +cap milestone
+  // (100 past-echo kills / 100 escort kills). Quasar (Maelstrom) unchanged.
+  {
+    const owned = activeOrb === 'tachyon' && rankOf('tachyon_eternalWake') > 0;
+    const into = ((_tachyonPastEchoKills || 0) % 100) / 100;
+    set('capCdTWake', owned, owned ? into : 0, `rgba(${TACHYON_PATH_COLORS.recurrence},0.95)`, false, false);
+  }
+  {
+    const owned = activeOrb === 'tachyon' && rankOf('tachyon_allTimelines') > 0;
+    const into = ((_tachyonEscortKills || 0) % 100) / 100;
+    set('capCdTFan', owned, owned ? into : 0, `rgba(${TACHYON_PATH_COLORS.divergence},0.95)`, false, false);
+  }
+  {
+    const hi = (typeof hyperSpeedStacks === 'number') && hyperSpeedStacks >= 5;
+    const owned = activeOrb === 'tachyon' && rankOf('tachyon_syzygy') > 0;
+    const elapsed = owned ? (now - (_tachyonSyzygyAt || now)) : 0;
+    const cdReady = elapsed >= 20000;
+    const progress = owned ? Math.max(0, Math.min(1, elapsed / 20000)) : 0;
+    const firing = owned && elapsed >= 0 && elapsed < 300;
+    set('capCdTSyzygy', owned, progress, `rgba(${TACHYON_PATH_COLORS.convergence},0.95)`, owned && cdReady && hi, firing);
   }
 }
 
@@ -31981,11 +33225,17 @@ function hyperIntensity01() {
   if (activeEffects.hyperspeed <= 0 || hyperspeedCurrentMult <= 1.05) return 0;
   const fade = Math.min(1, activeEffects.hyperspeed / 500); // ease out the last 500ms
   const speed01 = Math.max(0, Math.min(1, (hyperspeedCurrentMult - 1) / 11));
-  return fade * speed01;
+  let v = fade * speed01;
+  // Tachyon high-cap (12x+) intensity boost — wilder streaks/tunnel at high cap.
+  if (activeOrb === 'tachyon' && typeof _tachyonHyperIntensityBoost === 'function') {
+    v = Math.min(1, v * _tachyonHyperIntensityBoost(hyperSpeedStacks));
+  }
+  return v;
 }
 // Stack-tiered colour ramp. Plain hyperspeed: warm gold → white-gold → blue-white
 // (blueshift). Phantom Rush: an ETHEREAL violet/magenta ramp instead.
 function hyperTierColor(stacks) {
+  if (activeOrb === 'tachyon' && typeof _tachyonHyperTierColor === 'function') return _tachyonHyperTierColor(stacks);
   if (hyperIsPhantom()) {
     if (stacks <= 1) return [200, 120, 255];
     if (stacks === 2) return [212, 140, 255];
@@ -32396,13 +33646,14 @@ function drawHyperStackText(tctx = ctx) {
   ctx.fillStyle = tint.white
     ? `rgba(255,${230 + Math.round(Math.sin(frame * 0.4) * 25)},${230 + Math.round(Math.sin(frame * 0.4) * 25)},1)`
     : `rgba(${tint.r},${tint.g},${tint.b},1)`;
+  const _hy = hyperStackDrawY();   // measured top-stack bottom (or 58+safe+cutout fallback)
   if (emphasized && !coreLabel) {
     // Thicker outline via stroke-then-fill.
     ctx.strokeStyle = `rgba(${tint.edgeR},${tint.edgeG},${tint.edgeB},0.9)`;
     ctx.lineWidth = 2.6;
-    ctx.strokeText(label, W / 2, 58 + safeAreaTop + cutoutTop);
+    ctx.strokeText(label, W / 2, _hy);
   }
-  ctx.fillText(label, W / 2, 58 + safeAreaTop + cutoutTop);
+  ctx.fillText(label, W / 2, _hy);
   ctx.restore();
   ctx.globalAlpha = 1;
 }
@@ -32892,6 +34143,9 @@ document.getElementById('startBtn').addEventListener('click', ()=>{
     enterDevMode();
     return;
   }
+  // (v2.2.0 release: the TACHYONTEST / ROAMERTEST / PHANTASMTEST dev cheats were removed.
+  // Tachyon now ships as a real enhanced orb — unlock via Warp(nebula) active + 5000 kills →
+  // Sirius convo → unlockedOrbs, exactly like Roamer/Phantasm/Helios. No cheat path remains.)
   // DEV cheat: pilot name "TREETEST" (case-insensitive) grants 5,000,000
   // crystals, unlocks all three difficulty gates, and resets every orb's
   // skill tree to fresh state. One-shot per run start (the ENTER THE VOID
@@ -37971,6 +39225,10 @@ const TREE_TERM_COLOR = {
   emp: '255,200,120', streak: '255,170,90', stack: '255,220,60',
   sundog: '255,215,120', prominence: '255,170,60',
   heliograph: '255,244,200', beam: '255,244,200',
+  // Tachyon terms.
+  echo: '120,220,255', recurrence: '120,220,255',
+  divergence: '170,150,255', convergence: '210,180,255',
+  formation: '170,150,255', escort: '170,150,255', lance: '210,180,255',
 };
 
 // Glossary copy — wry/mocking "???" narrator voice; the term itself is bolded
@@ -37993,6 +39251,14 @@ const TREE_GLOSSARY = {
   prominence: "Prominence. An arc of fire I throw off myself, sweeping across whatever's bunched up. Aim it at the crowd. <b>Prominence.</b>",
   heliograph: "Heliograph. Signalling with light, except the message is 'cease to exist'. A beam that lances through planets in a line. <b>Heliograph.</b>",
   beam: "Beam. A lance of pure light I fire through a line of planets — everything it crosses simply stops existing. Point it at a crowd, not the empty void you keep aiming at. <b>Beam.</b>",
+  // Tachyon terms.
+  echo: "Echo. A copy of you, shed from going too fast for one body to contain. It does your dirty work and then politely explodes. <b>Echo.</b>",
+  recurrence: "Recurrence. Your past selves retrace exactly where you just flew, then detonate there. History repeating, violently, on purpose. <b>Recurrence.</b>",
+  divergence: "Divergence. Future yous refuse to wait — they fly in formation beside you and fire ahead. Teamwork, if the team were all you. <b>Divergence.</b>",
+  convergence: "Convergence. All your scattered echoes snap into one and strike as a single lance. Many yous, one very pointed opinion. <b>Convergence.</b>",
+  formation: "Formation. Your escort-clones holding position around you like obedient ghosts of momentum. They fly with you; they do not babysit you. <b>Formation.</b>",
+  escort: "Escort. A clone flying alongside you, firing forward on a beat. It will not body-block planets for you — that's still your job. <b>Escort.</b>",
+  lance: "Lance. A line of collapsed echoes punched straight through everything between you and your target. A beam, but angrier. Aim it at a crowd. <b>Lance.</b>",
 };
 
 function escTreeHtml(s) {
@@ -38017,11 +39283,18 @@ function treeTermKey(matchLower) {
   if (m === 'prominence') return 'prominence';
   if (m === 'heliograph') return 'heliograph';
   if (m === 'beam' || m === 'beams') return 'beam';
+  if (m === 'echo' || m === 'echoes' || m === 'echos') return 'echo';
+  if (m === 'recurrence') return 'recurrence';
+  if (m === 'divergence') return 'divergence';
+  if (m === 'convergence') return 'convergence';
+  if (m === 'formation' || m === 'formations') return 'formation';
+  if (m === 'escort' || m === 'escorts') return 'escort';
+  if (m === 'lance' || m === 'lances') return 'lance';
   return null;
 }
 // Longest-first alternation so "pair combo" beats "pair", "supernova" beats
 // "nova". Case-insensitive; \b keeps "nova" out of "Supernova" etc.
-const TREE_TERM_RE = /\b(pair combos|pair combo|hyperspeed|supernovas?|powerups?|shields?|bursts?|singles?|pairs?|novas?|ghosts?|streaks?|emps?|stacks?|sundogs?|prominence|heliograph|beams?)\b/gi;
+const TREE_TERM_RE = /\b(pair combos|pair combo|hyperspeed|supernovas?|powerups?|shields?|bursts?|singles?|pairs?|novas?|ghosts?|streaks?|emps?|stacks?|sundogs?|prominence|heliograph|beams?|echoes|echos|echo|recurrence|divergence|convergence|formations?|escorts?|lances?)\b/gi;
 // Numbers / math: signed numbers with optional decimals/commas + an optional
 // trailing unit (only units that can't be confused with a word — the (?![A-Za-z])
 // lookahead stops "s" in "shield" from matching), plus standalone → and ×.
