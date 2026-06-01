@@ -9940,6 +9940,7 @@ let _heliosZenithFiredAt = 0;    // ring "firing" pulse (Sundog Zenith)
 let _heliosZenithActive  = false; // Zenith lockout: active until all orbs discharge their super
 let _heliosStormFiredAt  = 0;    // ring "firing" pulse (Corona Storm)
 let _heliosNovaSfxAt     = 0;
+let _heliosBeamSfxAt     = 0;   // Heliograph beam SFX throttle (mirrors the _heliosNovaSfx gate so a magazine dump rolls, not machine-guns)
 let _heliosFrameKills    = 0;   // feel TIER 2: per-frame Helios kill accumulator → ONE shakeMassDestroy/frame (no per-kill rumble)
 
 function _heliosNovaSfx() {
@@ -10133,6 +10134,7 @@ function _heliosLaunch(fb, zenith) {
   const t = fb.target || _heliosNearestBody(fb.x, fb.y);
   if (!t) { fb.armStart = Date.now(); fb.phase = 'arm'; return; }   // no target → keep arming
   fb.phase = 'launch'; fb.target = t; fb._zenith = !!zenith;
+  try { SFX.playSfxBuffer('sundogLaunch', 0.4); } catch (e) {}   // SFX: sundog fling cue
   if (!zenith) _helios_flash('sundog', 'SUNDOG', HELIOS_PATH_COLORS.sundog, 600);
 }
 function _heliosTickSundog() {
@@ -10259,6 +10261,9 @@ function _heliosEruptProminence(full) {
   const ac = Math.atan2(dense.y - player.y, dense.x - player.x);
   const arc = full ? Math.PI * 2 : _heliosPromArc();
   _heliosFlares.push({ cx: player.x, cy: player.y, a0: full ? 0 : ac - arc / 2, arc, reach: _heliosPromReach(), startTime: Date.now(), dur: _heliosPromSweepMs(), cinder: rankOf('helios_cinderEdge') > 0 });
+  // SFX: eruption ACTIVATION cue (once per sweep here, NOT per-kill). Corona Storm (full)
+  // plays its own louder coronaStorm cue at the call site, so skip the sweep cue there.
+  if (!full) { try { SFX.playSfxBuffer('prominenceSweep', 0.4); } catch (e) {} }
 }
 function _heliosTickProminence() {
   if (rankOf('helios_prominence') <= 0) { if (_heliosFlares.length) _heliosFlares = []; return; }
@@ -10268,7 +10273,7 @@ function _heliosTickProminence() {
   // sizeMult 0.9, radiusMult 1 — same 378px/s growth, same ~400px radius).
   if (rankOf('helios_coronaStorm') > 0) {
     if (!_heliosPromStormAt) _heliosPromStormAt = now + 20000;
-    else if (now >= _heliosPromStormAt) { _heliosPromStormAt = now + 20000; _heliosStormFiredAt = now; _heliosEruptProminence(true); _heliosNova(player.x, player.y, 1.0, true); try { triggerHitstop(110); addShake(14); } catch (e) {} _helios_flash('coronaStorm', 'CORONA STORM', HELIOS_PATH_COLORS.prominence, 0); }   /* feel TIER 1 */
+    else if (now >= _heliosPromStormAt) { _heliosPromStormAt = now + 20000; _heliosStormFiredAt = now; _heliosEruptProminence(true); _heliosNova(player.x, player.y, 1.0, true); try { triggerHitstop(110); addShake(14); } catch (e) {} try { SFX.playSfxBuffer('coronaStorm', 0.6); } catch (e) {} _helios_flash('coronaStorm', 'CORONA STORM', HELIOS_PATH_COLORS.prominence, 0); }   /* feel TIER 1 + SFX (loudest moment) */
   }
   // Regular eruption — also start a full interval first.
   if (!_heliosPromNextAt) _heliosPromNextAt = now + _heliosPromCadenceMs();
@@ -10355,6 +10360,14 @@ function _heliosCastBeamRay(ox, oy, ang, reach, refractsLeft) {
   const ex = ox + Math.cos(ang) * reach, ey = oy + Math.sin(ang) * reach;
   if (_heliosBeams.length >= HELIOS_BEAM_CAP) _heliosBeams.shift();
   _heliosBeams.push({ ox, oy, ex, ey, startTime: Date.now(), life: 260 });
+  // SFX: per-beam fire cue, THROTTLED like _heliosNovaSfx (its 120ms gate) so a 150ms-cadence
+  // magazine dump rolls into a sizzle instead of a machine-gun. 90ms gate + low volume; a lone
+  // passive beam (every 2-3s) always clears the gate and sounds. Refraction recursion shares
+  // the same gate, so a chained multi-hit beam is one cue, not several.
+  {
+    const _bnow = Date.now();
+    if (_bnow - _heliosBeamSfxAt >= 90) { _heliosBeamSfxAt = _bnow; try { SFX.playSfxBuffer('heliographBeam', 0.18); } catch (e) {} }
+  }
   const flashWin = Date.now() < _heliosZenithFlashUntil;   // Zenith Flash: beam hits also nova
   let firstKill = null;
   for (let i = bodies.length - 1; i >= 0; i--) {
@@ -10472,7 +10485,7 @@ function _heliosTickHeliograph() {
   // Zenith Flash makes its hits nova too.
   if (rankOf('helios_shadowLine') > 0 && !_heliosShadow) {
     if (!_heliosShadowAt) _heliosShadowAt = now + 8000;
-    else if (now >= _heliosShadowAt) { _heliosShadow = { y: -20, startTime: now }; _heliosShadowAt = now + 8000; try { addShake(5); } catch (e) {} _helios_flash('lightsweep', 'LIGHT SWEEP', HELIOS_PATH_COLORS.heliograph, 0); }   /* feel TIER 1 */
+    else if (now >= _heliosShadowAt) { _heliosShadow = { y: -20, startTime: now }; _heliosShadowAt = now + 8000; try { addShake(5); } catch (e) {} try { SFX.playSfxBuffer('lightSweep', 0.3); } catch (e) {} _helios_flash('lightsweep', 'LIGHT SWEEP', HELIOS_PATH_COLORS.heliograph, 0); }   /* feel TIER 1 + SFX (ambient, quiet) */
   }
   if (_heliosShadow) {
     _heliosShadow.y += 7 * dtScale;
@@ -19524,6 +19537,12 @@ const SFX = (function() {
     rift:              './assets/SFX/RIFT.mp3',
     temporalFracture:  './assets/SFX/TEMPORALFRACTURE.mp3',
     alarm:             './assets/SFX/ALARM.mp3',
+    // Helios SFX batch 1 (lazy-loaded on first playSfxBuffer call, same as the above).
+    sundogLaunch:      './assets/SFX/SUNDOG_LAUNCH.mp3',
+    prominenceSweep:   './assets/SFX/PROMINENCE_SWEEP.mp3',
+    coronaStorm:       './assets/SFX/CORONA_STORM.mp3',
+    lightSweep:        './assets/SFX/LIGHT_SWEEP.mp3',
+    heliographBeam:    './assets/SFX/HELIOGRAPH_BEAM.mp3',
   };
   const sfxBuffers = { shieldDestroy: null, novaDestroy: null, hyperspeedBarrier: null, scream: null, toothed: null, eruption: null, tentacle: null, heartbeat: null, mirror: null, lotd: null, rift: null, alarm: null };
   const sfxLoading = { shieldDestroy: null, novaDestroy: null, hyperspeedBarrier: null, scream: null, toothed: null, eruption: null, tentacle: null, heartbeat: null, mirror: null, lotd: null, rift: null, alarm: null };
