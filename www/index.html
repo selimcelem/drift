@@ -18978,7 +18978,7 @@ let runStats = { totalPassed: 0, totalDestroyed: 0, pointsFromPassing: 0, points
 // Example: TIME_DILATION = 60 → 1 real second = 60 in-game seconds for
 // progression, apocalypse triggers in ~10 real seconds.
 const TIME_DILATION = 1;
-const GAME_VERSION = '2.2.0';
+const GAME_VERSION = '2.2.1';
 try {
   const vl = document.getElementById('versionLabel');
   if (vl) vl.textContent = 'v' + GAME_VERSION;
@@ -34331,28 +34331,9 @@ document.getElementById('startBtn').addEventListener('click', ()=>{
   // (v2.2.0 release: the TACHYONTEST / ROAMERTEST / PHANTASMTEST dev cheats were removed.
   // Tachyon now ships as a real enhanced orb — unlock via Warp(nebula) active + 5000 kills →
   // Sirius convo → unlockedOrbs, exactly like Roamer/Phantasm/Helios.)
-  // DEV cheat: pilot name "TRAILTEST" — TEMPORARY trail/visual playtest access. Unlocks
-  // EVERY orb's trails (default + unlockable, incl. Tachyon's Cherenkov Wake), reveals +
-  // unlocks all orbs + trees, grants crystals, and equips Tachyon, then FALLS THROUGH to
-  // start the run. IN-MEMORY / LOCAL TEST STATE ONLY — it calls NO save* fns, so it never
-  // touches the real threshold/save path that ships to players, and it resets on reload.
-  // DEV-ONLY: REMOVE BEFORE SHIP (v2.2.1), same as TACHYONTEST/ROAMERTEST/PHANTASMTEST.
-  if (getUsername().toUpperCase() === 'TRAILTEST') {
-    totalCrystals = Math.max(totalCrystals, 5000000);
-    try {
-      for (const o of ORB_ORDER) {
-        if (unlockedOrbs.indexOf(o) < 0) unlockedOrbs.push(o);
-        if (typeof orbUnlockSeen !== 'undefined' && orbUnlockSeen) orbUnlockSeen[o] = true;
-        if (typeof treesUnlocked !== 'undefined' && treesUnlocked) treesUnlocked[o] = true;
-        if (stats && stats.unlockedTrails) stats.unlockedTrails[o] = true;
-      }
-    } catch (e) {}
-    activeOrb = 'tachyon';
-    try { refreshActiveTreeCache(); } catch (e) {}
-    if (typeof refreshOrbBrowser === 'function') { try { refreshOrbBrowser(); } catch (e) {} }
-    console.log('[TRAILTEST] all trails + orbs unlocked (IN-MEMORY ONLY), 5M crystals, Tachyon equipped — nothing persisted');
-    // Fall through — run starts with Tachyon equipped; no save* called, so nothing persists.
-  }
+  // (v2.2.1 release: the TRAILTEST trail/visual playtest cheat was removed — it was
+  // in-memory-only and never touched the real unlock/save path. No cheat path remains
+  // for trails; they unlock via the normal kill-threshold milestones.)
   // DEV cheat: pilot name "TREETEST" (case-insensitive) grants 5,000,000
   // crystals, unlocks all three difficulty gates, and resets every orb's
   // skill tree to fresh state. One-shot per run start (the ENTER THE VOID
