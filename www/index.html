@@ -8518,20 +8518,20 @@ TREE_DEFS.tachyon = {
           desc: 'Faithful past-echoes shed faster — shed timer 1.3s → 0.9s.',
           effect: r => r ? 'Shed 1.3s → 0.9s' : 'Locked' },
         { key: 'tachyon_rewindCadence', name: 'Echo Loop', tier: 1, max: 1, costOverride: [2500], pointCost: 2,
-          desc: 'Past-echoes that finish replaying LOOP and keep retracing your wake while you hyperspeed — building a visible train of your past selves (max 6; oldest detonates on overflow). They detonate when hyperspeed ends or you Temporal Snap.',
+          desc: 'Past-echoes that finish replaying LOOP and keep retracing your wake while you hyperspeed — building a visible train of your past selves (max 6; oldest detonates on overflow). They detonate when hyperspeed ends.',
           effect: r => r ? 'Echoes loop into a train (max 6)' : 'Locked' },
         { key: 'tachyon_wakeDamage', name: 'Wake Damage', tier: 1, max: 1, costOverride: [2500], pointCost: 2,
           desc: 'Past-echoes detonate into MEDIUM novas instead of small ones.',
           effect: r => r ? 'Past-echo → medium nova' : 'Locked' },
         { key: 'tachyon_longMemory', name: 'Long Memory', tier: 2, max: 1, costOverride: [5000], pointCost: 3,
-          desc: 'Replay window 1.6s → 1.8s — longer, farther-reaching echoes.',
-          effect: r => r ? 'Replay 1.6s → 1.8s' : 'Locked' },
+          desc: 'Replay window 1.6s → 2.0s — longer, farther-reaching echoes.',
+          effect: r => r ? 'Replay 1.6s → 2.0s' : 'Locked' },
         { key: 'tachyon_photonDebt', name: 'Temporal Snap', tier: 1, max: 1, costOverride: [2500], pointCost: 2,
-          desc: 'When you BURST or hyperspeed ends, your whole train collapses inward and detonates in a chain along your wake — the longer the train, the bigger the implosion. Each blast feeds Eternal Wake.',
-          effect: r => r ? 'Burst / end → collapse the train' : 'Locked' },
+          desc: 'Requires Echo Loop. Your looping echoes don\'t vanish after they detonate at the end of hyperspeed — each one replays the whole window one more time, one by one, and detonates AGAIN. A second full wake-and-collapse cycle.',
+          effect: r => r ? 'Train replays + detonates a 2nd time' : 'Locked' },
         { key: 'tachyon_eternalWake', name: 'Eternal Wake', tier: 3, max: 1, costOverride: [10000], pointCost: 5,
-          desc: 'CAPSTONE. Every 100 kills by past-echoes, your max hyperspeed cap rises +1 for the rest of the run (toward 20). The past compounds.',
-          effect: r => r ? '100 past-echo kills → +1 max cap' : 'Locked' },
+          desc: 'CAPSTONE. Every 50 kills by past-echoes, your max hyperspeed cap rises +1 for the rest of the run (toward 20). The past compounds.',
+          effect: r => r ? '50 past-echo kills → +1 max cap' : 'Locked' },
       ],
     },
     // ---- 2. DIVERGENCE (future selves flung ahead, no new tech) ----------
@@ -8557,8 +8557,8 @@ TREE_DEFS.tachyon = {
           desc: 'Requires Causal Lead. While hyperspeeding your escorts don\'t wait for the end — they RACE off the top in a streak, destroying everything in their path, then a fresh formation appears and does it again (~2 waves per blaze).',
           effect: r => r ? 'Escorts streak off & respawn (~2 waves)' : 'Locked' },
         { key: 'tachyon_allTimelines', name: 'All Timelines', tier: 3, max: 1, costOverride: [10000], pointCost: 5,
-          desc: 'CAPSTONE. Every 100 kills made by escort-clones, your max hyperspeed cap rises +1 for the rest of the run (toward 20).',
-          effect: r => r ? '100 escort kills → +1 max cap' : 'Locked' },
+          desc: 'CAPSTONE. Every 150 kills made by escort-clones, your max hyperspeed cap rises +1 for the rest of the run (toward 20).',
+          effect: r => r ? '150 escort kills → +1 max cap' : 'Locked' },
       ],
     },
     // ---- 3. MAELSTROM (gravity WELLS — Tachyon's own implosion, NOT Warp's rift)
@@ -8605,7 +8605,7 @@ const TACHYON_PREREQS = {
   tachyon_rewindCadence:     { prereq: ['tachyon_recurrence'] },
   tachyon_wakeDamage:        { prereq: ['tachyon_recurrence'] },
   tachyon_longMemory:        { prereq: ['tachyon_recurrence'] },
-  tachyon_photonDebt:        { prereq: ['tachyon_recurrence'] },
+  tachyon_photonDebt:        { prereq: ['tachyon_rewindCadence'], requiresActive: ['tachyon_rewindCadence'] },   // 1c: Temporal Snap is a SUPPORT gated behind Echo Loop
   tachyon_eternalWake:       { prereq: ['tachyon_recurrence'] },
   tachyon_forkedPath:        { prereq: ['tachyon_divergence'] },
   tachyon_causalLead:        { prereq: ['tachyon_divergence'] },
@@ -8722,7 +8722,9 @@ const TACHYON_MAX_STACKS_CEILING = 20;
 ORB_BEHAVIOR.tachyon.hyperspeedMaxStacks = function() {
   return Math.min(TACHYON_MAX_STACKS_CEILING, TACHYON_BASE_MAX_STACKS + (_tachyonCapBonus | 0));
 };
-ORB_BEHAVIOR.tachyon.burstCooldown = function() { return 18000; };
+// (Burst-cooldown standardization: Tachyon's old flat 18000 override was removed so
+// it uses the shared 30000 base like every other orb; its tree/live reductions —
+// Slipstream Echo, etc. — and the burst's max-cap slam still apply on top.)
 OrbHooks.on('afterLoadTreeState', () => { ActiveBudget.restoreActivePoints('tachyon'); });
 
 // === TACHYON flash feedback (cloned from _helios flash helpers) ============
@@ -8790,14 +8792,12 @@ function _tachyonRecordEvt(ev) {
 let _tachyonRecurAt = 0, _tachyonSyzygyAt = 0;
 let _tachyonOverchargeAt = 0;
 let _tachyonCascadeAt = 0;   // Causal Cascade: delayed wave-2 fire time after hyperspeed end (0 = none)
-// MAELSTROM gravity wells (own ephemeral pool — no echo-cap pressure) + Accretion
-// growth + TEMPORAL SNAP chain queue.
+// MAELSTROM gravity wells (own ephemeral pool — no echo-cap pressure) + Accretion growth.
 let _tachyonWells = [], _tachyonWellAt = 0, _tachyonAccretion = 0;
-let _tachyonSnapQueue = [], _tachyonSnapAt = 0;
 let _tachyonTimersInit = false;
 // Kill-milestone capstone counters (Eternal Wake / All Timelines) → cap growth.
 let _tachyonPastEchoKills = 0, _tachyonEscortKills = 0;
-let _tachyonWakeNext = 100, _tachyonAllNext = 100;
+let _tachyonWakeNext = 50, _tachyonAllNext = 150;   // 1b rebalance: past-echoes kill ~3-5x less often than escorts (they're fewer + event-gated, escorts kill ~every frame across 2-4 agents), so Eternal Wake fires per 50 past kills, All Timelines per 150 escort kills → comparable wall-clock rate. TUNABLE.
 let _tachyonPrevHyper = false;   // edge-detect hyperspeed end (Causal Lead)
 function _tachyonBlob(g, x, y, r, rgb, a) {
   g.beginPath(); g.fillStyle = `rgba(${rgb},${(a * 0.4).toFixed(3)})`; g.arc(x, y, r, 0, 6.2832); g.fill();
@@ -8845,7 +8845,7 @@ function _tachyonPush(e) {
 function _tachyonSpawnPast() {
   const len = Math.min(_tachyonHistFilled, TACHYON_HISTORY_LEN);
   if (len < 8) return;   // not enough history yet (no future-clone fallback)
-  const winSamples = (rankOf('tachyon_longMemory') > 0) ? 108 : 96;  // 1.8s vs 1.6s
+  const winSamples = (rankOf('tachyon_longMemory') > 0) ? 120 : 96;  // 2.0s (Long Memory, 1e buff) vs 1.6s
   const useLen = Math.min(len, winSamples);
   const path = new Array(useLen);
   for (let i = 0; i < useLen; i++) {
@@ -8878,7 +8878,7 @@ function _tachyonCheckWake() {
   if (rankOf('tachyon_eternalWake') <= 0) return;
   while (_tachyonPastEchoKills >= _tachyonWakeNext && (TACHYON_BASE_MAX_STACKS + _tachyonCapBonus) < TACHYON_MAX_STACKS_CEILING) {
     _tachyonCapBonus++;
-    _tachyonWakeNext += 100;
+    _tachyonWakeNext += 50;
     _tachyon_flash('eternalWake', 'ETERNAL WAKE +CAP', TACHYON_PATH_COLORS.recurrence, 0);
   }
 }
@@ -8887,7 +8887,7 @@ function _tachyonCheckAllTimelines() {
   if (rankOf('tachyon_allTimelines') <= 0) return;
   while (_tachyonEscortKills >= _tachyonAllNext && (TACHYON_BASE_MAX_STACKS + _tachyonCapBonus) < TACHYON_MAX_STACKS_CEILING) {
     _tachyonCapBonus++;
-    _tachyonAllNext += 100;
+    _tachyonAllNext += 150;
     _tachyon_flash('allTimelines', 'ALL TIMELINES +CAP', TACHYON_PATH_COLORS.divergence, 0);
   }
 }
@@ -8923,6 +8923,7 @@ function _tachyonKillBody(b, idx) {
   try { addDestroyPoints(); } catch (e) {}
   try { releaseBodyCanvases(b); } catch (e) {}
   bodies.splice(idx, 1);
+  try { SFX.planetDestroyed('nova'); } catch (e) {}   // hotfix Part 3: Tachyon kills were silent (self-throttles)
   try { checkDestroyProc(b, 'nova'); } catch (e) {}
 }
 // Spawn a gravity WELL. FIXED placement: the target is LOCKED now (densest
@@ -8956,6 +8957,7 @@ function _tachyonSpawnWell(big) {
   if (rankOf('tachyon_gather') > 0) pullR = Math.min(300, Math.round(pullR * 1.5));  // TIDAL PULL: far wider tide (self-sufficient)
   _tachyonWells.push({ x: cx, y: cy, born: Date.now(), life, pullR, killR, big: !!big, coreAt: 0 });
   _tachyon_flash(big ? 'quasar' : 'maelstrom', big ? 'QUASAR' : 'MAELSTROM', TACHYON_PATH_COLORS.convergence, big ? 0 : 250);
+  try { SFX.playSfxBuffer('rift', big ? 0.45 : 0.3); } catch (e) {}   // hotfix Part 3: reuse RIFT.mp3 for the collapse cue
 }
 // Tachyon's OWN pull-math (NOT a copy of Warp's rift): proximity-ACCELERATED +
 // time-RAMPED, so bodies fall inward faster as they near the core and as the well
@@ -8989,6 +8991,9 @@ function _tachyonWellCrush(w) {
   const now = Date.now();
   const k = _tachyonRadiusKill(w.x, w.y, w.killR, 'collapse');
   _tachyonDetonate(w.x, w.y, 'convergence', w.big ? 1.6 : (rankOf('tachyon_implosion') > 0 ? 1.05 : 0.8));   // BUFF nova size
+  // 4a feel: the end-of-life implosion gets a beat when it crushes something. Wells fire
+  // ~2.2s apart so this is NOT high-frequency. Quasar (big) hits harder + a brief hitstop.
+  if (k > 0) { try { addShake(w.big ? 7 : 3); } catch (e) {} if (w.big) { try { triggerHitstop(45); } catch (e) {} } }
   if (k > 0 && rankOf('tachyon_synchrony') > 0) _tachyonAccretion = Math.min(80, _tachyonAccretion + k * 5);   // Accretion (BUFF cap 60→80, +4→+5)
   if (k >= 3 && rankOf('tachyon_overcharge') > 0 && now - _tachyonOverchargeAt > 1500) {                        // Resonant Collapse
     _tachyonOverchargeAt = now;
@@ -9051,19 +9056,28 @@ function _tachyonDetonatePast(e, full) {
   _tachyonRadiusKill(e.x, e.y, full ? 60 : 44, 'past');
   _tachyonDetonate(e.x, e.y, 'recurrence', full ? 1.0 : 0.6);
 }
-// TEMPORAL SNAP: collapse the whole living train and detonate it in a CHAIN along
-// your wake (farthest-from-you first → the wave marches toward you). Bigger train =
-// bigger implosion. HARD RULE: each blast fires at the echo's PAST position.
+// TEMPORAL SNAP (support, requires Echo Loop): the looping train doesn't VANISH after
+// its end-of-hyperspeed detonation — each echo REPLAYS its whole window one more time
+// and detonates AGAIN (a 2nd wake-and-collapse cycle). Called on hyperspeed-end: detonate
+// each looper now (1st blast), then reset it to replay once more (`snapped` flag = single
+// extra cycle). With blazing false, the tick won't re-loop it, so at the end of the 2nd
+// replay it detonates via _tachyonDetonatePast and is removed. HARD RULE: all blasts fire
+// at the echo's PAST position; every detonation credits Eternal Wake (1d, via _tachyonDetonatePast).
 function _tachyonTemporalSnap() {
-  const train = _tachyonEchoes.filter(e => e.kind === 'past');
-  if (!train.length) return;
   const full = rankOf('tachyon_wakeDamage') > 0;
-  const scale = 1 + Math.min(0.6, train.length * 0.06);
-  train.sort((a, b) => ((b.x - player.x) * (b.x - player.x) + (b.y - player.y) * (b.y - player.y)) - ((a.x - player.x) * (a.x - player.x) + (a.y - player.y) * (a.y - player.y)));
-  for (const e of train) _tachyonSnapQueue.push({ x: e.x, y: e.y, full, scale });
-  _tachyonEchoes = _tachyonEchoes.filter(e => e.kind !== 'past');
-  _tachyon_flash('snap', 'TEMPORAL SNAP', TACHYON_PATH_COLORS.recurrence, 0);
-  try { addShake(5); } catch (e) {}
+  let n = 0;
+  for (const e of _tachyonEchoes) {
+    if (e.kind !== 'past' || !e.isLooping || e.snapped) continue;
+    _tachyonDetonatePast(e, full);   // 1st detonation (the normal end-of-hyperspeed blast)
+    e.idx = 0; e.snapped = true; e._collapse = false; e.isLooping = true;  // queue a single extra replay cycle
+    n++;
+  }
+  if (n > 0) {
+    _tachyon_flash('snap', 'TEMPORAL SNAP', TACHYON_PATH_COLORS.recurrence, 0);
+    try { addShake(5); } catch (e) {}
+    try { triggerHitstop(40); } catch (e) {}   // 4a feel: the snap collapse gets a beat
+    try { SFX.beyondEcho(); } catch (e) {}      // echo-collapse cue (reuse)
+  }
 }
 // GHOST TRAIN length tick: small pips above the player, one per looping echo.
 function _tachyonDrawTrainHud() {
@@ -9215,7 +9229,7 @@ OrbHooks.on('onUpdate', () => {
   // hyperspeed, killing in their path, then vanish.
   if (_tachyonPrevHyper && !hyperNow && rankOf('tachyon_causalLead') > 0) {
     // WAVE 1: Causal Lead streaks the live escorts off on hyperspeed-END.
-    if (_tachyonStreakEscorts() > 0) _tachyon_flash('causalLead', 'CAUSAL LEAD', TACHYON_PATH_COLORS.divergence, 0);
+    if (_tachyonStreakEscorts() > 0) { _tachyon_flash('causalLead', 'CAUSAL LEAD', TACHYON_PATH_COLORS.divergence, 0); try { SFX.afterburnWhoosh(); } catch (e) {} }  // hotfix Part 3: streak launch whoosh
     // CAUSAL CASCADE (tachyon_quantumTunnel): schedule a SEPARATE, delayed WAVE 2
     // ~1s later (respawn the formation + streak it off again) — released below. This
     // replaces the old rapid back-to-back double-fire so the two waves read distinctly.
@@ -9268,6 +9282,7 @@ OrbHooks.on('onUpdate', () => {
       _tachyon_flash('cascade', 'CAUSAL CASCADE', TACHYON_PATH_COLORS.divergence, 0);
       try { addShake(4); } catch (e) {}
       try { triggerHitstop(45); } catch (e) {}
+      try { SFX.afterburnWhoosh(); } catch (e) {}   // hotfix Part 3: streak launch whoosh (reuse)
     }
   }
   // RECURRENCE keystone — a SEPARATE, ADDITIONAL faithful shed layered on top
@@ -9299,13 +9314,6 @@ OrbHooks.on('onUpdate', () => {
   }
   _tachyonTickEchoes();
   _tachyonTickWells();
-  // TEMPORAL SNAP chain release (~45ms apart): detonate along the collapsed wake.
-  if (_tachyonSnapQueue.length && now - _tachyonSnapAt >= 45) {
-    _tachyonSnapAt = now;
-    const sq = _tachyonSnapQueue.shift();
-    _tachyonRadiusKill(sq.x, sq.y, sq.full ? 60 : 44, 'past');
-    _tachyonDetonate(sq.x, sq.y, 'recurrence', (sq.full ? 1.0 : 0.6) * (sq.scale || 1));
-  }
 });
 OrbHooks.on('onCombo', (key) => {
   if (activeOrb !== 'tachyon') return;
@@ -9318,13 +9326,12 @@ OrbHooks.on('onResetGame', () => {
   _tachyonEchoes = []; _tachyonWells = [];
   _tachyonHistHead = 0; _tachyonHistFilled = 0;
   _tachyonWellAt = 0; _tachyonAccretion = 0;
-  _tachyonSnapQueue = []; _tachyonSnapAt = 0;
   _tachyonRecurAt = 0; _tachyonSyzygyAt = 0;
   _tachyonOverchargeAt = 0;
   _tachyonCascadeAt = 0;
   _tachyonTimersInit = false;
   _tachyonPastEchoKills = 0; _tachyonEscortKills = 0;
-  _tachyonWakeNext = 100; _tachyonAllNext = 100;
+  _tachyonWakeNext = 50; _tachyonAllNext = 150;
   _tachyonCapBonus = 0; _tachyonPrevHyper = false;
   _tachyonHistWriteSlot = 0;
   for (let i = 0; i < TACHYON_HISTORY_LEN; i++) { _tachyonHistBar[i] = 0; _tachyonHistStk[i] = 0; _tachyonHistEvt[i] = null; }
@@ -9341,11 +9348,11 @@ ORB_BEHAVIOR.tachyon.executeBurst = function() {
   let guard = 0;
   while (hyperSpeedStacks < cap && guard++ < 30) activateHyperspeed();
   _tachyonRecordEvt({ burst: 1 });   // action-replay: Recurrence's past-echoes re-perform the burst
-  if (rankOf('tachyon_photonDebt') > 0) _tachyonTemporalSnap();   // Temporal Snap: collapse the train
   runBurstCount++;
   try { addShake(9); } catch (e) {}
   try { triggerHitstop(60); } catch (e) {}
   _tachyon_flash('burst', 'TEMPORAL FRACTURE', TACHYON_CORE, 0);
+  try { SFX.playSfxBuffer('temporalFracture', 0.55); } catch (e) {}   // Part 3: bespoke burst cue (layers over the hyperspeed whoosh)
   return true;
 };
 
@@ -9933,6 +9940,7 @@ let _heliosZenithFiredAt = 0;    // ring "firing" pulse (Sundog Zenith)
 let _heliosZenithActive  = false; // Zenith lockout: active until all orbs discharge their super
 let _heliosStormFiredAt  = 0;    // ring "firing" pulse (Corona Storm)
 let _heliosNovaSfxAt     = 0;
+let _heliosFrameKills    = 0;   // feel TIER 2: per-frame Helios kill accumulator → ONE shakeMassDestroy/frame (no per-kill rumble)
 
 function _heliosNovaSfx() {
   const now = Date.now();
@@ -9983,6 +9991,7 @@ function _heliosKill(b, idx, colorRgb, src) {
   _heliosNovaSfx();
   try { releaseBodyCanvases(b); } catch {}
   bodies.splice(idx, 1);
+  _heliosFrameKills++;   // feel TIER 2: count this kill; the Helios onUpdate drains it into ONE shakeMassDestroy/frame
   try { checkDestroyProc(b, src || 'nova'); } catch {}
 }
 
@@ -10029,7 +10038,7 @@ ORB_BEHAVIOR.helios.executeBurst = function() {
   activatePowerup('nova', player.x, player.y);   // immediate central nova
   _heliosSpawnBurstOrbs(HELIOS_BURST_ORBS);       // + 4 orbs that each nova
   runBurstCount++;
-  addShake(9); triggerHitstop(60);
+  addShake(11); triggerHitstop(80);   // feel TIER 3: Solar Burst bumped 9→11 / 60→80
   _helios_flash('burst', 'SOLAR BURST', HELIOS_GOLD, 0);
   try {
     if (rankOf('helios_solstice') > 0) _heliosDoSolstice(); // bank 5 beams
@@ -10042,11 +10051,16 @@ ORB_BEHAVIOR.helios.executeBurst = function() {
 OrbHooks.on('onUpdate', () => {
   if (activeOrb !== 'helios') return;
   if (state !== 'playing' && state !== 'devmode' && state !== 'apocalypse') return;
+  _heliosFrameKills = 0;   // feel TIER 2: reset the per-frame kill accumulator BEFORE the ticks fill it
   try { _heliosTickSundog(); } catch (e) {}
   try { _heliosTickProminence(); } catch (e) {}
   try { _heliosTickHeliograph(); } catch (e) {}
   try { _heliosTickEmbers(); } catch (e) {}
   try { _heliosTickBurstOrbs(); } catch (e) {}
+  // feel TIER 2: the core kill loop (sweeps / beams / embers / Photosphere) finally
+  // LANDS — all kills this frame collapse into ONE shake (5/8/11 by count, same as the
+  // nova orbs), never a per-kill rumble. Reset above + drained here = self-limiting.
+  if (_heliosFrameKills > 0) { try { shakeMassDestroy(_heliosFrameKills); } catch (e) {} _heliosFrameKills = 0; }
 });
 // Master render — additive gold draws on the 2D overlay (#c covers both paths).
 OrbHooks.on('onRender', () => {
@@ -10106,7 +10120,7 @@ function _heliosPhotosphereKill(fb) {
 function _heliosFleetImpact(fb, tx, ty) {
   const zen = !!fb._zenith; fb._zenith = false;
   _heliosNova(tx, ty, zen ? 1.0 : _heliosImpactRm(), zen);   // Zenith barrage = SUPERNOVA blasts
-  if (zen) { triggerHitstop(45); addShake(9); } else { triggerHitstop(28); addShake(5); }
+  if (zen) { triggerHitstop(55); addShake(11); } else { triggerHitstop(40); addShake(7); }   // feel TIER 3: Zenith super 45/9→55/11, normal 28/5→40/7
   if (rankOf('helios_emberSpark') > 0) _heliosSpawnEmber(tx, ty);
   if (fb.chainHit) {
     fb.chainHit = false;
@@ -10143,6 +10157,7 @@ function _heliosTickSundog() {
       else if (now >= _heliosZenithNextAt) {
         _heliosZenithActive = true; _heliosZenithFiredAt = now;
         for (const f of _heliosFleet) f._zenithPending = true;
+        try { triggerHitstop(60); addShake(11); } catch (e) {}   // feel TIER 1: Zenith activation
         _helios_flash('zenith', 'ZENITH!', HELIOS_PATH_COLORS.sundog, 0);
       }
     }
@@ -10253,7 +10268,7 @@ function _heliosTickProminence() {
   // sizeMult 0.9, radiusMult 1 — same 378px/s growth, same ~400px radius).
   if (rankOf('helios_coronaStorm') > 0) {
     if (!_heliosPromStormAt) _heliosPromStormAt = now + 20000;
-    else if (now >= _heliosPromStormAt) { _heliosPromStormAt = now + 20000; _heliosStormFiredAt = now; _heliosEruptProminence(true); _heliosNova(player.x, player.y, 1.0, true); _helios_flash('coronaStorm', 'CORONA STORM', HELIOS_PATH_COLORS.prominence, 0); }
+    else if (now >= _heliosPromStormAt) { _heliosPromStormAt = now + 20000; _heliosStormFiredAt = now; _heliosEruptProminence(true); _heliosNova(player.x, player.y, 1.0, true); try { triggerHitstop(110); addShake(14); } catch (e) {} _helios_flash('coronaStorm', 'CORONA STORM', HELIOS_PATH_COLORS.prominence, 0); }   /* feel TIER 1 */
   }
   // Regular eruption — also start a full interval first.
   if (!_heliosPromNextAt) _heliosPromNextAt = now + _heliosPromCadenceMs();
@@ -10370,6 +10385,7 @@ function _heliosDoSolstice() {
   _heliosBeamBank = cap;
   _heliosBeamKillCtr = 0;
   _heliosBankArmed = true;
+  try { addShake(7); } catch (e) {}   // feel TIER 1: Solstice magazine fill
   _helios_flash('solstice', 'SOLSTICE +' + cap, HELIOS_PATH_COLORS.heliograph, 0);
 }
 // Shared origin + target lookup for both passive and bank fire paths. Returns
@@ -10408,6 +10424,7 @@ function _heliosTickHeliograph() {
       else if (now >= _heliosZenithFlashAt) {
         _heliosZenithFlashUntil = now + 10000;                 // 10s active
         _heliosZenithFlashAt = _heliosZenithFlashUntil + 20000; // 20s cooldown AFTER it ends
+        try { triggerHitstop(70); addShake(10); } catch (e) {}   // feel TIER 1: Zenith Flash activation
         _helios_flash('zenithFlash', 'ZENITH FLASH', HELIOS_PATH_COLORS.heliograph, 0);
       }
     }
@@ -10455,7 +10472,7 @@ function _heliosTickHeliograph() {
   // Zenith Flash makes its hits nova too.
   if (rankOf('helios_shadowLine') > 0 && !_heliosShadow) {
     if (!_heliosShadowAt) _heliosShadowAt = now + 8000;
-    else if (now >= _heliosShadowAt) { _heliosShadow = { y: -20, startTime: now }; _heliosShadowAt = now + 8000; _helios_flash('lightsweep', 'LIGHT SWEEP', HELIOS_PATH_COLORS.heliograph, 0); }
+    else if (now >= _heliosShadowAt) { _heliosShadow = { y: -20, startTime: now }; _heliosShadowAt = now + 8000; try { addShake(5); } catch (e) {} _helios_flash('lightsweep', 'LIGHT SWEEP', HELIOS_PATH_COLORS.heliograph, 0); }   /* feel TIER 1 */
   }
   if (_heliosShadow) {
     _heliosShadow.y += 7 * dtScale;
@@ -19505,6 +19522,7 @@ const SFX = (function() {
     mirror:            './assets/SFX/MIRROR.mp3',
     lotd:              './assets/SFX/LOTD.mp3',
     rift:              './assets/SFX/RIFT.mp3',
+    temporalFracture:  './assets/SFX/TEMPORALFRACTURE.mp3',
     alarm:             './assets/SFX/ALARM.mp3',
   };
   const sfxBuffers = { shieldDestroy: null, novaDestroy: null, hyperspeedBarrier: null, scream: null, toothed: null, eruption: null, tentacle: null, heartbeat: null, mirror: null, lotd: null, rift: null, alarm: null };
@@ -21028,6 +21046,7 @@ const TRAIL_UNLOCK_THRESHOLDS = {
   // 1,000-kill threshold (Phantasm shares the cosmic trail render).
   phantomV2: 1000,
   helios: 3000,
+  tachyon: 3000,   // Cherenkov Wake — parity with Warp/nebula
 };
 // Display names for the unlocked alternative trail per orb (shown in the
 // orb-preview dropdown and the unlock banner).
@@ -21040,6 +21059,7 @@ const TRAIL_UNLOCKED_NAMES = {
   drifterV2: 'Prismatic Pulse',
   phantomV2: 'Spectral Wisps',
   helios: 'Corona Veil',
+  tachyon: 'Cherenkov Wake',
 };
 // v1.9.0 polish: enumerate ALL ORB_ORDER entries instead of hard-coding the
 // original five. Previously DrifterV2 stats were silently dropped on every
@@ -30926,6 +30946,23 @@ function emitOrbTrail() {
         flicker: Math.random() * 6.28,
         alphaMul, startTime: nowOt, maxLifeMs: _heliosHyperOn ? 460 : 320,
       }, ORB_TRAIL_CAP);
+    } else if (orb === 'tachyon') {
+      // Tachyon (hotfix Part 1): cherenkov speed-lines. Nebula-style 'line' trail,
+      // but tinted to Tachyon's identity — core cherenkov blue-white (120,220,255)
+      // mixed with a violet-white edge (200,150,255), additive — so it reads distinct
+      // from Warp's plain blue. Fixes the blank-trail bug (tachyon had no branch).
+      const len = (10 + Math.random() * 14) * sizeMul;
+      pushCapped(orbTrailParticles, {
+        kind: 'line',
+        x: jx, y: jy,
+        vx: bx * (0.9 + Math.random() * 0.8),
+        vy: by * (0.9 + Math.random() * 0.8),
+        dx: bx, dy: by,
+        len,
+        hue: Math.random() < 0.5 ? '120,220,255' : '200,150,255',
+        additive: true,
+        life: 1, alphaMul, startTime: nowOt, maxLifeMs: 367,
+      }, ORB_TRAIL_CAP);
     }
   }
 }
@@ -31390,6 +31427,11 @@ function emitOrbTrailUnlocked(orb, intensity, sizeMul, alphaMul, px, py, bx, by,
         }, ORB_TRAIL_CAP);
       }
     }
+  } else if (orb === 'tachyon') {
+    // CHERENKOV WAKE — Tachyon's unlocked trail (hotfix Part 2): a more intense,
+    // elongated cherenkov speed-line wake than the default (brighter/denser/longer)
+    // to justify the unlock. Mirrors Warp "Lightspeed" via emitTachyonWakeTrail.
+    emitTachyonWakeTrail(intensity, sizeMul, alphaMul, hyperOn, stacks, bx, by);
   }
 }
 
@@ -31440,6 +31482,42 @@ function emitWarpBaseTrail(intensity, sizeMul, alphaMul, hyperOn, stacks, bx, by
       additive: true,                        // line render path checks this
       life: 1, alphaMul: baseAlpha,
       startTime: Date.now(), maxLifeMs: 420 + Math.random() * 120,
+    }, ORB_TRAIL_CAP);
+  }
+}
+// CHERENKOV WAKE — Tachyon's unlocked base trail (hotfix Part 2). Like
+// emitWarpBaseTrail but cherenkov-tinted (core 120,220,255 / violet-white edge
+// 200,150,255) and more intense: +1 line and a longer/brighter wake vs the default.
+function emitTachyonWakeTrail(intensity, sizeMul, alphaMul, hyperOn, stacks, bx, by) {
+  const speedT = Math.max(0, Math.min(1, intensity / 4));
+  let lineCount;
+  if (!hyperOn) {
+    if (intensity < 0.5)      lineCount = 2;
+    else if (intensity < 1.5) lineCount = 3;
+    else                      lineCount = 3 + (Math.random() < 0.55 ? 1 : 0);
+  } else {
+    lineCount = 4 + (Math.random() < 0.5 ? 1 : 0);              // hyperspeed: 4-5 (denser than Lightspeed)
+  }
+  if (lineCount > 5) lineCount = 5;
+  const px = player.x + bx * (PLAYER_R + 2);
+  const py = player.y + by * (PLAYER_R + 2);
+  const baseLen = (16 + Math.random() * 16) * sizeMul;          // longer than Lightspeed's 12+14
+  const lenScale = 1.0 + speedT * 0.5 + (hyperOn ? Math.min(0.4, stacks * 0.04) : 0);
+  const baseAlpha = Math.min(1, alphaMul * (hyperOn ? 1.1 : 1.0));
+  for (let i = 0; i < lineCount; i++) {
+    const jx = px + (Math.random() - 0.5) * 9;
+    const jy = py + (Math.random() - 0.5) * 9;
+    pushCapped(orbTrailParticles, {
+      kind: 'line',
+      x: jx, y: jy,
+      vx: bx * (0.9 + Math.random() * 0.8),
+      vy: by * (0.9 + Math.random() * 0.8),
+      dx: bx, dy: by,
+      len: baseLen * lenScale,
+      hue: Math.random() < 0.5 ? '120,220,255' : '200,150,255',
+      additive: true,
+      life: 1, alphaMul: baseAlpha,
+      startTime: Date.now(), maxLifeMs: 460 + Math.random() * 140,
     }, ORB_TRAIL_CAP);
   }
 }
@@ -31557,6 +31635,84 @@ function drawWarpOrbitalRings(ctx, cx, cy, intensity, hyperOn, stacks, radiusOve
     ctx.restore();
   }
 
+  ctx.globalCompositeOperation = prevComp;
+  ctx.restore();
+}
+
+// CHERENKOV WAKE — Tachyon's unlocked-trail premium element: an animated DYSON SPHERE.
+// A caged wireframe of great-circle rings on VARIED tilt axes (true orthographic 3D, not
+// flat ellipses) that tumbles as one sphere around the player. Cherenkov palette (glow band
+// 120,220,255 / violet-white core 200,150,255), additive stroke-only — NO fill, NO shadowBlur.
+// Speed/stack-reactive (same signals the old rings read): more rings + faster spin + brighter
+// + tighter as hyperspeed stacks climb, so going fast visibly ENERGIZES the sphere. Replaces
+// the old flat orbital-ellipse rings. Shared by gameplay (drawPlayer) and the orb preview.
+//
+// Draw cost (worst case, tier 4 / 7+ stacks): 6 rings × 2 strokes = 12 stroke ops on 27-point
+// polylines, 0 fills. Tiers: t1=3 rings(6 strokes) / t2=4(8) / t3=5(10) / t4=6(12). The OLD fn
+// was worst-case 3 ellipses × 2 = 6 strokes on 31-pt paths. So Dyson adds at most +6 stroke ops
+// (≈2×), still trivially under this monofile's draw-call ceiling.
+const _TACHYON_DYSON_RINGS = [          // per-ring orientation offsets (pitch, yaw) → woven cage
+  { p: 0,            y: 0 },
+  { p: 0,            y: Math.PI / 3 },
+  { p: 0,            y: 2 * Math.PI / 3 },
+  { p: Math.PI / 2,  y: 0 },
+  { p: Math.PI / 4,  y: Math.PI / 5 },
+  { p: -Math.PI / 4, y: -Math.PI / 4 },
+];
+function _drawTachyonDysonSphere(ctx, cx, cy, intensity, hyperOn, stacks, radiusOverride) {
+  let tier, baseAlpha;
+  if (!hyperOn) {
+    if (intensity < 0.5) { tier = 0; baseAlpha = 0; }
+    else if (intensity < 1.5) { tier = 1; baseAlpha = 0.07 + Math.min(0.15, (intensity - 0.5) * 0.2); }
+    else { tier = 2; baseAlpha = 0.4; }
+  } else {
+    if (stacks >= 7)      { tier = 4; baseAlpha = 1.0; }
+    else if (stacks >= 4) { tier = 3; baseAlpha = 0.82; }
+    else                  { tier = 3; baseAlpha = 0.62; }
+  }
+  if (baseAlpha <= 0.01) return;
+  const ringCount = tier <= 1 ? 3 : tier === 2 ? 4 : tier === 3 ? 5 : 6;
+  const t = Date.now() * 0.001;
+  // spin faster + tighten the cage as hyperspeed stacks rise.
+  const spin = 0.6 + (hyperOn ? Math.min(1.5, stacks * 0.12) : 0);
+  const globalYaw = t * spin;
+  const globalPitch = 0.42 + Math.sin(t * 0.5) * 0.18;     // slow tumble/wobble
+  const pulse = 1 + Math.sin(t * Math.PI * 5) * (tier >= 4 ? 0.16 : 0.10);
+  const tighten = hyperOn ? (1 - Math.min(0.18, stacks * 0.018)) : 1;
+  const R0 = (typeof radiusOverride === 'number' && radiusOverride > 0) ? radiusOverride : PLAYER_R * 2.5;
+  const Rs = R0 * tighten * (1 + Math.sin(t * Math.PI * 5) * 0.04);
+  const lineWidth = 1 + ((hyperOn && stacks >= 7) ? 0.6 : 0);
+  const aBase = baseAlpha * pulse;
+  // Rotate a unit vector about X by ax, then about Y by ay (orthographic: project x,y).
+  function rv(ex, ey, ez, ax, ay) {
+    const cax = Math.cos(ax), sax = Math.sin(ax);
+    const y1 = ey * cax - ez * sax, z1 = ey * sax + ez * cax;
+    const cay = Math.cos(ay), say = Math.sin(ay);
+    return { x: ex * cay + z1 * say, y: y1 };   // z dropped (orthographic)
+  }
+  ctx.save();
+  ctx.translate(cx, cy);
+  const prevComp = ctx.globalCompositeOperation;
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.lineCap = 'round';
+  const SEG = 26;
+  const glow = `rgba(120,220,255,${Math.min(1, aBase * 0.5).toFixed(3)})`;
+  const core = `rgba(200,150,255,${Math.min(1, aBase).toFixed(3)})`;
+  for (let r = 0; r < ringCount; r++) {
+    const def = _TACHYON_DYSON_RINGS[r];
+    const ax = globalPitch + def.p, ay = globalYaw + def.y;
+    const u = rv(1, 0, 0, ax, ay);   // in-plane basis vectors of this great circle, post-rotation
+    const v = rv(0, 1, 0, ax, ay);
+    ctx.beginPath();
+    for (let i = 0; i <= SEG; i++) {
+      const th = (i / SEG) * Math.PI * 2;
+      const c = Math.cos(th) * Rs, s = Math.sin(th) * Rs;
+      const px = c * u.x + s * v.x, py = c * u.y + s * v.y;
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.strokeStyle = glow; ctx.lineWidth = lineWidth + 3; ctx.stroke();   // cherenkov glow band
+    ctx.strokeStyle = core; ctx.lineWidth = lineWidth;     ctx.stroke();   // violet-white core
+  }
   ctx.globalCompositeOperation = prevComp;
   ctx.restore();
 }
@@ -32056,6 +32212,16 @@ function drawPlayer(tctx = ctx) {
     const _moveMagRings = Math.hypot(player.vx, player.vy);
     const _intensityRings = scrollSpeed() * 0.3 + _moveMagRings * 0.5;
     drawWarpOrbitalRings(ctx, player.x, player.y, _intensityRings, _hyperOnRings, _stacksRings);
+  }
+  // CHERENKOV WAKE — Tachyon's DYSON SPHERE around-orb element, same gating as Warp's rings.
+  if (activeOrb === 'tachyon'
+      && stats.unlockedTrails && stats.unlockedTrails.tachyon
+      && stats.equippedTrails && stats.equippedTrails.tachyon === 'unlocked') {
+    const _hyperOnT = activeEffects.hyperspeed > 0;
+    const _stacksT  = hyperSpeedStacks | 0;
+    const _moveMagT = Math.hypot(player.vx, player.vy);
+    const _intensityT = scrollSpeed() * 0.3 + _moveMagT * 0.5;
+    _drawTachyonDysonSphere(ctx, player.x, player.y, _intensityT, _hyperOnT, _stacksT);
   }
 }
 
@@ -33005,15 +33171,15 @@ function updateCapstoneCountdowns() {
   }
   // TACHYON capstone rings (playtest). Eternal Wake / All Timelines are now
   // KILL-MILESTONE capstones — the ring fills toward the next +cap milestone
-  // (100 past-echo kills / 100 escort kills). Quasar (Maelstrom) unchanged.
+  // (50 past-echo kills / 150 escort kills, 1b rebalance). Quasar (Maelstrom) unchanged.
   {
     const owned = activeOrb === 'tachyon' && rankOf('tachyon_eternalWake') > 0;
-    const into = ((_tachyonPastEchoKills || 0) % 100) / 100;
+    const into = ((_tachyonPastEchoKills || 0) % 50) / 50;
     set('capCdTWake', owned, owned ? into : 0, `rgba(${TACHYON_PATH_COLORS.recurrence},0.95)`, false, false);
   }
   {
     const owned = activeOrb === 'tachyon' && rankOf('tachyon_allTimelines') > 0;
-    const into = ((_tachyonEscortKills || 0) % 100) / 100;
+    const into = ((_tachyonEscortKills || 0) % 150) / 150;
     set('capCdTFan', owned, owned ? into : 0, `rgba(${TACHYON_PATH_COLORS.divergence},0.95)`, false, false);
   }
   {
@@ -34145,7 +34311,29 @@ document.getElementById('startBtn').addEventListener('click', ()=>{
   }
   // (v2.2.0 release: the TACHYONTEST / ROAMERTEST / PHANTASMTEST dev cheats were removed.
   // Tachyon now ships as a real enhanced orb — unlock via Warp(nebula) active + 5000 kills →
-  // Sirius convo → unlockedOrbs, exactly like Roamer/Phantasm/Helios. No cheat path remains.)
+  // Sirius convo → unlockedOrbs, exactly like Roamer/Phantasm/Helios.)
+  // DEV cheat: pilot name "TRAILTEST" — TEMPORARY trail/visual playtest access. Unlocks
+  // EVERY orb's trails (default + unlockable, incl. Tachyon's Cherenkov Wake), reveals +
+  // unlocks all orbs + trees, grants crystals, and equips Tachyon, then FALLS THROUGH to
+  // start the run. IN-MEMORY / LOCAL TEST STATE ONLY — it calls NO save* fns, so it never
+  // touches the real threshold/save path that ships to players, and it resets on reload.
+  // DEV-ONLY: REMOVE BEFORE SHIP (v2.2.1), same as TACHYONTEST/ROAMERTEST/PHANTASMTEST.
+  if (getUsername().toUpperCase() === 'TRAILTEST') {
+    totalCrystals = Math.max(totalCrystals, 5000000);
+    try {
+      for (const o of ORB_ORDER) {
+        if (unlockedOrbs.indexOf(o) < 0) unlockedOrbs.push(o);
+        if (typeof orbUnlockSeen !== 'undefined' && orbUnlockSeen) orbUnlockSeen[o] = true;
+        if (typeof treesUnlocked !== 'undefined' && treesUnlocked) treesUnlocked[o] = true;
+        if (stats && stats.unlockedTrails) stats.unlockedTrails[o] = true;
+      }
+    } catch (e) {}
+    activeOrb = 'tachyon';
+    try { refreshActiveTreeCache(); } catch (e) {}
+    if (typeof refreshOrbBrowser === 'function') { try { refreshOrbBrowser(); } catch (e) {} }
+    console.log('[TRAILTEST] all trails + orbs unlocked (IN-MEMORY ONLY), 5M crystals, Tachyon equipped — nothing persisted');
+    // Fall through — run starts with Tachyon equipped; no save* called, so nothing persists.
+  }
   // DEV cheat: pilot name "TREETEST" (case-insensitive) grants 5,000,000
   // crystals, unlocks all three difficulty gates, and resets every orb's
   // skill tree to fresh state. One-shot per run start (the ENTER THE VOID
@@ -37733,6 +37921,9 @@ function drawOrbPreview() {
   if (key === 'nebula' && useUnlocked) {
     drawWarpOrbitalRings(orbPreviewCtx, cx, cy, 1.6, false, 0, 40);
   }
+  if (key === 'tachyon' && useUnlocked) {
+    _drawTachyonDysonSphere(orbPreviewCtx, cx, cy, 2.4, true, 4, 40);   // Cherenkov Wake Dyson sphere in preview (energized look so the cage reads)
+  }
 }
 
 // v1.7.0: unlocked-variant rendering for the orb-preview canvas. Uses the
@@ -37797,6 +37988,21 @@ function drawOrbPreviewUnlocked(particles, orbKey, color, cx, cy, t, dtScale) {
         life: 1, size: 2,
         lineLen: 22 + Math.random() * 18,
         hue: '160,200,255',
+        kind: 'speedline',
+      });
+    }
+  } else if (orbKey === 'tachyon') {
+    // CHERENKOV WAKE preview (2a): was MISSING → blank preview. Mirror nebula's
+    // speedline emission but with the cherenkov palette (120,220,255 / 200,150,255),
+    // denser + longer than the default trail. The around-orb rings draw after the core.
+    if (Math.random() < 0.6 * dtScale) {
+      particles.push({
+        x: cx + (Math.random() - 0.5) * 30,
+        y: cy + (Math.random() - 0.5) * 30,
+        vx: 0, vy: 4 + Math.random() * 3,
+        life: 1, size: 2,
+        lineLen: 26 + Math.random() * 18,
+        hue: Math.random() < 0.5 ? '120,220,255' : '200,150,255',
         kind: 'speedline',
       });
     }
