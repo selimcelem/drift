@@ -11044,6 +11044,1226 @@ OrbHooks.on('onResetGame', () => {
   if (_bulwark_hudEl) _bulwark_hudEl.style.display = 'none';
 });
 
+// =====================================================================
+// LEVIATHAN — enhanced Bulwark (PLAYTEST / cull-build, Pass 1 of 2)
+// =====================================================================
+// "Bulwark was the wall. Leviathan is the storm." Apex deep-sea predator.
+// DESIGN: Leviathan rides SINGLETON FIELDS, not swarms — the cheapest enhanced
+// orb. Worst case ~1 field per active tree + the shared nova/destroy pools and a
+// hard-capped (8) _lev_rings pool → a few dozen additive arcs/frame, an order of
+// magnitude under the ~538 draw-call crash ceiling. Bodies are crushed AT RANGE /
+// AHEAD of the hull — the player hull stays MORTAL at all times (no persistent
+// kill-aura, no burst invuln). All code is gated on activeOrb==='leviathan'.
+//
+// ISOLATION: this block only DEFINES the orb (TREE_DEFS/ActiveBudget/ORB_BEHAVIOR/
+// hooks). It does NOT enter ORB_DEFS/ORB_ORDER/orbTrees, so leviathan stays a pure
+// tease for normal players. Access is DEV-ONLY via the LEVIATHANTEST pilot-name
+// cheat (added in the start handler) which promotes it IN-MEMORY only.
+//
+// Pass 1 verbs: BRINK (graze-charge), MAW (devour/hunger), TIDE (breathing
+// collapse). Burst: MAELSTROM. Apex resource: FATHOM (grow-only) + DEEP WARD + DEEP UNLEASH.
+const LEVIATHAN_CORE = '120,200,180';
+const LEVIATHAN_PATH_COLORS = {
+  brink: '120,255,210',   // electric teal — the nerve / courting the edge
+  maw:   '90,200,170',    // deep teal — the hunger
+  tide:  '150,210,255',   // pale storm-blue — the breath of the deep
+};
+// ORB_DEFS entry is assigned ONLY by the LEVIATHANTEST cheat (kept out of the real
+// ORB_DEFS so leviathan never enters "real orb" iteration for normal players).
+const LEVIATHAN_ORB_DEF = { name: 'Leviathan', desc: 'Bulwark was the wall. Leviathan is the storm.', color: LEVIATHAN_CORE, cost: 7000, streakCap: 8, trail: 'leviathan', bias: 'shield' };
+
+TREE_DEFS.leviathan = {
+  name: 'LEVIATHAN',
+  color: LEVIATHAN_CORE,
+  paths: {
+    // ---- 1. BRINK — court danger: skim death to charge a storm that breaks ----
+    brink: {
+      name: 'BRINK',
+      nodes: [
+        { key: 'brink_brinkmanship', name: 'Brinkmanship', tier: 3, max: 1, costOverride: [7500], pointCost: 5,
+          desc: "KEYSTONE. Court the brink — every body that skims past your hull WITHOUT touching it charges STATIC PRESSURE, and at full charge the storm BREAKS: an EMP shock crushes everything close. You wear no shield; the deep rewards only those who ride the edge. — FATHOM rises with every crush and ebbs when you stop killing; past 50% you enter THE DEEP and the storm charges faster and breaks wider, past 80% (THE ABYSS) faster and wider still. Only the MAELSTROM burst and DEEP WARD ever spend FATHOM.",
+          effect: r => r ? 'Graze → EMP break · deeper = faster/wider' : 'Locked' },
+        { key: 'brink_keenedge', name: 'Keen Edge', tier: 1, max: 1, costOverride: [3000], pointCost: 2,
+          desc: 'Read the water — your danger band widens, so bodies graze it from farther out with more room to charge. The storm still charges faster in THE DEEP (>50% FATHOM) and THE ABYSS (>80%).',
+          effect: r => r ? '+ graze band width' : 'Locked' },
+        { key: 'brink_overcharge', name: 'Overcharge', tier: 1, max: 1, costOverride: [3000], pointCost: 2,
+          desc: 'The closer you cut it, the faster it builds — a hull-skimming pass charges the storm up to twice as fast, and THE DEEP (>50%) and THE ABYSS (>80%) stack their own charge speed on top.',
+          effect: r => r ? 'Closer graze → up to 2× charge' : 'Locked' },
+        { key: 'brink_chainlightning', name: 'Forked Lightning', tier: 1, max: 1, costOverride: [3000], pointCost: 2,
+          desc: 'The break splits into forked lightning — 40% wider, throwing an arc to every body it catches. Its reach widens again with the break itself in THE DEEP (>50%) and THE ABYSS (>80%).',
+          effect: r => r ? '+40% break · forked arcs' : 'Locked' },
+        { key: 'brink_galvanize', name: 'Galvanize', tier: 2, max: 1, costOverride: [5500], pointCost: 3,
+          desc: 'The storm feeds on the deep — the FATHOM you hold makes it charge faster yet (on top of the THE DEEP / THE ABYSS buffs), and every break bleeds a little off your burst cooldown.',
+          effect: r => r ? 'Deeper → faster charge · break cuts burst CD' : 'Locked' },
+        { key: 'brink_thunderhead', name: 'Thunderhead', tier: 2, max: 1, costOverride: [5500], pointCost: 3,
+          desc: 'Requires Forked Lightning. The break now CHAINS — lightning leaps body to body across the field, up to THREE jumps, hunting down the few strays a single blast leaves standing. A support for reach, not a match for the EYE capstone; its jumps reach a little farther in THE DEEP / THE ABYSS.',
+          effect: r => r ? 'Break chains up to 3 strays' : 'Locked' },
+        { key: 'brink_eyeofstorm', name: 'Eye of the Storm', tier: 3, max: 1, costOverride: [9000], pointCost: 5,
+          desc: 'CAPSTONE. The break opens into the EYE OF THE STORM — three widening EMP pulses over a held breath, each crushing whatever has drifted into reach. The storm swells with THE DEEP (>50%) and THE ABYSS (>80%), reaching far past any single chain.',
+          effect: r => r ? 'Break → 3-pulse widening storm' : 'Locked' },
+      ],
+    },
+    // ---- 2. MAW — a duty-cycled kill-funnel ahead; devour bodies to feed FATHOM ----
+    maw: {
+      name: 'MAW',
+      nodes: [
+        { key: 'maw_open', name: 'The Maw', tier: 3, max: 1, costOverride: [7500], pointCost: 5,
+          desc: "KEYSTONE. The maw opens and closes in a slow, FIXED rhythm — 3s OPEN, 3.5s CLOSED, always. While OPEN, bodies AHEAD are dragged into its throat and DEVOURED; while CLOSED nothing protects you — steer clear. — FATHOM rises with every devour and ebbs when you stop killing; past 50% (THE DEEP) the maw reaches farther and pulls harder, past 80% (THE ABYSS) wider and stronger still. Only the MAELSTROM burst and DEEP WARD ever spend FATHOM.",
+          effect: r => r ? 'Kill-funnel · 3s open / 3.5s closed' : 'Locked' },
+        { key: 'maw_gullet', name: 'Gullet', tier: 1, max: 1, costOverride: [3000], pointCost: 2,
+          desc: 'A deeper gullet — the maw reaches farther and pulls harder, and reaches farther again in THE DEEP (>50% FATHOM) and THE ABYSS (>80%).',
+          effect: r => r ? '+ maw reach & pull' : 'Locked' },
+        { key: 'maw_gorge', name: 'Abyssal Maw', tier: 1, max: 1, costOverride: [3000], pointCost: 2,
+          desc: 'The hungrier the deep, the wider the jaws — Abyssal Maw amplifies how much THE DEEP (>50%) and THE ABYSS (>80%) enlarge the maw, swelling it well past its base size.',
+          effect: r => r ? 'THE DEEP / THE ABYSS enlarge the maw more' : 'Locked' },
+        { key: 'maw_gnash', name: 'Gnash', tier: 1, max: 1, costOverride: [3000], pointCost: 2,
+          desc: "Grinding teeth — the maw's crushing throat is wider and chews faster, wider still as you sink into THE DEEP (>50%) and THE ABYSS (>80%).",
+          effect: r => r ? '+ crush size & speed' : 'Locked' },
+        { key: 'maw_lure', name: 'Lure', tier: 2, max: 1, costOverride: [5500], pointCost: 3,
+          desc: 'As the maw yawns open it draws breath — one hard pull that drags the whole field ahead into the throat before the steady current takes hold. The pull lands harder in THE DEEP / THE ABYSS.',
+          effect: r => r ? 'Opening pull drags the field in' : 'Locked' },
+        { key: 'maw_chum', name: 'Feeding Frenzy', tier: 2, max: 1, costOverride: [5500], pointCost: 3,
+          desc: 'Requires Lure. Blood in the water — every body the maw takes WHILE OPEN whips it into a FRENZY, growing wider and pulling harder with each kill, until it closes and the hunger resets. The frenzy stacks on top of the THE DEEP / THE ABYSS buffs.',
+          effect: r => r ? 'Devours build a frenzy (resets on close)' : 'Locked' },
+        { key: 'maw_hunger', name: 'The Devouring Deep', tier: 3, max: 1, costOverride: [9000], pointCost: 5,
+          desc: 'CAPSTONE. The maw\'s opening yawn now ENGULFS — each time it opens, the ENTIRE field ahead is swallowed in one breath, not just a mouthful. Deeper FATHOM widens the steady devour that follows.',
+          effect: r => r ? 'Each open swallows the whole field ahead' : 'Locked' },
+      ],
+    },
+    // ---- 3. TIDE — a breathing pressure ring that collapses & crushes ----
+    tide: {
+      name: 'TIDE',
+      nodes: [
+        { key: 'tide_breath', name: 'Tidal Breath', tier: 3, max: 1, costOverride: [7500], pointCost: 5,
+          desc: 'KEYSTONE. The storm breathes — a pressure ring swells out, then COLLAPSES inward on its rhythm, crushing anything it gathered the instant it closes. Between breaths you are mortal; read the tide. — FATHOM rises with every crush and ebbs when you stop killing; past 50% (THE DEEP) the tide reaches wider and breathes faster, past 80% (THE ABYSS) wider and faster still. Only the MAELSTROM burst and DEEP WARD ever spend FATHOM.',
+          effect: r => r ? 'Breathing collapse-crush · deeper = wider/faster' : 'Locked' },
+        { key: 'tide_deepswell', name: 'Deep Swell', tier: 1, max: 1, costOverride: [3000], pointCost: 2,
+          desc: 'A deeper draw of breath — the swell reaches wider, so the collapse crushes a wider ring, wider again in THE DEEP (>50% FATHOM) and THE ABYSS (>80%).',
+          effect: r => r ? '+ swell & collapse radius' : 'Locked' },
+        { key: 'tide_lull', name: 'Spring Tide', tier: 1, max: 1, costOverride: [3000], pointCost: 2,
+          desc: 'A spring tide — when a collapse crushes three or more, the rhythm quickens and the next breaths come faster. THE DEEP (>50%) and THE ABYSS (>80%) quicken the base rhythm on top of this.',
+          effect: r => r ? 'Big collapses → faster breaths' : 'Locked' },
+        { key: 'tide_deeptow', name: 'Deep Tow', tier: 2, max: 1, costOverride: [5500], pointCost: 3,
+          desc: 'The abyss lends its weight — Deep Tow widens every swell and collapse in proportion to the FATHOM you hold, reaching widest in THE DEEP (>50%) and THE ABYSS (>80%).',
+          effect: r => r ? 'Deeper FATHOM → wider tides' : 'Locked' },
+        { key: 'tide_backwash', name: 'Backwash', tier: 1, max: 1, costOverride: [3000], pointCost: 2,
+          desc: 'The undertow throws its catch back — when the tide collapses, the bodies at its rim are hurled up and out toward the deep. The rim it flings grows with the tide in THE DEEP / THE ABYSS.',
+          effect: r => r ? 'Collapse flings rim-bodies up/away' : 'Locked' },
+        { key: 'tide_resonance', name: 'Resonance', tier: 2, max: 1, costOverride: [5500], pointCost: 3,
+          desc: 'Requires Spring Tide. While the rhythm is racing the deep RESOUNDS — a second collapse rolls in a beat behind the first, crushing the wave that drifted in after it. Both collapses widen in THE DEEP / THE ABYSS.',
+          effect: r => r ? 'Racing tide → a second collapse follows' : 'Locked' },
+        { key: 'tide_kingtide', name: 'King Tide', tier: 3, max: 1, costOverride: [9000], pointCost: 5,
+          desc: 'CAPSTONE. Every third breath swells into a KING TIDE — a screen-wide collapse, at full rhythm, that crushes twice and leaves no calm water at its centre. In THE ABYSS (>80% FATHOM) it comes every OTHER breath.',
+          effect: r => r ? 'Screen-wide double-crush · more often in THE ABYSS' : 'Locked' },
+      ],
+    },
+  },
+  capstones: [],
+};
+if (typeof TREE_UNLOCK_COSTS !== 'undefined') TREE_UNLOCK_COSTS.leviathan = 32000;   // apex tier (above Tachyon 30000)
+if (typeof ORB_COST_SCALE !== 'undefined') ORB_COST_SCALE.leviathan = 1.0;
+if (typeof ORB_CAPSTONE_COST_SCALE !== 'undefined') ORB_CAPSTONE_COST_SCALE.leviathan = 0.70;
+
+const LEVIATHAN_KEYSTONES = { brink: 'brink_brinkmanship', maw: 'maw_open', tide: 'tide_breath' };
+const LEVIATHAN_PREREQS = {
+  brink_keenedge:       { prereq: ['brink_brinkmanship'] },
+  brink_overcharge:     { prereq: ['brink_brinkmanship'] },
+  brink_chainlightning: { prereq: ['brink_brinkmanship'] },
+  brink_galvanize:      { prereq: ['brink_brinkmanship'] },
+  brink_thunderhead:    { prereq: ['brink_chainlightning'], requiresActive: ['brink_chainlightning'] },
+  brink_eyeofstorm:     { prereq: ['brink_brinkmanship'] },
+  maw_gullet:        { prereq: ['maw_open'] },
+  maw_gorge:         { prereq: ['maw_open'] },
+  maw_gnash:         { prereq: ['maw_open'] },
+  maw_lure:          { prereq: ['maw_open'] },
+  maw_chum:          { prereq: ['maw_lure'], requiresActive: ['maw_lure'] },
+  maw_hunger:        { prereq: ['maw_open'] },
+  tide_deepswell:    { prereq: ['tide_breath'] },
+  tide_lull:         { prereq: ['tide_breath'] },
+  tide_deeptow:      { prereq: ['tide_breath'] },
+  tide_backwash:     { prereq: ['tide_breath'] },
+  tide_resonance:    { prereq: ['tide_lull'], requiresActive: ['tide_lull'] },
+  tide_kingtide:     { prereq: ['tide_breath'] },
+};
+const LEVIATHAN_TREE_LAYOUTS = {
+  brink: { name: 'BRINK', color: LEVIATHAN_PATH_COLORS.brink, nodes: {
+    brink_brinkmanship:   { x: 100, y: 48, keystone: true },
+    brink_keenedge:       { x: 40,  y: 138 },
+    brink_chainlightning: { x: 100, y: 138 },
+    brink_overcharge:     { x: 160, y: 138 },
+    brink_galvanize:      { x: 65,  y: 224 },
+    brink_thunderhead:    { x: 135, y: 224 },
+    brink_eyeofstorm:     { x: 100, y: 322, capstone: true },
+  } },
+  maw: { name: 'MAW', color: LEVIATHAN_PATH_COLORS.maw, nodes: {
+    maw_open:   { x: 100, y: 48, keystone: true },
+    maw_gullet: { x: 40,  y: 138 },
+    maw_gnash:  { x: 100, y: 138 },
+    maw_gorge:  { x: 160, y: 138 },
+    maw_lure:   { x: 65,  y: 224 },
+    maw_chum:   { x: 135, y: 224 },
+    maw_hunger: { x: 100, y: 322, capstone: true },
+  } },
+  tide: { name: 'TIDE', color: LEVIATHAN_PATH_COLORS.tide, nodes: {
+    tide_breath:    { x: 100, y: 48, keystone: true },
+    tide_deepswell: { x: 40,  y: 138 },
+    tide_backwash:  { x: 100, y: 138 },
+    tide_lull:      { x: 160, y: 138 },
+    tide_deeptow:   { x: 65,  y: 224 },
+    tide_resonance: { x: 135, y: 224 },
+    tide_kingtide:  { x: 100, y: 322, capstone: true },
+  } },
+};
+ActiveBudget.register('leviathan', {
+  base: 25, expandMax: 5, expandCost: 2000,
+  bonusKey: 'drift_leviathan_budget_bonus',
+  keystones: LEVIATHAN_KEYSTONES,
+  prereqs: LEVIATHAN_PREREQS,
+});
+function getLeviathanBudgetCap()         { return ActiveBudget.budgetCap('leviathan'); }
+function getLeviathanBudgetBonus()       { return ActiveBudget.budgetBonus('leviathan'); }
+function purchaseLeviathanBudgetExpand() { return ActiveBudget.purchaseExpand('leviathan'); }
+function isLeviathanActive()             { return activeOrb === 'leviathan'; }
+// orbTrees.leviathan is created lazily (by the cheat) so a normal player's saved
+// tree blob never gains a leviathan key.
+function _lev_ensureTree() { if (!orbTrees.leviathan) orbTrees.leviathan = freshOrbTreeState('leviathan'); return orbTrees.leviathan; }
+
+ORB_BEHAVIOR.leviathan = ORB_BEHAVIOR.leviathan || {};
+ORB_BEHAVIOR.leviathan.rankOf = function(nodeKey) {
+  if (typeof nodeKey === 'string' && ActiveBudget.resolveNode('leviathan', nodeKey)) {
+    return ActiveBudget.isActive('leviathan', nodeKey) ? 1 : 0;
+  }
+  return _rankOf_default(nodeKey);
+};
+ORB_BEHAVIOR.leviathan.pathPrereqMet = function(state, pathKey, nodeIdx) {
+  if (state !== orbTrees.leviathan) return _pathPrereqMet_default(state, pathKey, nodeIdx);
+  return ActiveBudget.pathPrereqMet('leviathan', pathKey, nodeIdx);
+};
+ORB_BEHAVIOR.leviathan.respecNode = function(orbKey, pathKey, nodeIdx) {
+  const def = TREE_DEFS.leviathan; const state = orbTrees.leviathan;
+  if (!def || !state) return false;
+  const node = def.paths[pathKey] && def.paths[pathKey].nodes[nodeIdx];
+  if (!node) return false;
+  const current = state[pathKey][nodeIdx] | 0;
+  if (current <= 0) return false;
+  const invested = nodeCrystalsInvested(orbKey, node, current);
+  const fee = refundFee(invested);
+  if (totalCrystals < fee) return false;
+  totalCrystals = Math.max(0, totalCrystals - fee);
+  totalCrystals += invested;
+  state[pathKey][nodeIdx] = 0;
+  ActiveBudget.deactivate('leviathan', node.key);
+  saveCrystals(); saveTreeState();
+  if (orbKey === activeOrb) refreshActiveTreeCache();
+  return true;
+};
+ORB_BEHAVIOR.leviathan.fullTreeRespecCost = function(orbKey) { return refundFee(treeCrystalsInvested(orbKey)); };
+ORB_BEHAVIOR.leviathan.respecTree = function(orbKey) {
+  const def = TREE_DEFS.leviathan; const state = orbTrees.leviathan;
+  if (!def || !state) return false;
+  if (totalRanksInvested(orbKey) <= 0) return false;
+  const invested = treeCrystalsInvested(orbKey);
+  const fee = refundFee(invested);
+  if (totalCrystals < fee) return false;
+  totalCrystals = Math.max(0, totalCrystals - fee);
+  for (const pKey of Object.keys(def.paths)) {
+    const nodes = def.paths[pKey].nodes; const arr = state[pKey];
+    for (let i = 0; i < nodes.length; i++) {
+      totalCrystals += nodeCrystalsInvested(orbKey, nodes[i], arr[i] | 0);
+      arr[i] = 0;
+    }
+  }
+  state.activePoints = {};
+  saveCrystals(); saveTreeState();
+  if (orbKey === activeOrb) refreshActiveTreeCache();
+  return true;
+};
+ORB_BEHAVIOR.leviathan.executeBurst = function() { _lev_fireMaelstrom(); return true; };
+// Active points restore on load — only relevant once a leviathan tree exists (cheat).
+OrbHooks.on('afterLoadTreeState', () => { if (orbTrees.leviathan && ActiveBudget.restoreActivePoints) ActiveBudget.restoreActivePoints('leviathan'); });
+
+// === LEVIATHAN runtime state + flash feedback (teal, throttled) ============
+let _lev_flashes = [];
+let _lev_flashGates = {};
+// === APEX RESOURCE — FATHOM (the leviathan sounds the deep). The spine ALL trees share.
+// v5 (PASSIVE THRESHOLD model): FATHOM DECAYS SLOWLY over time and is SUSTAINED BY KILLS —
+// every body you crush raises it (per-tree rate, see LEV_FATHOM_GAIN), idle lets it ebb. It
+// is NOT spent by the kit: while you hold it above 50% (THE DEEP) your whole owned kit gets
+// stronger, and above 80% (THE ABYSS) stronger still — PASSIVE buffs, no spend, the deeper
+// the more powerful. ONLY two things spend FATHOM: the MAELSTROM burst and the DEEP WARD.
+// Stop killing → FATHOM ebbs → you lose THE DEEP/ABYSS buffs, then the ward → you die.
+const LEV_FATHOM_MAX         = 100;   // clean percentage scale: THE DEEP = 50, THE ABYSS = 80
+// RE-TUNE (measured, not estimated): the field's body FLUX is only ~1.1–2.5 bodies/sec (constant
+// population `while(bodies.length<bodyCap)`, cap 3–6, spacing 180, scroll 1.7–3.7 → flux=scroll·120/180),
+// so realistic kills/sec is ~0.5–1.3 per tree, NOT the 2–4 first guessed. With the old gains 3/5/7 that's
+// only ~2–4 gross/sec — under the (buggy, doubled) decay. Gains raised ~2.4× + decay halved + bug fixed.
+const LEV_FATHOM_GAIN        = { brink: 8, maw: 12, tide: 11 };   // FATHOM per crush, PER TREE: BRINK kills most consistently (graze→AoE break+chain) so least per kill; MAW is shut 54% of the cycle so most per kill; TIDE bursty. All net positive vs decay in normal aggressive play.
+const LEV_FATHOM_GAIN_DEFAULT = 4;    // crushes with no owning tree (MAELSTROM final clear, DEEP WARD body) — kept low so the burst stays a real spend
+const LEV_FATHOM_DECAY_PER_S = 3;     // slow ebb: full→empty in ~33s idle; from THE DEEP the ward lasts ~7s after you stop — real aggression pressure without starving FATHOM (was 4, but applied /60 → effectively 8/sec; now /120, see onUpdate)
+const LEV_FATHOM_BURST_SPEND = 50;    // FATHOM the MAELSTROM burst consumes (fixed; power scales with FATHOM held)
+let _lev_fathom = 0;       // 0..LEV_FATHOM_MAX (the apex gauge)
+let _lev_bandShown = 0;    // highest depth BAND announced (0 surface / 1 THE DEEP / 2 THE ABYSS) — re-arms as you ebb
+function _lev_addFathom(n) { _lev_fathom = Math.max(0, Math.min(LEV_FATHOM_MAX, _lev_fathom + n)); }
+// _lev_depth() is ALWAYS 0..1 (fathom is clamped to [0,MAX]) so scalars never overshoot.
+function _lev_depth() { return _lev_fathom / LEV_FATHOM_MAX; }   // 0..1 smooth factor (visuals/continuous scaling)
+// _lev_buffTier() — the PASSIVE THRESHOLD band the whole kit reads: 0 = surface (<50%),
+// 1 = THE DEEP (>=50%), 2 = THE ABYSS (>=80%). The two steps are what the player FEELS.
+function _lev_buffTier() { const d = _lev_fathom / LEV_FATHOM_MAX; return d >= 0.8 ? 2 : d >= 0.5 ? 1 : 0; }
+const LEV_BUFF_SIZE        = [1.0, 1.25, 1.55];   // radius / reach multiplier by band — PERCEPTIBLE steps
+const LEV_BUFF_RATE        = [1.0, 1.35, 1.75];   // charge / cadence speed by band
+const LEV_BUFF_FORCE       = [1.0, 1.30, 1.70];   // pull strength by band
+const LEV_BUFF_TIDE_PERIOD = [1.0, 0.80, 0.62];   // TIDE breath period by band (smaller = faster breaths)
+let _lev_bandPulse = 0;    // timestamp of the last band-up (HUD pulse)
+// Throttled SFX helper — plays an existing buffer sound, rate-limited per key so per-frame
+// triggers (devour/collapse) don't machine-gun. Placeholders until bespoke .mp3s land.
+let _lev_sfxGate = {};
+function _lev_sfx(key, vol, minMs) {
+  const now = Date.now();
+  if (now - (_lev_sfxGate[key] || 0) < (minMs || 0)) return;
+  _lev_sfxGate[key] = now;
+  try { if (SFX && SFX.playSfxBuffer) SFX.playSfxBuffer(key, vol); } catch (e) {}
+}
+// === DEEP WARD — survivability EARNED BY AGGRESSION (Part 1). While FATHOM >= LEV_WARD_MIN
+// (you've dived deep enough by KILLING), a lethal BODY hit is shrugged off: the body is
+// crushed, FATHOM drains by LEV_WARD_COST, and a brief i-frame fires. NOT permanent — each
+// save costs FATHOM you can only refill by attacking, so stop being aggressive / take too
+// many hits and you fall below the threshold and DIE. Aggression-fuelled, not pickup-fed
+// (vs Bulwark's hit-stack shield). Walls remain lethal — the ward is only for bodies.
+const LEV_WARD_MIN       = 30;   // FATHOM needed for the ward to be up
+const LEV_WARD_COST      = 40;   // FATHOM drained per shrugged-off hit
+const LEV_WARD_IFRAME_MS = 600;  // brief grace after a save (no permanent invuln)
+let _lev_wardNextTime = 0;       // ward re-arm timestamp
+let _lev_wardFx = 0;             // last ward-save timestamp (for the save flash)
+
+// === FATHOM CONSUMPTION removed (v5) ====================================================
+// "DEEP UNLEASH" (the round-robin auto-firing of empowered tree procs at high FATHOM) is GONE.
+// FATHOM no longer auto-spends into procs at all — it is now a PASSIVE buff pool (see
+// _lev_buffTier above): holding it deep strengthens the whole kit for free. The ONLY drains
+// are the MAELSTROM burst (_lev_fireMaelstrom) and the DEEP WARD (checkCollisions). The maw
+// CAPSTONE "The Devouring Deep" — once an unleash proc — now fires on each MAW open instead
+// (see _lev_tickMaw), so _lev_gorge keeps its caller.
+let _lev_storm = 0;        // BRINK graze charge 0..1 (local charge→release loop)
+let _lev_grazeFx = 0;      // BRINK graze visual pulse 0..1
+let _lev_eyeStorm = null;  // BRINK "Eye of the Storm" lingering pulse state
+let _lev_bolts = [];       // BRINK lightning arcs (HARD cap 24)
+let _lev_mawWasOn = false; // MAW duty-cycle edge tracker (OPEN/CLOSED flash)
+let _lev_tidePhaseStart = 0;
+let _lev_tideCount = 0;
+let _lev_tideR = 0;        // TIDE ring radius (render)
+let _lev_tideTempo = 0;    // TIDE "Spring Tide" tempo charge 0..1 (fed breaths come faster)
+let _lev_maelstrom = null; // burst state { start, eyeX, eyeY, hitstopFired, power }
+let _lev_rings = [];       // shared discharge/collapse visual rings (HARD cap 8)
+function _lev_addBolt(x1, y1, x2, y2, color) {
+  if (_lev_bolts.length >= 24) _lev_bolts.shift();
+  const segs = 4, pts = [[x1, y1]];
+  for (let i = 1; i < segs; i++) {
+    const f = i / segs, mx = x1 + (x2 - x1) * f, my = y1 + (y2 - y1) * f;
+    pts.push([mx + (Math.random() - 0.5) * 20, my + (Math.random() - 0.5) * 20]);
+  }
+  pts.push([x2, y2]);
+  _lev_bolts.push({ pts, start: Date.now(), life: 220, color: color || LEVIATHAN_PATH_COLORS.brink });
+}
+function _lev_addFlash(text, color, durationMs) {
+  if (activeOrb !== 'leviathan') return;
+  if (_lev_flashes.length >= 6) _lev_flashes.shift();
+  _lev_flashes.push({ text: String(text || ''), color: color || LEVIATHAN_CORE, startTime: Date.now(), durationMs: durationMs || 800 });
+}
+function _lev_flash(key, text, color, minMs) {
+  const now = Date.now();
+  if (now - (_lev_flashGates[key] || 0) < (minMs || 0)) return;
+  _lev_flashGates[key] = now;
+  _lev_addFlash(text, color, 800);
+}
+function _lev_drawFlashes() {
+  if (!_lev_flashes.length) return;
+  const g = ctx; const now = Date.now();
+  g.save();
+  g.textAlign = 'center';
+  g.font = 'bold 11px Orbitron, monospace';
+  for (let i = _lev_flashes.length - 1; i >= 0; i--) {
+    const f = _lev_flashes[i];
+    const age = now - f.startTime;
+    if (age >= f.durationMs) { _lev_flashes.splice(i, 1); continue; }
+    const fade = 1 - age / f.durationMs;
+    const y = player.y - 28 - (i * 13) - (age / f.durationMs) * 16;
+    g.lineWidth = 3; g.strokeStyle = `rgba(0,0,0,${(0.5 * fade).toFixed(3)})`;
+    g.strokeText(f.text, player.x, y);
+    g.fillStyle = `rgba(${f.color},${(0.95 * fade).toFixed(3)})`;
+    g.fillText(f.text, player.x, y);
+  }
+  g.restore();
+}
+function _lev_pushRing(x, y, r0, r1, life, color) {
+  if (_lev_rings.length >= 8) _lev_rings.shift();
+  _lev_rings.push({ x, y, r0, r1, start: Date.now(), life: life || 380, color: color || LEVIATHAN_CORE });
+}
+// Shared crush primitive — kills body at index i exactly like the Dead Star
+// implode (score + procs + canvas release + splice). Caller iterates BACKWARD.
+function _lev_crush(b, i, colorRGB, gain) {
+  try { emitDestroyBurst(b.x, b.y, colorRGB || LEVIATHAN_CORE); } catch (e) {}
+  try { emitDestroyEffects(b, 'shield'); } catch (e) {}
+  try { addDestroyPoints(); } catch (e) {}
+  try { releaseBodyCanvases(b); } catch (e) {}
+  try { checkDestroyProc(b, 'leviathan'); } catch (e) {}
+  // PART 3 AUDIO: every Leviathan kill now makes a per-body destroy sound (it was SILENT — the
+  // MAELSTROM sucked planets in with no kill sound, just one boom at the end). Routed through the
+  // shared planetDestroyed path so it AUTO-DUCKS in swarms (destroySfxGainScale → total ≈3× a
+  // single cue): a satisfying mid-frequency crush rattle (phone-audible) layered UNDER the bassy
+  // bespoke event sounds (stormBreak/mawDevour/tideCollapse/maelstrom), and consistent in volume
+  // with every other orb's kills (they all route through planetDestroyed too).
+  try { if (typeof SFX !== 'undefined' && SFX.planetDestroyed) SFX.planetDestroyed('nova'); } catch (e) {}
+  _lev_addFathom(gain == null ? LEV_FATHOM_GAIN_DEFAULT : gain);   // kills SUSTAIN FATHOM (per-tree rate; default for burst/ward)
+  bodies.splice(i, 1);
+}
+
+// === BURST — MAELSTROM (bespoke; converges & crushes, then clears) =========
+// Scales with FATHOM — the deeper you are, the larger the whirlpool & final clear.
+const LEV_MAELSTROM_MS = 1150;
+function _lev_fireMaelstrom() {
+  const depth = _lev_depth();
+  const band = _lev_buffTier();   // band at fire time — locks the burst's power & ABYSS bonus from the dive
+  const eyeX = player.x;
+  const eyeY = Math.max(70, player.y - (110 + depth * 60));   // reaches further ahead the deeper you are
+  _lev_maelstrom = { start: Date.now(), eyeX, eyeY, hitstopFired: false, power: 1 + depth * 1.6, abyss: band >= 2 };   // DRAMATICALLY bigger at high FATHOM; THE ABYSS adds a 2nd discharge
+  _lev_addFathom(-LEV_FATHOM_BURST_SPEND);   // ONE of only two FATHOM drains (power locked from the pre-spend dive)
+  try { runBurstCount++; } catch (e) {}
+  try { addShake(11); triggerHitstop(80); } catch (e) {}
+  _lev_flash('burst', band >= 2 ? 'MAELSTROM — THE ABYSS' : (band >= 1 ? 'MAELSTROM — THE DEEP' : 'MAELSTROM'), LEVIATHAN_CORE, 0);
+  try { _lev_sfx('maelstrom', 0.9, 0); } catch (e) {}   // bespoke MAELSTROM.mp3 — signature burst, raised 0.6→0.9 (was too quiet on phone)
+}
+function _lev_tickMaelstrom(now) {
+  if (!_lev_maelstrom) return;
+  const m = _lev_maelstrom;
+  const t = (now - m.start) / LEV_MAELSTROM_MS;
+  if (t >= 1) {
+    // Final collapse — a wide INSTANT crush at the eye (no pull) clears the gathered
+    // cluster, scaled by FATHOM. Its radius reaches down past the player, so bodies
+    // level-with/below the hull (which we never pulled) are still swept here.
+    _lev_dischargeShock(m.eyeX, m.eyeY, 170 * m.power + 50, LEVIATHAN_CORE, { x: m.eyeX, y: m.eyeY });
+    // ABYSS (Part 1): a 2nd, wider discharge when the burst was fired at MAX FATHOM (tier 5).
+    if (m.abyss) _lev_dischargeShock(m.eyeX, m.eyeY, 170 * m.power + 140, LEVIATHAN_CORE, { x: m.eyeX, y: m.eyeY });
+    try { triggerHitstop(60); addShake(14); _lev_sfx('novaDestroy', 0.6, 0); } catch (e) {}   // climactic burst-collapse boom (per-body crush pops layer in via _lev_crush)
+    _lev_maelstrom = null;
+    return;
+  }
+  const pull = (5 + t * 18) * m.power;
+  const crushR = 30 + t * 12;
+  // HARD RULE: the pull must NEVER drag a body through the hull. The eye sits ABOVE the
+  // player, so we only pull bodies already above the hull top — they move further UP
+  // toward the eye, never crossing the player. Bodies level-with/below the hull are left
+  // to scroll (the final collapse shock above clears them). No self-kill from the burst.
+  const hullSafeY = player.y - (typeof PLAYER_R === 'number' ? PLAYER_R : 14);
+  let crushed = 0;
+  for (let i = bodies.length - 1; i >= 0; i--) {
+    const b = bodies[i]; if (!b || isNaN(b.x) || isNaN(b.y)) continue;
+    if (b.y >= hullSafeY) continue;   // never pull a body at/below the hull through the player
+    const dx = m.eyeX - b.x, dy = m.eyeY - b.y;
+    const d = Math.max(1, Math.hypot(dx, dy));
+    if (d <= crushR) { _lev_crush(b, i, LEVIATHAN_CORE); crushed++; }
+    else { b.x += (dx / d) * Math.min(d, pull); b.y += (dy / d) * Math.min(d, pull); }
+  }
+  if (crushed > 0) { try { shakeMassDestroy(crushed); } catch (e) {} }
+  if (t >= 0.5 && !m.hitstopFired) { m.hitstopFired = true; try { triggerHitstop(40); } catch (e) {} }
+}
+
+// === 1. BRINK — graze charges the storm; it BREAKS as an EMP-lightning shock =
+const LEV_GRAZE_INNER = (typeof PLAYER_R === 'number' ? PLAYER_R : 14) + 12;   // band inner edge (just OUTSIDE the lethal hull)
+const LEV_GRAZE_OUTER = (typeof PLAYER_R === 'number' ? PLAYER_R : 14) + 44;
+// Crush every body in radius, arc lightning to each, ring it. Returns kill count.
+function _lev_dischargeShock(cx, cy, radius, color, boltFrom, gain) {
+  let n = 0;
+  for (let i = bodies.length - 1; i >= 0; i--) {
+    const b = bodies[i]; if (!b || isNaN(b.x) || isNaN(b.y)) continue;
+    if (POWERUP_COLORS[b.type]) continue;   // never destroy powerups / pair-powerups
+    if (Math.hypot(b.x - cx, b.y - cy) <= radius) {
+      if (boltFrom) _lev_addBolt(boltFrom.x, boltFrom.y, b.x, b.y, color);
+      _lev_crush(b, i, color, gain); n++;
+    }
+  }
+  if (n > 0) { try { shakeMassDestroy(n); } catch (e) {} }
+  _lev_pushRing(cx, cy, radius * 0.2, radius, 360, color);
+  return n;
+}
+// Eye of the Storm — a LINGERING lightning storm: 3 widening pulses over ~0.7s,
+// each re-arcing lightning and crushing anything newly in range.
+function _lev_triggerEyeStorm(cx, cy, baseR) { _lev_eyeStorm = { start: Date.now(), x: cx, y: cy, baseR, fired: 0 }; }
+function _lev_tickEyeStorm(now) {
+  if (!_lev_eyeStorm) return;
+  const s = _lev_eyeStorm, dur = 700, pulses = 3, gap = dur / pulses;
+  while (s.fired < pulses && (now - s.start) >= s.fired * gap) {
+    const r = s.baseR * (1.0 + s.fired * 0.55);
+    _lev_dischargeShock(s.x, s.y, r, LEVIATHAN_PATH_COLORS.brink, { x: s.x, y: s.y }, LEV_FATHOM_GAIN.brink);
+    try { addShake(5); } catch (e) {}
+    s.fired++;
+  }
+  if (now - s.start >= dur) _lev_eyeStorm = null;
+}
+function _lev_tickBrink(now, dt) {
+  if (rankOf('brink_brinkmanship') < 1) return;
+  const bt = _lev_buffTier();
+  const inner = LEV_GRAZE_INNER;
+  const outer = LEV_GRAZE_OUTER + (rankOf('brink_keenedge') ? 26 : 0);
+  // Graze reads ONLY real bodies (planets/obstacles): scan bodies[] directly (NOT
+  // closestBody, which also counts powerups), skipping powerup-typed + marked bodies — so
+  // you can't farm by hovering a powerup.
+  let gd = Infinity;
+  for (let i = 0; i < bodies.length; i++) {
+    const b = bodies[i]; if (!b || isNaN(b.x) || isNaN(b.y)) continue;
+    if (b._phantomMarked || POWERUP_COLORS[b.type]) continue;
+    const d = Math.hypot(b.x - player.x, b.y - player.y) - (b.radius || 0);
+    if (d < gd) gd = d;
+  }
+  if (gd > inner && gd <= outer) {
+    let rate = 0.014 * LEV_BUFF_RATE[bt];   // PASSIVE BUFF: THE DEEP/ABYSS charge the storm faster (perceptible step)
+    if (rankOf('brink_galvanize')) rate *= 1 + 0.5 * _lev_depth();   // Galvanize: faster yet with FATHOM held (on top)
+    if (rankOf('brink_overcharge')) rate *= 1 + (outer - gd) / Math.max(1, (outer - inner));   // closer → up to ~2×
+    _lev_storm = Math.min(1, _lev_storm + rate * dt);
+    _lev_grazeFx = 1;
+    _lev_flash('graze', 'GRAZE', LEVIATHAN_PATH_COLORS.brink, 280);
+  }
+  _lev_grazeFx = Math.max(0, _lev_grazeFx - 0.05 * dt);
+  if (_lev_storm >= 1) {
+    const eye = rankOf('brink_eyeofstorm') > 0;
+    const chain = rankOf('brink_chainlightning') > 0;
+    const radius = 120 * LEV_BUFF_SIZE[bt] * (chain ? 1.4 : 1);   // PASSIVE BUFF: THE DEEP/ABYSS break WIDER
+    _lev_dischargeShock(player.x, player.y, radius, LEVIATHAN_PATH_COLORS.brink, { x: player.x, y: player.y }, LEV_FATHOM_GAIN.brink);
+    // Thunderhead (Part 3 NERF) — the break's lightning CHAINS body-to-body to mop up strays
+    // a radial pulse leaves standing. Brought UNDER the Eye capstone: up to 3 hops at ~260px
+    // (was 5 @ 380 → max reach ~840px vs ~1900px, max kills 3 vs 5). A reach SUPPORT, not a
+    // rival to Eye's 3-pulse field. Reach widens a touch in THE DEEP/ABYSS.
+    if (rankOf('brink_thunderhead')) {
+      const maxHops = 3, hopRange = 260 + 30 * bt;
+      let fx = player.x, fy = player.y; const used = new Set();
+      for (let hop = 0; hop < maxHops; hop++) {
+        let best = null, bd = Infinity;
+        for (let i = 0; i < bodies.length; i++) {
+          const b = bodies[i]; if (!b || isNaN(b.x) || isNaN(b.y) || POWERUP_COLORS[b.type] || used.has(b)) continue;
+          const dd = Math.hypot(b.x - fx, b.y - fy);
+          if (dd < bd) { bd = dd; best = b; }
+        }
+        if (!best || bd > hopRange) break;   // chain only leaps a reachable gap
+        used.add(best); _lev_addBolt(fx, fy, best.x, best.y, LEVIATHAN_PATH_COLORS.brink);
+        fx = best.x; fy = best.y;
+      }
+      let cn = 0;
+      for (let i = bodies.length - 1; i >= 0; i--) { if (used.has(bodies[i])) { _lev_crush(bodies[i], i, LEVIATHAN_PATH_COLORS.brink, LEV_FATHOM_GAIN.brink); cn++; } }
+      if (cn > 0) { try { shakeMassDestroy(cn); } catch (e) {} }
+    }
+    // Galvanize — the break bleeds your burst cooldown (aggression pays forward).
+    if (rankOf('brink_galvanize') && typeof burstCooldownEnd !== 'undefined' && burstCooldownEnd > now) {
+      burstCooldownEnd = Math.max(now, burstCooldownEnd - 1200);
+    }
+    try { _lev_sfx('stormBreak', (eye || chain) ? 0.75 : 0.6, 120); } catch (e) {}   // raised 0.5/0.4→0.75/0.6 (phone-audible)
+    if (eye) {
+      _lev_triggerEyeStorm(player.x, player.y, radius);
+      _lev_flash('discharge', 'EYE OF THE STORM', LEVIATHAN_PATH_COLORS.brink, 0);
+      try { addShake(13); triggerHitstop(70); } catch (e) {}
+    } else {
+      _lev_flash('discharge', chain ? 'FORKED LIGHTNING' : 'STORM BREAK', LEVIATHAN_PATH_COLORS.brink, 0);
+      try { addShake(7); triggerHitstop(35); } catch (e) {}
+    }
+    _lev_storm = 0;
+  }
+}
+
+// === 2. MAW — a DUTY-CYCLED kill-funnel ahead; devour feeds FATHOM ==========
+// TUNABLE duty cycle: the maw funnels for MAW_ON_MS, then closes for MAW_OFF_MS.
+// During OFF the funnel is gone — bodies get through and you must dodge, so it is a
+// rhythm to exploit, NOT a hands-off constant clear.
+const MAW_ON_MS  = 3000;   // Part 4: FLAT timing, all depths — 3s open
+const MAW_OFF_MS = 3500;   // 3.5s closed
+let _lev_mawFrenzy = 0;   // Feeding Frenzy build (0..1); resets when the maw closes
+// FLAT duty cycle (Part 4): 3s OPEN / 3.5s CLOSED at ALL FATHOM depths — no tier-scaling.
+// FATHOM strengthens the maw's SIZE/PULL (passive buffs), never its timing, so the closed
+// window stays a real dodge window (never a hands-off clear). Shared by the tick and the draw.
+function _lev_mawOpen(now) {
+  return (now % (MAW_ON_MS + MAW_OFF_MS)) < MAW_ON_MS;
+}
+// The maw's full GORGE — instantly devours bodies AHEAD within `radius` of the eye
+// (radius <= 0 = the WHOLE field ahead). Never below the hull, never powerups. Now driven by
+// the CAPSTONE "The Devouring Deep" on each MAW open (its only caller — see _lev_tickMaw).
+function _lev_gorge(eyeX, eyeY, radius) {
+  const whole = !(radius > 0);   // The Devouring Deep = the WHOLE field ahead, swallowed in one breath
+  let n = 0;
+  for (let i = bodies.length - 1; i >= 0; i--) {
+    const b = bodies[i]; if (!b || isNaN(b.x) || isNaN(b.y)) continue;
+    if (POWERUP_COLORS[b.type]) continue;             // never devour powerups
+    if (b.y > player.y + 30) continue;                // only the field ahead — never below the hull (no hands-off-win: the closed window stays lethal)
+    if (radius > 0 && Math.hypot(b.x - eyeX, b.y - eyeY) > radius) continue;
+    _lev_crush(b, i, LEVIATHAN_PATH_COLORS.maw, LEV_FATHOM_GAIN.maw); n++;
+  }
+  // The capstone engulf is the maw's big payoff — but it fires on EACH open (~every 6.5s), so
+  // its feedback is tuned a touch under the old rare-unleash to avoid constant heavy hitstop.
+  if (n > 0) { try { shakeMassDestroy(n); triggerHitstop(whole ? 80 : 60); addShake(whole ? 14 : 10); } catch (e) {} }
+  else { try { addShake(whole ? 8 : 5); } catch (e) {} }   // a felt LUNGE even on an empty field
+  try { _lev_sfx('mawDevour', whole ? 0.72 : 0.45, 150); } catch (e) {}   // raised 0.5/0.3→0.72/0.45 (gorge/open yawn)
+  _lev_pushRing(eyeX, eyeY, 40, radius > 0 ? radius : 380, whole ? 560 : 460, LEVIATHAN_PATH_COLORS.maw);
+  if (whole) _lev_pushRing(eyeX, eyeY, 80, 280, 620, LEVIATHAN_PATH_COLORS.maw);   // second engulf ring
+}
+function _lev_tickMaw(now, dt) {
+  if (rankOf('maw_open') < 1) return;
+  const on = _lev_mawOpen(now);
+  const opened = on && !_lev_mawWasOn;                      // OPEN transition this frame (for Lure)
+  const closed = !on && _lev_mawWasOn;
+  if (on !== _lev_mawWasOn) { _lev_mawWasOn = on; _lev_flash('mawcycle', on ? 'MAW OPEN' : 'MAW CLOSED', LEVIATHAN_PATH_COLORS.maw, 0); }
+  if (closed) _lev_mawFrenzy = 0;                           // Feeding Frenzy resets when the maw closes
+  if (!on) return;   // duty cycle OFF — no funnel; bodies get through, you must dodge
+  const bt = _lev_buffTier();
+  // PASSIVE BUFF: THE DEEP/ABYSS enlarge the maw (size) and strengthen the pull (force).
+  // Abyssal Maw (maw_gorge) AMPLIFIES the size step the bands add.
+  const sizeMul = 1 + (LEV_BUFF_SIZE[bt] - 1) * (rankOf('maw_gorge') > 0 ? 1.6 : 1.0);
+  const frenzy = rankOf('maw_chum') ? _lev_mawFrenzy : 0;   // Feeding Frenzy widens/quickens as it eats
+  const eyeDist = 86 + 34 * _lev_depth();
+  const eyeX = player.x, eyeY = player.y - eyeDist;          // ahead = toward incoming (top of screen)
+  const range = (150 + (rankOf('maw_gullet') ? 70 : 0)) * sizeMul * (1 + frenzy * 0.45);
+  const crushR = (26 + (rankOf('maw_gullet') ? 8 : 0) + (rankOf('maw_gnash') ? 12 : 0)) * (1 + (sizeMul - 1) * 0.7) * (1 + frenzy * 0.3);   // Gnash: wider crush point
+  const pullBase = (2.4 + (rankOf('maw_gullet') ? 1.2 : 0) + (rankOf('maw_gnash') ? 0.8 : 0)) * LEV_BUFF_FORCE[bt] + frenzy * 1.6;
+  const hullSafeY = player.y - (typeof PLAYER_R === 'number' ? PLAYER_R : 14);
+  // The Devouring Deep (CAPSTONE): each time the maw opens, the yawn ENGULFS the whole field
+  // ahead at once (its only proc now that DEEP UNLEASH is gone). Rhythmic, not constant —
+  // the 3.5s closed window after still demands dodging (HARD RULE: no hands-off-win).
+  if (opened && rankOf('maw_hunger')) { _lev_gorge(eyeX, eyeY, 0); _lev_flash('mawengulf', 'THE DEVOURING DEEP', LEVIATHAN_PATH_COLORS.maw, 0); }
+  // Lure — the OPENING gulp: one strong yank of the whole ahead-field toward the eye.
+  if (opened && rankOf('maw_lure')) {
+    for (let i = 0; i < bodies.length; i++) {
+      const b = bodies[i]; if (!b || isNaN(b.x) || isNaN(b.y) || POWERUP_COLORS[b.type]) continue;
+      if (b.y >= hullSafeY) continue;
+      const dx = eyeX - b.x, dy = eyeY - b.y, d = Math.max(1, Math.hypot(dx, dy));
+      if (d > range * 2.2) continue;
+      b.x += (dx / d) * Math.min(d, 60); b.y += (dy / d) * Math.min(d, 60);
+    }
+    _lev_flash('mawlure', 'LURE', LEVIATHAN_PATH_COLORS.maw, 0);
+  }
+  let crushed = 0;
+  for (let i = bodies.length - 1; i >= 0; i--) {
+    const b = bodies[i]; if (!b || isNaN(b.x) || isNaN(b.y)) continue;
+    if (b.y >= hullSafeY) continue;                         // HULL-SAFE: only pull bodies ABOVE the hull top (eye is above) — never drag one through the player
+    if (POWERUP_COLORS[b.type]) continue;                   // never devour powerups
+    const dx = eyeX - b.x, dy = eyeY - b.y;
+    const d = Math.max(1, Math.hypot(dx, dy));
+    if (d > range) continue;
+    if (d <= crushR) {
+      _lev_crush(b, i, LEVIATHAN_PATH_COLORS.maw, LEV_FATHOM_GAIN.maw); crushed++;
+      if (rankOf('maw_chum')) _lev_mawFrenzy = Math.min(1, _lev_mawFrenzy + 0.12);   // Feeding Frenzy RAMPS: each devour stokes it; widens range & strengthens pull until close (resets on close above)
+      continue;
+    }
+    const pull = pullBase * (1 + (range - d) / range) * dt;  // closer → stronger
+    b.x += (dx / d) * Math.min(d, pull);
+    b.y += (dy / d) * Math.min(d, pull);
+  }
+  if (crushed > 0) { try { shakeMassDestroy(crushed); } catch (e) {} _lev_flash('maw', 'DEVOUR', LEVIATHAN_PATH_COLORS.maw, 320); _lev_sfx('mawDevour', 0.32, 160); }
+}
+
+// === 3. TIDE — a breathing ring; collapse crushes what it gathered =========
+const LEV_TIDE_PERIOD_MS = 3200;
+let _lev_tideEchoAt = 0, _lev_tideEchoR = 0, _lev_tideEchoKing = false;   // Resonance scheduled echo-collapse
+function _lev_tideCollapse(cx, cy, maxR, isKing) {
+  const inner = isKing ? 0 : 30;   // normal tide leaves a central gap (point-blank stays lethal); King Tide takes ALL
+  let n = 0;
+  for (let i = bodies.length - 1; i >= 0; i--) {
+    const b = bodies[i]; if (!b || isNaN(b.x) || isNaN(b.y)) continue;
+    const d = Math.hypot(b.x - cx, b.y - cy);
+    if (d >= inner && d <= maxR) { _lev_crush(b, i, LEVIATHAN_PATH_COLORS.tide, LEV_FATHOM_GAIN.tide); n++; }
+  }
+  if (isKing) {
+    // KING TIDE follow-up shock — a 2nd, wider crush pulse so the capstone is a clear
+    // UPGRADE (screen-wide AND a double-crush at full speed), not a slow tradeoff.
+    for (let i = bodies.length - 1; i >= 0; i--) {
+      const b = bodies[i]; if (!b || isNaN(b.x) || isNaN(b.y)) continue;
+      if (Math.hypot(b.x - cx, b.y - cy) <= maxR * 1.15) { _lev_crush(b, i, LEVIATHAN_PATH_COLORS.tide, LEV_FATHOM_GAIN.tide); n++; }
+    }
+    try { triggerHitstop(70); addShake(13); } catch (e) {}
+    _lev_pushRing(cx, cy, maxR * 1.15, 0, 460, LEVIATHAN_PATH_COLORS.tide);
+  }
+  if (n > 0) { try { shakeMassDestroy(n); } catch (e) {} }
+  // Backwash — fling the bodies at the collapse EDGE up and away (hull-safe displacement).
+  if (rankOf('tide_backwash')) {
+    const hy = player.y - (typeof PLAYER_R === 'number' ? PLAYER_R : 14);
+    for (let i = 0; i < bodies.length; i++) {
+      const b = bodies[i]; if (!b || isNaN(b.x) || isNaN(b.y) || POWERUP_COLORS[b.type]) continue;
+      if (b.y >= hy) continue;                          // only ABOVE the hull — never shove a body toward you
+      const d = Math.hypot(b.x - cx, b.y - cy);
+      if (d > maxR && d <= maxR * 1.5) {
+        const ux = (b.x - cx) / Math.max(1, d), uy = (b.y - cy) / Math.max(1, d);
+        b.x += ux * 26; b.y += uy * 26 - 26;            // outward + a strong upward bias (toward the deep)
+      }
+    }
+  }
+  // Spring Tide: a big collapse (3+ crushed) tightens the next breaths' tempo.
+  if (rankOf('tide_lull') && n >= 3) _lev_tideTempo = Math.min(1, _lev_tideTempo + 0.4);
+  _lev_flash('tide', isKing ? 'KING TIDE' : 'TIDE', LEVIATHAN_PATH_COLORS.tide, isKing ? 0 : 400);
+  try { _lev_sfx('tideCollapse', isKing ? 0.8 : 0.55, 220); } catch (e) {}   // raised 0.55/0.35→0.8/0.55 (phone-audible)
+  _lev_pushRing(cx, cy, maxR, inner, 360, LEVIATHAN_PATH_COLORS.tide);
+}
+function _lev_tickTide(now, dt) {
+  if (rankOf('tide_breath') < 1) return;
+  if (!_lev_tidePhaseStart) _lev_tidePhaseStart = now;
+  const bt = _lev_buffTier();
+  // King Tide comes around MORE OFTEN the deeper you are (every 3rd breath → every 2nd in THE ABYSS).
+  const kingEvery = rankOf('tide_kingtide') > 0 ? (bt >= 2 ? 2 : 3) : 99;
+  const isKing = rankOf('tide_kingtide') > 0 && (_lev_tideCount % kingEvery === kingEvery - 1);
+  const tempoMul = rankOf('tide_lull') ? (1 - 0.4 * _lev_tideTempo) : 1;   // Spring Tide → faster breaths
+  // PASSIVE BUFF: THE DEEP/ABYSS quicken the base breath (LEV_BUFF_TIDE_PERIOD) on top of
+  // Spring Tide; the King breath still charges faster (×0.8) so its big payoff arrives promptly.
+  const period = LEV_TIDE_PERIOD_MS * tempoMul * LEV_BUFF_TIDE_PERIOD[bt] * (isKing ? 0.8 : 1);
+  const depth = _lev_depth();
+  const maxR = (150 + (rankOf('tide_deepswell') ? 70 : 0)) * LEV_BUFF_SIZE[bt] * (rankOf('tide_deeptow') ? (1 + depth * 0.5) : 1) * (isKing ? 2.6 : 1);   // PASSIVE BUFF: THE DEEP/ABYSS widen the tide; Deep Tow adds FATHOM-proportional reach
+  // Resonance — fire a scheduled echo-collapse a beat after the main one.
+  if (_lev_tideEchoAt && now >= _lev_tideEchoAt) { _lev_tideCollapse(player.x, player.y, _lev_tideEchoR, _lev_tideEchoKing); _lev_tideEchoAt = 0; }
+  const t = (now - _lev_tidePhaseStart) / period;
+  if (t >= 1) {
+    _lev_tideCollapse(player.x, player.y, maxR, isKing);
+    // Resonance: while the rhythm is RACING, schedule a 2nd echo-collapse a beat later.
+    if (rankOf('tide_resonance') && _lev_tideTempo > 0.5) { _lev_tideEchoAt = now + 280; _lev_tideEchoR = maxR * 1.05; _lev_tideEchoKing = false; }   // FIX(0a): full(+) radius so bodies that drifted in land in the CRUSH band, not Backwash's push-band
+    _lev_tidePhaseStart = now;
+    _lev_tideCount++;
+    _lev_tideR = 0;
+    return;
+  }
+  _lev_tideR = maxR * (t < 0.6 ? (t / 0.6) : (1 - (t - 0.6) / 0.4));   // swell out then contract (render)
+}
+
+// === LEVIATHAN per-frame hooks (all gated on activeOrb === 'leviathan') ====
+OrbHooks.on('onUpdate', () => {
+  if (activeOrb !== 'leviathan') return;
+  if (state !== 'playing' && state !== 'devmode' && state !== 'apocalypse') return;
+  const now = Date.now();
+  const dt = (typeof dtScale === 'number' && dtScale > 0) ? dtScale : 1;
+  try { _lev_tickMaelstrom(now); } catch (e) {}
+  try { _lev_tickEyeStorm(now); } catch (e) {}
+  try { _lev_tickBrink(now, dt); } catch (e) {}
+  try { _lev_tickMaw(now, dt); } catch (e) {}
+  try { _lev_tickTide(now, dt); } catch (e) {}
+  // FATHOM DECAYS SLOWLY (Part 1): kills SUSTAIN it; idle lets it ebb. Stop killing and you
+  // fall out of THE DEEP/ABYSS (lose the passive buffs) and finally below the DEEP WARD
+  // threshold — so survival demands sustained aggression (the HARD RULE). Decay is NOT a spend.
+  // dt is in 120fps-frames (dtScale=1 @ 120fps), so sum(dt)/sec = 120 → divide by 120 for a
+  // true per-SECOND rate. (Was /60 — that silently DOUBLED decay to ~8/sec, the tuning bug.)
+  _lev_addFathom(-LEV_FATHOM_DECAY_PER_S * dt / 120);
+  // Announce crossing UP into THE DEEP / THE ABYSS (re-arms as you ebb back down). Per-band
+  // gate + throttle so jitter right at a threshold (slow decay vs discrete kills) can't spam.
+  { const bt = _lev_buffTier(); if (bt > _lev_bandShown) { _lev_bandPulse = now; _lev_flash(bt >= 2 ? 'deepenAbyss' : 'deepenDeep', bt >= 2 ? 'THE ABYSS' : 'THE DEEP', bt >= 2 ? '170,255,235' : LEVIATHAN_PATH_COLORS.tide, 1200); } _lev_bandShown = bt; }
+  _lev_tideTempo = Math.max(0, _lev_tideTempo - 0.0006 * dt);
+  for (let i = _lev_rings.length - 1; i >= 0; i--) { if (now - _lev_rings[i].start > _lev_rings[i].life) _lev_rings.splice(i, 1); }
+  for (let i = _lev_bolts.length - 1; i >= 0; i--) { if (now - _lev_bolts[i].start > _lev_bolts[i].life) _lev_bolts.splice(i, 1); }
+});
+// === LEVIATHAN VISUAL TOOLKIT (Part 2 rebuild) ============================================
+// Built to the bar of the game's best effects. Techniques borrowed + cited:
+//  • TWO-STROKE ring (wide low-alpha GLOW BAND + crisp bright CORE) — Bulwark's Bastion shield
+//    escalation (~33170) draws its rings exactly this way: constant-thickness glow band then a
+//    sharp core, additive, NO shadowBlur. _lev_ring2 packages it for reuse across the kit.
+//  • ORTHOGRAPHIC-3D ring cage — Tachyon's "Cherenkov Wake" Dyson sphere (_drawTachyonDysonSphere,
+//    ~32820): great-circle rings on a varied pitch/yaw axis table, rotated by a tumbling global
+//    yaw+pitch then projected (drop z), each ring a two-stroke glow+core polyline. _lev_dysonCage
+//    is the same construction in a teal/abyss palette, shared by the burst AND the trail aura.
+//  • Additive 'lighter' throughout + ~3–5Hz pulses for life (both references do this).
+
+// Two-stroke ring: glow band + bright core (Bastion technique). Caller controls composite.
+function _lev_ring2(g, cx, cy, r, rgb, coreA, lw, a0, a1) {
+  if (!(r > 0.5)) return;
+  const s = (a0 == null) ? 0 : a0, e = (a1 == null) ? 6.2832 : a1;
+  g.lineWidth = (lw || 2) + 3; g.strokeStyle = `rgba(${rgb},${Math.max(0, coreA * 0.38).toFixed(3)})`;
+  g.beginPath(); g.arc(cx, cy, r, s, e); g.stroke();            // wide glow band
+  g.lineWidth = (lw || 2);     g.strokeStyle = `rgba(${rgb},${Math.max(0, Math.min(1, coreA)).toFixed(3)})`;
+  g.beginPath(); g.arc(cx, cy, r, s, e); g.stroke();            // crisp bright core
+}
+
+// Real churning WHIRLPOOL/MAW — replaces the old transparent-circle "vortex". Layers:
+//  (1) a luminous THROAT: an additive radial gradient that's dim at the centre and bright at the
+//      rim, so the unlit centre reads as a hole/mouth with DEPTH (the Dyson trick — bright edge,
+//      empty middle = a 3D void, no darkening needed under additive);
+//  (2) SPIRAL INTAKE ARMS that wind inward toward the eye and rotate (two-stroke glow+core each);
+//  (3) pulsing JAWS/TEETH spikes around the rim. ~21 draws.
+function _lev_whirlpool(g, cx, cy, r, rgb, intensity) {
+  if (!(r > 2)) return;
+  const now = Date.now(), turn = now * 0.0024;
+  const a = Math.max(0, intensity) * (0.85 + 0.15 * Math.sin(now * 0.012));
+  g.save(); g.globalCompositeOperation = 'lighter';
+  const grad = g.createRadialGradient(cx, cy, r * 0.08, cx, cy, r * 1.05);
+  grad.addColorStop(0,    `rgba(${rgb},${(a * 0.06).toFixed(3)})`);
+  grad.addColorStop(0.5,  `rgba(190,255,235,${(a * 0.42).toFixed(3)})`);
+  grad.addColorStop(0.82, `rgba(${rgb},${(a * 0.30).toFixed(3)})`);
+  grad.addColorStop(1,    `rgba(${rgb},0)`);
+  g.fillStyle = grad; g.beginPath(); g.arc(cx, cy, r * 1.05, 0, 6.2832); g.fill();
+  const ARMS = 4, SEG = 14, WRAP = 3.1;
+  for (let arm = 0; arm < ARMS; arm++) {
+    const a0 = turn + arm * (6.2832 / ARMS);
+    const trace = (lw, col) => {
+      g.lineWidth = lw; g.strokeStyle = col; g.lineCap = 'round'; g.beginPath();
+      for (let i = 0; i <= SEG; i++) {
+        const f = i / SEG, rad = r * (1.02 - f * 0.92), ang = a0 + f * WRAP;
+        const px = cx + Math.cos(ang) * rad, py = cy + Math.sin(ang) * rad;
+        if (i === 0) g.moveTo(px, py); else g.lineTo(px, py);
+      }
+      g.stroke();
+    };
+    trace(3.2, `rgba(${rgb},${(a * 0.26).toFixed(3)})`);             // glow band
+    trace(1.3, `rgba(205,255,240,${(a * 0.70).toFixed(3)})`);        // bright core
+  }
+  const TEETH = 12; g.lineWidth = 1.6; g.lineCap = 'round';
+  for (let t = 0; t < TEETH; t++) {
+    const ang = -turn * 0.6 + t * (6.2832 / TEETH);
+    const tp = 0.55 + 0.45 * Math.sin(now * 0.02 + t);
+    const r0 = r * 0.9, r1 = r * (1.03 + 0.13 * tp);
+    g.strokeStyle = `rgba(190,255,235,${(a * 0.5 * tp).toFixed(3)})`;
+    g.beginPath(); g.moveTo(cx + Math.cos(ang) * r0, cy + Math.sin(ang) * r0); g.lineTo(cx + Math.cos(ang) * r1, cy + Math.sin(ang) * r1); g.stroke();
+  }
+  g.restore();
+}
+
+// Orthographic-3D ring cage (Tachyon Dyson technique) in an abyss palette — shared by the
+// MAELSTROM burst and the "Maelstrom Wake" trail aura. ~ringCount×2 strokes.
+const _LEV_CAGE_AXES = [ {p:0,y:0}, {p:0,y:Math.PI/3}, {p:0,y:2*Math.PI/3}, {p:Math.PI/2,y:0}, {p:Math.PI/4,y:Math.PI/5}, {p:-Math.PI/4,y:-Math.PI/4} ];
+function _lev_dysonCage(g, cx, cy, R, rgb, alpha, ringCount, spin) {
+  if (!(R > 2) || alpha <= 0.01) return;
+  const t = Date.now() * 0.001;
+  const yaw = t * (spin || 0.7), pitch = 0.42 + Math.sin(t * 0.5) * 0.2;
+  const SEG = 22;
+  const rv = (ex, ey, ez, ax, ay) => {
+    const cax = Math.cos(ax), sax = Math.sin(ax);
+    const y1 = ey * cax - ez * sax, z1 = ey * sax + ez * cax;
+    const cay = Math.cos(ay), say = Math.sin(ay);
+    return { x: ex * cay + z1 * say, y: y1 };   // z dropped — orthographic projection
+  };
+  g.save(); g.globalCompositeOperation = 'lighter'; g.lineCap = 'round';
+  const glow = `rgba(${rgb},${Math.min(1, alpha * 0.45).toFixed(3)})`;
+  const core = `rgba(205,255,242,${Math.min(1, alpha).toFixed(3)})`;
+  const n = Math.max(1, Math.min(6, ringCount || 3));
+  for (let r = 0; r < n; r++) {
+    const def = _LEV_CAGE_AXES[r];
+    const ax = pitch + def.p, ay = yaw + def.y;
+    const u = rv(1, 0, 0, ax, ay), v = rv(0, 1, 0, ax, ay);
+    g.beginPath();
+    for (let i = 0; i <= SEG; i++) {
+      const th = (i / SEG) * 6.2832, c = Math.cos(th) * R, s = Math.sin(th) * R;
+      const px = cx + c * u.x + s * v.x, py = cy + c * u.y + s * v.y;
+      if (i === 0) g.moveTo(px, py); else g.lineTo(px, py);
+    }
+    g.lineWidth = 3.4; g.strokeStyle = glow; g.stroke();         // cherenkov-style glow band
+    g.lineWidth = 1.2; g.strokeStyle = core; g.stroke();         // bright core
+  }
+  g.restore();
+}
+
+// MAELSTROM burst — a dramatic layered event (NOT a circle): a churning 3D cage + the whirlpool
+// mouth + inward-rushing intake streaks + a core flash that intensifies as it converges/collapses.
+function _lev_drawMaelstrom(g, m, t) {
+  const now = Date.now(), eyeX = m.eyeX, eyeY = m.eyeY, grow = m.power, conv = 1 - t;
+  const R = (40 + 70 * grow) * (0.55 + 0.45 * conv);             // big, contracting as it converges
+  _lev_dysonCage(g, eyeX, eyeY, R * 1.15, '120,225,245', 0.55 + 0.3 * conv, m.abyss ? 5 : 4, 1.4);
+  _lev_whirlpool(g, eyeX, eyeY, R * 0.8, LEVIATHAN_CORE, 0.7 + 0.3 * grow);
+  g.save(); g.globalCompositeOperation = 'lighter'; g.lineCap = 'round';
+  const STREAKS = 14, turn = now * 0.004;
+  for (let i = 0; i < STREAKS; i++) {
+    const ang = turn + i * (6.2832 / STREAKS);
+    const phase = ((now * 0.0009 + i / STREAKS) % 1);
+    const r1 = R * (1.6 - phase * 1.25), r0 = r1 + R * 0.32;
+    const aa = 0.5 * (1 - phase) * (0.6 + 0.4 * grow);
+    g.lineWidth = 2; g.strokeStyle = `rgba(150,235,225,${aa.toFixed(3)})`;
+    g.beginPath(); g.moveTo(eyeX + Math.cos(ang) * r0, eyeY + Math.sin(ang) * r0); g.lineTo(eyeX + Math.cos(ang) * r1, eyeY + Math.sin(ang) * r1); g.stroke();
+  }
+  const coreA = 0.25 + 0.6 * t * t;                              // bright collapse flash near the end
+  const cg = g.createRadialGradient(eyeX, eyeY, 0, eyeX, eyeY, R * 0.62);
+  cg.addColorStop(0, `rgba(225,255,248,${coreA.toFixed(3)})`); cg.addColorStop(1, 'rgba(180,240,230,0)');
+  g.fillStyle = cg; g.beginPath(); g.arc(eyeX, eyeY, R * 0.62, 0, 6.2832); g.fill();
+  g.restore();
+}
+
+// MAELSTROM WAKE around-orb aura (the premium unlocked trail's signature) — now a true
+// Dyson-style 3D cage (two counter-rotating woven shells) around the orb, abyss palette. Drawn
+// from drawPlayer's end (gameplay) and the orb preview, exactly where Tachyon's Dyson sphere is.
+function _lev_drawMaelstromAura(g, cx, cy, intensity, rOverride) {
+  const baseR = (rOverride || 24) * 1.12;
+  const a = 0.5 + Math.min(0.4, (intensity || 0) * 0.05);
+  _lev_dysonCage(g, cx, cy, baseR, '120,225,235', a, 3 + (intensity > 1.2 ? 1 : 0), 0.8);
+  _lev_dysonCage(g, cx, cy, baseR * 0.64, '150,255,225', a * 0.7, 2, -1.15);   // inner counter-rotating shell
+}
+function _lev_draw() {
+  const g = ctx; const now = Date.now();
+  const depth = _lev_depth();
+  const hull = (typeof PLAYER_R === 'number' ? PLAYER_R : 14);
+  g.save();
+  g.globalCompositeOperation = 'lighter';
+  // DEEP WARD — a layered abyssal shield-ring hugs the hull WHILE WARDED (FATHOM >= LEV_WARD_MIN):
+  // a two-stroke glow+core ring (Bastion technique) brighter the deeper you are, a breathing outer
+  // halo, and orbiting pressure-ticks; a bright two-stroke ring expands on each shrug-off save.
+  if (_lev_fathom >= LEV_WARD_MIN) {
+    const wa = Math.min(0.95, 0.45 + 0.2 * Math.sin(now / 150) + 0.3 * depth);
+    _lev_ring2(g, player.x, player.y, hull + 7, '170,255,235', wa, 2.5);
+    g.beginPath(); g.lineWidth = 1.5; g.strokeStyle = `rgba(120,200,180,${(wa * 0.45).toFixed(3)})`;
+    g.arc(player.x, player.y, hull + 12 + Math.sin(now / 220) * 2.5, 0, 6.2832); g.stroke();   // breathing outer halo
+    const TICKS = 6, tk = now * 0.0016;
+    for (let i = 0; i < TICKS; i++) { const ang = tk + i * (6.2832 / TICKS), rr = hull + 7;
+      g.fillStyle = `rgba(205,255,245,${(wa * 0.7).toFixed(3)})`; g.beginPath(); g.arc(player.x + Math.cos(ang) * rr, player.y + Math.sin(ang) * rr, 1.6, 0, 6.2832); g.fill(); }
+  }
+  if (_lev_wardFx && now - _lev_wardFx < 420) {
+    const wp = (now - _lev_wardFx) / 420;
+    _lev_ring2(g, player.x, player.y, hull + 7 + wp * 46, '210,255,248', 0.9 * (1 - wp), 3);
+  }
+  // BRINK — faint danger-band ring + a charge arc that brightens as the storm fills
+  if (rankOf('brink_brinkmanship') > 0) {
+    const outer = LEV_GRAZE_OUTER + (rankOf('brink_keenedge') ? 26 : 0);
+    const a = 0.12 + _lev_grazeFx * 0.30 + _lev_storm * 0.18;
+    g.beginPath(); g.lineWidth = 2; g.strokeStyle = `rgba(${LEVIATHAN_PATH_COLORS.brink},${a.toFixed(3)})`;
+    g.arc(player.x, player.y, outer, 0, 6.2832); g.stroke();
+    if (_lev_storm > 0) {
+      g.beginPath(); g.lineWidth = 3; g.strokeStyle = `rgba(${LEVIATHAN_PATH_COLORS.brink},${(0.5 + _lev_storm * 0.5).toFixed(3)})`;
+      g.arc(player.x, player.y, outer - 4, -Math.PI / 2, -Math.PI / 2 + _lev_storm * 6.2832); g.stroke();
+    }
+  }
+  // BRINK lightning arcs (EMP break / Forked Lightning / Eye of the Storm)
+  for (const bolt of _lev_bolts) {
+    const p = (now - bolt.start) / bolt.life; if (p >= 1) continue;
+    g.beginPath(); g.lineWidth = 2.5 * (1 - p); g.strokeStyle = `rgba(${bolt.color},${(0.9 * (1 - p)).toFixed(3)})`;
+    g.moveTo(bolt.pts[0][0], bolt.pts[0][1]);
+    for (let i = 1; i < bolt.pts.length; i++) g.lineTo(bolt.pts[i][0], bolt.pts[i][1]);
+    g.stroke();
+  }
+  // MAW — a real churning WHIRLPOOL at the eye ahead (only while OPEN), size by FATHOM
+  if (rankOf('maw_open') > 0 && _lev_mawOpen(now)) {
+    const grow = depth * (rankOf('maw_gorge') > 0 ? 1.0 : 0.45);
+    const eyeDist = 86 + depth * 34;
+    const ex = player.x, ey = player.y - eyeDist;
+    const pulse = 0.5 + 0.5 * Math.sin(now / 130);
+    _lev_whirlpool(g, ex, ey, 22 + grow * 30 + pulse * 5, LEVIATHAN_PATH_COLORS.maw, 0.55 + depth * 0.4);
+  }
+  // TIDE — the breathing pressure ring (two-stroke glow+core) + concentric inner pressure rings
+  if (rankOf('tide_breath') > 0 && _lev_tideR > 4) {
+    _lev_ring2(g, player.x, player.y, _lev_tideR, LEVIATHAN_PATH_COLORS.tide, 0.6, 2.5);
+    for (let k = 1; k <= 2; k++) {   // concentric pressure rings inside the breath
+      g.beginPath(); g.lineWidth = 1.5; g.strokeStyle = `rgba(${LEVIATHAN_PATH_COLORS.tide},${(0.26 - k * 0.07).toFixed(3)})`;
+      g.arc(player.x, player.y, _lev_tideR * (1 - k * 0.28), 0, 6.2832); g.stroke();
+    }
+  }
+  // shared rings (discharge / collapse / gorge) — two-stroke glow+core for punch
+  for (const r of _lev_rings) {
+    const p = (now - r.start) / r.life; if (p >= 1) continue;
+    const rr = r.r0 + (r.r1 - r.r0) * p;
+    _lev_ring2(g, r.x, r.y, Math.max(1, rr), r.color, 0.6 * (1 - p), 2.5 * (1 - p) + 0.5);
+  }
+  // MAELSTROM — the dramatic converging maelstrom (3D cage + whirlpool + intake streaks + core flash)
+  if (_lev_maelstrom) {
+    const m = _lev_maelstrom; const t = (now - m.start) / LEV_MAELSTROM_MS;
+    _lev_drawMaelstrom(g, m, Math.max(0, Math.min(1, t)));
+  }
+  g.restore();
+}
+// FATHOM readout (the apex gauge) — a VERTICAL bar on the LEFT edge, vertically
+// centred, fills bottom-up. Deliberately OFF the top-centre camera cutout (S20) and
+// clear of the bottom-left orb HUD / capstone rings.
+function _lev_drawHud() {
+  if (typeof W !== 'number' || typeof H !== 'number') return;
+  const g = ctx;
+  const ratio = _lev_fathom / LEV_FATHOM_MAX;
+  const bw = 10, bh = 130, bx = 16, by = (H - bh) / 2;
+  const bt = _lev_buffTier();
+  const col = bt >= 2 ? '170,255,235' : bt >= 1 ? '150,230,210' : LEVIATHAN_CORE;
+  g.save();
+  g.globalCompositeOperation = 'source-over';
+  g.fillStyle = 'rgba(8,16,22,0.55)'; g.fillRect(bx - 2, by - 2, bw + 4, bh + 4);
+  const fillH = bh * ratio;
+  { const grad = g.createLinearGradient(0, by + bh, 0, by); grad.addColorStop(0, `rgba(${col},0.95)`); grad.addColorStop(1, `rgba(${col},0.45)`); g.fillStyle = grad; }
+  g.fillRect(bx, by + (bh - fillH), bw, fillH);   // fills bottom-up — deep-sea pressure gradient
+  if (fillH > 1) {   // additive glow bloom over the filled column + a bright animated surface meniscus
+    g.save(); g.globalCompositeOperation = 'lighter';
+    const _topY = by + (bh - fillH);
+    const _gg = g.createLinearGradient(0, by + bh, 0, _topY);
+    _gg.addColorStop(0, `rgba(${col},0.32)`); _gg.addColorStop(1, `rgba(${col},0.06)`);
+    g.fillStyle = _gg; g.fillRect(bx - 1, _topY, bw + 2, fillH);
+    const _mp = 0.6 + 0.4 * Math.sin(Date.now() * 0.006);
+    g.fillStyle = `rgba(210,255,245,${(0.55 * _mp).toFixed(3)})`; g.fillRect(bx - 1, _topY - 1, bw + 2, 2);
+    g.restore();
+  }
+  g.strokeStyle = `rgba(${LEVIATHAN_CORE},0.6)`; g.lineWidth = 1; g.strokeRect(bx + 0.5, by + 0.5, bw, bh);
+  // PASSIVE-BUFF thresholds — the two lines the player plays around: THE DEEP (50%) and THE
+  // ABYSS (80%). Each lights bright once you're past it, so the buff state is always readable.
+  const _mark = (frac, lit, lbl) => {
+    const ny = by + bh - bh * frac;
+    g.strokeStyle = lit ? 'rgba(170,255,235,0.95)' : `rgba(${LEVIATHAN_CORE},0.5)`;
+    g.lineWidth = lit ? 2 : 1;
+    g.beginPath(); g.moveTo(bx - (lit ? 3 : 0), ny + 0.5); g.lineTo(bx + bw + (lit ? 3 : 0), ny + 0.5); g.stroke();
+    g.fillStyle = lit ? 'rgba(170,255,235,0.95)' : `rgba(${LEVIATHAN_CORE},0.6)`;
+    g.font = 'bold 7px Orbitron, monospace'; g.textAlign = 'left'; g.fillText(lbl, bx + bw + 5, ny + 2.5);
+  };
+  _mark(0.5, bt >= 1, 'DEEP');
+  _mark(0.8, bt >= 2, 'ABYSS');
+  // band-up pulse — a brief bright glow around the bar when you cross into a deeper band
+  const tp = _lev_bandPulse ? Math.max(0, 1 - (Date.now() - _lev_bandPulse) / 600) : 0;
+  if (tp > 0) { g.strokeStyle = `rgba(170,255,235,${(0.85 * tp).toFixed(3)})`; g.lineWidth = 2 + 4 * tp; g.strokeRect(bx - 3, by - 3, bw + 6, bh + 6); }
+  // DEEP WARD threshold marker (distinct hue) — lit while the ward is actually up
+  { const wy = by + bh - bh * (LEV_WARD_MIN / LEV_FATHOM_MAX); const wup = _lev_fathom >= LEV_WARD_MIN;
+    g.strokeStyle = wup ? 'rgba(200,180,255,0.9)' : 'rgba(160,150,200,0.55)'; g.lineWidth = 1.5;
+    g.beginPath(); g.moveTo(bx - 3, wy + 0.5); g.lineTo(bx + bw + 3, wy + 0.5); g.stroke();
+    g.fillStyle = wup ? 'rgba(200,180,255,0.95)' : 'rgba(160,150,200,0.6)';
+    g.font = 'bold 7px Orbitron, monospace'; g.textAlign = 'left'; g.fillText('WARD', bx + bw + 5, wy + 2.5); }
+  g.fillStyle = `rgba(${col},0.95)`; g.font = 'bold 9px Orbitron, monospace'; g.textAlign = 'center';
+  g.fillText(bt >= 2 ? 'ABYSS' : bt >= 1 ? 'DEEP' : 'FATHOM', bx + bw / 2, by + bh + 13);
+  g.fillText(String(Math.round(_lev_fathom)), bx + bw / 2, by - 6);
+  g.restore();
+}
+OrbHooks.on('onRender', () => {
+  if (activeOrb !== 'leviathan') return;
+  if (state !== 'playing' && state !== 'paused' && state !== 'devmode' && state !== 'apocalypse') return;
+  try { _lev_draw(); } catch (e) {}
+  try { _lev_drawHud(); } catch (e) {}
+  try { _lev_drawFlashes(); } catch (e) {}
+});
+OrbHooks.on('onResetGame', () => {
+  _lev_storm = 0; _lev_grazeFx = 0; _lev_fathom = 0; _lev_bandShown = 0; _lev_bandPulse = 0; _lev_eyeStorm = null;
+  _lev_wardNextTime = 0; _lev_wardFx = 0;
+  _lev_tidePhaseStart = 0; _lev_tideCount = 0; _lev_tideR = 0; _lev_tideTempo = 0; _lev_mawWasOn = false;
+  _lev_mawFrenzy = 0; _lev_tideEchoAt = 0; _lev_tideEchoR = 0; _lev_tideEchoKing = false;
+  _lev_maelstrom = null; _lev_rings = []; _lev_bolts = [];
+  _lev_flashes = []; _lev_flashGates = {};
+});
+
+// === LEVIATHAN custom tree UI (cloned from the tachyon branching layout) ===
+function _lev_nodeState(nodeKey) {
+  const r = ActiveBudget.resolveNode('leviathan', nodeKey);
+  if (!r) return 'locked';
+  const state = orbTrees.leviathan;
+  if (!state) return 'locked';
+  const current = state[r.pathKey][r.nodeIdx] | 0;
+  const prereqOk = pathPrereqMet(state, r.pathKey, r.nodeIdx);
+  if (current > 0 && ActiveBudget.isActive('leviathan', nodeKey)) return 'active';
+  if (current > 0) return 'owned';
+  if (prereqOk) return 'available';
+  return 'locked';
+}
+function _lev_buildTreeColumn(pathKey) {
+  const layout = LEVIATHAN_TREE_LAYOUTS[pathKey];
+  const col = document.createElement('div');
+  col.className = 'dv2-tree-col';
+  col.style.cssText = 'position:relative; width:200px; height:430px; flex-shrink:0;';
+  const svgNS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(svgNS, 'svg');
+  svg.setAttribute('viewBox', '0 0 200 430');
+  svg.setAttribute('width', '200');
+  svg.setAttribute('height', '430');
+  svg.style.cssText = 'position:absolute; top:0; left:0; pointer-events:none;';
+  for (const nKey of Object.keys(layout.nodes)) {
+    const spec = LEVIATHAN_PREREQS[nKey];
+    if (!spec || !Array.isArray(spec.prereq)) continue;
+    const me = layout.nodes[nKey];
+    for (const parentKey of spec.prereq) {
+      const parent = layout.nodes[parentKey];
+      if (!parent) continue;
+      const bothActive = _lev_nodeState(nKey) === 'active' && _lev_nodeState(parentKey) === 'active';
+      const line = document.createElementNS(svgNS, 'line');
+      line.setAttribute('x1', parent.x); line.setAttribute('y1', parent.y);
+      line.setAttribute('x2', me.x); line.setAttribute('y2', me.y);
+      line.setAttribute('stroke', bothActive ? `rgba(${layout.color},0.9)` : 'rgba(120,120,140,0.35)');
+      line.setAttribute('stroke-width', bothActive ? '3' : '2');
+      if (bothActive) line.setAttribute('filter', 'drop-shadow(0 0 4px rgba(' + layout.color + ',0.6))');
+      svg.appendChild(line);
+    }
+  }
+  col.appendChild(svg);
+  const label = document.createElement('div');
+  label.style.cssText = `position:absolute; bottom:8px; left:0; right:0; text-align:center; font-family:Orbitron,monospace; font-size:11px; letter-spacing:3px; color:rgba(${layout.color},0.85);`;
+  label.textContent = layout.name;
+  col.appendChild(label);
+  for (const nKey of Object.keys(layout.nodes)) {
+    const pos = layout.nodes[nKey];
+    const r = ActiveBudget.resolveNode('leviathan', nKey);
+    if (!r) continue;
+    const nodeDef = r.node;
+    const nState = _lev_nodeState(nKey);
+    const isCapstone = !!pos.capstone;
+    const isKeystone = !!pos.keystone;
+    const size = isCapstone ? 38 : isKeystone ? 34 : 28;
+    const btn = document.createElement('button');
+    btn.dataset.nodeKey = nKey;
+    btn.style.cssText = `
+      position:absolute; left:${pos.x - size / 2}px; top:${pos.y - size / 2}px;
+      width:${size}px; height:${size}px;
+      border-radius:${isCapstone ? '8px' : '50%'};
+      border:2px solid rgba(${layout.color},${nState === 'locked' ? 0.18 : nState === 'available' ? 0.45 : 0.9});
+      background:${nState === 'active' ? `rgba(${layout.color},0.85)` : 'rgba(8,16,26,0.85)'};
+      box-shadow:${nState === 'active' ? `0 0 14px rgba(${layout.color},0.7)` : 'none'};
+      color:${nState === 'active' ? 'rgba(0,0,0,0.9)' : `rgba(${layout.color},${nState === 'locked' ? 0.3 : 0.95})`};
+      font-family:Orbitron,monospace; font-size:${isCapstone ? 12 : 10}px; font-weight:bold;
+      cursor:pointer; padding:0; transition: all 0.15s;
+      ${nState === 'locked' ? 'opacity:0.45;' : ''}
+    `;
+    btn.textContent = (nodeDef.pointCost | 0) || 1;
+    const _unitCost = nodeCost(nodeDef.tier, 1, 'leviathan', nodeDef);
+    btn.title = `${nodeDef.name} — ${(nodeDef.pointCost | 0) || 1} pt · ${formatCrystals(_unitCost)} 💎 (${nState})`;
+    btn.addEventListener('click', () => {
+      SFX.clickSecondary();
+      treeDetailCurrent = { kind: 'node', orbKey: 'leviathan', pathKey: r.pathKey, nodeIdx: r.nodeIdx };
+      renderTreeDetail();
+      document.getElementById('treeNodeDetail').classList.add('visible');
+    });
+    col.appendChild(btn);
+    if (nState === 'available' || nState === 'locked') {
+      const costLbl = document.createElement('div');
+      const lblW = 56;
+      costLbl.style.cssText = `position:absolute; left:${pos.x - lblW / 2}px; top:${pos.y + size / 2 + 2}px; width:${lblW}px; text-align:center; font-family:Orbitron,monospace; font-size:9px; letter-spacing:0.5px; color:rgba(${layout.color},${nState === 'locked' ? 0.35 : 0.85}); pointer-events:none; line-height:1;`;
+      costLbl.textContent = `${formatCrystals(_unitCost)} 💎`;
+      col.appendChild(costLbl);
+    }
+  }
+  return col;
+}
+function _lev_renderCustomTreeOverlay() {
+  const def = TREE_DEFS.leviathan;
+  const state = orbTrees.leviathan;
+  if (!def || !state) return;
+  document.getElementById('treeTitle').textContent = 'LEVIATHAN';
+  document.getElementById('treeTitle').style.color = `rgba(${LEVIATHAN_CORE},1)`;
+  document.getElementById('treeCrystals').textContent = '💎 ' + formatCrystals(totalCrystals);
+  const pathsEl = document.getElementById('treePaths');
+  pathsEl.innerHTML = '';
+  pathsEl.style.display = 'flex';
+  pathsEl.style.gap = '14px';
+  pathsEl.style.flexWrap = 'nowrap';
+  pathsEl.style.overflowX = 'auto';
+  pathsEl.style.overflowY = 'hidden';
+  pathsEl.style.webkitOverflowScrolling = 'touch';
+  pathsEl.style.padding = '6px 8px 12px';
+  pathsEl.style.maxHeight = '450px';
+  pathsEl.style.justifyContent = 'flex-start';
+  for (const pKey of ['brink', 'maw', 'tide']) {
+    pathsEl.appendChild(_lev_buildTreeColumn(pKey));
+  }
+  const capsEl = document.getElementById('treeCapstones');
+  capsEl.innerHTML = '';
+  capsEl.style.display = 'flex';
+  capsEl.style.flexDirection = 'column';
+  capsEl.style.alignItems = 'center';
+  capsEl.style.gap = '6px';
+  const total = ActiveBudget.activePointsTotal('leviathan');
+  const cap = getLeviathanBudgetCap();
+  const bonus = getLeviathanBudgetBonus();
+  const overBudget = total > cap;
+  const budget = document.createElement('div');
+  budget.style.cssText = `display:flex; align-items:center; gap:10px; padding:10px 8px; font-family:Orbitron,monospace; font-size:13px; letter-spacing:3px; color:rgba(${LEVIATHAN_CORE},0.85);`;
+  const totalColor = overBudget ? 'rgba(255,90,90,1)' : `rgba(${LEVIATHAN_CORE},1)`;
+  const label = document.createElement('span');
+  label.innerHTML = `ACTIVE POINTS: <span style="color:${totalColor}; font-weight:bold; font-size:16px;">${total}</span> <span style="opacity:0.6;">/ ${cap}</span>`;
+  budget.appendChild(label);
+  const expandMax = ActiveBudget.expandMaxFor('leviathan');
+  const expandCost = ActiveBudget.expandCostFor('leviathan');
+  const expandBtn = document.createElement('button');
+  expandBtn.style.cssText = `background:transparent; border:1px solid rgba(${LEVIATHAN_CORE},0.55); color:rgba(${LEVIATHAN_CORE},0.95); font-family:Orbitron,monospace; font-size:12px; letter-spacing:1px; padding:4px 10px; cursor:pointer; border-radius:3px; transition:all 0.18s; min-height:26px; text-transform:uppercase;`;
+  if (bonus >= expandMax) {
+    expandBtn.textContent = 'MAXED';
+    expandBtn.disabled = true;
+    expandBtn.style.opacity = '0.45';
+    expandBtn.style.cursor = 'not-allowed';
+  } else {
+    expandBtn.textContent = '＋';
+    expandBtn.title = `Expand active points capacity by +1 — ${formatCrystals(expandCost)} 💎`;
+    expandBtn.addEventListener('click', () => {
+      SFX.clickSecondary();
+      const remaining = expandMax - bonus;
+      confirmTreeAction(
+        `Expand active points capacity by +1? Cost: ${formatCrystals(expandCost)} 💎. (${remaining} expansion${remaining === 1 ? '' : 's'} remaining)`,
+        () => { if (purchaseLeviathanBudgetExpand()) { SFX.clickPrimary(); renderTreeOverlay(); } }
+      );
+    });
+  }
+  budget.appendChild(expandBtn);
+  capsEl.appendChild(budget);
+  const ranks = totalRanksInvested('leviathan');
+  const full = document.getElementById('treeRespecFullBtn');
+  const _fullFee = fullTreeRespecCost('leviathan');
+  full.textContent = ranks > 0 ? `REFUND ALL (${formatCrystals(_fullFee)} 💎)` : 'REFUND ALL';
+  full.disabled = ranks === 0 || totalCrystals < _fullFee;
+}
+ORB_BEHAVIOR.leviathan.renderTreeOverlay = function() { _lev_renderCustomTreeOverlay(); };
+ORB_BEHAVIOR.leviathan.renderTreeDetail = function() {
+  if (!treeDetailCurrent || treeDetailCurrent.kind !== 'node') return _renderTreeDetail_default();
+  _renderTreeDetail_default();
+  const t = treeDetailCurrent;
+  const def = TREE_DEFS.leviathan;
+  const state = orbTrees.leviathan;
+  if (!def || !state) return;
+  const node = def.paths[t.pathKey].nodes[t.nodeIdx];
+  const current = state[t.pathKey][t.nodeIdx] | 0;
+  const prereqOk = pathPrereqMet(state, t.pathKey, t.nodeIdx);
+  const upBtn = document.getElementById('treeDetailUpgradeBtn');
+  const respecBtn = document.getElementById('treeDetailRespecBtn');
+  if (!upBtn || !respecBtn) return;
+  const isActive = ActiveBudget.isActive('leviathan', node.key);
+  const pointCost = (node.pointCost | 0) || 1;
+  const total = ActiveBudget.activePointsTotal('leviathan');
+  if (current <= 0) {
+    upBtn.style.visibility = '';
+    if (!prereqOk) {
+      upBtn.textContent = 'PREREQ MISSING';
+      upBtn.disabled = true;
+    } else {
+      const nextCost = nodeCost(node.tier, 1, t.orbKey, node);
+      upBtn.textContent = `UNLOCK — ${formatCrystals(nextCost)} 💎`;
+      upBtn.disabled = totalCrystals < nextCost;
+      upBtn.onclick = () => {
+        if (purchaseNodeRank(t.orbKey, t.pathKey, t.nodeIdx)) {
+          SFX.clickPrimary(); renderTreeOverlay(); renderTreeDetail();
+        }
+      };
+    }
+    respecBtn.style.visibility = 'hidden';
+    respecBtn.disabled = true;
+  } else if (!isActive) {
+    upBtn.style.visibility = '';
+    const requiredKs = ActiveBudget.keystoneRequiredFor('leviathan', node.key);
+    const ksMissing = !!requiredKs && !ActiveBudget.isActive('leviathan', requiredKs);
+    const fits = total + pointCost <= getLeviathanBudgetCap();
+    if (ksMissing) {
+      const ksResolved = ActiveBudget.resolveNode('leviathan', requiredKs);
+      const ksName = (ksResolved && ksResolved.node && ksResolved.node.name) || 'keystone';
+      upBtn.textContent = `ACTIVATE ${ksName.toUpperCase()} FIRST`;
+      upBtn.disabled = true;
+    } else if (!fits) {
+      upBtn.textContent = 'BUDGET FULL';
+      upBtn.disabled = true;
+    } else {
+      upBtn.textContent = 'ACTIVATE';
+      upBtn.disabled = false;
+    }
+    upBtn.onclick = () => {
+      if (ActiveBudget.activate('leviathan', node.key)) {
+        SFX.clickPrimary(); renderTreeOverlay(); renderTreeDetail();
+      }
+    };
+    respecBtn.style.visibility = '';
+    {
+      const _fee = respecNodeCost(t.orbKey, t.pathKey, t.nodeIdx);
+      respecBtn.disabled = totalCrystals < _fee;
+      respecBtn.textContent = `REFUND (${formatCrystals(_fee)} 💎)`;
+      respecBtn.onclick = () => {
+        confirmTreeAction(`Refund ${node.name}? Costs ${formatCrystals(_fee)} 💎 and returns all spent crystals.`, () => {
+          if (respecNode(t.orbKey, t.pathKey, t.nodeIdx)) { SFX.clickSecondary(); renderTreeOverlay(); closeTreeDetail(); }
+        });
+      };
+    }
+  } else {
+    upBtn.style.visibility = '';
+    upBtn.textContent = 'DEACTIVATE';
+    upBtn.disabled = false;
+    upBtn.onclick = () => {
+      ActiveBudget.deactivate('leviathan', node.key);
+      SFX.clickPrimary(); renderTreeOverlay(); renderTreeDetail();
+    };
+    respecBtn.style.visibility = '';
+    {
+      const _fee = respecNodeCost(t.orbKey, t.pathKey, t.nodeIdx);
+      respecBtn.disabled = totalCrystals < _fee;
+      respecBtn.textContent = `REFUND (${formatCrystals(_fee)} 💎)`;
+      respecBtn.onclick = () => {
+        confirmTreeAction(`Refund ${node.name}? Costs ${formatCrystals(_fee)} 💎, frees ${pointCost} budget point${pointCost > 1 ? 's' : ''} and returns all spent crystals.`, () => {
+          if (respecNode(t.orbKey, t.pathKey, t.nodeIdx)) { SFX.clickSecondary(); renderTreeOverlay(); closeTreeDetail(); }
+        });
+      };
+    }
+  }
+};
+// =====================================================================
+// END LEVIATHAN (Pass 1) — access via LEVIATHANTEST cheat (start handler)
+// =====================================================================
+
 // === NEBULA schema migration (v1 multi-rank → v2 active-budget) ============
 function _nebulaLooksLegacy(rawNebula) {
   if (!rawNebula) return false;
@@ -19543,6 +20763,11 @@ const SFX = (function() {
     coronaStorm:       './assets/SFX/CORONA_STORM.mp3',
     lightSweep:        './assets/SFX/LIGHT_SWEEP.mp3',
     heliographBeam:    './assets/SFX/HELIOGRAPH_BEAM.mp3',
+    maelstrom:         './assets/SFX/MAELSTROM.mp3',   // Leviathan MAELSTROM burst
+    deepHold:          './assets/SFX/DEEP_HOLD.mp3',
+    mawDevour:         './assets/SFX/MAW_DEVOUR.mp3',
+    tideCollapse:      './assets/SFX/TIDE_COLLAPSE.mp3',
+    stormBreak:        './assets/SFX/STORM_BREAK.mp3',
   };
   const sfxBuffers = { shieldDestroy: null, novaDestroy: null, hyperspeedBarrier: null, scream: null, toothed: null, eruption: null, tentacle: null, heartbeat: null, mirror: null, lotd: null, rift: null, alarm: null };
   const sfxLoading = { shieldDestroy: null, novaDestroy: null, hyperspeedBarrier: null, scream: null, toothed: null, eruption: null, tentacle: null, heartbeat: null, mirror: null, lotd: null, rift: null, alarm: null };
@@ -21066,6 +22291,7 @@ const TRAIL_UNLOCK_THRESHOLDS = {
   phantomV2: 1000,
   helios: 3000,
   tachyon: 3000,   // Cherenkov Wake — parity with Warp/nebula
+  leviathan: 3000, // Maelstrom Wake — parity with the apex tier
 };
 // Display names for the unlocked alternative trail per orb (shown in the
 // orb-preview dropdown and the unlock banner).
@@ -21079,6 +22305,7 @@ const TRAIL_UNLOCKED_NAMES = {
   phantomV2: 'Spectral Wisps',
   helios: 'Corona Veil',
   tachyon: 'Cherenkov Wake',
+  leviathan: 'Maelstrom Wake',
 };
 // v1.9.0 polish: enumerate ALL ORB_ORDER entries instead of hard-coding the
 // original five. Previously DrifterV2 stats were silently dropped on every
@@ -26286,12 +27513,12 @@ function checkCollisions() {
     return false;
   }
 
-  let _lethal = null;
+  let _lethal = null, _lethalBody = null;
   for (const b of bodies) {
     // Phantasm Brand: marked bodies phase through the player. They're the
     // player's curse, not a threat to it.
     if (b._phantomMarked) continue;
-    if (bodyHits(b, -3)) { _lethal = b.type || 'unknown'; break; }
+    if (bodyHits(b, -3)) { _lethal = b.type || 'unknown'; _lethalBody = b; break; }
   }
   // Crack fragments are lethal on contact as well.
   if (!_lethal) {
@@ -26300,6 +27527,27 @@ function checkCollisions() {
     }
   }
   if (_lethal) {
+    // LEVIATHAN — DEEP WARD: survivability EARNED BY AGGRESSION. While deep enough
+    // (FATHOM >= LEV_WARD_MIN), a lethal hit is SHRUGGED OFF — the body is crushed, FATHOM
+    // drains by LEV_WARD_COST, and a brief i-frame fires. Each save costs FATHOM you can
+    // only refill by KILLING, so stop attacking (or take too many hits) and you drop below
+    // the threshold and die. Brief i-frame only — no permanent invulnerability.
+    if (activeOrb === 'leviathan' && _lev_fathom >= LEV_WARD_MIN && Date.now() >= _lev_wardNextTime) {
+      const nowW = Date.now();
+      const _wband = _lev_buffTier();   // flavour text only — cost & i-frame are FIXED (Part 1)
+      // DEEP WARD = one of only TWO things that spend FATHOM (Part 1): a FIXED cost per save and
+      // a brief fixed i-frame. The body that hit you is crushed. Each save spends FATHOM you can
+      // only refill by KILLING, so stop attacking / take too many hits → fall below LEV_WARD_MIN
+      // → you die. No permanent invulnerability; walls stay lethal (only bodies are warded).
+      _lev_addFathom(-LEV_WARD_COST);
+      _lev_wardNextTime = nowW + LEV_WARD_IFRAME_MS;
+      graceEndTime = Math.max(graceEndTime || 0, nowW + LEV_WARD_IFRAME_MS);
+      if (_lethalBody) { const _wi = bodies.indexOf(_lethalBody); if (_wi >= 0) { try { _lev_crush(_lethalBody, _wi, LEVIATHAN_CORE); } catch (e) {} } }
+      _lev_wardFx = nowW;
+      _lev_flash('ward', _wband >= 2 ? 'THE ABYSS HOLDS' : 'THE DEEP HOLDS', LEVIATHAN_CORE, 0);
+      try { triggerHitstop(80); addShake(12); if (typeof SFX !== 'undefined' && SFX.playSfxBuffer) SFX.playSfxBuffer('deepHold', 0.85); } catch (e) {}   // raised 0.55→0.85 — the ward save must read clearly
+      return false; // shrugged off — but FATHOM spent; must re-earn by attacking
+    }
     // Umbral Step (Phantom VEIL): a lethal hit while NOT phasing drops you into
     // a 1s emergency ghost instead of dying. 90s internal cooldown.
     if ((activeOrb === 'cosmic') && rankOf('umbralStep') > 0 &&
@@ -30982,6 +32230,28 @@ function emitOrbTrail() {
         additive: true,
         life: 1, alphaMul, startTime: nowOt, maxLifeMs: 367,
       }, ORB_TRAIL_CAP);
+    } else if (orb === 'leviathan') {
+      // Abyssal wake (default) — a LUSH stream of teal deep-water bubbles that rise & drift.
+      // kind:'cyan' (renderer-tinted, guaranteed to move+render). Two sizes/hues + an occasional
+      // bright rising "glint" bubble give it real depth — denser & livelier than Bulwark's dust.
+      const big = Math.random() < 0.5;
+      pushCapped(orbTrailParticles, {
+        kind: 'cyan',
+        x: jx + (Math.random() - 0.5) * 6, y: jy,
+        vx: bx * (0.35 + Math.random() * 0.6) + (Math.random() - 0.5) * 0.6,
+        vy: by * (0.35 + Math.random() * 0.6) - 0.5 - Math.random() * 0.7,
+        hue: big ? '120,205,185' : '90,180,205',
+        life: 1, size: (big ? 3 + Math.random() * 3 : 1.5 + Math.random() * 2) * sizeMul,
+        alphaMul: alphaMul * (big ? 1 : 0.8), startTime: nowOt, maxLifeMs: big ? 560 : 420,
+      }, ORB_TRAIL_CAP);
+      if (Math.random() < 0.4) {   // a bright rising glint bubble for sparkle/depth
+        pushCapped(orbTrailParticles, {
+          kind: 'cyan', x: jx + (Math.random() - 0.5) * 12, y: jy - Math.random() * 4,
+          vx: (Math.random() - 0.5) * 0.5, vy: -0.7 - Math.random() * 0.9,
+          hue: '200,255,240', life: 1, size: (1 + Math.random() * 1.5) * sizeMul,
+          alphaMul: Math.min(1, alphaMul * 1.1), startTime: nowOt, maxLifeMs: 360,
+        }, ORB_TRAIL_CAP);
+      }
     }
   }
 }
@@ -31451,6 +32721,24 @@ function emitOrbTrailUnlocked(orb, intensity, sizeMul, alphaMul, px, py, bx, by,
     // elongated cherenkov speed-line wake than the default (brighter/denser/longer)
     // to justify the unlock. Mirrors Warp "Lightspeed" via emitTachyonWakeTrail.
     emitTachyonWakeTrail(intensity, sizeMul, alphaMul, hyperOn, stacks, bx, by);
+  } else if (orb === 'leviathan') {
+    // MAELSTROM WAKE — premium unlocked trail: a DENSE, bright teal-white abyssal wake of additive
+    // 'line' streaks (varied length, occasional bright core streak). The around-orb 3D Dyson cage
+    // (_lev_drawMaelstromAura) is drawn at drawPlayer's end — together they clearly out-class
+    // Bulwark's orbiting shards.
+    const n = 2 + Math.floor(intensity * 0.5);
+    for (let i = 0; i < n; i++) {
+      const bright = Math.random() < 0.4;
+      pushCapped(orbTrailParticles, {
+        kind: 'line',
+        x: px + (Math.random() - 0.5) * 12, y: py + (Math.random() - 0.5) * 12,
+        vx: bx * (0.9 + Math.random() * 0.9), vy: by * (0.9 + Math.random() * 0.9),
+        dx: bx, dy: by, len: (bright ? 18 + Math.random() * 22 : 10 + Math.random() * 14) * sizeMul,
+        hue: bright ? '205,255,240' : (Math.random() < 0.5 ? '150,230,210' : '90,185,215'),
+        additive: true,
+        life: 1, alphaMul: Math.min(1, alphaMul * (bright ? 1.35 : 1.1)), startTime: nowOt, maxLifeMs: bright ? 470 : 400,
+      }, ORB_TRAIL_CAP);
+    }
   }
 }
 
@@ -32241,6 +33529,14 @@ function drawPlayer(tctx = ctx) {
     const _moveMagT = Math.hypot(player.vx, player.vy);
     const _intensityT = scrollSpeed() * 0.3 + _moveMagT * 0.5;
     _drawTachyonDysonSphere(ctx, player.x, player.y, _intensityT, _hyperOnT, _stacksT);
+  }
+  // MAELSTROM WAKE — Leviathan's around-orb cage, same gating as Warp's rings / Tachyon's Dyson.
+  if (activeOrb === 'leviathan'
+      && stats.unlockedTrails && stats.unlockedTrails.leviathan
+      && stats.equippedTrails && stats.equippedTrails.leviathan === 'unlocked') {
+    const _moveMagL = Math.hypot(player.vx, player.vy);
+    const _intensityL = scrollSpeed() * 0.3 + _moveMagL * 0.5;
+    _lev_drawMaelstromAura(ctx, player.x, player.y, _intensityL, (typeof PLAYER_R === 'number' ? PLAYER_R : 14) + 6);
   }
 }
 
@@ -34359,6 +35655,32 @@ document.getElementById('startBtn').addEventListener('click', ()=>{
     saveTutorialCompleted(true);
     refreshActiveTreeCache();
     console.log('[TREETEST] Crystals granted, all trees unlocked, tree state reset, tutorial skipped');
+    // Fall through — the run starts normally so the tester can play a round.
+  }
+  // DEV cheat: pilot name "LEVIATHANTEST" (case-insensitive). Mirrors the removed
+  // TACHYONTEST: unlock + reveal + equip + grant crystals + tree access — but
+  // STRICTLY IN-MEMORY. It calls NO save*/localStorage, never sets orbUnlockSeen,
+  // and never touches the real tease/threshold/Sirius/migration flow, so leviathan
+  // can NEVER leak into real progression (reveal/ownership key solely off the
+  // untouched orbUnlockSeen). The ENHANCED_UNLOCK/TEASE_ORBS deletions below mutate
+  // transient in-memory consts that are re-derived from source on reload. DEV-ONLY —
+  // REMOVE BEFORE SHIP. (Buying nodes persists inert crystal/tree-rank data via the
+  // normal shop save path; that never unlocks leviathan. DRIFTRESET wipes dev state.)
+  if (getUsername().toUpperCase() === 'LEVIATHANTEST') {
+    totalCrystals = Math.max(totalCrystals, 5000000);              // in-memory only (no saveCrystals)
+    if (typeof ORB_DEFS !== 'undefined' && !ORB_DEFS.leviathan) ORB_DEFS.leviathan = LEVIATHAN_ORB_DEF;
+    if (typeof ORB_ORDER !== 'undefined' && !ORB_ORDER.includes('leviathan')) ORB_ORDER.push('leviathan');
+    // Reveal + de-tease for THIS SESSION ONLY (transient consts; never serialized):
+    try { if (typeof ENHANCED_UNLOCK !== 'undefined') delete ENHANCED_UNLOCK.leviathan; } catch (e) {}
+    try { if (typeof TEASE_ORBS !== 'undefined') delete TEASE_ORBS.leviathan; } catch (e) {}
+    try { if (typeof TEASE_ORB_ORDER !== 'undefined') { const _ti = TEASE_ORB_ORDER.indexOf('leviathan'); if (_ti >= 0) TEASE_ORB_ORDER.splice(_ti, 1); } } catch (e) {}
+    _lev_ensureTree();                                             // create the tree in-memory
+    treesUnlocked.leviathan = true;
+    if (!unlockedOrbs.includes('leviathan')) unlockedOrbs.push('leviathan');
+    activeOrb = 'leviathan';                                       // force-equip (NO saveOrb)
+    try { if (stats && stats.unlockedTrails && stats.equippedTrails) { stats.unlockedTrails.leviathan = true; stats.equippedTrails.leviathan = 'unlocked'; } } catch (e) {}   // preview Maelstrom Wake in-memory (no saveStats — transient, like TRAILTEST)
+    refreshActiveTreeCache();
+    console.log('[LEVIATHANTEST] Leviathan equipped + tree unlocked (in-memory dev cheat; nothing persisted)');
     // Fall through — the run starts normally so the tester can play a round.
   }
   // DEV cheat: pilot name "DRIFTRESET" (case-insensitive) wipes ALL local
@@ -37840,6 +39162,8 @@ function drawOrbPreview() {
         particles.push({ x: cx - 40 + Math.random() * 80, y: cy + (Math.random() - 0.5) * 40, vx: 0, vy: 4 + Math.random() * 3, life: 1, size: 2, lineLen: 18 + Math.random() * 20 });
       } else if (def.trail === 'asteroid') {
         particles.push({ x: cx + (Math.random() - 0.5) * 20, y: cy + 14, vx: (Math.random() - 0.5) * 2, vy: 1.5 + Math.random() * 2, life: 1, size: 2 + Math.random() * 3, angle: Math.random() * 6.28, spin: (Math.random() - 0.5) * 0.2 });
+      } else if (def.trail === 'leviathan') {
+        particles.push({ x: cx + (Math.random() - 0.5) * 24, y: cy + 16 + Math.random() * 12, vx: (Math.random() - 0.5) * 0.6, vy: -1.2 - Math.random() * 1.4, life: 1, size: 2 + Math.random() * 4 });   // abyssal bubbles rising (rendered as teal circles by the default draw)
       } else {
         particles.push({ x: cx + (Math.random() - 0.5) * 10, y: cy + 10, vx: (Math.random() - 0.5) * 1.5, vy: 1 + Math.random() * 2, life: 1, size: 2 + Math.random() * 3 });
       }
@@ -37924,6 +39248,9 @@ function drawOrbPreview() {
   if (key === 'tachyon' && useUnlocked) {
     _drawTachyonDysonSphere(orbPreviewCtx, cx, cy, 2.4, true, 4, 40);   // Cherenkov Wake Dyson sphere in preview (energized look so the cage reads)
   }
+  if (key === 'leviathan' && useUnlocked) {
+    _lev_drawMaelstromAura(orbPreviewCtx, cx, cy, 2.0, 40);   // Maelstrom Wake cage in preview (around the larger preview orb)
+  }
 }
 
 // v1.7.0: unlocked-variant rendering for the orb-preview canvas. Uses the
@@ -38003,6 +39330,20 @@ function drawOrbPreviewUnlocked(particles, orbKey, color, cx, cy, t, dtScale) {
         life: 1, size: 2,
         lineLen: 26 + Math.random() * 18,
         hue: Math.random() < 0.5 ? '120,220,255' : '200,150,255',
+        kind: 'speedline',
+      });
+    }
+  } else if (orbKey === 'leviathan') {
+    // MAELSTROM WAKE preview — teal abyssal speedlines (was MISSING → blank preview,
+    // the bug Tachyon had). The around-orb maelstrom cage draws after the core.
+    if (Math.random() < 0.6 * dtScale) {
+      particles.push({
+        x: cx + (Math.random() - 0.5) * 30,
+        y: cy + (Math.random() - 0.5) * 30,
+        vx: 0, vy: 4 + Math.random() * 3,
+        life: 1, size: 2,
+        lineLen: 24 + Math.random() * 16,
+        hue: Math.random() < 0.5 ? '150,230,210' : '90,180,210',
         kind: 'speedline',
       });
     }
