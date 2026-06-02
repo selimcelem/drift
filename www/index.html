@@ -5335,11 +5335,11 @@ const ORB_ORDER = ['cyan', 'cosmic', 'solar', 'nebula', 'asteroid'];
 // sees them. They appear ONLY in the orb-browser cycle via menuOrbCycle(), show
 // a name + tease + "COMING SOON", and are not purchasable.
 const TEASE_ORBS = {
-  // helios + tachyon promoted to real enhanced orbs (ORB_DEFS/TREE_DEFS below); only leviathan
-  // remains a tease. isTeaseOrb() keys off THIS map, so tachyon must be absent here once shipped.
-  leviathan: { name: 'Leviathan', color: '120,200,180', desc: 'Bulwark was the wall. Leviathan is the storm.' },
+  // v2.3.0: leviathan promoted to a REAL enhanced orb (ORB_DEFS/TREE_DEFS/ORB_ORDER), so it is ABSENT
+  // here. isTeaseOrb() keys off THIS map — leaving an entry would force leviathan to render "COMING SOON"
+  // and double-list it in the menu (the exact bug Tachyon's promotion had to undo). No tease orbs remain.
 };
-const TEASE_ORB_ORDER = ['leviathan'];
+const TEASE_ORB_ORDER = [];   // v2.3.0: leviathan shipped — no tease orbs remain
 function isTeaseOrb(key) { return Object.prototype.hasOwnProperty.call(TEASE_ORBS, key); }
 // Main-menu-only orb cycle: every real orb (ORB_ORDER, already incl. Roamer +
 // Phantasm by load time) followed by the locked teases. Computed fresh so it
@@ -8532,8 +8532,8 @@ TREE_DEFS.tachyon = {
           desc: 'Requires Echo Loop. When hyperspeed ends the train doesn\'t just detonate — each echo replays the whole window ONE more time and detonates again. Twice-haunted.',
           effect: r => r ? 'Train replays + detonates a 2nd time' : 'Locked' },
         { key: 'tachyon_eternalWake', name: 'Eternal Wake', tier: 3, max: 1, costOverride: [10000], pointCost: 5,
-          desc: 'CAPSTONE. Every 50 echo kills, your max hyperspeed cap climbs +1 for the run (toward 20). The past compounds.',
-          effect: r => r ? '50 past-echo kills → +1 max cap' : 'Locked' },
+          desc: 'CAPSTONE. Every 150 echo kills, your max hyperspeed cap climbs +1 for the run (toward 20). The past compounds.',
+          effect: r => r ? '150 past-echo kills → +1 max cap' : 'Locked' },
       ],
     },
     // ---- 2. DIVERGENCE (future selves flung ahead, no new tech) ----------
@@ -8799,7 +8799,7 @@ let _tachyonWells = [], _tachyonWellAt = 0, _tachyonAccretion = 0;
 let _tachyonTimersInit = false;
 // Kill-milestone capstone counters (Eternal Wake / All Timelines) → cap growth.
 let _tachyonPastEchoKills = 0, _tachyonEscortKills = 0;
-let _tachyonWakeNext = 50, _tachyonAllNext = 150;   // 1b rebalance: past-echoes kill ~3-5x less often than escorts (they're fewer + event-gated, escorts kill ~every frame across 2-4 agents), so Eternal Wake fires per 50 past kills, All Timelines per 150 escort kills → comparable wall-clock rate. TUNABLE.
+let _tachyonWakeNext = 150, _tachyonAllNext = 150;   // Eternal Wake fires per 150 past-echo kills (RAISED 50→150 this pass), All Timelines per 150 escort kills. Both grant +1 max hyperspeed cap, milestone-driven. TUNABLE.
 let _tachyonPrevHyper = false;   // edge-detect hyperspeed end (Causal Lead)
 function _tachyonBlob(g, x, y, r, rgb, a) {
   g.beginPath(); g.fillStyle = `rgba(${rgb},${(a * 0.4).toFixed(3)})`; g.arc(x, y, r, 0, 6.2832); g.fill();
@@ -8875,12 +8875,12 @@ function _tachyonRadiusKill(x, y, radius, who) {
 }
 // (Slipstream Echo removed — tachyon_photonDebt is now Temporal Snap; the payoff
 // is _tachyonTemporalSnap, not a burst-CD shave.)
-// Eternal Wake: every 100 past-echo kills → +1 max hyperspeed cap (≤20).
+// Eternal Wake: every 150 past-echo kills → +1 max hyperspeed cap (≤20).
 function _tachyonCheckWake() {
   if (rankOf('tachyon_eternalWake') <= 0) return;
   while (_tachyonPastEchoKills >= _tachyonWakeNext && (TACHYON_BASE_MAX_STACKS + _tachyonCapBonus) < TACHYON_MAX_STACKS_CEILING) {
     _tachyonCapBonus++;
-    _tachyonWakeNext += 50;
+    _tachyonWakeNext += 150;
     _tachyon_flash('eternalWake', 'ETERNAL WAKE +CAP', TACHYON_PATH_COLORS.recurrence, 0);
   }
 }
@@ -8901,7 +8901,12 @@ function _tachyonDetonate(x, y, pathKey, sizeMult) {
   const sm = (typeof sizeMult === 'number') ? sizeMult : 0.6;
   // tcol:1 marks this as a TACHYON SKILL nova → rendered blue/blue-white (not the
   // standard gold). Powerup-pickup novas don't set it, so they stay gold.
-  pushNovaRingCapped({ x, y, radius: 0, life: 1, prevR: 0, startTime: now, sizeMult: sm, radiusMult: rm, tcol: 1 });
+  // tachyonPast / tachyonEscort: tag the nova by its OWNING path so the nova-ring kill loop credits the
+  // right kill-milestone capstone for the kills the EXPANDING ring makes (beyond the instant
+  // _tachyonRadiusKill sliver). recurrence → Eternal Wake (past-echo kills); divergence → All Timelines
+  // (escort kills, the Probability Split nova). convergence (well) novas stay uncredited — Quasar is
+  // stack-gated, not a kill-milestone. Tags are only set during tachyon play, so other orbs never see them.
+  pushNovaRingCapped({ x, y, radius: 0, life: 1, prevR: 0, startTime: now, sizeMult: sm, radiusMult: rm, tcol: 1, tachyonPast: pathKey === 'recurrence', tachyonEscort: pathKey === 'divergence' });
   try { emitNovaSpecks(x, y); } catch (e) {}
 }
 // V-FORMATION offsets by slot. 0/1 = base pair (left/right); 2 = left-and-back
@@ -9333,7 +9338,7 @@ OrbHooks.on('onResetGame', () => {
   _tachyonCascadeAt = 0;
   _tachyonTimersInit = false;
   _tachyonPastEchoKills = 0; _tachyonEscortKills = 0;
-  _tachyonWakeNext = 50; _tachyonAllNext = 150;
+  _tachyonWakeNext = 150; _tachyonAllNext = 150;
   _tachyonCapBonus = 0; _tachyonPrevHyper = false;
   _tachyonHistWriteSlot = 0;
   for (let i = 0; i < TACHYON_HISTORY_LEN; i++) { _tachyonHistBar[i] = 0; _tachyonHistStk[i] = 0; _tachyonHistEvt[i] = null; }
@@ -11057,22 +11062,25 @@ OrbHooks.on('onResetGame', () => {
 // AHEAD of the hull — the player hull stays MORTAL at all times (no persistent
 // kill-aura, no burst invuln). All code is gated on activeOrb==='leviathan'.
 //
-// ISOLATION: this block only DEFINES the orb (TREE_DEFS/ActiveBudget/ORB_BEHAVIOR/
-// hooks). It does NOT enter ORB_DEFS/ORB_ORDER/orbTrees, so leviathan stays a pure
-// tease for normal players. Access is DEV-ONLY via the LEVIATHANTEST pilot-name
-// cheat (added in the start handler) which promotes it IN-MEMORY only.
+// SHIPPED (v2.3.0): leviathan is a REAL enhanced orb — this block registers it into ORB_DEFS / ORB_ORDER
+// / orbTrees / treesUnlocked just like helios & tachyon (see the ORB_DEFS.leviathan assignment + the
+// orbTrees init below, and the ORB_ORDER.push beside tachyon's). Earned via the normal path: Bulwark
+// (asteroid) 6000-kill threshold → Sirius unlock convo (ENHANCED_UNLOCK.leviathan, tease:false). The
+// in-memory LEVIATHANTEST cheat was REMOVED at release. All gameplay code stays gated on activeOrb==='leviathan'.
 //
 // Pass 1 verbs: BRINK (graze-charge), MAW (devour/hunger), TIDE (breathing
-// collapse). Burst: MAELSTROM. Apex resource: FATHOM (grow-only) + DEEP WARD + DEEP UNLEASH.
+// collapse). Burst: MAELSTROM (auto-fires on cooldown). Apex resource: FATHOM (DECAYS, sustained by kills) + DEEP WARD.
 const LEVIATHAN_CORE = '120,200,180';
 const LEVIATHAN_PATH_COLORS = {
   brink: '120,255,210',   // electric teal — the nerve / courting the edge
   maw:   '90,200,170',    // deep teal — the hunger
   tide:  '150,210,255',   // pale storm-blue — the breath of the deep
 };
-// ORB_DEFS entry is assigned ONLY by the LEVIATHANTEST cheat (kept out of the real
-// ORB_DEFS so leviathan never enters "real orb" iteration for normal players).
 const LEVIATHAN_ORB_DEF = { name: 'Leviathan', desc: 'Bulwark was the wall. Leviathan is the storm.', color: LEVIATHAN_CORE, cost: 7000, streakCap: 8, trail: 'leviathan', bias: 'shield' };
+// v2.3.0 SHIP: register the ORB_DEFS entry permanently (mirrors ORB_DEFS.tachyon/helios). Reveal +
+// ownership still gate SOLELY on orbUnlockSeen (the earned Sirius convo) — not on ORB_DEFS presence —
+// so defining this does NOT grant the orb; it just lets the menu/colour/equip plumbing resolve it.
+ORB_DEFS.leviathan = LEVIATHAN_ORB_DEF;
 
 TREE_DEFS.leviathan = {
   name: 'LEVIATHAN',
@@ -11226,9 +11234,12 @@ function getLeviathanBudgetCap()         { return ActiveBudget.budgetCap('leviat
 function getLeviathanBudgetBonus()       { return ActiveBudget.budgetBonus('leviathan'); }
 function purchaseLeviathanBudgetExpand() { return ActiveBudget.purchaseExpand('leviathan'); }
 function isLeviathanActive()             { return activeOrb === 'leviathan'; }
-// orbTrees.leviathan is created lazily (by the cheat) so a normal player's saved
-// tree blob never gains a leviathan key.
-function _lev_ensureTree() { if (!orbTrees.leviathan) orbTrees.leviathan = freshOrbTreeState('leviathan'); return orbTrees.leviathan; }
+// v2.3.0 SHIP: init the leviathan tree-state permanently (mirrors orbTrees.tachyon = freshOrbTreeState).
+// The save/merge layer is generic (mergeTrees iterates Object.keys(TREE_DEFS)), so an existing player's
+// saved blob simply gains an empty leviathan tree on next save — zero regression, exactly like Tachyon.
+// treesUnlocked.leviathan=false: the tree unlocks only via the earned path (it's never free).
+orbTrees.leviathan = freshOrbTreeState('leviathan');
+treesUnlocked.leviathan = false;
 
 ORB_BEHAVIOR.leviathan = ORB_BEHAVIOR.leviathan || {};
 ORB_BEHAVIOR.leviathan.rankOf = function(nodeKey) {
@@ -11282,7 +11293,7 @@ ORB_BEHAVIOR.leviathan.respecTree = function(orbKey) {
 };
 ORB_BEHAVIOR.leviathan.executeBurst = function() { _lev_fireMaelstrom(); return true; };
 // Active points restore on load — only relevant once a leviathan tree exists (cheat).
-OrbHooks.on('afterLoadTreeState', () => { if (orbTrees.leviathan && ActiveBudget.restoreActivePoints) ActiveBudget.restoreActivePoints('leviathan'); });
+OrbHooks.on('afterLoadTreeState', () => { ActiveBudget.restoreActivePoints('leviathan'); });   // v2.3.0: orbTrees.leviathan now always exists (real orb) — matches helios/tachyon's unguarded hook
 
 // === LEVIATHAN runtime state + flash feedback (teal, throttled) ============
 let _lev_flashes = [];
@@ -12364,7 +12375,7 @@ ORB_BEHAVIOR.leviathan.renderTreeDetail = function() {
   }
 };
 // =====================================================================
-// END LEVIATHAN (Pass 1) — access via LEVIATHANTEST cheat (start handler)
+// END LEVIATHAN — SHIPPED v2.3.0 as a real enhanced orb (earned via the Bulwark 6000-kill Sirius convo)
 // =====================================================================
 
 // === NEBULA schema migration (v1 multi-rank → v2 active-budget) ============
@@ -15722,6 +15733,7 @@ ORB_DEFS.phantomV2 = {
 ORB_ORDER.push('phantomV2');
 ORB_ORDER.push('helios');   // Helios listed AFTER Phantasm in the menu order
 ORB_ORDER.push('tachyon');  // v2.2.0: Tachyon shipped as a real enhanced orb (enhanced Warp)
+ORB_ORDER.push('leviathan'); // v2.3.0: Leviathan shipped as a real enhanced orb (enhanced Bulwark) — last in menu order
 
 TREE_DEFS.phantomV2 = {
   name: 'PHANTASM',
@@ -18673,7 +18685,7 @@ loadTreeState();
 // Idempotent and grow-only: it never lowers a cap, and re-running is a no-op
 // once cap >= spent. Also invoked from applyToLocal after a cloud merge.
 function _healBudgetCaps() {
-  for (const orb of ['cyan', 'cosmic', 'solar', 'nebula', 'asteroid', 'helios', 'tachyon']) {
+  for (const orb of ['cyan', 'cosmic', 'solar', 'nebula', 'asteroid', 'helios', 'tachyon', 'leviathan']) {
     if (!ActiveBudget.has(orb)) continue;
     let guard = 0;
     while (ActiveBudget.activePointsTotal(orb) > ActiveBudget.budgetCap(orb)
@@ -19773,6 +19785,7 @@ const PGS = (() => {
         asteroid:  ActiveBudget.budgetBonus('asteroid'),
         helios:    ActiveBudget.budgetBonus('helios'),
         tachyon:   ActiveBudget.budgetBonus('tachyon'),
+        leviathan: ActiveBudget.budgetBonus('leviathan'),   // v2.3.0: synced grow-only like the others (mergeBudgetBonus is a key-union + Math.max)
         drifterV2: _drifterV2_budgetBonus | 0,
         phantomV2: _phantomV2_budgetBonus | 0,
       },
@@ -20130,7 +20143,7 @@ const PGS = (() => {
     // in-memory value too, so this can only ever grow a cap, never shrink it.
     if (payload.budgetBonus && typeof payload.budgetBonus === 'object') {
       const bb = payload.budgetBonus;
-      for (const orb of ['cyan', 'cosmic', 'solar', 'nebula', 'asteroid', 'helios', 'tachyon']) {
+      for (const orb of ['cyan', 'cosmic', 'solar', 'nebula', 'asteroid', 'helios', 'tachyon', 'leviathan']) {
         if (bb[orb] != null && ActiveBudget.has(orb)) {
           ActiveBudget.setBonus(orb, Math.max(ActiveBudget.budgetBonus(orb), bb[orb] | 0));
         }
@@ -20301,7 +20314,7 @@ let runStats = { totalPassed: 0, totalDestroyed: 0, pointsFromPassing: 0, points
 // Example: TIME_DILATION = 60 → 1 real second = 60 in-game seconds for
 // progression, apocalypse triggers in ~10 real seconds.
 const TIME_DILATION = 1;
-const GAME_VERSION = '2.2.1';
+const GAME_VERSION = '2.3.0';
 try {
   const vl = document.getElementById('versionLabel');
   if (vl) vl.textContent = 'v' + GAME_VERSION;
@@ -22483,7 +22496,7 @@ const ENHANCED_UNLOCK = {
   phantomV2: { base: 'cosmic',   threshold: 3000, tease: false },
   helios:    { base: 'solar',    threshold: 4000, tease: false },
   tachyon:   { base: 'nebula',   threshold: 5000, tease: false },
-  leviathan: { base: 'asteroid', threshold: 6000, tease: true  },
+  leviathan: { base: 'asteroid', threshold: 6000, tease: false },   // v2.3.0: SHIPPED — earned via Bulwark 6000 kills + Sirius convo (same path as helios/tachyon)
 };
 const BASE_TO_ENHANCED = { cyan: 'drifterV2', cosmic: 'phantomV2', solar: 'helios', nebula: 'tachyon', asteroid: 'leviathan' };
 // Approved rhyming Sirius scripts ([speaker, text] tuples; {player} substituted).
@@ -28870,6 +28883,16 @@ function _updateCore() {
           }
           checkDestroyProc(b, r.source || 'nova');
           novaKillCount++;
+          // ETERNAL WAKE FIX: credit kills made by a PAST-ECHO detonation's nova RING as 'past' echo
+          // kills (Recurrence capstone). The instant _tachyonRadiusKill('past') at the detonation point
+          // only catches the 44–60px sliver; the expanding ring — the bulk of an end-of-life expiry nova
+          // — was uncredited, so Eternal Wake undercounted. Each body is spliced on kill, so a ring kill
+          // and the instant 'past' kill never touch the SAME body → counted exactly once, no double-count.
+          if (r.tachyonPast) { _tachyonPastEchoKills++; _tachyonCheckWake(); }
+          // PART 1 (parallel fix): a DIVERGENCE escort nova (Probability Split) credits the escort tally /
+          // All Timelines for its expanding-ring kills, exactly like recurrence→Wake above. The ring kills
+          // are DISJOINT from the instant _tachyonRadiusKill('escort') (bodies splice on kill) → once, no dup.
+          if (r.tachyonEscort) { _tachyonEscortKills++; _tachyonCheckAllTimelines(); }
           break;
         }
       }
@@ -34600,10 +34623,10 @@ function updateCapstoneCountdowns() {
   }
   // TACHYON capstone rings (playtest). Eternal Wake / All Timelines are now
   // KILL-MILESTONE capstones — the ring fills toward the next +cap milestone
-  // (50 past-echo kills / 150 escort kills, 1b rebalance). Quasar (Maelstrom) unchanged.
+  // (150 past-echo kills / 150 escort kills). Quasar (Maelstrom) unchanged.
   {
     const owned = activeOrb === 'tachyon' && rankOf('tachyon_eternalWake') > 0;
-    const into = ((_tachyonPastEchoKills || 0) % 50) / 50;
+    const into = ((_tachyonPastEchoKills || 0) % 150) / 150;
     set('capCdTWake', owned, owned ? into : 0, `rgba(${TACHYON_PATH_COLORS.recurrence},0.95)`, false, false);
   }
   {
@@ -35775,32 +35798,11 @@ document.getElementById('startBtn').addEventListener('click', ()=>{
     console.log('[TREETEST] Crystals granted, all trees unlocked, tree state reset, tutorial skipped');
     // Fall through — the run starts normally so the tester can play a round.
   }
-  // DEV cheat: pilot name "LEVIATHANTEST" (case-insensitive). Mirrors the removed
-  // TACHYONTEST: unlock + reveal + equip + grant crystals + tree access — but
-  // STRICTLY IN-MEMORY. It calls NO save*/localStorage, never sets orbUnlockSeen,
-  // and never touches the real tease/threshold/Sirius/migration flow, so leviathan
-  // can NEVER leak into real progression (reveal/ownership key solely off the
-  // untouched orbUnlockSeen). The ENHANCED_UNLOCK/TEASE_ORBS deletions below mutate
-  // transient in-memory consts that are re-derived from source on reload. DEV-ONLY —
-  // REMOVE BEFORE SHIP. (Buying nodes persists inert crystal/tree-rank data via the
-  // normal shop save path; that never unlocks leviathan. DRIFTRESET wipes dev state.)
-  if (getUsername().toUpperCase() === 'LEVIATHANTEST') {
-    totalCrystals = Math.max(totalCrystals, 5000000);              // in-memory only (no saveCrystals)
-    if (typeof ORB_DEFS !== 'undefined' && !ORB_DEFS.leviathan) ORB_DEFS.leviathan = LEVIATHAN_ORB_DEF;
-    if (typeof ORB_ORDER !== 'undefined' && !ORB_ORDER.includes('leviathan')) ORB_ORDER.push('leviathan');
-    // Reveal + de-tease for THIS SESSION ONLY (transient consts; never serialized):
-    try { if (typeof ENHANCED_UNLOCK !== 'undefined') delete ENHANCED_UNLOCK.leviathan; } catch (e) {}
-    try { if (typeof TEASE_ORBS !== 'undefined') delete TEASE_ORBS.leviathan; } catch (e) {}
-    try { if (typeof TEASE_ORB_ORDER !== 'undefined') { const _ti = TEASE_ORB_ORDER.indexOf('leviathan'); if (_ti >= 0) TEASE_ORB_ORDER.splice(_ti, 1); } } catch (e) {}
-    _lev_ensureTree();                                             // create the tree in-memory
-    treesUnlocked.leviathan = true;
-    if (!unlockedOrbs.includes('leviathan')) unlockedOrbs.push('leviathan');
-    activeOrb = 'leviathan';                                       // force-equip (NO saveOrb)
-    try { if (stats && stats.unlockedTrails && stats.equippedTrails) { stats.unlockedTrails.leviathan = true; stats.equippedTrails.leviathan = 'unlocked'; } } catch (e) {}   // preview Maelstrom Wake in-memory (no saveStats — transient, like TRAILTEST)
-    refreshActiveTreeCache();
-    console.log('[LEVIATHANTEST] Leviathan equipped + tree unlocked (in-memory dev cheat; nothing persisted)');
-    // Fall through — the run starts normally so the tester can play a round.
-  }
+  // LEVIATHANTEST dev cheat REMOVED at v2.3.0 release (no production path ran through it). Leviathan is
+  // now a real earned orb: ORB_DEFS.leviathan + orbTrees.leviathan + treesUnlocked.leviathan registered
+  // permanently in the leviathan block, ORB_ORDER.push beside tachyon, ENHANCED_UNLOCK.leviathan tease:false,
+  // unlocked via the Bulwark(asteroid) 6000-kill Sirius convo. (TACHYONTEST/ROAMERTEST/PHANTASMTEST were
+  // likewise removed at their releases; DRIFTRESET + the general dev tools remain.)
   // DEV cheat: pilot name "DRIFTRESET" (case-insensitive) wipes ALL local
   // progress — crystals, difficulty-beat flags, every orb tree's ranks +
   // capstones, unlocked-orbs set (back to Drifter only), active orb, top-5
