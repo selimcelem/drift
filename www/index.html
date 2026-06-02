@@ -326,8 +326,10 @@
     width: 28px;
     height: 28px;
     border-radius: 50%;
+    /* PART 2: arc colour is the ACTIVE ORB's signature colour, set per-orb via --burst-color in
+       updateBurstBar() (sourced from activeOrbColor()). Falls back to the original orange. */
     background: conic-gradient(
-      rgba(255,170,0,0.95) calc(var(--burst-progress, 0) * 360deg),
+      var(--burst-color, rgba(255,170,0,0.95)) calc(var(--burst-progress, 0) * 360deg),
       rgba(255,255,255,0.1) 0deg
     );
     position: relative;
@@ -340,8 +342,8 @@
     background: rgba(0,0,10,0.85);
   }
   #burstIndicator.ready .burst-ring {
-    background: rgba(255,170,0,0.95);
-    box-shadow: 0 0 16px rgba(255,170,0,0.85);
+    background: var(--burst-color, rgba(255,170,0,0.95));
+    box-shadow: 0 0 16px var(--burst-color, rgba(255,170,0,0.85));
   }
   #burstIndicator .burst-lbl {
     font-family: 'Space Mono', monospace;
@@ -351,7 +353,7 @@
     text-transform: uppercase;
   }
   #burstIndicator.ready .burst-lbl {
-    color: rgba(255,210,140,0.95);
+    color: var(--burst-color, rgba(255,210,140,0.95));
   }
 
   /* v1.7.0 second pass: ATTRACT/REPEL pushed noticeably higher (was +64,
@@ -8512,25 +8514,25 @@ TREE_DEFS.tachyon = {
       name: 'RECURRENCE',
       nodes: [
         { key: 'tachyon_recurrence', name: 'Recurrence', tier: 3, max: 1, costOverride: [7500], pointCost: 5,
-          desc: 'KEYSTONE. While hyperspeeding, every 1.3s shed a FAITHFUL past-echo that replays your last 1.6s of movement and state — including your hyperspeed barrier — then detonates a nova.',
+          desc: 'KEYSTONE. Too fast for one body to hold — every 1.3s of hyperspeed sheds an echo that replays your last 1.6s, barrier and all, then detonates a nova. The past does your killing.',
           effect: r => r ? 'Faithful past-echo shed' : 'Locked' },
         { key: 'tachyon_afterself', name: 'Afterself', tier: 1, max: 1, costOverride: [2500], pointCost: 2,
-          desc: 'Faithful past-echoes shed faster — shed timer 1.3s → 0.9s.',
+          desc: 'Shed echoes faster — 1.3s → 0.9s. More of you, sooner.',
           effect: r => r ? 'Shed 1.3s → 0.9s' : 'Locked' },
         { key: 'tachyon_rewindCadence', name: 'Echo Loop', tier: 1, max: 1, costOverride: [2500], pointCost: 2,
-          desc: 'Past-echoes that finish replaying LOOP and keep retracing your wake while you hyperspeed — building a visible train of your past selves (max 6; oldest detonates on overflow). They detonate when hyperspeed ends.',
+          desc: 'Echoes that finish replaying LOOP instead of vanishing, retracing your wake as a train of past selves (max 6; the oldest detonates on overflow). The train detonates when hyperspeed ends.',
           effect: r => r ? 'Echoes loop into a train (max 6)' : 'Locked' },
         { key: 'tachyon_wakeDamage', name: 'Wake Damage', tier: 1, max: 1, costOverride: [2500], pointCost: 2,
-          desc: 'Past-echoes detonate into MEDIUM novas instead of small ones.',
+          desc: 'Echoes detonate into MEDIUM novas, not small ones. The past hits harder.',
           effect: r => r ? 'Past-echo → medium nova' : 'Locked' },
         { key: 'tachyon_longMemory', name: 'Long Memory', tier: 2, max: 1, costOverride: [5000], pointCost: 3,
-          desc: 'Replay window 1.6s → 2.0s — longer, farther-reaching echoes.',
+          desc: 'Longer memory — replay window 1.6s → 2.0s. Echoes reach farther back, and farther out.',
           effect: r => r ? 'Replay 1.6s → 2.0s' : 'Locked' },
         { key: 'tachyon_photonDebt', name: 'Temporal Snap', tier: 1, max: 1, costOverride: [2500], pointCost: 2,
-          desc: 'Requires Echo Loop. Your looping echoes don\'t vanish after they detonate at the end of hyperspeed — each one replays the whole window one more time, one by one, and detonates AGAIN. A second full wake-and-collapse cycle.',
+          desc: 'Requires Echo Loop. When hyperspeed ends the train doesn\'t just detonate — each echo replays the whole window ONE more time and detonates again. Twice-haunted.',
           effect: r => r ? 'Train replays + detonates a 2nd time' : 'Locked' },
         { key: 'tachyon_eternalWake', name: 'Eternal Wake', tier: 3, max: 1, costOverride: [10000], pointCost: 5,
-          desc: 'CAPSTONE. Every 50 kills by past-echoes, your max hyperspeed cap rises +1 for the rest of the run (toward 20). The past compounds.',
+          desc: 'CAPSTONE. Every 50 echo kills, your max hyperspeed cap climbs +1 for the run (toward 20). The past compounds.',
           effect: r => r ? '50 past-echo kills → +1 max cap' : 'Locked' },
       ],
     },
@@ -8539,25 +8541,25 @@ TREE_DEFS.tachyon = {
       name: 'DIVERGENCE',
       nodes: [
         { key: 'tachyon_divergence', name: 'Divergence', tier: 3, max: 1, costOverride: [7500], pointCost: 5,
-          desc: 'KEYSTONE. While hyperspeeding, 2 ESCORT-clones fly in a V beside you, blurred and lagging ~0.8s so they feel alive. They kill what they touch via their own hyperspeed barrier and by body-slamming, plus forward strikes. Your own hitbox is never shielded.',
+          desc: 'KEYSTONE. The futures won\'t wait — while hyperspeeding, 2 escort-clones fly a V beside you, killing what they touch and striking ahead of you.',
           effect: r => r ? 'Escort V-formation while hyperspeeding' : 'Locked' },
         { key: 'tachyon_forkedPath', name: 'Forked Path', tier: 1, max: 1, costOverride: [2500], pointCost: 2,
-          desc: '+1 escort joining the V-formation (sits left-and-back of the line).',
+          desc: '+1 escort, tucked left-and-back of the V-formation.',
           effect: r => r ? '+1 escort (V left)' : 'Locked' },
         { key: 'tachyon_causalLead', name: 'Causal Lead', tier: 1, max: 1, costOverride: [2500], pointCost: 2,
-          desc: 'When hyperspeed ENDS, your escorts race off to the top of the screen at full speed, destroying everything in their path (and procing their other skills), then vanish.',
+          desc: 'When hyperspeed ENDS, your escorts tear off to the top of the screen at full speed, destroying everything in their lane, then vanish.',
           effect: r => r ? 'Escorts race out on hyperspeed end' : 'Locked' },
         { key: 'tachyon_manyWorlds', name: 'Wide Formation', tier: 1, max: 1, costOverride: [2500], pointCost: 2,
-          desc: '+1 escort on the right side of the V (mirror of Forked Path).',
+          desc: '+1 escort on the right of the V — mirror of Forked Path.',
           effect: r => r ? '+1 escort (V right)' : 'Locked' },
         { key: 'tachyon_probabilitySplit', name: 'Probability Split', tier: 2, max: 1, costOverride: [5000], pointCost: 3,
-          desc: 'When an escort kills a body — by muzzle-strike OR its hyperspeed barrier — detonate a small nova (1s cooldown per escort).',
+          desc: 'When an escort kills — forward strike OR its hyperspeed barrier — it pops a small nova. 1s cooldown each.',
           effect: r => r ? 'Escort kill → nova (1s/escort)' : 'Locked' },
         { key: 'tachyon_quantumTunnel', name: 'Causal Cascade', tier: 1, max: 1, costOverride: [2500], pointCost: 2,
-          desc: 'Requires Causal Lead. While hyperspeeding your escorts don\'t wait for the end — they RACE off the top in a streak, destroying everything in their path, then a fresh formation appears and does it again (~2 waves per blaze).',
+          desc: 'Requires Causal Lead. Your escorts don\'t wait for the end — mid-blaze they streak off the top destroying everything in their lane, then a fresh formation forms and does it again (~2 waves).',
           effect: r => r ? 'Escorts streak off & respawn (~2 waves)' : 'Locked' },
         { key: 'tachyon_allTimelines', name: 'All Timelines', tier: 3, max: 1, costOverride: [10000], pointCost: 5,
-          desc: 'CAPSTONE. Every 150 kills made by escort-clones, your max hyperspeed cap rises +1 for the rest of the run (toward 20).',
+          desc: 'CAPSTONE. Every 150 escort kills, your max hyperspeed cap climbs +1 for the run (toward 20).',
           effect: r => r ? '150 escort kills → +1 max cap' : 'Locked' },
       ],
     },
@@ -8566,25 +8568,25 @@ TREE_DEFS.tachyon = {
       name: 'MAELSTROM',
       nodes: [
         { key: 'tachyon_convergence', name: 'Collapsar', tier: 3, max: 1, costOverride: [7500], pointCost: 5,
-          desc: 'KEYSTONE. While hyperspeeding, every ~3s collapse a GRAVITY WELL at the densest cluster — it drags nearby bodies inward, then implodes them in a crush. Fires off your hyperspeed; needs no echoes. Your own hitbox is never pulled.',
+          desc: 'KEYSTONE. While hyperspeeding, every ~3s collapse a gravity well at the thickest cluster — it drags bodies inward, then implodes them. Needs no echoes to fire.',
           effect: r => r ? 'Gravity wells while hyperspeeding' : 'Locked' },
         { key: 'tachyon_implosion', name: 'Implosion', tier: 1, max: 1, costOverride: [2500], pointCost: 2,
-          desc: 'The crush at a well\'s core is bigger — a wider kill radius and a larger implosion nova.',
+          desc: 'The crush at a gravity well\'s core runs wider — bigger kill radius, bigger implosion nova.',
           effect: r => r ? '+ crush radius' : 'Locked' },
         { key: 'tachyon_lockstep', name: 'Deep Well', tier: 1, max: 1, costOverride: [2500], pointCost: 2,
-          desc: 'Wells reach farther and linger longer, dragging bodies in from a wider field before they implode.',
+          desc: 'Gravity wells reach farther and linger longer, dragging bodies from a wider field before they implode.',
           effect: r => r ? '+ pull range & duration' : 'Locked' },
         { key: 'tachyon_synchrony', name: 'Accretion', tier: 1, max: 1, costOverride: [2500], pointCost: 2,
-          desc: 'Each body a well crushes feeds the next one — wells grow stronger and pull wider as the run goes on (capped).',
+          desc: 'Each body a gravity well crushes feeds the next — they grow stronger and pull wider as the run goes on (capped).',
           effect: r => r ? 'Crushes feed the next well' : 'Locked' },
         { key: 'tachyon_gather', name: 'Tidal Pull', tier: 2, max: 1, costOverride: [5000], pointCost: 3,
-          desc: 'Your wells become true TIDES: they pull from a far wider field, and each implosion fires an AFTERSHOCK that crushes the whole gathered region at once. (Also drags your escorts/past-echoes into the crush.)',
+          desc: 'Your gravity wells become true tides — they pull from a far wider field, and each implosion fires an aftershock that crushes the whole gathered region. (Drags your echoes and escorts in too.)',
           effect: r => r ? 'Wider pull + aftershock crush' : 'Locked' },
         { key: 'tachyon_overcharge', name: 'Resonant Collapse', tier: 1, max: 1, costOverride: [2500], pointCost: 2,
-          desc: 'A well that crushes 3+ bodies refunds its cooldown — the next well collapses sooner (1.5s internal cooldown).',
+          desc: 'A gravity well that crushes 3+ bodies refunds its cooldown — the next collapses sooner (1.5s floor).',
           effect: r => r ? 'Big crush → next well sooner' : 'Locked' },
         { key: 'tachyon_syzygy', name: 'Quasar', tier: 3, max: 1, costOverride: [10000], pointCost: 5,
-          desc: 'CAPSTONE. At 5+ hyperspeed stacks, every ~20s tear open a QUASAR at the densest cluster — a huge, long-lived well that drags in and annihilates a wide area.',
+          desc: 'CAPSTONE. At 5+ hyperspeed stacks, every ~20s tear open a quasar at the densest cluster — a vast, long-lived gravity well that drags in and annihilates a wide swath.',
           effect: r => r ? 'Black hole at 5+ stacks / 20s' : 'Locked' },
       ],
     },
@@ -11081,25 +11083,25 @@ TREE_DEFS.leviathan = {
       name: 'BRINK',
       nodes: [
         { key: 'brink_brinkmanship', name: 'Brinkmanship', tier: 3, max: 1, costOverride: [7500], pointCost: 5,
-          desc: "KEYSTONE. Court the brink — every body that skims past your hull WITHOUT touching it charges STATIC PRESSURE, and at full charge the storm BREAKS: an EMP shock crushes everything close. You wear no shield; the deep rewards only those who ride the edge. — FATHOM rises with every crush and ebbs when you stop killing; past 50% you enter THE DEEP and the storm charges faster and breaks wider, past 80% (THE ABYSS) faster and wider still. Only the MAELSTROM burst and DEEP WARD ever spend FATHOM.",
+          desc: "KEYSTONE. Court the brink — every body that grazes your hull WITHOUT touching it winds the storm, and at full charge it BREAKS: an EMP shock that crushes everything close. You wear no shield; the deep rewards only those who ride the edge. Crushing builds FATHOM; the deep charges the storm faster and breaks it wider.",
           effect: r => r ? 'Graze → EMP break · deeper = faster/wider' : 'Locked' },
         { key: 'brink_keenedge', name: 'Keen Edge', tier: 1, max: 1, costOverride: [3000], pointCost: 2,
-          desc: 'Read the water — your danger band widens, so bodies graze it from farther out with more room to charge. The storm still charges faster in THE DEEP (>50% FATHOM) and THE ABYSS (>80%).',
+          desc: 'Read the water — your graze band widens, so bodies feed the storm from farther out.',
           effect: r => r ? '+ graze band width' : 'Locked' },
         { key: 'brink_overcharge', name: 'Overcharge', tier: 1, max: 1, costOverride: [3000], pointCost: 2,
-          desc: 'The closer you cut it, the faster it builds — a hull-skimming pass charges the storm up to twice as fast, and THE DEEP (>50%) and THE ABYSS (>80%) stack their own charge speed on top.',
+          desc: 'Cut it closer — a hull-skimming graze winds the storm up to twice as fast.',
           effect: r => r ? 'Closer graze → up to 2× charge' : 'Locked' },
         { key: 'brink_chainlightning', name: 'Forked Lightning', tier: 1, max: 1, costOverride: [3000], pointCost: 2,
-          desc: 'The break splits into forked lightning — 40% wider, throwing an arc to every body it catches. Its reach widens again with the break itself in THE DEEP (>50%) and THE ABYSS (>80%).',
+          desc: 'The break forks — 40% wider, throwing an arc to every body it catches.',
           effect: r => r ? '+40% break · forked arcs' : 'Locked' },
         { key: 'brink_galvanize', name: 'Galvanize', tier: 2, max: 1, costOverride: [5500], pointCost: 3,
-          desc: 'The storm feeds on the deep — the FATHOM you hold makes it charge faster yet (on top of the THE DEEP / THE ABYSS buffs), and every break bleeds a little off your burst cooldown.',
+          desc: 'The storm feeds on the deep — the more FATHOM you hold, the faster it charges, and every break bleeds your MAELSTROM cooldown.',
           effect: r => r ? 'Deeper → faster charge · break cuts burst CD' : 'Locked' },
         { key: 'brink_thunderhead', name: 'Thunderhead', tier: 2, max: 1, costOverride: [5500], pointCost: 3,
-          desc: 'Requires Forked Lightning. The break now CHAINS — lightning leaps body to body across the field, up to THREE jumps, hunting down the few strays a single blast leaves standing. A support for reach, not a match for the EYE capstone; its jumps reach a little farther in THE DEEP / THE ABYSS.',
+          desc: 'Requires Forked Lightning. The break now CHAINS — leaping body to body, up to three jumps, to hunt the strays a single blast leaves standing.',
           effect: r => r ? 'Break chains up to 3 strays' : 'Locked' },
         { key: 'brink_eyeofstorm', name: 'Eye of the Storm', tier: 3, max: 1, costOverride: [9000], pointCost: 5,
-          desc: 'CAPSTONE. The break opens into the EYE OF THE STORM — three widening EMP pulses over a held breath, each crushing whatever has drifted into reach. The storm swells with THE DEEP (>50%) and THE ABYSS (>80%), reaching far past any single chain.',
+          desc: 'CAPSTONE. The break opens into the EYE OF THE STORM — three widening EMP pulses over one held breath, each crushing whatever drifted into reach. The storm swells with the deep.',
           effect: r => r ? 'Break → 3-pulse widening storm' : 'Locked' },
       ],
     },
@@ -11108,25 +11110,25 @@ TREE_DEFS.leviathan = {
       name: 'MAW',
       nodes: [
         { key: 'maw_open', name: 'The Maw', tier: 3, max: 1, costOverride: [7500], pointCost: 5,
-          desc: "KEYSTONE. The maw opens and closes in a slow, FIXED rhythm — 3s OPEN, 3.5s CLOSED, always. While OPEN, bodies AHEAD are dragged into its throat and DEVOURED; while CLOSED nothing protects you — steer clear. — FATHOM rises with every devour and ebbs when you stop killing; past 50% (THE DEEP) the maw reaches farther and pulls harder, past 80% (THE ABYSS) wider and stronger still. Only the MAELSTROM burst and DEEP WARD ever spend FATHOM.",
+          desc: "KEYSTONE. The maw opens and shuts on a fixed rhythm — 3s OPEN, 3.5s CLOSED, always. While open, bodies ahead are dragged into its throat and DEVOURED; while closed, nothing protects you — steer clear. Each devour feeds FATHOM; the deep widens the maw and its pull.",
           effect: r => r ? 'Kill-funnel · 3s open / 3.5s closed' : 'Locked' },
         { key: 'maw_gullet', name: 'Gullet', tier: 1, max: 1, costOverride: [3000], pointCost: 2,
-          desc: 'A deeper gullet — the maw reaches farther and pulls harder, and reaches farther again in THE DEEP (>50% FATHOM) and THE ABYSS (>80%).',
+          desc: 'A deeper gullet — the maw reaches farther and pulls harder.',
           effect: r => r ? '+ maw reach & pull' : 'Locked' },
         { key: 'maw_gorge', name: 'Abyssal Maw', tier: 1, max: 1, costOverride: [3000], pointCost: 2,
-          desc: 'The hungrier the deep, the wider the jaws — Abyssal Maw amplifies how much THE DEEP (>50%) and THE ABYSS (>80%) enlarge the maw, swelling it well past its base size.',
+          desc: 'The hungrier the deep, the wider the jaws — the abyss enlarges the maw far past its base size.',
           effect: r => r ? 'THE DEEP / THE ABYSS enlarge the maw more' : 'Locked' },
         { key: 'maw_gnash', name: 'Gnash', tier: 1, max: 1, costOverride: [3000], pointCost: 2,
-          desc: "Grinding teeth — the maw's crushing throat is wider and chews faster, wider still as you sink into THE DEEP (>50%) and THE ABYSS (>80%).",
+          desc: "Grinding teeth — the maw's crushing throat runs wider and chews faster.",
           effect: r => r ? '+ crush size & speed' : 'Locked' },
         { key: 'maw_lure', name: 'Lure', tier: 2, max: 1, costOverride: [5500], pointCost: 3,
-          desc: 'As the maw yawns open it draws breath — one hard pull that drags the whole field ahead into the throat before the steady current takes hold. The pull lands harder in THE DEEP / THE ABYSS.',
+          desc: 'As the maw yawns, it draws breath — one hard pull that drags the whole field ahead into the throat before the steady current takes hold.',
           effect: r => r ? 'Opening pull drags the field in' : 'Locked' },
         { key: 'maw_chum', name: 'Feeding Frenzy', tier: 2, max: 1, costOverride: [5500], pointCost: 3,
-          desc: 'Requires Lure. Blood in the water — every body the maw takes WHILE OPEN whips it into a FRENZY, growing wider and pulling harder with each kill, until it closes and the hunger resets. The frenzy stacks on top of the THE DEEP / THE ABYSS buffs.',
+          desc: 'Requires Lure. Blood in the water — every body DEVOURED while the maw is open whips it into a FRENZY, wider and hungrier with each kill, until it shuts and the hunger resets.',
           effect: r => r ? 'Devours build a frenzy (resets on close)' : 'Locked' },
         { key: 'maw_hunger', name: 'The Devouring Deep', tier: 3, max: 1, costOverride: [9000], pointCost: 5,
-          desc: 'CAPSTONE. The maw\'s opening yawn now ENGULFS — each time it opens, the ENTIRE field ahead is swallowed in one breath, not just a mouthful. Deeper FATHOM widens the steady devour that follows.',
+          desc: 'CAPSTONE. The maw\'s opening yawn now ENGULFS — each time it opens, the entire field ahead is swallowed in one breath. The deep widens the steady devour that follows.',
           effect: r => r ? 'Each open swallows the whole field ahead' : 'Locked' },
       ],
     },
@@ -11135,26 +11137,26 @@ TREE_DEFS.leviathan = {
       name: 'TIDE',
       nodes: [
         { key: 'tide_breath', name: 'Tidal Breath', tier: 3, max: 1, costOverride: [7500], pointCost: 5,
-          desc: 'KEYSTONE. The storm breathes — a pressure ring swells out, then COLLAPSES inward on its rhythm, crushing anything it gathered the instant it closes. Between breaths you are mortal; read the tide. — FATHOM rises with every crush and ebbs when you stop killing; past 50% (THE DEEP) the tide reaches wider and breathes faster, past 80% (THE ABYSS) wider and faster still. Only the MAELSTROM burst and DEEP WARD ever spend FATHOM.',
+          desc: 'KEYSTONE. The deep breathes — a pressure ring swells out, then COLLAPSES inward and crushes whatever it gathered the instant it closes. Between breaths you are mortal; read the tide. Each crush feeds FATHOM; the deep breathes wider and faster.',
           effect: r => r ? 'Breathing collapse-crush · deeper = wider/faster' : 'Locked' },
         { key: 'tide_deepswell', name: 'Deep Swell', tier: 1, max: 1, costOverride: [3000], pointCost: 2,
-          desc: 'A deeper draw of breath — the swell reaches wider, so the collapse crushes a wider ring, wider again in THE DEEP (>50% FATHOM) and THE ABYSS (>80%).',
+          desc: 'A deeper draw of breath — the swell reaches wider, so the collapse crushes a wider ring.',
           effect: r => r ? '+ swell & collapse radius' : 'Locked' },
         { key: 'tide_lull', name: 'Spring Tide', tier: 1, max: 1, costOverride: [3000], pointCost: 2,
-          desc: 'A spring tide — when a collapse crushes three or more, the rhythm quickens and the next breaths come faster. THE DEEP (>50%) and THE ABYSS (>80%) quicken the base rhythm on top of this.',
+          desc: 'A spring tide — crush three or more in one collapse and the rhythm quickens, the next breaths coming faster.',
           effect: r => r ? 'Big collapses → faster breaths' : 'Locked' },
         { key: 'tide_deeptow', name: 'Deep Tow', tier: 2, max: 1, costOverride: [5500], pointCost: 3,
-          desc: 'The abyss lends its weight — Deep Tow widens every swell and collapse in proportion to the FATHOM you hold, reaching widest in THE DEEP (>50%) and THE ABYSS (>80%).',
+          desc: 'The abyss lends its weight — every swell and collapse widens with the FATHOM you hold.',
           effect: r => r ? 'Deeper FATHOM → wider tides' : 'Locked' },
         { key: 'tide_backwash', name: 'Backwash', tier: 1, max: 1, costOverride: [3000], pointCost: 2,
-          desc: 'The undertow throws its catch back — when the tide collapses, the bodies at its rim are hurled up and out toward the deep. The rim it flings grows with the tide in THE DEEP / THE ABYSS.',
+          desc: 'The undertow throws its catch — when the tide collapses, the bodies at its rim are hurled up and out toward the deep.',
           effect: r => r ? 'Collapse flings rim-bodies up/away' : 'Locked' },
         { key: 'tide_resonance', name: 'Resonance', tier: 2, max: 1, costOverride: [5500], pointCost: 3,
-          desc: 'Requires Spring Tide. While the rhythm is racing the deep RESOUNDS — a second collapse rolls in a beat behind the first, crushing the wave that drifted in after it. Both collapses widen in THE DEEP / THE ABYSS.',
+          desc: 'Requires Spring Tide. While the rhythm races, the deep RESOUNDS — a second collapse rolls in a beat behind the first, crushing the wave that drifted in.',
           effect: r => r ? 'Racing tide → a second collapse follows' : 'Locked' },
         { key: 'tide_kingtide', name: 'King Tide', tier: 3, max: 1, costOverride: [9000], pointCost: 5,
-          desc: 'CAPSTONE. Every third breath swells into a KING TIDE — a screen-wide collapse, at full rhythm, that crushes twice and leaves no calm water at its centre. In THE ABYSS (>80% FATHOM) it comes every OTHER breath.',
-          effect: r => r ? 'Screen-wide double-crush · more often in THE ABYSS' : 'Locked' },
+          desc: 'CAPSTONE. Every third breath swells into a KING TIDE — a screen-wide collapse, at full rhythm, that crushes twice and leaves no calm water at its centre.',
+          effect: r => r ? 'Every 3rd breath · screen-wide double-crush' : 'Locked' },
       ],
     },
   },
@@ -11293,14 +11295,27 @@ let _lev_flashGates = {};
 // the more powerful. ONLY two things spend FATHOM: the MAELSTROM burst and the DEEP WARD.
 // Stop killing → FATHOM ebbs → you lose THE DEEP/ABYSS buffs, then the ward → you die.
 const LEV_FATHOM_MAX         = 100;   // clean percentage scale: THE DEEP = 50, THE ABYSS = 80
-// RE-TUNE (measured, not estimated): the field's body FLUX is only ~1.1–2.5 bodies/sec (constant
-// population `while(bodies.length<bodyCap)`, cap 3–6, spacing 180, scroll 1.7–3.7 → flux=scroll·120/180),
-// so realistic kills/sec is ~0.5–1.3 per tree, NOT the 2–4 first guessed. With the old gains 3/5/7 that's
-// only ~2–4 gross/sec — under the (buggy, doubled) decay. Gains raised ~2.4× + decay halved + bug fixed.
-const LEV_FATHOM_GAIN        = { brink: 8, maw: 12, tide: 11 };   // FATHOM per crush, PER TREE: BRINK kills most consistently (graze→AoE break+chain) so least per kill; MAW is shut 54% of the cycle so most per kill; TIDE bursty. All net positive vs decay in normal aggressive play.
-const LEV_FATHOM_GAIN_DEFAULT = 4;    // crushes with no owning tree (MAELSTROM final clear, DEEP WARD body) — kept low so the burst stays a real spend
-const LEV_FATHOM_DECAY_PER_S = 3;     // slow ebb: full→empty in ~33s idle; from THE DEEP the ward lasts ~7s after you stop — real aggression pressure without starving FATHOM (was 4, but applied /60 → effectively 8/sec; now /120, see onUpdate)
-const LEV_FATHOM_BURST_SPEND = 50;    // FATHOM the MAELSTROM burst consumes (fixed; power scales with FATHOM held)
+// RE-TUNE v6 (ABYSS must be EARNED, not the default state). Measured: the field's body FLUX is only
+// ~1.1–2.5 bodies/sec (constant population `while(bodies.length<bodyCap)`, cap 3–6, spacing 180,
+// scroll 1.7–3.7 → flux=scroll·120/180). Total kills/sec is BOUNDED by that flux (all trees share the
+// same bodies) — you can't out-kill the spawn rate. v5's 8/12/11 gains gave ~11–25 gross/sec vs a flat
+// 3/sec decay → ABYSS in ~4s and pinned forever (the runaway loop). v6 cuts gains ~2.5× AND makes decay
+// BANDED + steeper the deeper you are, so at high FATHOM the bleed OUTPACES even flat-out killing.
+const LEV_FATHOM_GAIN        = { brink: 3, maw: 4, tide: 4 };   // FATHOM per crush, PER TREE: BRINK kills most consistently (graze→AoE break+chain) so least per kill; MAW is shut 54% of the cycle so per-kill is high — but it devours MANY per open window, so it was the strongest FATHOM engine; Part-4 slight nerf 5→4 trims that without touching BRINK/TIDE. TIDE bursty/AoE, low per-kill. Blended avg ~3.7 → ~6.5/sec gross at mid flux.
+const LEV_FATHOM_GAIN_DEFAULT = 2;    // crushes with no owning tree (DEEP WARD body, etc.) — kept low so the burst stays a real spend
+const LEV_FATHOM_GAIN_BURST  = LEV_FATHOM_GAIN_DEFAULT * 0.8;   // = 1.6. PART 1: the MAELSTROM's OWN kills credit 20% LESS FATHOM than a default crush, so the auto-fired burst can't refund its own cost (the kills it makes feed less than the kills you make). Only the burst's crushes use this; ward/other default crushes keep 2.
+const LEV_FATHOM_DECAY_PER_S = 2.5;   // BASE ebb at the SURFACE (below THE DEEP); the deeper bands bleed faster — see _lev_decayPerSec(). dt is summed in 120fps-frames, so the onUpdate drain divides by 120 for a true per-SECOND rate.
+// BANDED decay (the key v6 knob): gentle at the surface so climbing isn't punishing, faster through THE
+// DEEP, STEEP in THE ABYSS so the top can't be pinned. At mid flux (~7/sec gross) the net-zero point sits
+// at ~85 FATHOM (solidly in ABYSS but NOT at 100), and the instant your kill rate dips you slide back out
+// of ABYSS, then THE DEEP, then below the 30% ward line — so survival demands sustained aggression.
+function _lev_decayPerSec() {
+  const f = _lev_fathom;
+  if (f <= 50) return LEV_FATHOM_DECAY_PER_S;                       // surface: 2.5/s
+  if (f <= 80) return LEV_FATHOM_DECAY_PER_S + (f - 50) / 30 * 3.5; // THE DEEP: 2.5 → 6.0
+  return 6.0 + (f - 80) / 20 * 5.0;                                 // THE ABYSS: 6.0 → 11.0 (un-pinnable)
+}
+const LEV_FATHOM_BURST_SPEND = 72;    // FATHOM the MAELSTROM burst consumes (fixed; power locks from the pre-spend depth). PART 1: raised 60→72 (+20%). The burst AUTO-FIRES every cooldown (see the burst-trigger block), so this drain is the BALANCE VALVE — it keeps cashing FATHOM out on a timer, so ABYSS can't be pinned forever; firing from ABYSS (~85) drops you to ~13, well below the ward line.
 let _lev_fathom = 0;       // 0..LEV_FATHOM_MAX (the apex gauge)
 let _lev_bandShown = 0;    // highest depth BAND announced (0 surface / 1 THE DEEP / 2 THE ABYSS) — re-arms as you ebb
 function _lev_addFathom(n) { _lev_fathom = Math.max(0, Math.min(LEV_FATHOM_MAX, _lev_fathom + n)); }
@@ -11334,6 +11349,26 @@ const LEV_WARD_COST      = 40;   // FATHOM drained per shrugged-off hit
 const LEV_WARD_IFRAME_MS = 600;  // brief grace after a save (no permanent invuln)
 let _lev_wardNextTime = 0;       // ward re-arm timestamp
 let _lev_wardFx = 0;             // last ward-save timestamp (for the save flash)
+
+// === PART 3 — POWERUPS → FATHOM (Leviathan ONLY) ========================================
+// When Leviathan is active, EVERY powerup pickup converts to FATHOM instead of its normal effect: a
+// simultaneous PAIR = +20, a SINGLE = +10. HARD-gated on activeOrb==='leviathan' — the helper bails for
+// every other orb, so their pickup effects + visuals stay byte-identical. NOT an infinite-safety exploit:
+// FATHOM still DECAYS (banded, steeper the deeper you are) and the DEEP WARD costs 40/hit, and powerups
+// spawn only intermittently — so pickups TOP UP your depth (esp. for TIDE, which struggled to climb on
+// kills alone), they cannot pin THE ABYSS or hold the ward on their own. Icon reskin: see drawSinglePowerup.
+const LEV_FATHOM_PER_PAIR = 20, LEV_FATHOM_PER_SINGLE = 10;
+const LEV_POWERUP_RGB = '140,235,215';   // abyssal-teal — Leviathan powerups read as FATHOM/resource points
+function _lev_powerupToFathom(isPair, type) {
+  if (activeOrb !== 'leviathan') return false;   // hard scope — never touches any other orb's pickup path
+  const gain = isPair ? LEV_FATHOM_PER_PAIR : LEV_FATHOM_PER_SINGLE;
+  _lev_addFathom(gain);
+  try { emitPickupParticles(player.x, player.y, type); } catch (e) {}   // keep the pickup-burst feel
+  try { SFX.pickup(type); } catch (e) {}
+  try { runStats.powerupsUsed += isPair ? 2 : 1; runPowerupsUsed += isPair ? 2 : 1; } catch (e) {}   // analytics parity; spawn cadence unaffected
+  _lev_flash('fathomPU', '+' + gain + ' FATHOM', LEVIATHAN_CORE, 0);
+  return true;
+}
 
 // === FATHOM CONSUMPTION removed (v5) ====================================================
 // "DEEP UNLEASH" (the round-robin auto-firing of empowered tree procs at high FATHOM) is GONE.
@@ -11439,9 +11474,9 @@ function _lev_tickMaelstrom(now) {
     // Final collapse — a wide INSTANT crush at the eye (no pull) clears the gathered
     // cluster, scaled by FATHOM. Its radius reaches down past the player, so bodies
     // level-with/below the hull (which we never pulled) are still swept here.
-    _lev_dischargeShock(m.eyeX, m.eyeY, 170 * m.power + 50, LEVIATHAN_CORE, { x: m.eyeX, y: m.eyeY });
+    _lev_dischargeShock(m.eyeX, m.eyeY, 170 * m.power + 50, LEVIATHAN_CORE, { x: m.eyeX, y: m.eyeY }, LEV_FATHOM_GAIN_BURST);   // burst kills credit −20% FATHOM (no self-refund)
     // ABYSS (Part 1): a 2nd, wider discharge when the burst was fired at MAX FATHOM (tier 5).
-    if (m.abyss) _lev_dischargeShock(m.eyeX, m.eyeY, 170 * m.power + 140, LEVIATHAN_CORE, { x: m.eyeX, y: m.eyeY });
+    if (m.abyss) _lev_dischargeShock(m.eyeX, m.eyeY, 170 * m.power + 140, LEVIATHAN_CORE, { x: m.eyeX, y: m.eyeY }, LEV_FATHOM_GAIN_BURST);
     try { triggerHitstop(60); addShake(14); _lev_sfx('novaDestroy', 0.6, 0); } catch (e) {}   // climactic burst-collapse boom (per-body crush pops layer in via _lev_crush)
     _lev_maelstrom = null;
     return;
@@ -11459,7 +11494,7 @@ function _lev_tickMaelstrom(now) {
     if (b.y >= hullSafeY) continue;   // never pull a body at/below the hull through the player
     const dx = m.eyeX - b.x, dy = m.eyeY - b.y;
     const d = Math.max(1, Math.hypot(dx, dy));
-    if (d <= crushR) { _lev_crush(b, i, LEVIATHAN_CORE); crushed++; }
+    if (d <= crushR) { _lev_crush(b, i, LEVIATHAN_CORE, LEV_FATHOM_GAIN_BURST); crushed++; }   // burst kills credit −20% FATHOM (no self-refund)
     else { b.x += (dx / d) * Math.min(d, pull); b.y += (dy / d) * Math.min(d, pull); }
   }
   if (crushed > 0) { try { shakeMassDestroy(crushed); } catch (e) {} }
@@ -11657,8 +11692,15 @@ function _lev_tickMaw(now, dt) {
 // === 3. TIDE — a breathing ring; collapse crushes what it gathered =========
 const LEV_TIDE_PERIOD_MS = 3200;
 let _lev_tideEchoAt = 0, _lev_tideEchoR = 0, _lev_tideEchoKing = false;   // Resonance scheduled echo-collapse
-function _lev_tideCollapse(cx, cy, maxR, isKing) {
-  const inner = isKing ? 0 : 30;   // normal tide leaves a central gap (point-blank stays lethal); King Tide takes ALL
+function _lev_tideCollapse(cx, cy, maxR, isKing, isEcho) {
+  // PART 2 (NOT hands-off at ABYSS): the normal-breath central gap WIDENS with depth (30 → 46 → 62px in
+  // THE DEEP / THE ABYSS) instead of shrinking. The collapse never touches point-blank, so bodies that
+  // drift in close survive it and CAN kill you — the deeper (and faster-breathing) you are, the larger the
+  // mortal pocket you must actively dodge. Only the every-3rd-breath King Tide (capped cadence, below)
+  // takes ALL and clears that pocket — a periodic reprieve, never the steady state.
+  // The Resonance ECHO (isEcho) is a clean "resound" cleanup → NO central gap, so it catches the WHOLE
+  // wave that drifted in after the main collapse (point-blank arrivals included), not just an annulus.
+  const inner = (isKing || isEcho) ? 0 : (30 + 16 * _lev_buffTier());
   let n = 0;
   for (let i = bodies.length - 1; i >= 0; i--) {
     const b = bodies[i]; if (!b || isNaN(b.x) || isNaN(b.y)) continue;
@@ -11676,8 +11718,13 @@ function _lev_tideCollapse(cx, cy, maxR, isKing) {
     _lev_pushRing(cx, cy, maxR * 1.15, 0, 460, LEVIATHAN_PATH_COLORS.tide);
   }
   if (n > 0) { try { shakeMassDestroy(n); } catch (e) {} }
-  // Backwash — fling the bodies at the collapse EDGE up and away (hull-safe displacement).
-  if (rankOf('tide_backwash')) {
+  // Backwash — the MAIN collapse's rim-fling flourish (hull-safe). ROOT-CAUSE FIX: NEVER run it on the
+  // Resonance echo. Backwash's push-band is the annulus (maxR, maxR×1.5] — IMMEDIATELY OUTSIDE the crush
+  // band — and the echo's whole job is to crush the freshly-arrived wave, which sits right at that edge.
+  // Running Backwash on the echo DISPLACED that wave up/out instead of crushing it: the real, twice-
+  // recurring "second collapse only pushes" bug. It was the displacement stealing the bodies, never the
+  // radius — so the prior maxR×0.8→×1.05 tweaks were band-aids. Gate it off for the echo and it crushes.
+  if (rankOf('tide_backwash') && !isEcho) {
     const hy = player.y - (typeof PLAYER_R === 'number' ? PLAYER_R : 14);
     for (let i = 0; i < bodies.length; i++) {
       const b = bodies[i]; if (!b || isNaN(b.x) || isNaN(b.y) || POWERUP_COLORS[b.type]) continue;
@@ -11699,8 +11746,11 @@ function _lev_tickTide(now, dt) {
   if (rankOf('tide_breath') < 1) return;
   if (!_lev_tidePhaseStart) _lev_tidePhaseStart = now;
   const bt = _lev_buffTier();
-  // King Tide comes around MORE OFTEN the deeper you are (every 3rd breath → every 2nd in THE ABYSS).
-  const kingEvery = rankOf('tide_kingtide') > 0 ? (bt >= 2 ? 2 : 3) : 99;
+  // King Tide is capped at EVERY 3rd breath at ALL depths (PART 2 fix — was every 2nd in THE ABYSS, which
+  // made buffed TIDE a hands-off clear). This guarantees TWO gapped, point-blank-mortal breaths between
+  // every screen-wide reprieve, so the collapse rhythm always leaves a window to die in. FATHOM still makes
+  // the breaths come FASTER (LEV_BUFF_TIDE_PERIOD) — depth quickens the rhythm, it doesn't remove the gaps.
+  const kingEvery = rankOf('tide_kingtide') > 0 ? 3 : 99;
   const isKing = rankOf('tide_kingtide') > 0 && (_lev_tideCount % kingEvery === kingEvery - 1);
   const tempoMul = rankOf('tide_lull') ? (1 - 0.4 * _lev_tideTempo) : 1;   // Spring Tide → faster breaths
   // PASSIVE BUFF: THE DEEP/ABYSS quicken the base breath (LEV_BUFF_TIDE_PERIOD) on top of
@@ -11709,12 +11759,12 @@ function _lev_tickTide(now, dt) {
   const depth = _lev_depth();
   const maxR = (150 + (rankOf('tide_deepswell') ? 70 : 0)) * LEV_BUFF_SIZE[bt] * (rankOf('tide_deeptow') ? (1 + depth * 0.5) : 1) * (isKing ? 2.6 : 1);   // PASSIVE BUFF: THE DEEP/ABYSS widen the tide; Deep Tow adds FATHOM-proportional reach
   // Resonance — fire a scheduled echo-collapse a beat after the main one.
-  if (_lev_tideEchoAt && now >= _lev_tideEchoAt) { _lev_tideCollapse(player.x, player.y, _lev_tideEchoR, _lev_tideEchoKing); _lev_tideEchoAt = 0; }
+  if (_lev_tideEchoAt && now >= _lev_tideEchoAt) { _lev_tideCollapse(player.x, player.y, _lev_tideEchoR, _lev_tideEchoKing, true); _lev_tideEchoAt = 0; }   // isEcho=true → crush, no backwash, no gap
   const t = (now - _lev_tidePhaseStart) / period;
   if (t >= 1) {
     _lev_tideCollapse(player.x, player.y, maxR, isKing);
     // Resonance: while the rhythm is RACING, schedule a 2nd echo-collapse a beat later.
-    if (rankOf('tide_resonance') && _lev_tideTempo > 0.5) { _lev_tideEchoAt = now + 280; _lev_tideEchoR = maxR * 1.05; _lev_tideEchoKing = false; }   // FIX(0a): full(+) radius so bodies that drifted in land in the CRUSH band, not Backwash's push-band
+    if (rankOf('tide_resonance') && _lev_tideTempo > 0.5) { _lev_tideEchoAt = now + 280; _lev_tideEchoR = maxR; _lev_tideEchoKing = false; }   // echo reuses the breath's full footprint; it CRUSHES (no backwash, no gap — see _lev_tideCollapse) so the drifted-in wave dies instead of being shoved
     _lev_tidePhaseStart = now;
     _lev_tideCount++;
     _lev_tideR = 0;
@@ -11734,12 +11784,12 @@ OrbHooks.on('onUpdate', () => {
   try { _lev_tickBrink(now, dt); } catch (e) {}
   try { _lev_tickMaw(now, dt); } catch (e) {}
   try { _lev_tickTide(now, dt); } catch (e) {}
-  // FATHOM DECAYS SLOWLY (Part 1): kills SUSTAIN it; idle lets it ebb. Stop killing and you
-  // fall out of THE DEEP/ABYSS (lose the passive buffs) and finally below the DEEP WARD
-  // threshold — so survival demands sustained aggression (the HARD RULE). Decay is NOT a spend.
-  // dt is in 120fps-frames (dtScale=1 @ 120fps), so sum(dt)/sec = 120 → divide by 120 for a
-  // true per-SECOND rate. (Was /60 — that silently DOUBLED decay to ~8/sec, the tuning bug.)
-  _lev_addFathom(-LEV_FATHOM_DECAY_PER_S * dt / 120);
+  // FATHOM DECAYS (Part 1 re-tune): kills SUSTAIN it; idle lets it ebb. Decay is BANDED + steeper the
+  // deeper you are (_lev_decayPerSec) — so ABYSS can't be pinned and, stop killing, you fall out of THE
+  // DEEP/ABYSS (lose the passive buffs) and finally below the DEEP WARD line → you die. Survival demands
+  // sustained aggression (the HARD RULE). Decay is NOT a spend. dt is in 120fps-frames (dtScale=1 @
+  // 120fps), so sum(dt)/sec = 120 → divide by 120 for a true per-SECOND rate.
+  _lev_addFathom(-_lev_decayPerSec() * dt / 120);
   // Announce crossing UP into THE DEEP / THE ABYSS (re-arms as you ebb back down). Per-band
   // gate + throttle so jitter right at a threshold (slow decay vs discrete kills) can't spam.
   { const bt = _lev_buffTier(); if (bt > _lev_bandShown) { _lev_bandPulse = now; _lev_flash(bt >= 2 ? 'deepenAbyss' : 'deepenDeep', bt >= 2 ? 'THE ABYSS' : 'THE DEEP', bt >= 2 ? '170,255,235' : LEVIATHAN_PATH_COLORS.tide, 1200); } _lev_bandShown = bt; }
@@ -11811,8 +11861,9 @@ function _lev_whirlpool(g, cx, cy, r, rgb, intensity) {
   g.restore();
 }
 
-// Orthographic-3D ring cage (Tachyon Dyson technique) in an abyss palette — shared by the
-// MAELSTROM burst and the "Maelstrom Wake" trail aura. ~ringCount×2 strokes.
+// Orthographic-3D ring cage (Tachyon Dyson technique) in an abyss palette — used by the MAELSTROM
+// BURST only (the around-orb trail aura is a distinct churning-water look, see _lev_drawMaelstromAura
+// — Part 4: it must NOT read as Tachyon's crisp light cage). ~ringCount×2 strokes.
 const _LEV_CAGE_AXES = [ {p:0,y:0}, {p:0,y:Math.PI/3}, {p:0,y:2*Math.PI/3}, {p:Math.PI/2,y:0}, {p:Math.PI/4,y:Math.PI/5}, {p:-Math.PI/4,y:-Math.PI/4} ];
 function _lev_dysonCage(g, cx, cy, R, rgb, alpha, ringCount, spin) {
   if (!(R > 2) || alpha <= 0.01) return;
@@ -11869,14 +11920,58 @@ function _lev_drawMaelstrom(g, m, t) {
   g.restore();
 }
 
-// MAELSTROM WAKE around-orb aura (the premium unlocked trail's signature) — now a true
-// Dyson-style 3D cage (two counter-rotating woven shells) around the orb, abyss palette. Drawn
-// from drawPlayer's end (gameplay) and the orb preview, exactly where Tachyon's Dyson sphere is.
+// MAELSTROM WAKE around-orb aura (the premium unlocked trail's signature). PART 4 — DELIBERATELY
+// NOT Tachyon's crisp orthographic Dyson cage (which the burst still uses): this reads as a DEEP-OCEAN
+// MAELSTROM, not light-speed cherenkov. Same class of around-orb trail (rings/lines around the orb) but:
+//  • CURRENT BANDS — concentric rings whose radius RIPPLES with a travelling sine (waves that wind
+//    around the hull) so they churn like swirling water, not geometric great-circles; counter-rotating,
+//    speed ebbing in and out, slightly flattened for a "looking down into the deep" perspective.
+//  • RISING BUBBLES — small hollow motes drift UP through the wake and fade (foam/ink of the abyss).
+//  • Deep ABYSSAL teal palette (dark teal glow → green-teal current → pale foam), vs Tachyon's bright
+//    cyan/violet light. Drawn from drawPlayer's end (gameplay) and the orb preview.
 function _lev_drawMaelstromAura(g, cx, cy, intensity, rOverride) {
   const baseR = (rOverride || 24) * 1.12;
+  const now = Date.now();
   const a = 0.5 + Math.min(0.4, (intensity || 0) * 0.05);
-  _lev_dysonCage(g, cx, cy, baseR, '120,225,235', a, 3 + (intensity > 1.2 ? 1 : 0), 0.8);
-  _lev_dysonCage(g, cx, cy, baseR * 0.64, '150,255,225', a * 0.7, 2, -1.15);   // inner counter-rotating shell
+  const DEEP = '20,120,135', CURRENT = '36,186,160', FOAM = '170,255,232';   // abyssal teal ramp
+  g.save(); g.globalCompositeOperation = 'lighter'; g.lineCap = 'round';
+  // CURRENT BANDS — rippling concentric rings (the maelstrom's churn around the orb)
+  const churn = now * 0.0016, BANDS = 3, SEG = 40;
+  for (let bnd = 0; bnd < BANDS; bnd++) {
+    const dir = bnd % 2 ? -1 : 1;
+    const rBase = baseR * (0.62 + bnd * 0.27);
+    const phase = churn * dir * (1.0 + 0.25 * Math.sin(now * 0.0011 + bnd)) + bnd * 1.7;   // ebbing churn speed
+    const waves = 3 + bnd;                                          // more undulation on outer bands
+    const amp = rBase * (0.12 + 0.045 * Math.sin(now * 0.003 + bnd));   // breathing ripple depth
+    const trace = (lw, col) => {
+      g.lineWidth = lw; g.strokeStyle = col; g.beginPath();
+      for (let i = 0; i <= SEG; i++) {
+        const th = (i / SEG) * 6.2832;
+        const rr = rBase + Math.sin(th * waves + phase) * amp;       // travelling wave = a current, not a hoop
+        const px = cx + Math.cos(th) * rr, py = cy + Math.sin(th) * rr * 0.9;   // flattened = depth perspective
+        if (i === 0) g.moveTo(px, py); else g.lineTo(px, py);
+      }
+      g.closePath(); g.stroke();
+    };
+    trace(3.2, `rgba(${DEEP},${(a * 0.34).toFixed(3)})`);            // deep-teal glow band
+    trace(1.2, `rgba(${CURRENT},${(a * 0.72).toFixed(3)})`);         // bright current core
+  }
+  // RISING BUBBLES — procedural (time-hashed), no persistent array. They rise from below the orb and fade.
+  const BUB = 7;
+  for (let i = 0; i < BUB; i++) {
+    const seed = i * 1.61803;
+    const life = (now * 0.0006 + seed) % 1;                          // 0..1 ascent
+    const ang = seed * 6.2832;
+    const spread = baseR * (0.42 + (i % 3) * 0.22);
+    const bx = cx + Math.cos(ang) * spread * (0.6 + 0.4 * Math.sin(seed * 3 + now * 0.001));
+    const by = cy + baseR * 0.95 - life * baseR * 2.1;               // drift upward through the wake
+    const br = (1.1 + (i % 2) * 0.9) * (1 - life * 0.45);
+    const ba = a * 0.6 * Math.sin(life * Math.PI);                   // fade in then out over the rise
+    if (ba <= 0.02) continue;
+    g.beginPath(); g.strokeStyle = `rgba(${FOAM},${ba.toFixed(3)})`; g.lineWidth = 1;
+    g.arc(bx, by, Math.max(0.5, br), 0, 6.2832); g.stroke();         // hollow bubble
+  }
+  g.restore();
 }
 function _lev_draw() {
   const g = ctx; const now = Date.now();
@@ -12015,6 +12110,14 @@ OrbHooks.on('onResetGame', () => {
   _lev_mawFrenzy = 0; _lev_tideEchoAt = 0; _lev_tideEchoR = 0; _lev_tideEchoKing = false;
   _lev_maelstrom = null; _lev_rings = []; _lev_bolts = [];
   _lev_flashes = []; _lev_flashGates = {};
+  // PART 1: the MAELSTROM auto-fires on cooldown, so START the run on a FULL cooldown — the burst bar
+  // begins EMPTY and the first auto-fire lands ~30s in, NOT at run start. Runs after the generic reset
+  // (burstCooldownEnd=0) emits onResetGame, so this override wins. Leviathan-only (other orbs start ready).
+  if (activeOrb === 'leviathan') {
+    burstCooldownDuration = BURST_COOLDOWN();
+    burstCooldownStart = Date.now();
+    burstCooldownEnd = Date.now() + burstCooldownDuration;
+  }
 });
 
 // === LEVIATHAN custom tree UI (cloned from the tachyon branching layout) ===
@@ -24201,11 +24304,12 @@ function updatePixiPowerupLayer() {
       const rgb2 = POWERUP_COLORS[q.type].rgb;
       const parts1 = rgb1.split(',').map(n => parseInt(n,10)|0);
       const parts2 = rgb2.split(',').map(n => parseInt(n,10)|0);
-      const mix = (
+      let mix = (
         (((parts1[0] + parts2[0]) >> 1) << 16) |
         (((parts1[1] + parts2[1]) >> 1) << 8)  |
          ((parts1[2] + parts2[2]) >> 1)
       );
+      if (activeOrb === 'leviathan') mix = 0x8CEBD7;   // PART 3: abyssal-teal tether (matches 140,235,215) — Leviathan only
       // Outer glow beam
       tg.lineStyle({ width: 5, color: mix, alpha: 0.35 * pulse * 0.9 });
       tg.moveTo(p.x, p.y); tg.lineTo(q.x, q.y);
@@ -26253,6 +26357,7 @@ function _activateCombo_default(key, x, y) {
 }
 
 function activatePair(a, b) {
+  if (_lev_powerupToFathom(true, a.type)) return;   // PART 3: Leviathan converts the pair to +20 FATHOM, no normal effect
   if (typeof Sentry !== 'undefined') Sentry.addBreadcrumb({ category: 'powerup', message: 'picked up ' + a.type, level: 'info' });
   if (typeof Sentry !== 'undefined') Sentry.addBreadcrumb({ category: 'powerup', message: 'picked up ' + b.type, level: 'info' });
   emitPickupParticles(a.x, a.y, a.type);
@@ -26733,6 +26838,7 @@ function activateHyperspeed(durationOverride, peakScale, source) {
 }
 
 function activatePowerup(type, x, y) {
+  if (_lev_powerupToFathom(false, type)) return;   // PART 3: Leviathan converts the pickup to FATHOM, no normal effect
   if (typeof Sentry !== 'undefined') Sentry.addBreadcrumb({ category: 'powerup', message: 'picked up ' + type, level: 'info' });
   // Burst originates at the player (pickup is consumed INTO the player).
   // Previous behavior used pickup coords which drifted above the player by
@@ -28060,7 +28166,11 @@ function _updateCore() {
   // Burst trigger: also catches keyboard-held combos each frame.
   if (leftDown && rightDown) burstTriggered = true;
   const burstReady = Date.now() >= burstCooldownEnd;
-  if (burstTriggered && burstReady) {
+  // PART 1: Leviathan's MAELSTROM AUTO-FIRES the moment it's off cooldown — no left+right needed (the
+  // auto-drain on a timer is the balance valve that stops ABYSS being pinned). Every OTHER orb still
+  // requires the manual left+right trigger. Gated to live gameplay so it never fires while paused/dead/menu.
+  const levAutoBurst = (activeOrb === 'leviathan') && (state === 'playing' || state === 'devmode' || state === 'apocalypse');
+  if ((burstTriggered || levAutoBurst) && burstReady) {
     executeBurst();
     burstCooldownDuration = BURST_COOLDOWN();
     burstCooldownStart = Date.now();   // Salvage 50% floor reference
@@ -33684,8 +33794,9 @@ function drawPairTethers() {
     if (q.collected) continue;
     const rgb1 = POWERUP_COLORS[p.type].rgb;
     const rgb2 = POWERUP_COLORS[q.type].rgb;
-    // Mixed color by averaging
-    const mix = rgb1.split(',').map((n, i) => Math.round((+n + +rgb2.split(',')[i]) / 2)).join(',');
+    // Mixed color by averaging (Leviathan: force abyssal-teal so the tether matches the FATHOM-point icons)
+    const mix = (activeOrb === 'leviathan') ? LEV_POWERUP_RGB
+      : rgb1.split(',').map((n, i) => Math.round((+n + +rgb2.split(',')[i]) / 2)).join(',');
     const pulse = Math.sin(frame * 0.18) * 0.3 + 0.7;
     const segments = 6;
     ctx.save();
@@ -33724,7 +33835,10 @@ function drawSinglePowerup(p, tctx = ctx) {
   const ctx = tctx;
   const pulse = Math.sin(p.pulse) * 0.35 + 0.65;
   const r = p.radius * (0.95 + Math.sin(p.pulse) * 0.18);
-  const rgb = POWERUP_COLORS[p.type].rgb;
+  // PART 3 reskin (Leviathan ONLY): every powerup icon recolours to abyssal-teal so it reads as a FATHOM
+  // point (it grants FATHOM, not its normal effect). Halo/ring/icon all key off `rgb` → this one override
+  // reskins BOTH the #c path AND the Pixi path (which renders via this same fn). Other orbs: unchanged.
+  const rgb = (activeOrb === 'leviathan') ? LEV_POWERUP_RGB : POWERUP_COLORS[p.type].rgb;
   // Outer pulsing halo
   ctx.globalAlpha = 0.55 * pulse;
   const grd = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, r * 3.4);
@@ -34399,7 +34513,7 @@ function updateCapstoneCountdowns() {
       if (shroudFlagSet) { primed = true; progress = 1; }
       else progress = Math.max(0, Math.min(1, (now - shroudLastFireTime) / SHROUD_FLAG_ARM_MS));
     }
-    set('capCdShroud', owned, progress, 'rgba(200,150,255,0.95)', primed, false);
+    set('capCdShroud', owned, progress, `rgba(${COSMIC_PATH_COLORS.veil},0.95)`, primed, false);   // PART 3: VEIL (ghost) tree color
   }
   // NIGHT SHADE — Phantom. Cycle constant shared with tickCapstoneTimers.
   {
@@ -34409,7 +34523,7 @@ function updateCapstoneCountdowns() {
     const progress = Math.max(0, Math.min(1, elapsed / NIGHT_SHADE_CYCLE_MS));
     const firing = owned && (now - (capCdLastFired.nightShade || 0) < 300);
     if (owned && fireTs > 0 && fireTs <= now + 50) capCdLastFired.nightShade = now;
-    set('capCdNightShade', owned, progress, 'rgba(200,150,255,0.95)', false, firing);
+    set('capCdNightShade', owned, progress, `rgba(${COSMIC_PATH_COLORS.dusk},0.95)`, false, firing);   // PART 3: DUSK tree color (endlessDusk lives in DUSK)
   }
   // SUN FORGE — Inferno. Cycle constant shared with tickCapstoneTimers.
   {
@@ -34419,7 +34533,7 @@ function updateCapstoneCountdowns() {
     const progress = Math.max(0, Math.min(1, elapsed / SUN_FORGE_CYCLE_MS));
     const firing = owned && (now - (capCdLastFired.sunForge || 0) < 300);
     if (owned && fireTs > 0 && fireTs <= now + 50) capCdLastFired.sunForge = now;
-    set('capCdSunForge', owned, progress, 'rgba(255,180,80,0.95)', false, firing);
+    set('capCdSunForge', owned, progress, `rgba(${SOLAR_PATH_COLORS.corona},0.95)`, false, firing);   // PART 3: CORONA tree color (sunForge lives in CORONA)
   }
   // AEGIS — Bulwark. Cycle constant shared with tickCapstoneTimers.
   {
@@ -34429,7 +34543,7 @@ function updateCapstoneCountdowns() {
     const progress = Math.max(0, Math.min(1, elapsed / AEGIS_CYCLE_MS));
     const firing = owned && (now - (capCdLastFired.aegis || 0) < 300);
     if (owned && fireTs > 0 && fireTs <= now + 50) capCdLastFired.aegis = now;
-    set('capCdAegis', owned, progress, 'rgba(120,230,255,0.95)', false, firing);
+    set('capCdAegis', owned, progress, `rgba(${ASTEROID_PATH_COLORS.fortification},0.95)`, false, firing);   // PART 3: RAMPART/fortification tree color (matches the AEGIS flash)
   }
   // LINGERING HORIZON — Warp. Cycle constant shared with tickCapstoneTimers.
   // v1.7.0 stretched it to 120 s; v1.6.6 reverts to 90 s. Single-constant
@@ -34445,7 +34559,7 @@ function updateCapstoneCountdowns() {
     const firing = owned && lingeringHorizonLastFireTime > 0
       && (now - lingeringHorizonLastFireTime < 300);
     if (owned && firing) capCdLastFired.eventHorizon = lingeringHorizonLastFireTime;
-    set('capCdEventHorizon', owned, progress, 'rgba(255,200,80,0.95)', false, firing);
+    set('capCdEventHorizon', owned, progress, `rgba(${NEBULA_PATH_COLORS.duration},0.95)`, false, firing);   // PART 3: DURATION tree color (matches the LINGERING HORIZON flash)
   }
   // SINGULARITY — Warp Cap capstone. v1.9.0 rework: a 20s charge. PRIMED (glowing)
   // when charged/ready or while the current warp is armed for a rift; otherwise
@@ -34457,7 +34571,7 @@ function updateCapstoneCountdowns() {
     const primed = owned && (charged || nebulaSingularityArmedInstance);
     const progress = primed ? 1 : Math.max(0, Math.min(1, (SINGULARITY_CD_MS - (nebulaRiftNextArm - now)) / SINGULARITY_CD_MS));
     const firing = owned && !!nebulaRift && (now - nebulaRift.startTime < 300);
-    set('capCdSingularity', owned, progress, 'rgba(150,120,255,0.95)', primed, firing);
+    set('capCdSingularity', owned, progress, `rgba(${NEBULA_PATH_COLORS.cap},0.95)`, primed, firing);   // PART 3: CAP tree color (matches the SINGULARITY flash)
   }
   // HELIOS — Zenith (Sundog), Corona Storm (Prominence), Zenith Flash (Heliograph).
   {
@@ -34515,6 +34629,10 @@ function updateBurstBar() {
   burstIndicatorEl.classList.toggle('visible', visible);
   if (!visible) return; // preserve burstReadyPrev across pause/death so the
                         // resume frame doesn't false-positive the cue.
+  // PART 2: the burst ring uses the ACTIVE ORB's own colour (was hardcoded orange). activeOrbColor()
+  // returns the orb's signature 'R,G,B' (ORB_DEFS[activeOrb].color) — the same source the trails/death FX
+  // use — so Leviathan = abyssal teal, Tachyon = cherenkov blue, Helios = gold, etc., none left orange.
+  burstIndicatorEl.style.setProperty('--burst-color', 'rgba(' + (activeOrbColor() || '255,170,0') + ',0.95)');
   const ready = (burstCooldownEnd === 0) || (Date.now() >= burstCooldownEnd);
   const pct = ready
     ? 1
@@ -40776,6 +40894,12 @@ const TREE_TERM_COLOR = {
   echo: '120,220,255', recurrence: '120,220,255',
   divergence: '170,150,255', convergence: '210,180,255',
   formation: '170,150,255', escort: '170,150,255', lance: '210,180,255',
+  well: '210,180,255', quasar: '210,180,255',
+  // Leviathan terms (abyssal teal palette; mechanics in their tree's hue).
+  fathom: '170,255,235', deep: '150,230,210', abyss: '170,255,235',
+  crush: '120,255,210', devour: '90,200,170', graze: '120,255,210',
+  chains: '120,255,210', storm: '120,255,210', maelstrom: '120,200,180',
+  ward: '200,180,255',
 };
 
 // Glossary copy — wry/mocking "???" narrator voice; the term itself is bolded
@@ -40803,9 +40927,22 @@ const TREE_GLOSSARY = {
   recurrence: "Recurrence. Your past selves retrace exactly where you just flew, then detonate there. History repeating, violently, on purpose. <b>Recurrence.</b>",
   divergence: "Divergence. Future yous refuse to wait — they fly in formation beside you and fire ahead. Teamwork, if the team were all you. <b>Divergence.</b>",
   convergence: "Convergence. All your scattered echoes snap into one and strike as a single lance. Many yous, one very pointed opinion. <b>Convergence.</b>",
-  formation: "Formation. Your escort-clones holding position around you like obedient ghosts of momentum. They fly with you; they do not babysit you. <b>Formation.</b>",
-  escort: "Escort. A clone flying alongside you, firing forward on a beat. It will not body-block planets for you — that's still your job. <b>Escort.</b>",
+  formation: "Formation. Your escort-clones holding the V around you like obedient ghosts of momentum, guns forward. <b>Formation.</b>",
+  escort: "Escort. A clone flying alongside you, firing forward on a beat — an extra gun that keeps your pace. <b>Escort.</b>",
   lance: "Lance. A line of collapsed echoes punched straight through everything between you and your target. A beam, but angrier. Aim it at a crowd. <b>Lance.</b>",
+  well: "Gravity well. A dent torn in space at the densest knot of bodies — they slide in, then it snaps shut with them inside. <b>Gravity well.</b>",
+  quasar: "Quasar. A gravity well that got greedy — vast, long-lived, and it swallows a whole quarter of the sky before it's spent. <b>Quasar.</b>",
+  // Leviathan terms — Sirius AS the leviathan, low and pleased with itself.
+  fathom: "Fathom. How deep you've sounded. Every crush sinks you deeper; stop killing and you bob back up. Deep enough and the whole kit wakes. <b>Fathom.</b>",
+  deep: "The Deep. Past half-FATHOM. The pressure turns — everything reaches farther, breaks faster, pulls harder. <b>The Deep.</b>",
+  abyss: "The Abyss. Past four-fifths FATHOM. Deeper still, crueller still. You won't hold it long — that's rather the point. <b>The Abyss.</b>",
+  crush: "Crush. A body folded down to nothing. Each one feeds your FATHOM. <b>Crush.</b>",
+  devour: "Devour. The maw takes a body whole and wants the next. A crush, with appetite. <b>Devour.</b>",
+  graze: "Graze. Let a body skim your hull and NOT touch it. Reckless. It charges the storm. <b>Graze.</b>",
+  chains: "Chains. The break leaps body to body across the field, hunting the strays. Lightning with a grudge. <b>Chains.</b>",
+  storm: "Storm. Static pressure you wind up by courting the brink — at full charge it BREAKS, an EMP shock that crushes everything near. <b>Storm.</b>",
+  maelstrom: "Maelstrom. Your burst. A whirlpool that drags the whole field into one screaming collapse. It costs FATHOM — spend it well. <b>Maelstrom.</b>",
+  ward: "Deep Ward. Sounded deep enough, a hit that would kill you is shrugged off instead — for a price in FATHOM. Not a shield. Not forever. <b>Deep Ward.</b>",
 };
 
 function escTreeHtml(s) {
@@ -40837,11 +40974,33 @@ function treeTermKey(matchLower) {
   if (m === 'formation' || m === 'formations') return 'formation';
   if (m === 'escort' || m === 'escorts') return 'escort';
   if (m === 'lance' || m === 'lances') return 'lance';
+  // Tachyon MAELSTROM-path terms.
+  if (m === 'gravity well' || m === 'gravity wells') return 'well';
+  if (m === 'quasar' || m === 'quasars') return 'quasar';
+  // Leviathan terms.
+  if (m === 'the deep') return 'deep';
+  if (m === 'the abyss') return 'abyss';
+  if (m === 'fathom' || m === 'fathoms') return 'fathom';
+  if (m === 'maelstrom' || m === 'maelstroms') return 'maelstrom';
+  if (m === 'crush' || m === 'crushes' || m === 'crushed') return 'crush';
+  if (m === 'devour' || m === 'devours' || m === 'devoured') return 'devour';
+  if (m === 'graze' || m === 'grazes') return 'graze';
+  if (m === 'chain' || m === 'chains') return 'chains';
+  if (m === 'storm' || m === 'storms') return 'storm';
+  if (m === 'deep ward' || m === 'ward' || m === 'wards') return 'ward';
   return null;
 }
+// Orb-scoped terms — clickable ONLY inside their own orb's tree. The formatter is shared across every
+// orb, so this keeps generic words (Bulwark's "chains"/"crushed", Helios's "Storm"/"Kinetic Ward")
+// from popping a Leviathan/Tachyon blurb in the wrong tree. Terms absent here stay global (nova, shield…).
+const TREE_TERM_SCOPE = {
+  fathom: 'leviathan', deep: 'leviathan', abyss: 'leviathan', crush: 'leviathan', devour: 'leviathan',
+  graze: 'leviathan', chains: 'leviathan', storm: 'leviathan', maelstrom: 'leviathan', ward: 'leviathan',
+  well: 'tachyon', quasar: 'tachyon',
+};
 // Longest-first alternation so "pair combo" beats "pair", "supernova" beats
 // "nova". Case-insensitive; \b keeps "nova" out of "Supernova" etc.
-const TREE_TERM_RE = /\b(pair combos|pair combo|hyperspeed|supernovas?|powerups?|shields?|bursts?|singles?|pairs?|novas?|ghosts?|streaks?|emps?|stacks?|sundogs?|prominence|heliograph|beams?|echoes|echos|echo|recurrence|divergence|convergence|formations?|escorts?|lances?)\b/gi;
+const TREE_TERM_RE = /\b(pair combos|pair combo|hyperspeed|supernovas?|powerups?|shields?|bursts?|singles?|pairs?|novas?|ghosts?|streaks?|emps?|stacks?|sundogs?|prominence|heliograph|beams?|echoes|echos|echo|recurrence|divergence|convergence|formations?|escorts?|lances?|gravity wells?|deep ward|the deep|the abyss|fathoms?|maelstroms?|crush(?:es|ed)?|devour(?:s|ed)?|grazes?|chains?|storms?|quasars?|wards?)\b/gi;
 // Numbers / math: signed numbers with optional decimals/commas + an optional
 // trailing unit (only units that can't be confused with a word — the (?![A-Za-z])
 // lookahead stops "s" in "shield" from matching), plus standalone → and ×.
@@ -40855,7 +41014,7 @@ function formatTreeNumbers(escaped) {
 // Full description formatting: type label + numbers + clickable terms.
 // Order matters: numbers BEFORE terms, because term spans inject colour
 // attributes containing digits that the number regex must not re-scan.
-function formatNodeDesc(raw) {
+function formatNodeDesc(raw, orbKey) {
   let s = escTreeHtml(raw || '');
   // Pull the leading KEYSTONE/CAPSTONE label — AND its "(N pts)" budget cost, if
   // present — onto its own gold line (the span is display:block). Extracting it
@@ -40874,6 +41033,8 @@ function formatNodeDesc(raw) {
   s = s.replace(TREE_TERM_RE, (full) => {
     const key = treeTermKey(full.toLowerCase());
     if (!key) return full;
+    const scope = TREE_TERM_SCOPE[key];
+    if (scope && scope !== orbKey) return full;   // orb-specific term outside its tree → leave plain
     const rgb = TREE_TERM_COLOR[key] || '125,232,255';
     return `<span class="tree-term" data-gloss="${key}" style="color:rgba(${rgb},1)">${full}</span>`;
   });
@@ -40909,7 +41070,7 @@ function _renderTreeDetail_default() {
     const current = state[t.pathKey][t.nodeIdx] | 0;
     titleEl.textContent = node.name;
     titleEl.style.color = `rgba(${def.color},1)`;
-    descEl.innerHTML = formatNodeDesc(node.desc);
+    descEl.innerHTML = formatNodeDesc(node.desc, t.orbKey);
     let ranksHtml = '';
     for (let r = 1; r <= node.max; r++) {
       const cls = r <= current ? 'current' : (r === current + 1 ? 'next' : '');
@@ -40976,7 +41137,7 @@ function _renderTreeDetail_default() {
     const frozen = owned && !prereqOkCap;
     titleEl.textContent = '★ ' + cap.name;
     titleEl.style.color = `rgba(${def.color},1)`;
-    descEl.innerHTML = formatNodeDesc(cap.desc);
+    descEl.innerHTML = formatNodeDesc(cap.desc, t.orbKey);
     ranksEl.innerHTML = frozen
       ? '<div class="rank-row next">Unlocked · effect suspended (prereq missing)</div>'
       : owned
