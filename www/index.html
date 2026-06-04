@@ -8180,6 +8180,13 @@ ORB_BEHAVIOR.nebula.respecTree = function(orbKey) {
   return true;
 };
 OrbHooks.on('afterLoadTreeState', () => { maybeMigrateNebula(); ActiveBudget.restoreActivePoints('nebula'); });
+// KILL-RATE REBALANCE (v2.3.x): Warp burst cooldown 30s → 60s. Warp's burst grants +2
+// hyperspeed stacks (see _executeBurst_default), and a near-permanent burst loop (Ramjet's
+// once-limitless CD shave) kept the kill-farming hyperspeed barrier topped up. Doubling the
+// base CD — alongside Ramjet's new 50% floor and the hyperspeed scroll/flux cap — pulls
+// Warp's kill rate back toward the field without gutting its speed identity. Tree/live CD
+// reductions still apply on top of this base.
+ORB_BEHAVIOR.nebula.burstCooldown = function() { return 2 * BURST_COOLDOWN_MS; };
 
 // === NEBULA flash feedback (path-coloured, throttled) ======================
 let _nebula_flashes = [];
@@ -8715,18 +8722,23 @@ ORB_BEHAVIOR.tachyon.respecTree = function(orbKey) {
   if (orbKey === activeOrb) refreshActiveTreeCache();
   return true;
 };
-// Tachyon hyperspeed cap: BASE 8 (vs Warp's lower base), grown during the run
+// Tachyon hyperspeed cap: BASE 6 (vs Warp's lower base), grown during the run
 // by the two kill-milestone capstones (Eternal Wake / All Timelines) up to a
-// hard ceiling of 20. _tachyonCapBonus is per-run, reset in onResetGame.
+// hard ceiling of 20 — so the cap climbs 6→20 over a run. _tachyonCapBonus is
+// per-run, reset in onResetGame.
 let _tachyonCapBonus = 0;
-const TACHYON_BASE_MAX_STACKS = 8;
+const TACHYON_BASE_MAX_STACKS = 6;   // v2.3.x: trimmed 8→6 (ceiling/ milestones unchanged at 20)
 const TACHYON_MAX_STACKS_CEILING = 20;
 ORB_BEHAVIOR.tachyon.hyperspeedMaxStacks = function() {
   return Math.min(TACHYON_MAX_STACKS_CEILING, TACHYON_BASE_MAX_STACKS + (_tachyonCapBonus | 0));
 };
-// (Burst-cooldown standardization: Tachyon's old flat 18000 override was removed so
-// it uses the shared 30000 base like every other orb; its tree/live reductions —
-// Slipstream Echo, etc. — and the burst's max-cap slam still apply on top.)
+// KILL-RATE REBALANCE (v2.3.x): Tachyon burst cooldown 30s → 60s. TEMPORAL FRACTURE SLAMS
+// hyperspeed to the FULL current cap (6→20) every fire — instant peak scroll = instant peak
+// body flux = the single biggest spike in Tachyon's farm. At 30s it re-peaked constantly;
+// 60s halves how often it max-slams, and the hyperspeed scroll/flux cap bounds the peak
+// itself. (Tachyon's old flat 18000 override was removed in a prior pass; its tree/live
+// reductions and the burst's max-cap slam still apply on top of this 60s base.)
+ORB_BEHAVIOR.tachyon.burstCooldown = function() { return 2 * BURST_COOLDOWN_MS; };
 OrbHooks.on('afterLoadTreeState', () => { ActiveBudget.restoreActivePoints('tachyon'); });
 
 // === TACHYON flash feedback (cloned from _helios flash helpers) ============
@@ -9312,7 +9324,7 @@ OrbHooks.on('onUpdate', () => {
   // long-lived well at the densest cluster (own ephemeral pool — no echo-cap cost).
   if (rankOf('tachyon_syzygy') > 0 && hyperSpeedStacks >= 5 && now - _tachyonSyzygyAt >= 20000) {
     // Part 1 diagnosis: the >=5 gate IS reached in normal play (the burst slams to the
-    // max cap, 8+, ~every 20s ≈ this CD), so it fires — but the Quasar well looked
+    // max cap, 6+, ~every 20s ≈ this CD), so it fires — but the Quasar well looked
     // identical to a regular well (just bigger) and fired amid burst chaos → "no felt
     // difference". Cause = indistinctness, not the gate. Fix = distinct render + a beat.
     _tachyonSyzygyAt = now;
@@ -9346,7 +9358,7 @@ OrbHooks.on('onResetGame', () => {
 
 // === TACHYON bespoke burst — TEMPORAL FRACTURE =============================
 ORB_BEHAVIOR.tachyon.executeBurst = function() {
-  // The burst SLAMS hyperspeed to the CURRENT max cap (8 early, up to 20 late).
+  // The burst SLAMS hyperspeed to the CURRENT max cap (6 early, up to 20 late).
   // The per-stack hyperspeed DURATION buff applies naturally as the stacks rise,
   // so that instant max-cap slam IS the burst's payoff. NO echo shed (Recurrence's
   // own faithful echoes are separate and still shed on their own timer); no
@@ -9359,7 +9371,7 @@ ORB_BEHAVIOR.tachyon.executeBurst = function() {
   try { addShake(9); } catch (e) {}
   try { triggerHitstop(60); } catch (e) {}
   _tachyon_flash('burst', 'TEMPORAL FRACTURE', TACHYON_CORE, 0);
-  try { SFX.playSfxBuffer('temporalFracture', 0.55); } catch (e) {}   // Part 3: bespoke burst cue (layers over the hyperspeed whoosh)
+  try { SFX.playSfxBuffer('temporalFracture', 0.78); } catch (e) {}   // bespoke burst cue (layers over the whoosh); v2.3.x mix: 0.55→0.78 so it tops the kill stream (paired with the burst's destroy-duck)
   return true;
 };
 
@@ -11338,7 +11350,7 @@ function _lev_buffTier() { const d = _lev_fathom / LEV_FATHOM_MAX; return d >= 0
 const LEV_BUFF_SIZE        = [1.0, 1.25, 1.55];   // radius / reach multiplier by band — PERCEPTIBLE steps
 const LEV_BUFF_RATE        = [1.0, 1.35, 1.75];   // charge / cadence speed by band
 const LEV_BUFF_FORCE       = [1.0, 1.30, 1.70];   // pull strength by band
-const LEV_BUFF_TIDE_PERIOD = [1.0, 0.80, 0.62];   // TIDE breath period by band (smaller = faster breaths)
+const LEV_BUFF_TIDE_PERIOD = [1.0, 0.80, 0.70];   // TIDE breath period by band (smaller = faster breaths). PART 4 (v2.3.x): ABYSS 0.62→0.70 — TIDE at ABYSS read near hands-off, so slow its cadence a touch (slower breaths = more mortal gaps AND a less frequent every-3rd King). Still clearly faster than THE DEEP (0.80); SURFACE/DEEP untouched.
 let _lev_bandPulse = 0;    // timestamp of the last band-up (HUD pulse)
 // Throttled SFX helper — plays an existing buffer sound, rate-limited per key so per-frame
 // triggers (devour/collapse) don't machine-gun. Placeholders until bespoke .mp3s land.
@@ -11361,24 +11373,37 @@ const LEV_WARD_IFRAME_MS = 600;  // brief grace after a save (no permanent invul
 let _lev_wardNextTime = 0;       // ward re-arm timestamp
 let _lev_wardFx = 0;             // last ward-save timestamp (for the save flash)
 
-// === PART 3 — POWERUPS → FATHOM (Leviathan ONLY) ========================================
-// When Leviathan is active, EVERY powerup pickup converts to FATHOM instead of its normal effect: a
-// simultaneous PAIR = +20, a SINGLE = +10. HARD-gated on activeOrb==='leviathan' — the helper bails for
-// every other orb, so their pickup effects + visuals stay byte-identical. NOT an infinite-safety exploit:
-// FATHOM still DECAYS (banded, steeper the deeper you are) and the DEEP WARD costs 40/hit, and powerups
+// === PART 2 (v2.3.x) — POWERUPS grant EFFECT *and* FATHOM (Leviathan ONLY) ===============
+// When Leviathan is active, a powerup pickup now does BOTH: it runs its NORMAL effect AND banks FATHOM
+// (a simultaneous PAIR = +20, a SINGLE = +10). (Earlier passes converted the pickup to FATHOM INSTEAD of
+// the effect; that early-return is gone.) HARD-gated on activeOrb==='leviathan' — the helper bails for
+// every other orb, so their pickup effects + visuals stay byte-identical. Still NOT an infinite-safety
+// exploit: FATHOM DECAYS (banded, steeper the deeper you are), the DEEP WARD costs 40/hit, and powerups
 // spawn only intermittently — so pickups TOP UP your depth (esp. for TIDE, which struggled to climb on
-// kills alone), they cannot pin THE ABYSS or hold the ward on their own. Icon reskin: see drawSinglePowerup.
+// kills alone); they cannot pin THE ABYSS or hold the ward on their own. Icon reskin: see drawSinglePowerup.
 const LEV_FATHOM_PER_PAIR = 20, LEV_FATHOM_PER_SINGLE = 10;
-const LEV_POWERUP_RGB = '140,235,215';   // abyssal-teal — Leviathan powerups read as FATHOM/resource points
-function _lev_powerupToFathom(isPair, type) {
-  if (activeOrb !== 'leviathan') return false;   // hard scope — never touches any other orb's pickup path
+const LEV_POWERUP_RGB = '140,235,215';   // abyssal-teal anchor — Leviathan pickups are tinted TOWARD this per type (see _lev_powerupTint)
+// PART 2 (v2.3.x): Leviathan pickups grant the NORMAL powerup effect AND bank FATHOM (+20 pair /
+// +10 single). The old early-return that converted the pickup to FATHOM-INSTEAD-OF-effect is GONE —
+// the callers (activatePowerup/activatePair) now run the real effect and call this for the FATHOM
+// bonus on top. This adds ONLY the FATHOM + its flash; the callers already emit the pickup particles,
+// SFX and analytics, so we don't duplicate them. Hard-scoped to leviathan — other orbs are byte-identical.
+function _lev_addPickupFathom(isPair) {
+  if (activeOrb !== 'leviathan') return;
   const gain = isPair ? LEV_FATHOM_PER_PAIR : LEV_FATHOM_PER_SINGLE;
   _lev_addFathom(gain);
-  try { emitPickupParticles(player.x, player.y, type); } catch (e) {}   // keep the pickup-burst feel
-  try { SFX.pickup(type); } catch (e) {}
-  try { runStats.powerupsUsed += isPair ? 2 : 1; runPowerupsUsed += isPair ? 2 : 1; } catch (e) {}   // analytics parity; spawn cadence unaffected
   _lev_flash('fathomPU', '+' + gain + ' FATHOM', LEVIATHAN_CORE, 0);
-  return true;
+}
+// PART 2 (v2.3.x) reskin: a Leviathan pickup reads as "this powerup, water-flavored" — each type's OWN
+// colour pulled ~60% toward the abyssal-teal so it stays recognizable (shield cool / nova warm / hyperspeed
+// bright / ghost violet — and the per-type ICON SHAPE is unchanged) yet unmistakably of the deep. NOT a
+// flat resource dot (the old reskin forced every type to one identical teal). Leviathan-only.
+function _lev_powerupTint(type) {
+  const base = (POWERUP_COLORS[type] && POWERUP_COLORS[type].rgb) || LEV_POWERUP_RGB;
+  const a = LEV_POWERUP_RGB.split(',');
+  const b = base.split(',');
+  const t = 0.6;   // weight toward abyssal-teal; the remaining 0.4 preserves the type's own hue identity
+  return a.map((v, i) => Math.round((+v) * t + (+b[i]) * (1 - t))).join(',');
 }
 
 // === FATHOM CONSUMPTION removed (v5) ====================================================
@@ -11571,7 +11596,7 @@ function _lev_tickBrink(now, dt) {
   if (_lev_storm >= 1) {
     const eye = rankOf('brink_eyeofstorm') > 0;
     const chain = rankOf('brink_chainlightning') > 0;
-    const radius = 120 * LEV_BUFF_SIZE[bt] * (chain ? 1.4 : 1);   // PASSIVE BUFF: THE DEEP/ABYSS break WIDER
+    const radius = 135 * LEV_BUFF_SIZE[bt] * (chain ? 1.4 : 1);   // PASSIVE BUFF: THE DEEP/ABYSS break WIDER. PART 5 (v2.3.x) slight buff: base 120→135 — BRINK lagged MAW/TIDE as an area-clear, so each EARNED storm-break now clears a wider field. Cadence is still graze-gated (no free charge), so it gains punch without becoming dominant; still the smallest footprint of the three.
     _lev_dischargeShock(player.x, player.y, radius, LEVIATHAN_PATH_COLORS.brink, { x: player.x, y: player.y }, LEV_FATHOM_GAIN.brink);
     // Thunderhead (Part 3 NERF) — the break's lightning CHAINS body-to-body to mop up strays
     // a radial pulse leaves standing. Brought UNDER the Eye capstone: up to 3 hops at ~260px
@@ -19152,7 +19177,15 @@ function checkDestroyProc(body, source) {
     // destroyed during ACTIVE hyperspeed. Passive per-kill stat → no flash.
     if (rankOf('smoothEntry') > 0 && activeEffects.hyperspeed > 0 && burstCooldownEnd > Date.now()) {
       const reduce = Math.floor(0.005 * BURST_COOLDOWN_MS);
-      if (reduce > 0) burstCooldownEnd = Math.max(Date.now(), burstCooldownEnd - reduce);
+      if (reduce > 0) {
+        // KILL-RATE REBALANCE (v2.3.x): cap Ramjet's shave at a 50% FLOOR (mirrors
+        // Salvage above). It used to floor only at Date.now(), so during sustained
+        // hyperspeed kills it pulled the burst to ~0 — a limitless, near-permanent
+        // burst loop that kept re-topping the kill-farming hyperspeed barrier. The
+        // floor caps total shave at half the cooldown no matter how fast you kill.
+        const floor = burstCooldownStart + Math.floor(0.5 * burstCooldownDuration);
+        burstCooldownEnd = Math.max(Date.now(), floor, burstCooldownEnd - reduce);
+      }
     }
     // Critical Velocity (Warp Cap T1) v1.9.0: while AT max stacks, 20%
     // chance on body destroyed to detonate a default nova at the kill. 10s CD.
@@ -21175,16 +21208,32 @@ const SFX = (function() {
   // how many cues play (every kill still makes a sound, just quieter in a swarm).
   const DESTROY_SFX_WINDOW_MS = 160;
   let _destroySfxTimes = [];
+  // PART 3 (v2.3.x) side-chain duck: a "must cut through" cue (a burst — see
+  // SFX.duckDestroys) pulls the destroy wall DOWN for a short window so it is
+  // audible over a heavy kill stream. Auto-expires; reset to 1 on the next read.
+  let _destroyDuckUntil = 0;
+  let _destroyDuckLevel = 1;
+  function duckDestroys(ms, level) {
+    const now = Date.now();
+    _destroyDuckUntil = Math.max(_destroyDuckUntil, now + (ms || 250));
+    _destroyDuckLevel = (typeof level === 'number') ? level : 0.4;
+  }
   function destroySfxGainScale() {
     const now = Date.now();
     if (_destroySfxTimes.length > 80) _destroySfxTimes = _destroySfxTimes.slice(-80);
     _destroySfxTimes = _destroySfxTimes.filter(t => now - t < DESTROY_SFX_WINDOW_MS);
     _destroySfxTimes.push(now);
     const n = _destroySfxTimes.length;
-    if (n <= 3) return 1;
-    // Target total ≈ 3× a single cue: each of n cues plays at 3/n, floored so
-    // individual kills stay audible in extreme swarms.
-    return Math.max(0.12, 3 / n);
+    // PART 3 (v2.3.x) mix fix — at Tachyon/Warp kill rates the per-kill destroy cues
+    // formed a CONTINUOUS wall (the old ceiling targeted ~3× a single cue, sustained)
+    // that masked every skill/burst SFX. Up to 3 rapid kills still play full volume
+    // (normal combos untouched); beyond that the SUMMED loudness now targets ~2× a
+    // single cue so a stream stays "present, not a wall". The low 0.08 floor keeps it
+    // bounded even in rainbow mass-kill spikes.
+    let scale = (n <= 3) ? 1 : Math.max(0.08, 2 / n);
+    if (now < _destroyDuckUntil) scale *= _destroyDuckLevel;   // side-chain duck (e.g. just after a burst)
+    else _destroyDuckLevel = 1;
+    return scale;
   }
 
   // Supernova/combo kill — plays the shared NOVA DESTROY clip at 0.85,
@@ -21296,7 +21345,10 @@ const SFX = (function() {
     } else if (kind === 'nova') {
       playSfxBuffer('novaDestroy', 0.45 * ds);
     } else if (kind === 'barrier') {
-      playSfxBuffer('hyperspeedBarrier', 0.65 * ds);
+      // PART 3 (v2.3.x): the hyperspeed-barrier kill is the speed orbs' (Warp/Tachyon)
+      // main kill sound and the loudest brick in the wall — base 0.65 → 0.55. Other
+      // orbs never use 'barrier', so this is targeted at exactly the masking offender.
+      playSfxBuffer('hyperspeedBarrier', 0.55 * ds);
     } else if (kind === 'ghost') {
       // Soft ethereal passthrough — not a destroy. Sine whomp 180→60hz 0.2s
       // plus a brief sine shimmer 2000→800hz 0.08s. Volume 0.15 so it sits
@@ -22299,7 +22351,7 @@ const SFX = (function() {
   }
 
   return {
-    init, attract, repel, pickup, planetDestroyed, death,
+    init, attract, repel, pickup, planetDestroyed, death, duckDestroys,
     comboActivate, comboDestroySound, startHyperspeedWhoosh,
     startApocalypseRumble, playApocalypseImpact, screamShriek, startVoidHum,
     playSfxBuffer,
@@ -26370,7 +26422,7 @@ function _activateCombo_default(key, x, y) {
 }
 
 function activatePair(a, b) {
-  if (_lev_powerupToFathom(true, a.type)) return;   // PART 3: Leviathan converts the pair to +20 FATHOM, no normal effect
+  _lev_addPickupFathom(true);   // PART 2 (v2.3.x): Leviathan ALSO banks +20 FATHOM — the normal pair effect still runs below
   if (typeof Sentry !== 'undefined') Sentry.addBreadcrumb({ category: 'powerup', message: 'picked up ' + a.type, level: 'info' });
   if (typeof Sentry !== 'undefined') Sentry.addBreadcrumb({ category: 'powerup', message: 'picked up ' + b.type, level: 'info' });
   emitPickupParticles(a.x, a.y, a.type);
@@ -26743,7 +26795,7 @@ function computeHyperspeedPeakMult(stacks, peakScale) {
   }
   // (Tachyon's old always-on +0.25 peak coefficient was removed in the baseline
   // trim — Tachyon's per-stack peak now uses the normal model. Its signature vs
-  // Warp is the 8× starting cap + the burst's instant max-cap slam, not raw peak.)
+  // Warp is the 6× starting cap + the burst's instant max-cap slam, not raw peak.)
   let basePeak = Math.max(3.5 * thrustMult * s, (6.0 * thrustMult * s) / Math.max(normSpd, 0.01));
   if (activeOrb === 'nebula') {
     const cap = HYPERSPEED_MAX_STACKS();
@@ -26851,7 +26903,7 @@ function activateHyperspeed(durationOverride, peakScale, source) {
 }
 
 function activatePowerup(type, x, y) {
-  if (_lev_powerupToFathom(false, type)) return;   // PART 3: Leviathan converts the pickup to FATHOM, no normal effect
+  _lev_addPickupFathom(false);   // PART 2 (v2.3.x): Leviathan ALSO banks +10 FATHOM — the normal effect still runs below
   if (typeof Sentry !== 'undefined') Sentry.addBreadcrumb({ category: 'powerup', message: 'picked up ' + type, level: 'info' });
   // Burst originates at the player (pickup is consumed INTO the player).
   // Previous behavior used pickup coords which drifted above the player by
@@ -28185,6 +28237,9 @@ function _updateCore() {
   const levAutoBurst = (activeOrb === 'leviathan') && (state === 'playing' || state === 'devmode' || state === 'apocalypse');
   if ((burstTriggered || levAutoBurst) && burstReady) {
     executeBurst();
+    // PART 3 (v2.3.x) mix: a burst is a headline moment — duck the per-kill destroy wall
+    // briefly so the burst cue cuts through even mid kill-stream (Tachyon especially).
+    try { SFX.duckDestroys(320, 0.4); } catch (e) {}
     burstCooldownDuration = BURST_COOLDOWN();
     burstCooldownStart = Date.now();   // Salvage 50% floor reference
     burstCooldownEnd = Date.now() + burstCooldownDuration;
@@ -33817,7 +33872,7 @@ function drawPairTethers() {
     if (q.collected) continue;
     const rgb1 = POWERUP_COLORS[p.type].rgb;
     const rgb2 = POWERUP_COLORS[q.type].rgb;
-    // Mixed color by averaging (Leviathan: force abyssal-teal so the tether matches the FATHOM-point icons)
+    // Mixed color by averaging (Leviathan: the flat abyssal-teal anchor as a neutral "deep link" between the two per-type-tinted icons)
     const mix = (activeOrb === 'leviathan') ? LEV_POWERUP_RGB
       : rgb1.split(',').map((n, i) => Math.round((+n + +rgb2.split(',')[i]) / 2)).join(',');
     const pulse = Math.sin(frame * 0.18) * 0.3 + 0.7;
@@ -33858,16 +33913,26 @@ function drawSinglePowerup(p, tctx = ctx) {
   const ctx = tctx;
   const pulse = Math.sin(p.pulse) * 0.35 + 0.65;
   const r = p.radius * (0.95 + Math.sin(p.pulse) * 0.18);
-  // PART 3 reskin (Leviathan ONLY): every powerup icon recolours to abyssal-teal so it reads as a FATHOM
-  // point (it grants FATHOM, not its normal effect). Halo/ring/icon all key off `rgb` → this one override
-  // reskins BOTH the #c path AND the Pixi path (which renders via this same fn). Other orbs: unchanged.
-  const rgb = (activeOrb === 'leviathan') ? LEV_POWERUP_RGB : POWERUP_COLORS[p.type].rgb;
-  // Outer pulsing halo
+  // PART 2 (v2.3.x) reskin (Leviathan ONLY): each powerup keeps its per-type ICON SHAPE but its colour is
+  // pulled into the abyssal-teal water palette (see _lev_powerupTint) — "this powerup, of the deep", still
+  // recognizable by type, NOT a flat resource dot. Halo/ring/icon all key off `rgb`, so this one override
+  // restyles BOTH the #c path AND the Pixi path (which renders via this same fn). Other orbs: unchanged.
+  const isLev = (activeOrb === 'leviathan');
+  const rgb = isLev ? _lev_powerupTint(p.type) : POWERUP_COLORS[p.type].rgb;
+  // Outer pulsing halo — for Leviathan it sinks through a deeper abyssal-water ring before fading (a glow
+  // rising from the deep) instead of fading straight out in the icon's own hue.
   ctx.globalAlpha = 0.55 * pulse;
   const grd = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, r * 3.4);
-  grd.addColorStop(0, `rgba(${rgb},0.65)`);
-  grd.addColorStop(0.5, `rgba(${rgb},0.22)`);
-  grd.addColorStop(1, `rgba(${rgb},0)`);
+  if (isLev) {
+    grd.addColorStop(0, `rgba(${rgb},0.7)`);
+    grd.addColorStop(0.4, `rgba(${rgb},0.26)`);
+    grd.addColorStop(0.75, 'rgba(45,120,120,0.12)');
+    grd.addColorStop(1, 'rgba(20,55,65,0)');
+  } else {
+    grd.addColorStop(0, `rgba(${rgb},0.65)`);
+    grd.addColorStop(0.5, `rgba(${rgb},0.22)`);
+    grd.addColorStop(1, `rgba(${rgb},0)`);
+  }
   ctx.fillStyle = grd;
   ctx.beginPath(); ctx.arc(p.x, p.y, r * 3.4, 0, 6.28); ctx.fill();
   // Bright inner ring
