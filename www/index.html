@@ -11105,7 +11105,7 @@ OrbHooks.on('onResetGame', () => {
 // SHIPPED (v2.3.0): leviathan is a REAL enhanced orb — this block registers it into ORB_DEFS / ORB_ORDER
 // / orbTrees / treesUnlocked just like helios & tachyon (see the ORB_DEFS.leviathan assignment + the
 // orbTrees init below, and the ORB_ORDER.push beside tachyon's). Earned via the normal path: Bulwark
-// (asteroid) 6000-kill threshold → Sirius unlock convo (ENHANCED_UNLOCK.leviathan, tease:false). The
+// (asteroid) 3000-kill threshold → Sirius unlock convo (ENHANCED_UNLOCK.leviathan, tease:false). The
 // in-memory LEVIATHANTEST cheat was REMOVED at release. All gameplay code stays gated on activeOrb==='leviathan'.
 //
 // Pass 1 verbs: BRINK (graze-charge), MAW (devour/hunger), TIDE (breathing
@@ -11452,6 +11452,16 @@ let _lev_tideR = 0;        // TIDE ring radius (render)
 let _lev_tideTempo = 0;    // TIDE "Spring Tide" tempo charge 0..1 (fed breaths come faster)
 let _lev_maelstrom = null; // burst state { start, eyeX, eyeY, hitstopFired, power }
 let _lev_rings = [];       // shared discharge/collapse visual rings (HARD cap 8)
+// VISUAL "UMPH" PASS (v2.3.x): impact-flash blooms — a bright additive radial POP at every proc
+// epicenter (break / devour / collapse / maelstrom), the bioluminescent flash-MOMENT the loved
+// effects have (nova rings' baked detonation flash, ~34243) and Leviathan's procs lacked, so they
+// "just faded". Purely visual: _lev_blooms is read ONLY by _lev_draw (zero gameplay effect). Capped.
+let _lev_blooms = [];      // {x,y,r,start,life,rgb} — bright proc impact flashes (HARD cap)
+const _LEV_BLOOM_CAP = 14;
+function _lev_pushBloom(x, y, r, rgb, life) {
+  if (_lev_blooms.length >= _LEV_BLOOM_CAP) _lev_blooms.shift();
+  _lev_blooms.push({ x, y, r: r || 40, rgb: rgb || LEVIATHAN_CORE, start: Date.now(), life: life || 300 });
+}
 function _lev_addBolt(x1, y1, x2, y2, color) {
   if (_lev_bolts.length >= 24) _lev_bolts.shift();
   const segs = 4, pts = [[x1, y1]];
@@ -11495,6 +11505,8 @@ function _lev_drawFlashes() {
 function _lev_pushRing(x, y, r0, r1, life, color) {
   if (_lev_rings.length >= 8) _lev_rings.shift();
   _lev_rings.push({ x, y, r0, r1, start: Date.now(), life: life || 380, color: color || LEVIATHAN_CORE });
+  // pair every proc ring with a bright impact-flash bloom at its epicenter (the missing flash-moment)
+  _lev_pushBloom(x, y, Math.min(72, Math.max(26, (Math.max(r0, r1) || 40) * 0.5)), color || LEVIATHAN_CORE, 300);
 }
 // Shared crush primitive — kills body at index i exactly like the Dead Star
 // implode (score + procs + canvas release + splice). Caller iterates BACKWARD.
@@ -11860,6 +11872,7 @@ OrbHooks.on('onUpdate', () => {
   _lev_tideTempo = Math.max(0, _lev_tideTempo - 0.0006 * dt);
   for (let i = _lev_rings.length - 1; i >= 0; i--) { if (now - _lev_rings[i].start > _lev_rings[i].life) _lev_rings.splice(i, 1); }
   for (let i = _lev_bolts.length - 1; i >= 0; i--) { if (now - _lev_bolts[i].start > _lev_bolts[i].life) _lev_bolts.splice(i, 1); }
+  for (let i = _lev_blooms.length - 1; i >= 0; i--) { if (now - _lev_blooms[i].start > _lev_blooms[i].life) _lev_blooms.splice(i, 1); }
 });
 // === LEVIATHAN VISUAL TOOLKIT (Part 2 rebuild) ============================================
 // Built to the bar of the game's best effects. Techniques borrowed + cited:
@@ -11871,6 +11884,10 @@ OrbHooks.on('onUpdate', () => {
 //    yaw+pitch then projected (drop z), each ring a two-stroke glow+core polyline. _lev_dysonCage
 //    is the same construction in a teal/abyss palette, shared by the burst AND the trail aura.
 //  • Additive 'lighter' throughout + ~3–5Hz pulses for life (both references do this).
+//  • IMPACT-FLASH BLOOM (v2.3.x umph pass) — a bright hot-white→accent radial pop at each proc,
+//    matching the nova ring's detonation flash (~34243, the loved "kill-moment" bloom). Lightning
+//    is now two-stroke with a HOT-WHITE core (bioluminescent), and the murky abyss bases carry a
+//    bright bright-teal/white accent so the deep GLOWS instead of reading flat (the diagnosis fix).
 
 // Two-stroke ring: glow band + bright core (Bastion technique). Caller controls composite.
 function _lev_ring2(g, cx, cy, r, rgb, coreA, lw, a0, a1) {
@@ -11997,7 +12014,7 @@ function _lev_drawMaelstromAura(g, cx, cy, intensity, rOverride) {
   const baseR = (rOverride || 24) * 1.12;
   const now = Date.now();
   const a = 0.5 + Math.min(0.4, (intensity || 0) * 0.05);
-  const DEEP = '20,120,135', CURRENT = '36,186,160', FOAM = '170,255,232';   // abyssal teal ramp
+  const DEEP = '44,170,180', CURRENT = '64,222,188', FOAM = '198,255,240';   // abyssal teal ramp, LIFTED off murk so the wake glows (was 20,120,135 — near-black on dark space → invisible)
   g.save(); g.globalCompositeOperation = 'lighter'; g.lineCap = 'round';
   // CURRENT BANDS — rippling concentric rings (the maelstrom's churn around the orb)
   const churn = now * 0.0016, BANDS = 3, SEG = 40;
@@ -12017,8 +12034,8 @@ function _lev_drawMaelstromAura(g, cx, cy, intensity, rOverride) {
       }
       g.closePath(); g.stroke();
     };
-    trace(3.2, `rgba(${DEEP},${(a * 0.34).toFixed(3)})`);            // deep-teal glow band
-    trace(1.2, `rgba(${CURRENT},${(a * 0.72).toFixed(3)})`);         // bright current core
+    trace(3.4, `rgba(${DEEP},${(a * 0.42).toFixed(3)})`);            // deep-teal glow band (lifted)
+    trace(1.2, `rgba(${CURRENT},${(a * 0.82).toFixed(3)})`);         // bright current core
   }
   // RISING BUBBLES — procedural (time-hashed), no persistent array. They rise from below the orb and fade.
   const BUB = 7;
@@ -12058,25 +12075,50 @@ function _lev_draw() {
   if (_lev_wardFx && now - _lev_wardFx < 420) {
     const wp = (now - _lev_wardFx) / 420;
     _lev_ring2(g, player.x, player.y, hull + 7 + wp * 46, '210,255,248', 0.9 * (1 - wp), 3);
+    // bright save-flash bloom (impact frame) — the hull pulses white-hot the instant the deep holds
+    const _fa = (1 - wp) * (1 - wp);
+    const _fg = g.createRadialGradient(player.x, player.y, 0, player.x, player.y, hull + 22);
+    _fg.addColorStop(0, `rgba(235,255,250,${(0.72 * _fa).toFixed(3)})`); _fg.addColorStop(1, 'rgba(200,255,245,0)');
+    g.fillStyle = _fg; g.beginPath(); g.arc(player.x, player.y, hull + 22, 0, 6.2832); g.fill();
   }
-  // BRINK — faint danger-band ring + a charge arc that brightens as the storm fills
+  // BRINK — faint danger-band ring + a charge arc that winds up ELECTRIC (two-stroke glow+white-hot
+  // core, ~3Hz flicker) with a bright leading spark, so the storm visibly builds toward the break.
   if (rankOf('brink_brinkmanship') > 0) {
     const outer = LEV_GRAZE_OUTER + (rankOf('brink_keenedge') ? 26 : 0);
     const a = 0.12 + _lev_grazeFx * 0.30 + _lev_storm * 0.18;
     g.beginPath(); g.lineWidth = 2; g.strokeStyle = `rgba(${LEVIATHAN_PATH_COLORS.brink},${a.toFixed(3)})`;
     g.arc(player.x, player.y, outer, 0, 6.2832); g.stroke();
     if (_lev_storm > 0) {
-      g.beginPath(); g.lineWidth = 3; g.strokeStyle = `rgba(${LEVIATHAN_PATH_COLORS.brink},${(0.5 + _lev_storm * 0.5).toFixed(3)})`;
-      g.arc(player.x, player.y, outer - 4, -Math.PI / 2, -Math.PI / 2 + _lev_storm * 6.2832); g.stroke();
+      const end = -Math.PI / 2 + _lev_storm * 6.2832;
+      const flick = 0.85 + 0.15 * Math.sin(now * 0.03);                 // electric flicker
+      g.lineCap = 'round';
+      g.beginPath(); g.lineWidth = 6; g.strokeStyle = `rgba(${LEVIATHAN_PATH_COLORS.brink},${(0.30 * (0.4 + _lev_storm * 0.6) * flick).toFixed(3)})`;
+      g.arc(player.x, player.y, outer - 4, -Math.PI / 2, end); g.stroke();         // electric-teal glow band
+      g.beginPath(); g.lineWidth = 2; g.strokeStyle = `rgba(225,255,245,${((0.45 + _lev_storm * 0.5) * flick).toFixed(3)})`;
+      g.arc(player.x, player.y, outer - 4, -Math.PI / 2, end); g.stroke();         // white-hot core
+      if (_lev_storm > 0.15) {                                          // bright leading spark = the storm head
+        const hx = player.x + Math.cos(end) * (outer - 4), hy = player.y + Math.sin(end) * (outer - 4);
+        const hg = g.createRadialGradient(hx, hy, 0, hx, hy, 6 + _lev_storm * 8);
+        hg.addColorStop(0, `rgba(235,255,250,${(0.9 * _lev_storm).toFixed(3)})`); hg.addColorStop(1, `rgba(${LEVIATHAN_PATH_COLORS.brink},0)`);
+        g.fillStyle = hg; g.beginPath(); g.arc(hx, hy, 6 + _lev_storm * 8, 0, 6.2832); g.fill();
+      }
     }
   }
-  // BRINK lightning arcs (EMP break / Forked Lightning / Eye of the Storm)
+  // BRINK lightning arcs (EMP break / Forked Lightning / Eye of the Storm) — TWO-STROKE: a wide
+  // electric-teal glow band under a thin WHITE-HOT core, so the lightning reads bioluminescent
+  // (the deep's nerve firing), not a flat thin line. Matches the loved two-stroke glow+core recipe.
+  g.lineCap = 'round';
   for (const bolt of _lev_bolts) {
     const p = (now - bolt.start) / bolt.life; if (p >= 1) continue;
-    g.beginPath(); g.lineWidth = 2.5 * (1 - p); g.strokeStyle = `rgba(${bolt.color},${(0.9 * (1 - p)).toFixed(3)})`;
+    const fade = 1 - p;
+    g.beginPath(); g.lineWidth = 5 * fade + 1; g.strokeStyle = `rgba(${bolt.color},${(0.5 * fade).toFixed(3)})`;
     g.moveTo(bolt.pts[0][0], bolt.pts[0][1]);
     for (let i = 1; i < bolt.pts.length; i++) g.lineTo(bolt.pts[i][0], bolt.pts[i][1]);
-    g.stroke();
+    g.stroke();                                                        // electric-teal glow band
+    g.beginPath(); g.lineWidth = 1.6 * fade + 0.4; g.strokeStyle = `rgba(235,255,250,${(0.95 * fade).toFixed(3)})`;
+    g.moveTo(bolt.pts[0][0], bolt.pts[0][1]);
+    for (let i = 1; i < bolt.pts.length; i++) g.lineTo(bolt.pts[i][0], bolt.pts[i][1]);
+    g.stroke();                                                        // white-hot core
   }
   // MAW — a real churning WHIRLPOOL at the eye ahead (only while OPEN), size by FATHOM
   if (rankOf('maw_open') > 0 && _lev_mawOpen(now)) {
@@ -12084,14 +12126,18 @@ function _lev_draw() {
     const eyeDist = 86 + depth * 34;
     const ex = player.x, ey = player.y - eyeDist;
     const pulse = 0.5 + 0.5 * Math.sin(now / 130);
-    _lev_whirlpool(g, ex, ey, 22 + grow * 30 + pulse * 5, LEVIATHAN_PATH_COLORS.maw, 0.55 + depth * 0.4);
+    _lev_whirlpool(g, ex, ey, 22 + grow * 30 + pulse * 5, '120,235,200', 0.6 + depth * 0.4);   // bright electric-teal base (was murky maw 90,200,170 → it read flat) + a touch more intensity
   }
-  // TIDE — the breathing pressure ring (two-stroke glow+core) + concentric inner pressure rings
+  // TIDE — the breathing pressure ring (two-stroke glow+core, ~2Hz breath pulse) + a pale-white crest
+  // highlight + concentric inner pressure rings (now two-stroke too, for depth).
   if (rankOf('tide_breath') > 0 && _lev_tideR > 4) {
-    _lev_ring2(g, player.x, player.y, _lev_tideR, LEVIATHAN_PATH_COLORS.tide, 0.6, 2.5);
-    for (let k = 1; k <= 2; k++) {   // concentric pressure rings inside the breath
-      g.beginPath(); g.lineWidth = 1.5; g.strokeStyle = `rgba(${LEVIATHAN_PATH_COLORS.tide},${(0.26 - k * 0.07).toFixed(3)})`;
-      g.arc(player.x, player.y, _lev_tideR * (1 - k * 0.28), 0, 6.2832); g.stroke();
+    const _tb = 0.66 + 0.18 * Math.sin(now * 0.012);                   // breathing brightness pulse
+    _lev_ring2(g, player.x, player.y, _lev_tideR, LEVIATHAN_PATH_COLORS.tide, _tb, 2.5);
+    g.lineCap = 'round';
+    g.beginPath(); g.lineWidth = 1; g.strokeStyle = `rgba(225,245,255,${(_tb * 0.7).toFixed(3)})`;   // white-foam crest highlight
+    g.arc(player.x, player.y, _lev_tideR, 0, 6.2832); g.stroke();
+    for (let k = 1; k <= 2; k++) {   // concentric pressure rings inside the breath (two-stroke glow+core)
+      _lev_ring2(g, player.x, player.y, _lev_tideR * (1 - k * 0.28), LEVIATHAN_PATH_COLORS.tide, 0.34 - k * 0.08, 1.4);
     }
   }
   // shared rings (discharge / collapse / gorge) — two-stroke glow+core for punch
@@ -12099,6 +12145,18 @@ function _lev_draw() {
     const p = (now - r.start) / r.life; if (p >= 1) continue;
     const rr = r.r0 + (r.r1 - r.r0) * p;
     _lev_ring2(g, r.x, r.y, Math.max(1, rr), r.color, 0.6 * (1 - p), 2.5 * (1 - p) + 0.5);
+  }
+  // IMPACT-FLASH BLOOMS — the bright hot-white→accent POP at each proc epicenter (the nova-detonation
+  // technique, ~34243). Expands slightly + fades on a quadratic = a punchy kill-MOMENT, not a slow fade.
+  for (const bl of _lev_blooms) {
+    const p = (now - bl.start) / bl.life; if (p >= 1) continue;
+    const rr = bl.r * (0.55 + p * 0.75);
+    const aa = (1 - p) * (1 - p);
+    const bg = g.createRadialGradient(bl.x, bl.y, 0, bl.x, bl.y, rr);
+    bg.addColorStop(0,   `rgba(235,255,250,${(0.85 * aa).toFixed(3)})`);   // white-hot core
+    bg.addColorStop(0.4, `rgba(${bl.rgb},${(0.55 * aa).toFixed(3)})`);     // accent mid
+    bg.addColorStop(1,   `rgba(${bl.rgb},0)`);
+    g.fillStyle = bg; g.beginPath(); g.arc(bl.x, bl.y, rr, 0, 6.2832); g.fill();
   }
   // MAELSTROM — the dramatic converging maelstrom (3D cage + whirlpool + intake streaks + core flash)
   if (_lev_maelstrom) {
@@ -12172,7 +12230,7 @@ OrbHooks.on('onResetGame', () => {
   _lev_wardNextTime = 0; _lev_wardFx = 0;
   _lev_tidePhaseStart = 0; _lev_tideCount = 0; _lev_tideR = 0; _lev_tideTempo = 0; _lev_mawWasOn = false;
   _lev_mawFrenzy = 0; _lev_tideEchoAt = 0; _lev_tideEchoR = 0; _lev_tideEchoKing = false;
-  _lev_maelstrom = null; _lev_rings = []; _lev_bolts = [];
+  _lev_maelstrom = null; _lev_rings = []; _lev_bolts = []; _lev_blooms = [];
   _lev_flashes = []; _lev_flashGates = {};
   // PART 1: the MAELSTROM auto-fires on cooldown, so START the run on a FULL cooldown — the burst bar
   // begins EMPTY and the first auto-fire lands ~30s in, NOT at run start. Runs after the generic reset
@@ -12428,7 +12486,7 @@ ORB_BEHAVIOR.leviathan.renderTreeDetail = function() {
   }
 };
 // =====================================================================
-// END LEVIATHAN — SHIPPED v2.3.0 as a real enhanced orb (earned via the Bulwark 6000-kill Sirius convo)
+// END LEVIATHAN — SHIPPED v2.3.0 as a real enhanced orb (earned via the Bulwark 3000-kill Sirius convo)
 // =====================================================================
 
 // === NEBULA schema migration (v1 multi-rank → v2 active-budget) ============
@@ -22610,11 +22668,11 @@ loadStats();
 // them just flips the shop slot from "???" to "COMING SOON".
 // ===========================================================================
 const ENHANCED_UNLOCK = {
-  drifterV2: { base: 'cyan',     threshold: 2000, tease: false },
-  phantomV2: { base: 'cosmic',   threshold: 3000, tease: false },
-  helios:    { base: 'solar',    threshold: 4000, tease: false },
-  tachyon:   { base: 'nebula',   threshold: 5000, tease: false },
-  leviathan: { base: 'asteroid', threshold: 6000, tease: false },   // v2.3.0: SHIPPED — earned via Bulwark 6000 kills + Sirius convo (same path as helios/tachyon)
+  drifterV2: { base: 'cyan',     threshold: 2000, tease: false },   // unchanged (already at target)
+  phantomV2: { base: 'cosmic',   threshold: 2000, tease: false },   // v2.3.x: lowered 3000 → 2000
+  helios:    { base: 'solar',    threshold: 3000, tease: false },   // v2.3.x: lowered 4000 → 3000
+  tachyon:   { base: 'nebula',   threshold: 5000, tease: false },   // unchanged (already at target)
+  leviathan: { base: 'asteroid', threshold: 3000, tease: false },   // v2.3.x: lowered 6000 → 3000 — earned via Bulwark kills + Sirius convo (same path as helios/tachyon)
 };
 const BASE_TO_ENHANCED = { cyan: 'drifterV2', cosmic: 'phantomV2', solar: 'helios', nebula: 'tachyon', asteroid: 'leviathan' };
 // Approved rhyming Sirius scripts ([speaker, text] tuples; {player} substituted).
@@ -22627,7 +22685,7 @@ const ORB_UNLOCK_SCRIPTS = {
     ['Sirius', '...Nothing sparkled? Bah. Just check your shop.'],
   ],
   phantomV2: [
-    ['Sirius', 'Three thousand ghosts, {player} — how grim, how grand.'],
+    ['Sirius', 'Two thousand ghosts, {player} — how grim, how grand.'],
     ['Sirius', 'Let me reach past the veil with my luminous hand...'],
     ['Sirius', "SPIRITS! WRAITHS! Rise at Sirius' command!"],
     ['Sirius', '...They whisper just one word to me. Shop.'],
@@ -35922,17 +35980,27 @@ document.getElementById('startBtn').addEventListener('click', ()=>{
     saveBeatFlags();      // localStorage + PGS schedule
     saveTreeState();      // localStorage + PGS schedule
     saveTreesUnlocked();  // localStorage + PGS schedule
+    // v2.3.x: grant base-orb kills (MAX — never lower an existing count) so EVERY enhanced-orb Sirius
+    // unlock convo is triggerable for testing. These clear all five thresholds (incl. Warp's 5000):
+    // cyan→Roamer(2000), cosmic→Phantasm(2000), solar→Helios(3000), asteroid→Leviathan(3000),
+    // nebula→Tachyon(5000). Touches ONLY the per-orb kill counters — not the tease/threshold logic.
+    const _ttKills = { cyan: 4000, cosmic: 4000, solar: 4000, asteroid: 4000, nebula: 5500 };
+    for (const _o in _ttKills) {
+      if (!stats.perOrb[_o]) stats.perOrb[_o] = { kills: 0, runs: 0 };
+      stats.perOrb[_o].kills = Math.max(stats.perOrb[_o].kills | 0, _ttKills[_o]);
+    }
+    saveStats();          // localStorage + PGS schedule (matches TREETEST's persisted behavior)
     // v1.6.4: TREETEST also marks tutorial complete so dev test runs skip
     // the forced first-run tutorial.
     saveTutorialCompleted(true);
     refreshActiveTreeCache();
-    console.log('[TREETEST] Crystals granted, all trees unlocked, tree state reset, tutorial skipped');
+    console.log('[TREETEST] Crystals granted, all trees unlocked, tree state reset, base-orb kills set (cyan/cosmic/solar/asteroid 4000, nebula 5500 → all 5 unlock convos triggerable), tutorial skipped');
     // Fall through — the run starts normally so the tester can play a round.
   }
   // LEVIATHANTEST dev cheat REMOVED at v2.3.0 release (no production path ran through it). Leviathan is
   // now a real earned orb: ORB_DEFS.leviathan + orbTrees.leviathan + treesUnlocked.leviathan registered
   // permanently in the leviathan block, ORB_ORDER.push beside tachyon, ENHANCED_UNLOCK.leviathan tease:false,
-  // unlocked via the Bulwark(asteroid) 6000-kill Sirius convo. (TACHYONTEST/ROAMERTEST/PHANTASMTEST were
+  // unlocked via the Bulwark(asteroid) 3000-kill Sirius convo. (TACHYONTEST/ROAMERTEST/PHANTASMTEST were
   // likewise removed at their releases; DRIFTRESET + the general dev tools remain.)
   // DEV cheat: pilot name "DRIFTRESET" (case-insensitive) wipes ALL local
   // progress — crystals, difficulty-beat flags, every orb tree's ranks +
