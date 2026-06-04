@@ -5598,6 +5598,15 @@ function pgsScheduleWrite() {
     }
   } catch {}
 }
+// v2.3.x: force an IMMEDIATE cloud overwrite (supersede) — used by DRIFTRESET so the
+// full-reset state lands in the cloud at once instead of waiting on the debounce.
+function pgsWriteNow() {
+  try {
+    if (typeof PGS !== 'undefined' && PGS.isSignedIn && PGS.isSignedIn()) {
+      PGS.writeNow();
+    }
+  } catch {}
+}
 function getOrbBonus() { return ORB_DEFS[activeOrb] || ORB_DEFS.cyan; }
 // Universal streak cap — all orbs share the same 8-streak ceiling. Per-orb
 // streakCap fields in ORB_DEFS are intentionally ignored. Max per-kill is
@@ -7131,11 +7140,30 @@ const ActiveBudget = (() => {
       for (const k of Object.keys(raw.activePoints)) if (raw.activePoints[k] && resolveNode(orbKey, k)) orbTrees[orbKey].activePoints[k] = true;
     }
   }
+  // v2.3.x save-restore RECONCILE: bring an OVER-BUDGET active set back within the cap by
+  // deactivating excess nodes. The PGS merge OR-UNIONS activePoints (see mergeTrees), but that
+  // field is NON-monotonic — a respec deactivates nodes — so across sync cycles the cloud
+  // accumulates the union of every build a player ever ran. On reinstall that restores a total
+  // that can exceed even base+expandMax (the "35/25 active points in RED" bug), which the
+  // cap-raise heal alone can't cover. This trims the active set back to the cap. Owned RANKS
+  // stay intact — only which nodes are ACTIVE changes, so the player just re-activates within
+  // budget. Drops supports before keystones to limit cascade collateral. No-op when within cap.
+  function trimToCap(orbKey) {
+    const c = configs[orbKey]; if (!c) return;
+    const st = orbTrees[orbKey]; const map = st && st.activePoints; if (!map) return;
+    let guard = 0;
+    while (activePointsTotal(orbKey) > budgetCap(orbKey) && guard++ < 256) {
+      const active = Object.keys(map).filter(k => map[k]);
+      if (!active.length) break;
+      const pick = active.find(k => keystoneRequiredFor(orbKey, k) !== null) || active[0];
+      deactivate(orbKey, pick);
+    }
+  }
   return {
     register, has, budgetCap, budgetBonus, expandMaxFor, expandCostFor, purchaseExpand,
     ensureActiveMap, resolveNode, rankByKey, isActive, pointCostFor, activePointsTotal,
     keystoneRequiredFor, pathPrereqMet, activate, deactivate, clearActiveMap, restoreActivePoints,
-    setBonus,
+    setBonus, trimToCap,
   };
 })();
 
@@ -18707,8 +18735,13 @@ loadTreeState();
 // activePoints stayed active (the "25/20 in red" over-budget bug). If the
 // active allocation exceeds the current cap, the player demonstrably earned
 // that cap, so raise the bonus (clamped to expandMax) until the cap covers it.
-// Idempotent and grow-only: it never lowers a cap, and re-running is a no-op
-// once cap >= spent. Also invoked from applyToLocal after a cloud merge.
+// v2.3.x: when the active set exceeds even base+expandMax (the cloud activePoints
+// OR-union accumulating across respec/sync cycles — the "35/25 in red on reinstall"
+// bug), raising can't cover it, so it then RECONCILES by trimming the active set down
+// to the cap (deactivate excess; owned ranks kept). End state: cap and spend always
+// agree, no red. Idempotent: never lowers a cap, no-op once within budget. Also invoked
+// from applyToLocal after a cloud merge — and because applyToLocal aliases orbTrees to
+// the merged payload object, the trim also cleans the copy re-uploaded by syncFromRemote.
 function _healBudgetCaps() {
   for (const orb of ['cyan', 'cosmic', 'solar', 'nebula', 'asteroid', 'helios', 'tachyon', 'leviathan']) {
     if (!ActiveBudget.has(orb)) continue;
@@ -18718,6 +18751,10 @@ function _healBudgetCaps() {
         && guard++ < 64) {
       ActiveBudget.setBonus(orb, ActiveBudget.budgetBonus(orb) + 1);
     }
+    // v2.3.x: if STILL over budget after maxing the bonus, the active set exceeds even
+    // base+expandMax — the cloud activePoints OR-union accumulated past any real cap. Raising
+    // can't cover it; reconcile by trimming the active set down so cap and spend AGREE (no red).
+    ActiveBudget.trimToCap(orb);
   }
   // Legacy drifterV2 (Roamer) budget system.
   if (typeof _drifterV2_activePointsTotal === 'function') {
@@ -18728,6 +18765,15 @@ function _healBudgetCaps() {
       _drifterV2_budgetBonus = Math.min(DRIFTERV2_BUDGET_EXPAND_MAX, _drifterV2_budgetBonus + 1);
       try { localStorage.setItem(DRIFTERV2_BUDGET_BONUS_KEY, String(_drifterV2_budgetBonus)); } catch {}
     }
+    // v2.3.x reconcile (same as ActiveBudget.trimToCap, for the legacy system): trim excess.
+    let tguard = 0;
+    const dmap = orbTrees.drifterV2 && orbTrees.drifterV2.activePoints;
+    while (dmap && _drifterV2_activePointsTotal() > getDrifterV2BudgetCap() && tguard++ < 256) {
+      const active = Object.keys(dmap).filter(k => dmap[k]);
+      if (!active.length) break;
+      const pick = active.find(k => _drifterV2_keystoneRequiredFor(k) !== null) || active[0];
+      _drifterV2_deactivate(pick);
+    }
   }
   // Legacy phantomV2 (Phantasm) budget system.
   if (typeof _phantomV2_activePointsTotal === 'function') {
@@ -18737,6 +18783,15 @@ function _healBudgetCaps() {
         && guard++ < 64) {
       _phantomV2_budgetBonus = Math.min(PHANTOMV2_BUDGET_EXPAND_MAX, _phantomV2_budgetBonus + 1);
       try { localStorage.setItem(PHANTOMV2_BUDGET_BONUS_KEY, String(_phantomV2_budgetBonus)); } catch {}
+    }
+    // v2.3.x reconcile: trim excess so cap and spend agree (no red over-budget).
+    let tguard = 0;
+    const pmap = orbTrees.phantomV2 && orbTrees.phantomV2.activePoints;
+    while (pmap && _phantomV2_activePointsTotal() > getPhantomV2BudgetCap() && tguard++ < 256) {
+      const active = Object.keys(pmap).filter(k => pmap[k]);
+      if (!active.length) break;
+      const pick = active.find(k => _phantomV2_keystoneRequiredFor(k) !== null) || active[0];
+      _phantomV2_deactivate(pick);
     }
   }
 }
@@ -20290,13 +20345,24 @@ const PGS = (() => {
     }, WRITE_DEBOUNCE_MS);
   }
 
+  // v2.3.x: immediate forced overwrite (cancels any pending debounce). writeRemote
+  // OVERWRITES the cloud snapshot (it never merges), so pushing the current local
+  // payload NOW SUPERSEDES the remote. Used by the DRIFTRESET full-reset path so the
+  // wiped state reaches the cloud at once and the next sync's grow-only merge has
+  // nothing to resurrect. Fire-and-forget (async); reinstall/normal sync don't use it.
+  function writeNow() {
+    if (!authenticated) return;
+    if (writePending) { clearTimeout(writePending); writePending = null; }
+    try { writeRemote(buildPayload()); } catch {}
+  }
+
   function isSignedIn() { return authenticated; }
   function isSupported() { return supported(); }
   function getWriteFailCount() { return writeFailCount; }
 
   return {
     checkAuth, signIn, syncFromRemote,
-    scheduleWrite, isSignedIn, isSupported, getWriteFailCount,
+    scheduleWrite, writeNow, isSignedIn, isSupported, getWriteFailCount,
   };
 })();
 
@@ -35871,8 +35937,11 @@ document.getElementById('startBtn').addEventListener('click', ()=>{
   // DEV cheat: pilot name "DRIFTRESET" (case-insensitive) wipes ALL local
   // progress — crystals, difficulty-beat flags, every orb tree's ranks +
   // capstones, unlocked-orbs set (back to Drifter only), active orb, top-5
-  // scores per difficulty, and the resume-after-crash snapshot. Run
-  // proceeds normally so the tester can start fresh immediately.
+  // scores per difficulty, the resume-after-crash snapshot, the enhanced-orb
+  // unlock flags (orbUnlockSeen — else enhanced orbs resurrect on sync, the
+  // half-restore bug), and purchased budget-cap expansions — then force-overwrites
+  // the cloud (supersede) so the reset can't be undone by the next grow-only sync.
+  // Run proceeds normally so the tester can start fresh immediately.
   if (getUsername().toUpperCase() === 'DRIFTRESET') {
     totalCrystals = 0;
     beatDifficulty.NORMAL = false;
@@ -35911,7 +35980,28 @@ document.getElementById('startBtn').addEventListener('click', ()=>{
     // v1.10.0 Stage 3: clear the Sirius reveal flag too, so the dev tester
     // re-experiences the death-3 reveal + revive on the freshly reset profile.
     saveSiriusUsed(false);
-    pgsScheduleWrite();
+    // SYMPTOM B FIX (v2.3.x): clear orbUnlockSeen — the SOLE source of truth for enhanced-orb
+    // ownership (orbRevealed + _orbUnlockReconcile derive from it; unlockedOrbs is only a synced
+    // mirror). DRIFTRESET wiped unlockedOrbs/treesUnlocked but LEFT these flags, so the grow-only
+    // OR-merge + reconcile resurrected tachyon/leviathan on the next sync while crystal-bought BASE
+    // orbs (which live ONLY in unlockedOrbs) stayed gone — the backwards half-restore. Clearing them
+    // leaves reconcile nothing to re-grant, so the reset is genuinely fresh for BOTH orb classes.
+    for (const k of Object.keys(orbUnlockSeen)) delete orbUnlockSeen[k];
+    saveOrbUnlockSeen();
+    // Also reset purchased budget-cap expansions (a fresh player has base caps; also stops the
+    // overwrite below from carrying stale budgetBonus into the cloud).
+    for (const _orb of ['cyan','cosmic','solar','nebula','asteroid','helios','tachyon','leviathan']) {
+      if (ActiveBudget.has(_orb)) ActiveBudget.setBonus(_orb, 0);
+    }
+    _drifterV2_budgetBonus = 0;
+    try { localStorage.setItem(DRIFTERV2_BUDGET_BONUS_KEY, '0'); } catch {}
+    _phantomV2_budgetBonus = 0;
+    try { localStorage.setItem(PHANTOMV2_BUDGET_BONUS_KEY, '0'); } catch {}
+    // SUPERSEDE the cloud NOW (immediate overwrite, not the debounced schedule): writeRemote never
+    // merges, so this pushes the fully-wiped payload at once and the next sync's grow-only merge has
+    // nothing to bring back. (A plain reinstall — no reset — still restores normally; only this path
+    // force-overwrites.) Replaces the prior debounced pgsScheduleWrite() here.
+    pgsWriteNow();
     refreshActiveTreeCache();
     if (typeof refreshOrbBrowser === 'function') { try { refreshOrbBrowser(); } catch {} }
     if (typeof refreshImpossibleVisibility === 'function') refreshImpossibleVisibility();
