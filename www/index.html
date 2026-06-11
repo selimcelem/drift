@@ -2635,6 +2635,25 @@
       border-radius: 6px;
     }
   }
+  /* "The Last Light": the apocalypse two-voice exchange reuses the real Sirius
+     dialogue box (#ascensionDialogue) for an identical typewriter look. The
+     overlay backdrop stays transparent — the descending Void must remain visible
+     — and non-interactive (auto-played, no taps). */
+  #ascensionOverlay.apoc-exchange { background: transparent; pointer-events: none; }
+  /* THE VOID's voice: abyssal violet, heavier + colder than Sirius's bright cyan.
+     Same Space Mono / Orbitron family as Sirius (part of the same dialogue
+     system) but bolder, wider-tracked, and lit with a cold violet glow. */
+  #ascensionSpeaker.void-voice {
+    color: rgba(206, 150, 255, 0.95);
+    letter-spacing: 8px;
+    text-shadow: 0 0 22px rgba(150, 60, 220, 0.8);
+  }
+  #ascensionText.void-voice {
+    color: rgba(224, 206, 255, 0.97);
+    font-weight: 700;
+    letter-spacing: 3px;
+    text-shadow: 0 0 16px rgba(150, 70, 225, 0.6), 0 0 3px rgba(30, 0, 55, 0.95);
+  }
   #ascensionSpeaker {
     font-family: 'Orbitron', monospace;
     font-size: 12px;
@@ -3838,7 +3857,7 @@ function measureHyperStackAnchorY() {
 }
 // Final screen-Y for the banner top: measured top-stack bottom, else the legacy value.
 function hyperStackDrawY() {
-  if (_hyperStackAnchorY <= 0 && state === 'playing') measureHyperStackAnchorY();
+  if (_hyperStackAnchorY <= 0 && (state === 'playing' || state === 'voidfight')) measureHyperStackAnchorY();
   return _hyperStackAnchorY > 0 ? _hyperStackAnchorY : (58 + safeAreaTop + cutoutTop);
 }
 
@@ -6080,6 +6099,22 @@ let orbTrees = {
 // because it gates the IMPOSSIBLE difficulty.
 let beatDifficulty = { NORMAL: false, HARD: false, EXTREME: false };
 
+// === "THE LAST LIGHT" — Void-fight unlock gate (Stage 1) =============
+// Persisted count of runs that REACHED the 10:00 apocalypse (the same signal
+// as the beat-flag write below). At VOID_FIGHT_UNLOCK_COUNT survivals the
+// Void fight unlocks: reaching 10:00 then branches into the held-Void arena
+// (startVoidFight) instead of the consume-cutscene. Persisted exactly like
+// beatDifficulty — localStorage 'drift_apoc_survivals' + the PGS snapshot,
+// merged grow-only (MAX) across devices. Test the apocalypse/arena path
+// repeatedly with the APOCALYPSENOW pilot-name cheat (jumps a real run to 10:00).
+const VOID_FIGHT_UNLOCK_COUNT = 5;
+let apocalypseSurvivals = 0;
+function voidFightUnlocked() { return (apocalypseSurvivals | 0) >= VOID_FIGHT_UNLOCK_COUNT; }
+function saveApocalypseSurvivals() {
+  try { localStorage.setItem('drift_apoc_survivals', String(apocalypseSurvivals | 0)); } catch {}
+  pgsScheduleWrite();
+}
+
 // v1.6.3: per-orb skill-tree unlock, paid with crystals. Independent of
 // orb-unlock (player buys the orb first, then pays again to access its
 // skill tree). Persists to localStorage 'drift_trees_unlocked' and to the
@@ -6153,6 +6188,9 @@ function loadTreeState() {
     beatDifficulty.NORMAL = n === '1';
     beatDifficulty.HARD = h === '1';
     beatDifficulty.EXTREME = e === '1';
+    // "The Last Light": apocalypse-survival counter (Void-fight unlock gate).
+    const av = parseInt(localStorage.getItem('drift_apoc_survivals') || '0', 10);
+    apocalypseSurvivals = isNaN(av) ? 0 : Math.max(0, av);
   } catch {}
   // v1.6.3: load per-orb skill-tree unlock state. First-run migration from
   // pre-v1.6.3 difficulty-gate unlocks: if beatDifficulty.NORMAL was true,
@@ -7315,7 +7353,7 @@ function _cyan_flash(key, text, color, minMs) {
   _cyan_addFlash(text, color);
 }
 function _cyan_drawFlashes() {
-  if (state !== 'playing' && state !== 'paused' && state !== 'apocalypse' && state !== 'devmode') return;   // 6b: include devmode (match Helios/Tachyon)
+  if (state !== 'playing' && state !== 'paused' && state !== 'apocalypse' && state !== 'devmode' && state !== 'voidfight') return;   // 6b: include devmode (match Helios/Tachyon)
   if (!_cyan_flashes.length) return;
   if (!player || isNaN(player.x) || isNaN(player.y)) return;
   const now = Date.now();
@@ -7348,7 +7386,7 @@ function _cyan_drawFlashes() {
 // ones being pulled). Drawn on the 2D ctx overlay so it shows over the PIXI
 // powerup layer (same compositing path the flashes use).
 function _cyan_drawButterflyRings() {
-  if (state !== 'playing' && state !== 'apocalypse') return;
+  if (state !== 'playing' && state !== 'apocalypse' && state !== 'voidfight') return;
   let any = false;
   for (const p of powerups) { if (p.bf && !p.collected) { any = true; break; } }
   if (!any) return;
@@ -7437,7 +7475,7 @@ function _cyanGrantBonusSingle(type, x, y) {
   powerupLastActivated[type] = Date.now();
   if (activeOrb === 'cyan' && rankOf('cascade') > 0 && Math.random() < 0.25) {
     setTimeout(() => {
-      if (state !== 'playing' && state !== 'apocalypse') return;
+      if (state !== 'playing' && state !== 'apocalypse' && state !== 'voidfight') return;
       const t2 = POWERUP_TYPES[Math.floor(Math.random() * POWERUP_TYPES.length)];
       activatePowerup(t2, player.x, player.y);
       powerupLastActivated[t2] = Date.now();
@@ -7642,7 +7680,7 @@ function _cosmic_flash(key, text, color, minMs) {
   _cosmic_addFlash(text, color);
 }
 function _cosmic_drawFlashes() {
-  if (state !== 'playing' && state !== 'paused' && state !== 'apocalypse' && state !== 'devmode') return;   // 6b: include devmode (match Helios/Tachyon)
+  if (state !== 'playing' && state !== 'paused' && state !== 'apocalypse' && state !== 'devmode' && state !== 'voidfight') return;   // 6b: include devmode (match Helios/Tachyon)
   if (!_cosmic_flashes.length) return;
   if (!player || isNaN(player.x) || isNaN(player.y)) return;
   const now = Date.now();
@@ -7689,7 +7727,7 @@ function _cosmic_ensureHud() {
 }
 function _cosmic_updateHud() {
   _cosmic_ensureHud();
-  const show = activeOrb === 'cosmic' && rankOf('reapingStorm') > 0 && (state === 'playing' || state === 'apocalypse');
+  const show = activeOrb === 'cosmic' && rankOf('reapingStorm') > 0 && (state === 'playing' || state === 'apocalypse' || state === 'voidfight');
   _cosmic_hudEl.style.display = show ? 'block' : 'none';
   if (!show) return;
   _cosmic_hudReapEl.textContent = (Date.now() < _cosmicReapWindowEnd) ? 'REAPING STORM!' : ('REAP ' + _cosmicReapKills + '/20');
@@ -7818,7 +7856,7 @@ function _cosmicTickEntities() {
   }
 }
 function _cosmicDrawEntities() {
-  if (state !== 'playing' && state !== 'apocalypse') return;
+  if (state !== 'playing' && state !== 'apocalypse' && state !== 'voidfight') return;
   const now = Date.now();
   ctx.save();
   for (const c of _cosmicClones) {
@@ -8047,7 +8085,7 @@ function _solar_flash(key, text, color, minMs) {
   _solar_addFlash(text, color);
 }
 function _solar_drawFlashes() {
-  if (state !== 'playing' && state !== 'paused' && state !== 'apocalypse' && state !== 'devmode') return;   // 6b: include devmode (match Helios/Tachyon)
+  if (state !== 'playing' && state !== 'paused' && state !== 'apocalypse' && state !== 'devmode' && state !== 'voidfight') return;   // 6b: include devmode (match Helios/Tachyon)
   if (!_solar_flashes.length) return;
   if (!player || isNaN(player.x) || isNaN(player.y)) return;
   const now = Date.now();
@@ -8231,7 +8269,7 @@ function _nebula_flash(key, text, color, minMs) {
   _nebula_addFlash(text, color);
 }
 function _nebula_drawFlashes() {
-  if (state !== 'playing' && state !== 'paused' && state !== 'apocalypse' && state !== 'devmode') return;   // 6b: include devmode (match Helios/Tachyon)
+  if (state !== 'playing' && state !== 'paused' && state !== 'apocalypse' && state !== 'devmode' && state !== 'voidfight') return;   // 6b: include devmode (match Helios/Tachyon)
   if (!_nebula_flashes.length) return;
   if (!player || isNaN(player.x) || isNaN(player.y)) return;
   const now = Date.now();
@@ -8786,7 +8824,7 @@ function _tachyon_flash(key, text, color, minMs) {
 function _tachyon_drawFlashes() {
   // FLASH-SIZING FIX (Pass 1): match the house format exactly — cloned from
   // _helios_drawFlashes (bold 11px + dark stroke halo + offsets 28/13/16).
-  if (state !== 'playing' && state !== 'paused' && state !== 'apocalypse' && state !== 'devmode') return;
+  if (state !== 'playing' && state !== 'paused' && state !== 'apocalypse' && state !== 'devmode' && state !== 'voidfight') return;
   if (!_tachyon_flashes.length) return;
   if (!player || isNaN(player.x) || isNaN(player.y)) return;
   const now = Date.now();
@@ -8847,7 +8885,7 @@ function _tachyonBlob(g, x, y, r, rgb, a) {
 }
 function _tachyonDrawEchoes() {
   if (!_tachyonEchoes.length) return;
-  if (state !== 'playing' && state !== 'paused' && state !== 'apocalypse' && state !== 'devmode') return;
+  if (state !== 'playing' && state !== 'paused' && state !== 'apocalypse' && state !== 'devmode' && state !== 'voidfight') return;
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';
   // GHOST TRAIN line: connect looping past-echoes so the train reads as one chain.
@@ -9077,7 +9115,7 @@ function _tachyonTickWells() {
 // shared tachyon nova on crush.
 function _tachyonDrawWells() {
   if (!_tachyonWells.length) return;
-  if (state !== 'playing' && state !== 'paused' && state !== 'apocalypse' && state !== 'devmode') return;
+  if (state !== 'playing' && state !== 'paused' && state !== 'apocalypse' && state !== 'devmode' && state !== 'voidfight') return;
   const now = Date.now();
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';
@@ -9680,7 +9718,7 @@ function _helios_flash(key, text, color, minMs) {
   _helios_addFlash(text, color);
 }
 function _helios_drawFlashes() {
-  if (state !== 'playing' && state !== 'paused' && state !== 'apocalypse' && state !== 'devmode') return;
+  if (state !== 'playing' && state !== 'paused' && state !== 'apocalypse' && state !== 'devmode' && state !== 'voidfight') return;
   if (!_helios_flashes.length) return;
   if (!player || isNaN(player.x) || isNaN(player.y)) return;
   const now = Date.now();
@@ -10098,7 +10136,7 @@ ORB_BEHAVIOR.helios.executeBurst = function() {
 // its own keystone rank so inactive trees cost nothing.
 OrbHooks.on('onUpdate', () => {
   if (activeOrb !== 'helios') return;
-  if (state !== 'playing' && state !== 'devmode' && state !== 'apocalypse') return;
+  if (state !== 'playing' && state !== 'devmode' && state !== 'apocalypse' && state !== 'voidfight') return;
   _heliosFrameKills = 0;   // feel TIER 2: reset the per-frame kill accumulator BEFORE the ticks fill it
   try { _heliosTickSundog(); } catch (e) {}
   try { _heliosTickProminence(); } catch (e) {}
@@ -10113,7 +10151,7 @@ OrbHooks.on('onUpdate', () => {
 // Master render — additive gold draws on the 2D overlay (#c covers both paths).
 OrbHooks.on('onRender', () => {
   if (activeOrb !== 'helios') return;
-  if (state !== 'playing' && state !== 'paused' && state !== 'devmode' && state !== 'apocalypse') return;
+  if (state !== 'playing' && state !== 'paused' && state !== 'devmode' && state !== 'apocalypse' && state !== 'voidfight') return;
   try { _heliosDraw(); } catch (e) {}
 });
 OrbHooks.on('onResetGame', () => {
@@ -10583,7 +10621,7 @@ function _helios_ensureHud() {
 }
 function _helios_updateHud() {
   _helios_ensureHud();
-  const playing = activeOrb === 'helios' && (state === 'playing' || state === 'apocalypse');
+  const playing = activeOrb === 'helios' && (state === 'playing' || state === 'apocalypse' || state === 'voidfight');
   const beam = playing && rankOf('helios_heliograph') > 0;
   _helios_hudEl.style.display = beam ? 'flex' : 'none';
   if (beam && _helios_hudBeamEl) _helios_hudBeamEl.textContent = 'BEAMS ' + (_heliosBeamBank | 0) + '/' + _heliosBeamBankCap();
@@ -10736,7 +10774,7 @@ function _asteroid_flash(key, text, color, minMs) {
   _asteroid_addFlash(text, color);
 }
 function _asteroid_drawFlashes() {
-  if (state !== 'playing' && state !== 'paused' && state !== 'apocalypse' && state !== 'devmode') return;   // 6b: include devmode (match Helios/Tachyon)
+  if (state !== 'playing' && state !== 'paused' && state !== 'apocalypse' && state !== 'devmode' && state !== 'voidfight') return;   // 6b: include devmode (match Helios/Tachyon)
   if (!_asteroid_flashes.length) return;
   if (!player || isNaN(player.x) || isNaN(player.y)) return;
   const now = Date.now();
@@ -11071,7 +11109,7 @@ function _bulwark_ensureHud() {
 }
 function _bulwark_updateHud() {
   _bulwark_ensureHud();
-  const playing = state === 'playing' || state === 'apocalypse';
+  const playing = state === 'playing' || state === 'apocalypse' || state === 'voidfight';
   const has = activeOrb === 'asteroid' && rankOf('blackHole') > 0 && playing;
   _bulwark_hudEl.style.display = has ? 'flex' : 'none';
   if (has) {
@@ -11852,7 +11890,7 @@ function _lev_tickTide(now, dt) {
 // === LEVIATHAN per-frame hooks (all gated on activeOrb === 'leviathan') ====
 OrbHooks.on('onUpdate', () => {
   if (activeOrb !== 'leviathan') return;
-  if (state !== 'playing' && state !== 'devmode' && state !== 'apocalypse') return;
+  if (state !== 'playing' && state !== 'devmode' && state !== 'apocalypse' && state !== 'voidfight') return;
   const now = Date.now();
   const dt = (typeof dtScale === 'number' && dtScale > 0) ? dtScale : 1;
   try { _lev_tickMaelstrom(now); } catch (e) {}
@@ -12220,7 +12258,7 @@ function _lev_drawHud() {
 }
 OrbHooks.on('onRender', () => {
   if (activeOrb !== 'leviathan') return;
-  if (state !== 'playing' && state !== 'paused' && state !== 'devmode' && state !== 'apocalypse') return;
+  if (state !== 'playing' && state !== 'paused' && state !== 'devmode' && state !== 'apocalypse' && state !== 'voidfight') return;
   try { _lev_draw(); } catch (e) {}
   try { _lev_drawHud(); } catch (e) {}
   try { _lev_drawFlashes(); } catch (e) {}
@@ -12762,7 +12800,7 @@ function _solarTickFireballs() {
 }
 function _solarDrawFireballs() {
   if (!_solarFireballs.length) return;
-  if (state !== 'playing' && state !== 'apocalypse') return;
+  if (state !== 'playing' && state !== 'apocalypse' && state !== 'voidfight') return;
   const now = Date.now();
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';
@@ -12799,7 +12837,7 @@ function _solar_ensureHud() {
 }
 function _solar_updateHud() {
   _solar_ensureHud();
-  const playing = state === 'playing' || state === 'apocalypse';
+  const playing = state === 'playing' || state === 'apocalypse' || state === 'voidfight';
   const hasCol = activeOrb === 'solar' && rankOf('stellarCollapse') > 0 && playing;
   const hasMass = activeOrb === 'solar' && rankOf('criticalMass') > 0 && playing;
   _solar_hudEl.style.display = (hasCol || hasMass) ? 'flex' : 'none';
@@ -14872,7 +14910,7 @@ function _drifterV2_addFlash(text, color, durationMs) {
   if (_drifterV2_flashes.length > 6) _drifterV2_flashes.shift();
 }
 function _drifterV2_drawFlashes() {
-  if (state !== 'playing' && state !== 'paused' && state !== 'apocalypse' && state !== 'devmode') return;   // 6b: include devmode (match Helios/Tachyon)
+  if (state !== 'playing' && state !== 'paused' && state !== 'apocalypse' && state !== 'devmode' && state !== 'voidfight') return;   // 6b: include devmode (match Helios/Tachyon)
   if (!_drifterV2_flashes.length) return;
   if (!player || isNaN(player.x) || isNaN(player.y)) return;
   const now = Date.now();
@@ -15207,7 +15245,7 @@ function _drifterV2_activateLasers() {
 // Per-frame ticker for laser thread hit-checks + projectile motion + expiry.
 function _drifterV2_tickThreadSystems() {
   if (!_drifterV2_hasThread()) return;
-  if (state !== 'playing' && state !== 'devmode') return;
+  if (state !== 'playing' && state !== 'devmode' && state !== 'voidfight') return;
   // v1.9.0 perf: bail before allocating keepThreads / keepProjectiles when
   // nothing is in flight (Thread keystone owned but no kills yet, or threads
   // already expired). Skips two empty array allocations per frame.
@@ -15320,7 +15358,7 @@ function _drifterV2_tickThreadSystems() {
 
 function _drifterV2_drawThread() {
   if (!_drifterV2_hasThread()) return;
-  if (state !== 'playing' && state !== 'paused' && state !== 'apocalypse') return;
+  if (state !== 'playing' && state !== 'paused' && state !== 'apocalypse' && state !== 'voidfight') return;
   const now = Date.now();
   ctx.save();
   ctx.lineCap = 'round';
@@ -15594,7 +15632,7 @@ OrbHooks.on('onAddDestroyPoints', (basePts) => {
 // checkDestroyProc — feeds Thread + Pressure + Breaking-Point auto-fire.
 OrbHooks.on('onDestroy', (info) => {
   const body = info && info.body;
-  if (state !== 'playing' && state !== 'devmode') return;
+  if (state !== 'playing' && state !== 'devmode' && state !== 'voidfight') return;
   if (!isDrifterV2Active() || !body) return;
   if (_drifterV2_hasThread())   _drifterV2_threadOnDestroy(body);
   if (_drifterV2_hasPressure()) _drifterV2_pressureOnDestroy(body);
@@ -15670,7 +15708,7 @@ function _drifterV2_updateHud() {
     return;
   }
   const el = _drifterV2_ensureHud();
-  const visible = state === 'playing' || state === 'paused' || state === 'apocalypse';
+  const visible = state === 'playing' || state === 'paused' || state === 'apocalypse' || state === 'voidfight';
   el.style.display = visible ? 'flex' : 'none';
   if (!visible) return;
   if (_drifterV2_hudThreadEl) {
@@ -15764,7 +15802,7 @@ OrbHooks.on('onPickup', (type, isPair) => {
 // v1.9.0 Heartbeat: pulsing cyan rings around every powerup being pulled during
 // the magnet window — mirrors the cyan Butterfly Effect indicator.
 function _drifterV2_drawHeartbeatMagnetRings() {
-  if (state !== 'playing' && state !== 'apocalypse') return;
+  if (state !== 'playing' && state !== 'apocalypse' && state !== 'voidfight') return;
   if (Date.now() >= _drifterV2_heartbeatMagnetUntil) return;
   if (!powerups.length) return;
   const t = Date.now() * 0.006;
@@ -15801,7 +15839,7 @@ OrbHooks.on('onRender', () => {
 });
 
 OrbHooks.on('onUpdate', () => {
-  if (state !== 'playing' && state !== 'devmode') return;
+  if (state !== 'playing' && state !== 'devmode' && state !== 'voidfight') return;
   // v1.9.0 Heartbeat: stacks are driven by powerups scrolling off uncollected
   // (see the powerup scroll loop) and reset on pickup; the magnet window
   // expires on its own timestamp. Nothing to tick here beyond zeroing stacks
@@ -16609,7 +16647,7 @@ function _phantomV2_addFlash(text, color, durationMs) {
   if (_phantomV2_flashes.length > 6) _phantomV2_flashes.shift();
 }
 function _phantomV2_drawFlashes() {
-  if (state !== 'playing' && state !== 'paused' && state !== 'apocalypse' && state !== 'devmode') return;   // 6b: include devmode (match Helios/Tachyon)
+  if (state !== 'playing' && state !== 'paused' && state !== 'apocalypse' && state !== 'devmode' && state !== 'voidfight') return;   // 6b: include devmode (match Helios/Tachyon)
   if (!_phantomV2_flashes.length) return;
   if (!player || isNaN(player.x) || isNaN(player.y)) return;
   const now = Date.now();
@@ -16775,7 +16813,7 @@ function _phantomV2_spawnDeathBurst(x, y, radius, sourceTag, killerWraith) {
 }
 function _phantomV2_drawDeathBursts(tctx) {
   if (!_phantomV2_deathBursts.length) return;
-  if (state !== 'playing' && state !== 'paused' && state !== 'apocalypse') return;
+  if (state !== 'playing' && state !== 'paused' && state !== 'apocalypse' && state !== 'voidfight') return;
   const _ctx = tctx || ctx;
   const now = Date.now();
   const live = [];
@@ -16999,7 +17037,7 @@ function _phantomV2_isAnyGhostActive() {
 }
 function _phantomV2_onDestroyForRevenant(body, source) {
   if (!_phantomV2_hasRevenant()) return;
-  if (state !== 'playing' && state !== 'devmode') return;
+  if (state !== 'playing' && state !== 'devmode' && state !== 'voidfight') return;
   const wraithSource = (source === 'phantomV2_wraith' || source === 'phantomV2_wraithLord');
   // Soul Tether: while 5+ wraiths are alive, the wraith that authored this kill
   // extends ITS OWN duration by +2s, capped at 2× its max duration. startTime
@@ -17093,7 +17131,7 @@ function _phantomV2_nearestLiveBody(wx, wy) {
 }
 function _phantomV2_tickWraiths() {
   if (!_phantomV2_hasRevenant() && !_phantomV2_wraiths.length) return;
-  if (state !== 'playing' && state !== 'devmode') return;
+  if (state !== 'playing' && state !== 'devmode' && state !== 'voidfight') return;
   const now = Date.now();
   // Soul Tether ghost-extension is per-kill now (in the destroy hook above),
   // not a passive tick.
@@ -17274,7 +17312,7 @@ function _phantomV2_tickWraiths() {
   _phantomV2_wraiths = keep;
 }
 function _phantomV2_drawWraiths() {
-  if (state !== 'playing' && state !== 'paused' && state !== 'apocalypse') return;
+  if (state !== 'playing' && state !== 'paused' && state !== 'apocalypse' && state !== 'voidfight') return;
   const now = Date.now();
   // Lord of the Dead chain arcs (drawn even if no wraiths remain orbiting).
   if (_phantomV2_chainArcs.length) {
@@ -17484,7 +17522,7 @@ function _phantomV2_reviveAllEchoes() {
 }
 function _phantomV2_recordMovement() {
   if (!isPhantomV2Active()) return;
-  if (state !== 'playing' && state !== 'devmode') return;
+  if (state !== 'playing' && state !== 'devmode' && state !== 'voidfight') return;
   if (!player || isNaN(player.x) || isNaN(player.y)) return;
   const now = Date.now();
   const buf = _phantomV2_movementBuffer;
@@ -17563,7 +17601,7 @@ function _phantomV2_segmentHitsCircle(x1, y1, x2, y2, cx, cy, r) {
 }
 function _phantomV2_tickAfterimage() {
   if (!_phantomV2_hasAfterimage()) return;
-  if (state !== 'playing' && state !== 'devmode') return;
+  if (state !== 'playing' && state !== 'devmode' && state !== 'voidfight') return;
   const now = Date.now();
   // Keep echo list in sync with current delay configuration (Lag/Lead/HOM/
   // Long Memory rank changes mid-run all reshape the list).
@@ -17654,7 +17692,7 @@ function _phantomV2_tickAfterimage() {
 }
 function _phantomV2_drawAfterimage() {
   if (!_phantomV2_hasAfterimage()) return;
-  if (state !== 'playing' && state !== 'paused' && state !== 'apocalypse') return;
+  if (state !== 'playing' && state !== 'paused' && state !== 'apocalypse' && state !== 'voidfight') return;
   if (!_phantomV2_echoes.length) return;
   const now = Date.now();
   // Greyish-purple tint, deliberately desaturated and cooler than the
@@ -17739,7 +17777,7 @@ function _phantomV2_capstoneHallOfMirrorsOnBurst() {
     // than three identical ghost pickups.
     const burstPitch = 1 + 0.15 * Math.min(burstIdx, 2);
     setTimeout(() => {
-      if (state !== 'playing' && state !== 'devmode') return;
+      if (state !== 'playing' && state !== 'devmode' && state !== 'voidfight') return;
       _phantomV2_spawnDeathBurst(px, py, 150, 'phantomV2_echo');
       try { SFX.pickup('ghost', { pitch: burstPitch, gain: 0.85 }); } catch {}
     }, stagger);
@@ -18050,7 +18088,7 @@ function _phantomV2_stopSustainedAudio() {
 }
 function _phantomV2_updateWakeHiss(markCount) {
   const want = rankOf('phantomV2_wake') >= 1 && markCount > 0
-    && (state === 'playing' || state === 'devmode')
+    && (state === 'playing' || state === 'devmode' || state === 'voidfight')
     && (!SFX.isSfxEnabled || SFX.isSfxEnabled());
   if (!want) { _phantomV2_stopWakeHiss(); return; }
   if (!_phantomV2_wakeHissVoice) {
@@ -18062,7 +18100,7 @@ function _phantomV2_updateWakeHiss(markCount) {
 }
 
 function _phantomV2_tickHaunt() {
-  if (!_phantomV2_hasHaunt() || (state !== 'playing' && state !== 'devmode')) {
+  if (!_phantomV2_hasHaunt() || (state !== 'playing' && state !== 'devmode' && state !== 'voidfight')) {
     _phantomV2_stopWakeHiss();
     return;
   }
@@ -18361,7 +18399,7 @@ const _PHANTOMV2_HAUNT_CURSE_SOURCES = new Set([
 ]);
 function _phantomV2_onAnyDestroyForHaunt(body, source, info) {
   if (!_phantomV2_hasHaunt()) return;
-  if (state !== 'playing' && state !== 'devmode') return;
+  if (state !== 'playing' && state !== 'devmode' && state !== 'voidfight') return;
   if (!body) return;
   if (source && _PHANTOMV2_HAUNT_CURSE_SOURCES.has(source)) return;
   // Use the unified event's duringGhost (identical to _phantomV2_isAnyGhostActive);
@@ -18373,7 +18411,7 @@ function _phantomV2_onAnyDestroyForHaunt(body, source, info) {
 
 function _phantomV2_drawHaunt() {
   if (!_phantomV2_hasHaunt()) return;
-  if (state !== 'playing' && state !== 'paused' && state !== 'apocalypse') return;
+  if (state !== 'playing' && state !== 'paused' && state !== 'apocalypse' && state !== 'voidfight') return;
   const now = Date.now();
   const spreadBonus = rankOf('phantomV2_spread') >= 1 ? PHANTOMV2_CURSE_FIELD_SPREAD_PX : 0;
   ctx.save();
@@ -18603,7 +18641,7 @@ function _phantomV2_updateHud() {
     return;
   }
   const el = _phantomV2_ensureHud();
-  const visible = state === 'playing' || state === 'paused' || state === 'apocalypse';
+  const visible = state === 'playing' || state === 'paused' || state === 'apocalypse' || state === 'voidfight';
   el.style.display = visible ? 'flex' : 'none';
   if (!visible) return;
   if (_phantomV2_hudWraithEl) {
@@ -18719,7 +18757,7 @@ function _phantomV2_onDestroyForAfterimage(body, source) {
 OrbHooks.on('onDestroy', (info) => {
   const body = info && info.body;
   const source = info && info.source;
-  if (state !== 'playing' && state !== 'devmode') return;
+  if (state !== 'playing' && state !== 'devmode' && state !== 'voidfight') return;
   if (!isPhantomV2Active() || !body) return;
   _phantomV2_onDestroyForRevenant(body, source);
   _phantomV2_onDestroyForAfterimage(body, source);
@@ -18764,7 +18802,7 @@ OrbHooks.on('onRender', () => {
 
 // (was: update wrap) tick wraith / echo / haunt systems per frame.
 OrbHooks.on('onUpdate', () => {
-  if (state !== 'playing' && state !== 'devmode') return;
+  if (state !== 'playing' && state !== 'devmode' && state !== 'voidfight') return;
   if (!isPhantomV2Active()) return;
   _phantomV2_recordMovement();
   _phantomV2_tickWraiths();
@@ -18949,7 +18987,7 @@ function siphonProc() {
   // later (a Cascade re-proc, bypassing the 5s gate).
   if (activeOrb === 'cyan' && rankOf('cascade') > 0 && Math.random() < 0.25) {
     setTimeout(() => {
-      if (state !== 'playing' && state !== 'apocalypse') return;
+      if (state !== 'playing' && state !== 'apocalypse' && state !== 'voidfight') return;
       _siphonApply(picks[Math.floor(Math.random() * picks.length)]);
       _cyan_flash('cascade', 'CASCADE', CYAN_PATH_COLORS.convergence, 250);
     }, 400);
@@ -19002,7 +19040,7 @@ function secondFlameRollForCast(source, px, py, waveCount, isSupernova) {
   const delayMs = Math.max(waveCount | 0, 1) * 400;
   const spawnX = px, spawnY = py;
   const id = setTimeout(() => {
-    if (state !== 'playing' && state !== 'devmode') return;
+    if (state !== 'playing' && state !== 'devmode' && state !== 'voidfight') return;
     pushNovaRingCapped({
       x: spawnX, y: spawnY, radius: 0, life: 1, prevR: 0,
       startTime: Date.now(),
@@ -19231,7 +19269,7 @@ function tickCapstoneTimers() {
 // only extends an active shield (5s CD, 2× base cap), removing the
 // PHALANX feedback-loop risk that motivated the original guard.
 function checkDestroyProc(body, source) {
-  if (state !== 'playing' && state !== 'devmode') return;
+  if (state !== 'playing' && state !== 'devmode' && state !== 'voidfight') return;
   // HELIOGRAPH kill-banked beam earner — runs orb-agnostic at the top so it
   // sees every body-destroyed event, but increments only on NON-beam kills
   // (beam rays, Light Sweep, and Zenith-Flash spawned novas tag their source
@@ -19474,6 +19512,10 @@ let deadCenterActive = false;
 let deadCenterTimeoutId = null;
 let deadCenterCycleIntervalId = null;
 let deadCenterResolved = false;
+// "The Last Light": the live gameplay state the picker was opened FROM, so close
+// resumes back into it ('voidfight' / 'devmode' / 'playing') instead of hardcoding
+// 'playing' — which in the arena re-fired the 10:00 apocalypse trigger (the bug).
+let _deadCenterPrevState = 'playing';
 
 function resetTreeNodeState() {
   powerupLastActivated = { shield: 0, nova: 0, hyperspeed: 0, ghost: 0 };
@@ -19554,6 +19596,9 @@ function openDeadCenterOverlay() {
   if (deadCenterActive) return;
   deadCenterActive = true;
   deadCenterResolved = false;
+  // Remember which live state we paused FROM so close() resumes back into it
+  // (the arena is 'voidfight'; the sandbox is 'devmode'); fall back to 'playing'.
+  _deadCenterPrevState = (state === 'voidfight' || state === 'devmode') ? state : 'playing';
   state = 'deadCenter';
   leftDown = false; rightDown = false;
   runPauseStart = Date.now();
@@ -19659,7 +19704,9 @@ function closeDeadCenterOverlay(resumePlay) {
   }
   runPauseStart = 0;
   deadCenterActive = false;
-  if (resumePlay) state = 'playing';
+  // Resume back into the state we opened from (voidfight / devmode / playing) —
+  // NOT a hardcoded 'playing', which in the arena re-triggered the 10:00 apocalypse.
+  if (resumePlay) state = _deadCenterPrevState || 'playing';
 }
 
 // Keystone (Drifter Convergence T3) v1.6.3 rework: on any pair combo
@@ -19895,6 +19942,8 @@ const PGS = (() => {
         HARD:    !!beatDifficulty.HARD,
         EXTREME: !!beatDifficulty.EXTREME,
       },
+      // "The Last Light": Void-fight unlock counter — grow-only (MAX) merge.
+      apocalypseSurvivals: Math.max(0, apocalypseSurvivals | 0),
       treesUnlocked: (() => {
         // v1.9.0-pre: enumerate ALL treesUnlocked keys rather than hard-coding
         // the 5 original orbs — otherwise new orbs (drifterV2 and any future
@@ -19960,6 +20009,7 @@ const PGS = (() => {
         orbTrees: mergeTrees(local.orbTrees, remote.orbTrees),
         budgetBonus: mergeBudgetBonus(local.budgetBonus, remote.budgetBonus),
         beatDifficulty: mergeBeat(local.beatDifficulty, remote.beatDifficulty),
+        apocalypseSurvivals: Math.max(local.apocalypseSurvivals | 0, remote.apocalypseSurvivals | 0),
         treesUnlocked: mergeTreesUnlocked(local.treesUnlocked, remote.treesUnlocked),
         tutorialCompleted: !!(local.tutorialCompleted || remote.tutorialCompleted),
         rainbowOrbUsed: !!(local.rainbowOrbUsed || remote.rainbowOrbUsed),
@@ -19981,6 +20031,7 @@ const PGS = (() => {
       orbTrees: mergeTrees(local.orbTrees, remote.orbTrees),
       budgetBonus: mergeBudgetBonus(local.budgetBonus, remote.budgetBonus),
       beatDifficulty: mergeBeat(local.beatDifficulty, remote.beatDifficulty),
+      apocalypseSurvivals: Math.max(local.apocalypseSurvivals | 0, remote.apocalypseSurvivals | 0),
       treesUnlocked: mergeTreesUnlocked(local.treesUnlocked, remote.treesUnlocked),
       tutorialCompleted: !!(local.tutorialCompleted || remote.tutorialCompleted),
       // v2.1.2: one-time cutscene + orb-unlock flags — OR-merged so they survive
@@ -20239,6 +20290,11 @@ const PGS = (() => {
       try {
         if (typeof refreshImpossibleVisibility === 'function') refreshImpossibleVisibility();
       } catch {}
+    }
+    // "The Last Light": Void-fight unlock counter — grow-only (local never shrinks).
+    if (typeof payload.apocalypseSurvivals === 'number' && payload.apocalypseSurvivals >= 0) {
+      apocalypseSurvivals = Math.max(apocalypseSurvivals | 0, Math.floor(payload.apocalypseSurvivals));
+      try { localStorage.setItem('drift_apoc_survivals', String(apocalypseSurvivals)); } catch {}
     }
     if (payload.treesUnlocked && typeof payload.treesUnlocked === 'object') {
       for (const k of Object.keys(treesUnlocked)) {
@@ -22456,6 +22512,13 @@ const SFX = (function() {
   function clickSecondary() {
     safeSfx(t => { chipNote(392.00, t, 0.03, 0.15, 'square'); });  // G4
   }
+  // "The Last Light": the VOID's typewriter blip. Same chip synth as Sirius's
+  // clickSecondary (G4 square), dropped ~2 octaves to a soft low sine — a cold,
+  // round sub-tone so the Void reads as deeper and darker than Sirius's bright
+  // square click while staying clearly part of the same dialogue voice.
+  function clickVoid() {
+    safeSfx(t => { chipNote(92.50, t, 0.06, 0.16, 'sine'); });     // ~F#2
+  }
 
   // Release decoded music buffers for everything except the currently-playing
   // track and the next gameplay phase. Called from deepCleanup() — lets the GC
@@ -22485,7 +22548,7 @@ const SFX = (function() {
     brandMark, plagueProc, reverbBurst, startWakeHiss,
     playTrack, pauseMusic, resumeMusic,
     crossfadeGameplayPhase, stopAllGameplayTracks,
-    clickPrimary, clickSecondary,
+    clickPrimary, clickSecondary, clickVoid,
     setMusicEnabled, setSfxEnabled, isMusicEnabled, isSfxEnabled,
     suspendCtx, resumeCtx,
     releaseInactiveMusicBuffers,
@@ -23346,7 +23409,7 @@ function updatePixiStars() {
   // current scene. The expensive op is the WebGL render itself — that's
   // what we gate.
   const inGameplay = state === 'playing' || state === 'paused'
-                  || state === 'apocalypse' || state === 'devmode'
+                  || state === 'apocalypse' || state === 'voidfight' || state === 'devmode'
                   || state === 'tutorial';
   if (!inGameplay && isFullscreenOverlayVisible()) return;
   try { pixiApp.renderer.render(pixiApp.stage); } catch (err) {
@@ -23664,7 +23727,7 @@ function updatePixiBodyEffectsLayer() {
     // the targeting feedback they'll see in real gameplay.
     // v2.1.0 Option-B: neutral=white 60% (no pulse), input=cyan/red 90% with
     // 5Hz pulse. Width 2, ring +8 outside body with ±3 sine breathe.
-    if ((state === 'playing' || state === 'tutorial') && closestBody) {
+    if ((state === 'playing' || state === 'tutorial' || state === 'voidfight') && closestBody) {
       const b = closestBody;
       const inputHeld = leftDown || rightDown;
       const ringRgb = leftDown ? '80,200,255' : rightDown ? '255,120,80' : '230,235,245';
@@ -23689,7 +23752,7 @@ function updatePixiBodyEffectsLayer() {
   // distracting (second-pass tone-down from initial width 2 / alpha 0.65 bump).
   if (pixiTargetLineGraphics) {
     pixiTargetLineGraphics.clear();
-    if ((state === 'playing' || state === 'tutorial') && closestBody && (leftDown || rightDown)) {
+    if ((state === 'playing' || state === 'tutorial' || state === 'voidfight') && closestBody && (leftDown || rightDown)) {
       const b = closestBody;
       const baseColor = leftDown ? '80,200,255' : rightDown ? '255,120,80' : '230,235,245';
       const dashColor = playerInVoidRange ? '140,60,200' : baseColor;
@@ -23851,7 +23914,7 @@ function updatePixiPlayerLayer() {
   // v1.6.4: 'tutorial' must render the player too — Fix 1. The first-time
   // tutorial steps the player through ATTRACT/REPEL and powerup pickups; if
   // the orb is invisible they have no visual feedback for any of it.
-  const playerVisible = (state === 'playing' || state === 'paused' || state === 'apocalypse' || state === 'devmode' || state === 'tutorial');
+  const playerVisible = (state === 'playing' || state === 'paused' || state === 'apocalypse' || state === 'voidfight' || state === 'devmode' || state === 'tutorial');
   if (playerVisible) {
     const dpr = atlasScale();
     if (!pixiPlayerCanvas) {
@@ -23899,7 +23962,7 @@ function updatePixiPlayerLayer() {
   // v1.6.4: tutorial included so the orb trail particles render during
   // ATTRACT/REPEL demonstration — without it the orb appears to glide
   // without its signature trail.
-  const trailVisible = (state === 'playing' || state === 'paused' || state === 'apocalypse' || state === 'dead' || state === 'devmode' || state === 'tutorial');
+  const trailVisible = (state === 'playing' || state === 'paused' || state === 'apocalypse' || state === 'voidfight' || state === 'dead' || state === 'devmode' || state === 'tutorial');
   pixiTrailGraphics.clear();
   if (pixiTrailAdditiveGraphics) pixiTrailAdditiveGraphics.clear();
   if (trailVisible && orbTrailParticles.length) {
@@ -24769,7 +24832,7 @@ function updatePixiOverlayLayer() {
   }
 
   // Hyperspeed stack text (2× / 3× / 4× banner above player).
-  if (state === 'playing' && hyperSpeedStacks >= 2) {
+  if ((state === 'playing' || state === 'voidfight') && hyperSpeedStacks >= 2) {
     if (!pixiHyperStackCanvas) {
       pixiHyperStackCanvas = document.createElement('canvas');
       pixiHyperStackCanvas.width = PIXI_HYPER_STACK_W;
@@ -24807,7 +24870,7 @@ function updatePixiOverlayLayer() {
   // Apocalypse sun — complex radial gradients + 'lighter' composite + clip
   // + bezier flares. Full-screen offscreen canvas while active. The other
   // apocalypse visuals (tint + impact flashes) went to pixiScreenFillG above.
-  if (state === 'apocalypse' && apocalypseSun) {
+  if ((state === 'apocalypse' || state === 'voidfight') && apocalypseSun) {
     if (!pixiApocalypseSunCanvas) {
       pixiApocalypseSunCanvas = document.createElement('canvas');
       pixiApocalypseSunCanvas.width = W;
@@ -26158,6 +26221,10 @@ function addDestroyPoints() {
   // Pressure score bonus etc. (was: Roamer addDestroyPoints wrap). `pts` is the
   // base streak points just added; handlers add their own bonus via globals.
   OrbHooks.emit('onAddDestroyPoints', pts);
+  // "The Last Light" (source 1): in the Void-fight arena, every minion kill chips
+  // the Void's health — through the kill-rate cap (so a hyperspeed pass can't dump
+  // hundreds of kills' worth at once). The HP bar is the feedback (no per-kill FX).
+  if (state === 'voidfight') _voidDamage(VF_MINION_DMG, null, null);
 }
 
 // --- Combo helpers ---
@@ -26411,7 +26478,7 @@ function _activateCombo_default(key, x, y) {
     addShake(7);
     for (let i = 0; i < supernovaWaves; i++) {
       pendingNovaTimeouts.push(setTimeout(() => {
-        if (state !== 'playing' && state !== 'devmode') return;
+        if (state !== 'playing' && state !== 'devmode' && state !== 'voidfight') return;
         // v1.6.3: supernova first wave is 10% smaller (sizeMult 0.9) so
         // wave 0 matches a regular single nova's size. radiusMult grows
         // from that at the +10%/wave rate.
@@ -26706,7 +26773,7 @@ function fireTripleNova(px, py, source, waveOverride) {
   for (let i = 1; i < waves; i++) {
     const life = Math.max(0.4, 1 - i * 0.1);
     pendingNovaTimeouts.push(setTimeout(() => {
-      if (state === 'playing' || state === 'devmode') {
+      if (state === 'playing' || state === 'devmode' || state === 'voidfight') {
         pushNovaRingCapped({ x: player.x, y: player.y, radius: 0, life, prevR: 0, startTime: Date.now(), sizeMult: 0.9 });
         emitNovaSpecks(player.x, player.y);
         // v1.7.0: per-wave shake removed; kill-driven shake replaces it.
@@ -28326,6 +28393,12 @@ function _updateCore() {
   // tutorial since those run their own tick paths and aren't impact-gated.
   if (Date.now() < hitstopUntil && state !== 'apocalypse' && state !== 'tutorial') return;
   if (state === 'apocalypse') { frame++; updateApocalypse(); return; }
+  // "The Last Light": Void-fight dispatch (sibling to the apocalypse driver).
+  // updateVoidFight() returns true during the INTRO cinematic (player pinned,
+  // physics skipped — own frame tick like apocalypse); returns false in the
+  // ARENA so this falls through to the normal gameplay flow below (which runs
+  // its own frame++ after the devmode gate), reusing scroll/spawn/collision/orb offense.
+  if (state === 'voidfight' && updateVoidFight()) { frame++; return; }
   // v1.6.4: tutorial runs its own minimal physics tick so the player can
   // move + grab powerups while the rest of the world stays inert. No body
   // spawning, no scrolling, no death — walls rebound instead.
@@ -28333,7 +28406,11 @@ function _updateCore() {
   // DEVMODE runs the same physics/animation/collision loop as 'playing' so
   // the sandbox feels real, but auto-spawns / score submit / analytics /
   // apocalypse auto-trigger are gated below.
-  if (state !== 'playing' && state !== 'devmode') return;
+  // "The Last Light": the Void-fight ARENA also runs the full physics flow here
+  // (like devmode) — its INTRO already returned above; this is the arena frame.
+  // The 'playing'-only lines below (music phase, event rolls, the 10:00 trigger)
+  // stay gated, so the arena reuses scroll/spawn/collision/orb offense only.
+  if (state !== 'playing' && state !== 'devmode' && state !== 'voidfight') return;
   frame++;
   // Phase-based gameplay music crossfade — only during active play.
   if (state === 'playing') checkGameplayPhase();
@@ -28358,7 +28435,7 @@ function _updateCore() {
   // PART 1: Leviathan's MAELSTROM AUTO-FIRES the moment it's off cooldown — no left+right needed (the
   // auto-drain on a timer is the balance valve that stops ABYSS being pinned). Every OTHER orb still
   // requires the manual left+right trigger. Gated to live gameplay so it never fires while paused/dead/menu.
-  const levAutoBurst = (activeOrb === 'leviathan') && (state === 'playing' || state === 'devmode' || state === 'apocalypse');
+  const levAutoBurst = (activeOrb === 'leviathan') && (state === 'playing' || state === 'devmode' || state === 'apocalypse' || state === 'voidfight');
   if ((burstTriggered || levAutoBurst) && burstReady) {
     executeBurst();
     // PART 3 (v2.3.x) mix: a burst is a headline moment — duck the per-kill destroy wall
@@ -28799,10 +28876,12 @@ function _updateCore() {
     }
   }
   bodies = bodies.filter(b => !isNaN(b.x) && !isNaN(b.y) && !(b.x <= 1 && b.y <= 1) && b.y > -H * 3 && b.y < H + 80);
-  const bodyCap = effectiveMaxBodies();
+  // "The Last Light" (Bug 3): the arena uses a sane, readable minion density —
+  // NOT the 10:00 max-cap wall (effectiveMaxBodies ramps to 5/6/7/9 by 10:00).
+  const bodyCap = (state === 'voidfight') ? voidFightBodyCap() : effectiveMaxBodies();
   const refillSpacing = effectiveBodySpacing();
   // Devmode disables auto-refill — user spawns manually from the panel.
-  while (state === 'playing' && bodies.length < bodyCap) {
+  while ((state === 'playing' || state === 'voidfight') && bodies.length < bodyCap) {
     let yBase;
     if (bodies.length === 0) {
       // Math.min of an empty array is +Infinity — explicit fallback so the
@@ -28852,7 +28931,7 @@ function _updateCore() {
   // Per-frame Math.random() probability dt-scaled so attempts/second stays
   // constant across frame rates. 0.025 @ 120fps = 3 attempts/sec avg.
   // Devmode disables auto-spawn — user spawns powerups manually from the panel.
-  if (state === 'playing' && powerups.length < 2 && timeSinceSpawn > spawnIntervalMs && Math.random() < 0.025 * dtScale) {
+  if ((state === 'playing' || state === 'voidfight') && powerups.length < 2 && timeSinceSpawn > spawnIntervalMs && Math.random() < 0.025 * dtScale) {
     spawnPowerup();
     lastPowerupSpawn = Date.now();
   }
@@ -29033,7 +29112,7 @@ function _updateCore() {
               _solarCMBurnZonesPending = 3;
               _solar_addFlash('CRITICAL MASS', SOLAR_PATH_COLORS.inferno);
               const id = setTimeout(() => {
-                if (state !== 'playing' && state !== 'devmode') return;
+                if (state !== 'playing' && state !== 'devmode' && state !== 'voidfight') return;
                 fireTripleNova(player.x, player.y, 'critical_mass');
                 shakeCapstone('criticalMass');
                 triggerHitstop(140);
@@ -29434,12 +29513,165 @@ let apocalypseImpactTriggered = false;
 let apocalypseRumbleNodes = null;
 let apocalypsePlayerStart = null;     // position at phase 1 entry for smooth lerp
 
+// === "THE LAST LIGHT" — apocalypse two-voice exchange (Sirius vs the Void) ===
+// Shown DURING the consume-cutscene (the NOT-unlocked path), indexed by
+// apocalypseSurvivals at cutscene start (0..4). Each run: Sirius speaks in his
+// REAL dialogue presentation (the shared #ascension* typewriter box, his cyan
+// styling + clickSecondary blip), then THE VOID answers in its own voice (violet
+// styling + the deeper clickVoid blip). The exchange is TIMED off the apocalypse
+// clock — it auto-types and auto-advances (no taps), unlike the tap-driven
+// dialogueStart — but reuses the same DOM + typewriter look as every other Sirius
+// line, so the apocalypse no longer looks like a different system. Independent of
+// the suppressed Sirius death systems (the apocalypseDeathFlag guards).
+// Each stage = [ Sirius line, Void answer ]. Arc: Sirius's panic → defiance →
+// "soon we stop running" is answered by the Void's dismissal → patience →
+// interest → an almost-welcoming hunger (which sets up the arena once unlocked).
+const APOCALYPSE_EXCHANGE = [
+  // 0 — first apocalypse ever: Sirius panics + plants "...yet"; the Void barely notices the spark.
+  [ "There it is — the thing I keep from you. RUN, little light. You are nowhere near ready. Not yet.",
+    "You shield a single spark, star. I have swallowed suns. It will gutter like all the rest." ],
+  // 1 — Sirius urges flight; the Void answers with patient inevitability.
+  [ "Again. It always comes at the end. Move — it's CLOSER. No... not you. Not yet. Just RUN.",
+    "Run, then. Run as far as the dark — and the dark is everywhere. I am patient. I have already won." ],
+  // 2 — defiance creeping into Sirius; the Void shrugs off the delay.
+  [ "Still here. Still I drag you back from its mouth. One day you plant your feet... but not today.",
+    "How long you make him bleed for you, star. Postpone it forever. It changes nothing." ],
+  // 3 — the dark NOTICES the player now; the Void's first flicker of interest.
+  [ "Look how long you last now. The dark has noticed — and I might just let you TRY. Almost. Almost ready.",
+    "...Yes. I see it. The little light that will not go out. Bring it closer. Let me taste why it burns." ],
+  // 4 — unlock imminent: Sirius commits to the fight; the Void all but welcomes it.
+  [ "You magnificent, stubborn little light. Soon we stop running. Soon — we make the dark regret the descent.",
+    "Then come, spark. Come and be devoured. I have waited longer than your stars... and I do so love to be fed." ],
+];
+let _apocTauntStage = 0;        // survivals snapshot, chosen at consume-cutscene start
+
+// Timed two-voice typewriter — a faithful match of the dialogueStart engine
+// (same #ascension* DOM, same per-char reveal + every-2nd-char blip cadence) but
+// driven by the apocalypse clock instead of taps. Beats (seconds since start):
+const APOC_EX_SIRIUS_AT = 1.5;  // Sirius begins (during the quiet build)
+const APOC_EX_VOID_AT   = 9.0;  // the Void answers (as it begins its descent)
+const APOC_EX_END_AT    = 25.5; // clear the box so the final descent + impact read clean
+const APOC_EX_TYPE_MS   = 34;   // per-char pace (a touch slower than DLG's 28 for gravitas)
+let _apocExLine  = -1;          // current shown line: 0 = Sirius, 1 = Void, -1 = hidden
+let _apocExShown = 0;           // chars revealed of the current line
+let _apocExText  = '';          // substituted full text of the current line
+
+function _apocExClear() {
+  _apocExLine = -1; _apocExShown = 0; _apocExText = '';
+  const ov = document.getElementById('ascensionOverlay');
+  if (ov) ov.classList.remove('visible', 'apoc-exchange');
+  const sp = document.getElementById('ascensionSpeaker');
+  const tx = document.getElementById('ascensionText');
+  if (sp) sp.classList.remove('void-voice');
+  if (tx) tx.classList.remove('void-voice');
+}
+// Per-frame driver, called from updateApocalypse(). Types Sirius then the Void
+// off the apocalypse clock, each with its own blip + colour. Only the
+// consume-cutscene path runs this (state === 'apocalypse').
+function _updateApocExchange() {
+  if (state !== 'apocalypse') { _apocExClear(); return; }
+  const stage = APOCALYPSE_EXCHANGE[_apocTauntStage] || APOCALYPSE_EXCHANGE[0];
+  const t = apocalypseElapsed();
+  let line = -1, raw = '', start = 0, isVoid = false, speaker = '';
+  if (t >= APOC_EX_SIRIUS_AT && t < APOC_EX_VOID_AT) {
+    line = 0; raw = stage[0]; start = APOC_EX_SIRIUS_AT; isVoid = false; speaker = narratorSpeaker();
+  } else if (t >= APOC_EX_VOID_AT && t < APOC_EX_END_AT) {
+    line = 1; raw = stage[1]; start = APOC_EX_VOID_AT; isVoid = true; speaker = 'THE VOID';
+  } else {
+    _apocExClear(); return;
+  }
+  // Show the shared dialogue box: transparent backdrop so the descent stays
+  // visible, no TAP-TO-CONTINUE (auto-played). Defensively clear any stale
+  // cutscene classes that would hide/dim the box.
+  const ov = document.getElementById('ascensionOverlay');
+  if (ov && !ov.classList.contains('apoc-exchange')) {
+    ov.classList.remove('particle-phase', 'sd-scene', 'blackout');
+    ov.classList.add('visible', 'apoc-exchange');
+  }
+  _dlgShowContinue(false);
+  // On line change: set the speaker + per-voice styling, reset the typewriter.
+  if (line !== _apocExLine) {
+    _apocExLine = line;
+    _apocExShown = 0;
+    _apocExText = (typeof siriusSubstitute === 'function') ? siriusSubstitute(raw) : raw;
+    const sp = document.getElementById('ascensionSpeaker');
+    const tx = document.getElementById('ascensionText');
+    if (sp) { sp.textContent = speaker; sp.classList.toggle('void-voice', isVoid); }
+    if (tx) tx.classList.toggle('void-voice', isVoid);
+    _dlgSetText('');
+  }
+  // Reveal by elapsed-since-start; blip on each newly revealed char (every 2nd,
+  // matching _dlgBlip's cadence) using the speaker's own blip.
+  const want = Math.min(_apocExText.length, Math.floor((t - start) * 1000 / APOC_EX_TYPE_MS));
+  if (want > _apocExShown) {
+    for (let c = _apocExShown + 1; c <= want; c++) {
+      if ((c & 1) === 0) {
+        try {
+          if (isVoid) { if (SFX.clickVoid) SFX.clickVoid(); }
+          else if (SFX.clickSecondary) SFX.clickSecondary();
+        } catch {}
+      }
+    }
+    _apocExShown = want;
+    _dlgSetText(_apocExText.slice(0, _apocExShown));
+  }
+}
+
+// --- Void-fight arena (Stage 2: hybrid damage model — Void HP vs descent timer).
+const VF_INTRO_SEC         = 3.5;   // cinematic build-up before steering returns
+// The Void sits mostly OFF the top edge — a big core whose bottom ARC protrudes
+// into view (large + menacing, but it doesn't cover the play area). The arc
+// descends over the fight as the lose-timer; landing on the player = lose.
+const VF_VOID_RADIUS_FRAC  = 0.80;  // core radius (× W) — large; center stays above the top edge
+const VF_ARC_TOP_FRAC      = 0.12;  // held: the arc's bottom edge protrudes to ~12% screen height
+const VF_ARC_LAND_FRAC     = 0.80;  // lose: the arc has descended to ~80% (engulfs the player)
+const VF_DESCENT_TIME      = 95;    // s — the slow lose-timer (arc top → land)
+// Sane arena minion density per difficulty — readable "hard normal play", NOT
+// the 10:00 max-cap wall (effectiveMaxBodies ramps to 5/6/7/9 by 10:00).
+const VF_BODY_CAP = { NORMAL: 3, HARD: 4, EXTREME: 4, IMPOSSIBLE: 5 };
+function voidFightBodyCap() { return VF_BODY_CAP[difficulty] || 4; }
+// Void health — scaled by difficulty (harder = more HP = longer, harder fight).
+const VF_HP_BASE = 100;
+const VF_HP_DIFF = { NORMAL: 1.0, HARD: 1.2, EXTREME: 1.4, IMPOSSIBLE: 1.65 };
+// THE KILL-RATE CAP (voidfight ONLY — normal hyperspeed/orbs are untouched). A
+// token bucket: the Void loses at most VF_DMG_CAP_PER_SEC health/sec, with a
+// small burst tolerance. A 10×–20× hyperspeed pass that vaporizes hundreds of
+// minions still only spends the bucket — it clears minions (fun) but cannot
+// delete the Void instantly. Sustained damage flows at the cap; excess is dropped.
+const VF_DMG_CAP_PER_SEC   = 2.2;
+const VF_DMG_BUCKET_MAX    = VF_DMG_CAP_PER_SEC * 1.5;   // ~3.3 burst headroom
+const VF_MINION_DMG        = 0.7;   // source 1: per minion kill (drives the HP bar)
+const VF_RAM_DMG_PER_SEC   = 1.6;   // source 2: ramming the Void's underside
+const VF_RAM_HS_MULT       = 1.8;   // ram boosted while hyperspeeding (nebula/Warp identity)
+const VF_RING_DMG          = 0.55;  // source 2: a nova/EMP ring reaching the Void (once per ring)
+let voidFightStart = 0;
+let voidFightPhase = 'idle';        // 'idle' | 'intro' | 'arena' | 'win' | 'lose'
+let voidHp = 0, voidHpMax = 0;      // the Void's health pool (win = drain to 0)
+let voidDmgBudget = 0;              // kill-rate-cap token bucket (refills at the cap)
+let voidDescent = 0;               // 0..1 lose progress (arc top → land)
+let voidFightWon = false;          // set on the HP-zero win; drives the results banner
+let voidFightEndAt = 0;            // win/lose resolution timestamp
+let _voidHits = [];                // retro direct-hit FX: { x, y, dmg, t }
+
 function apocalypseElapsed() {
+  // "The Last Light": during the Void-fight arena the same clock drives the
+  // Void's animation (drawApocalypseSun's time term). The apocalypse code paths
+  // only run while state === 'apocalypse', so this branch can't cross them.
+  if (state === 'voidfight' && voidFightStart) return (Date.now() - voidFightStart) / 1000;
   return apocalypseStart ? (Date.now() - apocalypseStart) / 1000 : 0;
 }
 
 function startApocalypse() {
-  if (state === 'apocalypse' || state === 'dead') return;
+  if (state === 'apocalypse' || state === 'voidfight' || state === 'dead') return;
+  // "The Last Light": a REAL run (state 'playing' — including the APOCALYPSENOW
+  // dev cheat) at 10:00 with the fight unlocked branches into the held-Void
+  // ARENA. The devmode "TRIGGER APOCALYPSE NOW" button (state 'devmode') always
+  // plays the consume-cutscene and never enters the arena. The not-unlocked
+  // path below is unchanged except for the new escalating Sirius taunts.
+  if (state !== 'devmode' && voidFightUnlocked()) { startVoidFight(); return; }
+  // Snapshot which escalating taunt set this consume-cutscene shows (the counter
+  // is incremented later, at the apocalypse death in triggerDeath).
+  _apocTauntStage = Math.min(apocalypseSurvivals | 0, APOCALYPSE_EXCHANGE.length - 1);
   if (typeof Sentry !== 'undefined') Sentry.addBreadcrumb({ category: 'apocalypse', message: 'sequence start', level: 'info' });
   state = 'apocalypse';
   if (typeof AdManager !== 'undefined') AdManager.hideBanner();
@@ -29490,6 +29722,7 @@ function startApocalypse() {
 function updateApocalypse() {
   if (state !== 'apocalypse') return;
   const t = apocalypseElapsed();
+  _updateApocExchange();   // "The Last Light": timed Sirius↔Void two-voice exchange (consume-cutscene path)
 
   // Physics frozen — but we still smoothly lerp the player to center.
   if (t <= 3) {
@@ -29565,6 +29798,266 @@ function updateApocalypse() {
       // Jump to normal death flow. triggerDeath picks up apocalypseDeathFlag.
       triggerDeath();
     }
+  }
+}
+
+// === "THE LAST LIGHT" — Void-fight arena (Stage 1) ==================
+// Entered from startApocalypse() on a real run (state 'playing') when the fight
+// is unlocked. Reuses the apocalypse cinematic build-up, but the Void HALTS at a
+// hold line near the top instead of consuming the player. After the intro the
+// player steers + kills in a normal-physics arena (no meter/attacks/win-lose
+// yet — Stage 1). The player leaves only by dying normally (existing path).
+function startVoidFight() {
+  if (state === 'voidfight' || state === 'apocalypse' || state === 'dead') return;
+  if (typeof Sentry !== 'undefined') Sentry.addBreadcrumb({ category: 'voidfight', message: 'arena start', level: 'info' });
+  state = 'voidfight';
+  voidFightStart = Date.now();
+  voidFightPhase = 'intro';
+  _apocExClear();   // the arena has no consume-cutscene exchange
+  if (typeof AdManager !== 'undefined') AdManager.hideBanner();
+  // Reuse the apocalypse entry clears verbatim so the build-up reads identically
+  // up to the hold line: kill events, wipe the board + all transient skill
+  // visuals, fade music, neutralize input.
+  if (eventState) { eventState.active = null; eventState.scheduled.length = 0; }
+  eventWarnings.length = 0;
+  apocalypseImpactTriggered = false;
+  apocalypseImpactStart = 0;
+  apocalypseSun = null;
+  apocalypsePlayerStart = { x: player.x, y: player.y };
+  for (const b of bodies) {
+    emitDestroyBurst(b.x, b.y, b.glowColor || 'rgba(255,200,120,1)');
+    emitDestroyEffects(b, 'nova');
+  }
+  bodies = [];
+  powerups = [];
+  empRings = []; novaRings = []; burnZones = []; afterburnDiscs = [];
+  planetRipples = []; crackFragments = [];
+  nebulaRift = null; deadStarImplode = null;
+  goldenShieldActive = false; goldenShieldHits = 0;
+  _solarFireballs = [];
+  _cosmicClones = []; _cosmicArcs = [];
+  _drifterV2_threads = []; _drifterV2_threadProjectiles = [];
+  _phantomV2_deathBursts = []; _phantomV2_wraiths = []; _phantomV2_chainArcs = [];
+  _phantomV2_echoes = []; _phantomV2_severSnaps = []; _phantomV2_lingerZones = [];
+  _phantomV2_reverbDropPositions = [];
+  _cyan_flashes = []; _cosmic_flashes = []; _solar_flashes = [];
+  _nebula_flashes = []; _asteroid_flashes = []; _drifterV2_flashes = [];
+  _phantomV2_flashes = [];
+  try { clearPendingNovaTimeouts(); } catch {}
+  SFX.playTrack(null, 3);
+  leftDown = false;
+  rightDown = false;
+  pauseBtn.classList.remove('visible');
+}
+
+// Position the Void's big core so its bottom ARC sits at descent-fraction d
+// (0 = held at the top, 1 = landed on the player). The core center stays above
+// the screen; only the arc + glow protrude. Reused by intro / arena / win / lose.
+function _positionVoidArc(r, d) {
+  if (!apocalypseSun) apocalypseSun = { radius: r, y: -r, progress: 0 };
+  const bottom = H * (VF_ARC_TOP_FRAC + (VF_ARC_LAND_FRAC - VF_ARC_TOP_FRAC) * Math.max(0, Math.min(1, d)));
+  apocalypseSun.radius = r;
+  apocalypseSun.y = bottom - r;     // center kept above the top edge for a big radius
+  apocalypseSun.progress = d;
+}
+
+// Apply damage to the Void THROUGH the kill-rate cap (token bucket). Excess is
+// dropped — the kills/hits still happen, they just can't dump unlimited damage.
+function _voidDamage(amount, hitX, hitY) {
+  if (state !== 'voidfight' || voidFightPhase !== 'arena' || voidHp <= 0 || !(amount > 0)) return;
+  const applied = Math.min(amount, voidDmgBudget);
+  if (applied <= 0) return;         // cap reached this window — damage dropped
+  voidDmgBudget -= applied;
+  voidHp = Math.max(0, voidHp - applied);
+  if (hitX != null) _voidHits.push({ x: hitX, y: hitY, dmg: applied, t: Date.now() });
+}
+
+// SOURCE 2b: the first frame a nova/EMP ring's top edge reaches the Void's
+// underside, it chips the Void once (covers solar/supernova, Bulwark EMP chains,
+// Tachyon novas, drifterV2, Leviathan crush rings — anything using these arrays).
+function _voidRingHits(rings, arcBottom) {
+  if (!rings || !rings.length) return;
+  for (const ring of rings) {
+    if (!ring || ring._hitVoid) continue;
+    const rr = ring.radius || 0;
+    const ry = (ring.y != null) ? ring.y : player.y;
+    if (ry - rr <= arcBottom) {
+      ring._hitVoid = true;
+      _voidDamage(VF_RING_DMG, W / 2 + (Math.random() - 0.5) * W * 0.4, Math.max(12, arcBottom));
+    }
+  }
+}
+
+// Per-frame Void-fight driver. Returns TRUE when the world should be FROZEN
+// (intro cinematic + win/lose beats); returns FALSE in the LIVE arena (caller
+// falls through to the full gameplay flow, so scroll/spawn/collision/orb offense
+// all run for free). Drives the descent lose-timer, the kill-rate-cap bucket,
+// the direct-damage channels (ram + rings), and the win/lose resolution.
+function updateVoidFight() {
+  if (state !== 'voidfight') return false;
+  const t = (Date.now() - voidFightStart) / 1000;
+  const r = W * VF_VOID_RADIUS_FRAC;
+
+  // --- INTRO: cinematic build-up; the Void slides from off-screen down to its
+  // held arc. Player pinned + invulnerable; physics skipped.
+  if (t < VF_INTRO_SEC) {
+    voidFightPhase = 'intro';
+    const k = Math.min(1, t / 3);
+    const ease = k * k * (3 - 2 * k);
+    if (apocalypsePlayerStart) {
+      player.x = apocalypsePlayerStart.x + (W / 2 - apocalypsePlayerStart.x) * ease;
+      player.y = apocalypsePlayerStart.y + (H * 0.72 - apocalypsePlayerStart.y) * ease;
+    }
+    player.vx = 0; player.vy = 0;
+    leftDown = false; rightDown = false;
+    if (bodies.length) bodies = [];
+    if (powerups.length) powerups = [];
+    if (t >= 3 && !apocalypseRumbleNodes) apocalypseRumbleNodes = SFX.startApocalypseRumble();
+    if (t >= 3) screenShake = Math.max(screenShake, 5 + 9 * Math.min(1, (t - 3) / 0.5));
+    if (apocalypseRumbleNodes) {
+      apocalypseRumbleNodes.setVolume(t >= 3 ? 0.05 + 0.10 * Math.min(1, (t - 3) / 0.5) : 0.05);
+      if (apocalypseRumbleNodes.tick) apocalypseRumbleNodes.tick();
+    }
+    const heldBottom = H * VF_ARC_TOP_FRAC, p = Math.min(1, t / VF_INTRO_SEC);
+    if (!apocalypseSun) apocalypseSun = { radius: r, y: -r, progress: 0 };
+    apocalypseSun.radius = r;
+    apocalypseSun.y = (-r) + ((heldBottom - r) - (-r)) * p;   // bottom edge: off-screen → held
+    apocalypseSun.progress = 0;
+    graceEndTime = Math.max(graceEndTime, Date.now() + 200);
+    return true;
+  }
+
+  // First LIVE arena frame: init HP / cap bucket / descent; grace as control returns.
+  if (voidFightPhase === 'intro') {
+    voidFightPhase = 'arena';
+    voidHpMax = VF_HP_BASE * (VF_HP_DIFF[difficulty] || 1);
+    voidHp = voidHpMax;
+    voidDmgBudget = VF_DMG_BUCKET_MAX;
+    voidDescent = 0;
+    voidFightWon = false;
+    _voidHits.length = 0;
+    graceEndTime = Math.max(graceEndTime, Date.now() + GRACE_DURATION_MS);
+  }
+
+  const dt = Math.min(0.05, (frameDt || 16) / 1000);   // bg-tab guard
+
+  // --- WIN / LOSE beats: hold the world frozen for a short resolution, then finalize.
+  if (voidFightPhase === 'win')  { _positionVoidArc(r, voidDescent); if (Date.now() >= voidFightEndAt) _voidFightFinalizeWin();  return true; }
+  if (voidFightPhase === 'lose') { _positionVoidArc(r, 1);          if (Date.now() >= voidFightEndAt) _voidFightFinalizeLose(); return true; }
+
+  // --- LIVE ARENA: advance the descent, refill the cap bucket, apply DIRECT
+  // damage (ram + rings), position the Void, check win/lose.
+  voidDescent = Math.min(1, voidDescent + dt / VF_DESCENT_TIME);
+  voidDmgBudget = Math.min(VF_DMG_BUCKET_MAX, voidDmgBudget + VF_DMG_CAP_PER_SEC * dt);
+  _positionVoidArc(r, voidDescent);
+  if (apocalypseRumbleNodes) {
+    apocalypseRumbleNodes.setVolume(0.15 + 0.15 * voidDescent);   // swells as it nears
+    if (apocalypseRumbleNodes.tick) apocalypseRumbleNodes.tick();
+  }
+
+  const arcBottom = apocalypseSun.y + apocalypseSun.radius;   // the visible underside
+  // SOURCE 2a — RAM: the player (or its hyperspeed barrier) touching the Void's
+  // underside chips it continuously, boosted while hyperspeeding (nebula/Warp).
+  const hs = activeEffects.hyperspeed > 0;
+  const ramReach = PLAYER_R + (hs ? 96 : 26);
+  if (player.y - ramReach <= arcBottom) {
+    const ramFx = (frame % 4 === 0);   // rate-limit the spark FX (damage still applies every frame)
+    _voidDamage(VF_RAM_DMG_PER_SEC * (hs ? VF_RAM_HS_MULT : 1) * dt, ramFx ? player.x : null, ramFx ? Math.max(12, arcBottom) : null);
+  }
+  // SOURCE 2b — nova / EMP rings reaching the Void.
+  _voidRingHits(novaRings, arcBottom);
+  _voidRingHits(empRings, arcBottom);
+
+  if (voidHp <= 0)      { _voidFightBeginWin();  return true; }   // WIN: health drained
+  if (voidDescent >= 1) { _voidFightBeginLose(); return true; }   // LOSE: arc landed on the player
+  return false;   // live: fall through to normal gameplay physics
+}
+
+function _voidFightBeginWin() {
+  if (voidFightPhase === 'win' || voidFightPhase === 'lose') return;
+  voidFightPhase = 'win';
+  voidFightWon = true;
+  voidFightEndAt = Date.now() + 1500;
+  try {
+    const arcBottom = apocalypseSun ? apocalypseSun.y + apocalypseSun.radius : H * 0.2;
+    for (let i = 0; i < 14; i++) {
+      emitDestroyBurst(W * (0.08 + 0.84 * (i / 13)), Math.max(16, arcBottom - 10 + (Math.random() - 0.5) * 50), 'rgba(206,150,255,1)');
+    }
+    deathFlashFrames = 1;
+    screenShake = Math.max(screenShake, 18);
+    if (SFX.playApocalypseImpact) SFX.playApocalypseImpact();
+  } catch (e) {}
+  bodies = []; powerups = [];
+}
+function _voidFightBeginLose() {
+  if (voidFightPhase === 'win' || voidFightPhase === 'lose') return;
+  voidFightPhase = 'lose';
+  voidFightEndAt = Date.now() + 1200;
+  try { if (SFX.playApocalypseImpact) SFX.playApocalypseImpact(); screenShake = Math.max(screenShake, 30); } catch (e) {}
+  bodies = []; powerups = [];
+}
+function _voidFightFinalizeWin() {
+  if (apocalypseRumbleNodes) { try { apocalypseRumbleNodes.stop(); } catch {} apocalypseRumbleNodes = null; }
+  voidFightWon = true;
+  _voidMarkBeaten();
+  lastDeathCause = 'voidwin';
+  // apocalypseDeathFlag stays FALSE — a win is not a consume. The cutscene guard
+  // (state==='voidfight') suppresses the Sirius systems in triggerDeath; the
+  // results banner reads "THE VOID BREAKS" via voidFightWon.
+  triggerDeath();
+}
+function _voidFightFinalizeLose() {
+  if (apocalypseRumbleNodes) { try { apocalypseRumbleNodes.stop(); } catch {} apocalypseRumbleNodes = null; }
+  apocalypseDeathFlag = true;      // the Void consumed the player → the existing banner
+  lastDeathCause = 'apocalypse';
+  triggerDeath();
+}
+// Record a Void-fight win per difficulty. Minimal local persist for this stage;
+// full PGS cross-device sync is deferred to the victory-screen pass.
+function _voidMarkBeaten() {
+  try {
+    const m = JSON.parse(localStorage.getItem('drift_beat_void') || '{}') || {};
+    m[difficulty] = true;
+    localStorage.setItem('drift_beat_void', JSON.stringify(m));
+  } catch {}
+}
+
+// Void HP bar + retro direct-hit FX. Drawn on the 2D ctx overlay (over both the
+// pixi and canvas paths, like the tutorial wall-flash / target rings).
+function drawVoidFightHud(c) {
+  if (state !== 'voidfight') return;
+  const now = Date.now();
+  // Retro direct-hit sparks + damage ticks (fade over 0.5s).
+  for (let i = _voidHits.length - 1; i >= 0; i--) {
+    const h = _voidHits[i];
+    const age = (now - h.t) / 500;
+    if (age >= 1) { _voidHits.splice(i, 1); continue; }
+    const a = 1 - age, s = 3 + age * 6;
+    c.save();
+    c.fillStyle = `rgba(214,196,255,${(0.9 * a).toFixed(3)})`;
+    c.fillRect(h.x - s / 2, h.y - age * 14 - s / 2, s, s);
+    if (h.dmg >= 0.4) {
+      c.font = '700 11px "Space Mono", monospace';
+      c.textAlign = 'center';
+      c.fillStyle = `rgba(206,150,255,${a.toFixed(3)})`;
+      c.fillText('-' + h.dmg.toFixed(1), h.x, h.y - age * 16);
+    }
+    c.restore();
+  }
+  // The Void HP bar — slim, under the arc; only during the live fight + beats.
+  if (voidHpMax > 0 && (voidFightPhase === 'arena' || voidFightPhase === 'win' || voidFightPhase === 'lose')) {
+    const bw = Math.min(W * 0.7, 320), bh = 7;
+    const bx = (W - bw) / 2, by = Math.max(10, H * VF_ARC_TOP_FRAC + 8);
+    const frac = Math.max(0, voidHp / voidHpMax);
+    c.save();
+    c.fillStyle = 'rgba(20,4,30,0.7)';   c.fillRect(bx - 2, by - 2, bw + 4, bh + 4);
+    c.fillStyle = 'rgba(120,60,180,0.35)'; c.fillRect(bx, by, bw, bh);
+    c.fillStyle = 'rgba(206,150,255,0.95)'; c.fillRect(bx, by, bw * frac, bh);
+    c.font = '700 9px "Orbitron", monospace';
+    c.textAlign = 'center';
+    c.fillStyle = 'rgba(224,206,255,0.9)';
+    c.fillText('THE VOID', W / 2, by - 5);
+    c.restore();
   }
 }
 
@@ -29793,10 +30286,27 @@ function resetApocalypse() {
     try { apocalypseRumbleNodes.stop(); } catch {}
     apocalypseRumbleNodes = null;
   }
+  // "The Last Light": clear Void-fight arena + damage-model state + the exchange.
+  voidFightStart = 0;
+  voidFightPhase = 'idle';
+  voidHp = 0; voidHpMax = 0;
+  voidDmgBudget = 0;
+  voidDescent = 0;
+  voidFightWon = false;
+  voidFightEndAt = 0;
+  _voidHits.length = 0;
+  _apocExClear();
 }
 
 function triggerDeath() {
   if (typeof Sentry !== 'undefined') Sentry.addBreadcrumb({ category: 'death', message: 'died at score ' + score, level: 'info' });
+  _apocExClear();   // "The Last Light": clear the apocalypse two-voice exchange before the death flow
+  // "The Last Light": a death in the Void-fight ARENA reaches here directly (the
+  // consume-cutscene stops its own rumble at impact). Stop the ambient Void
+  // rumble so it can't drone into the death screen. No-op on normal deaths
+  // (apocalypseRumbleNodes is null) and on the consume path (already stopped).
+  if (apocalypseRumbleNodes) { try { apocalypseRumbleNodes.stop(); } catch {} apocalypseRumbleNodes = null; }
+
   // Kill any sustained Phantasm voices (Coven void-hum drone, wake-trail hiss)
   // immediately on death. On death state flips to 'dead', so the Phantasm
   // onUpdate handler early-returns before tickHaunt's own stop runs — without
@@ -29809,7 +30319,14 @@ function triggerDeath() {
   // routes through this function again at its own end (ascensionRunActive
   // will be true; handled below to skip leaderboard + stats writes and
   // award the cutscene crystal reward).
-  if (ascensionCutsceneEligible()) {
+  // "The Last Light": a death in the Void-fight ARENA never plays a death-cutscene
+  // (a Sirius revive would be a hands-off continuation that breaks the fight; the
+  // orb-unlock convo / roast / ascension / second-death are all interrupts). The
+  // arena's minion-death, descent-lose, and HP-zero win all reach triggerDeath with
+  // state still 'voidfight', so the `state !== 'voidfight'` guards below route them
+  // straight to the normal finalize (state → 'dead'), with the win/lose banner
+  // handled there via voidFightWon.
+  if (state !== 'voidfight' && ascensionCutsceneEligible()) {
     const _wasApoc = !!apocalypseDeathFlag;
     // Snapshot elapsed wall-clock at the moment of death so the Ascension run
     // resumes the timer mid-flight (run continues from the death-time
@@ -29860,7 +30377,7 @@ function triggerDeath() {
   // then re-enters triggerDeath() to finalize the REAL death normally. Placed
   // AFTER the Ascension check (priority) and BEFORE the normal path; gated on
   // !ascensionRunActive so the Ascension run's own end-death doesn't count.
-  if (secondDeathCutsceneEligible()) {
+  if (state !== 'voidfight' && secondDeathCutsceneEligible()) {
     secondDeathStart();
     return;
   }
@@ -29873,11 +30390,11 @@ function triggerDeath() {
   // Priority ABOVE the revive roll + roast (one per death; only the active orb's
   // match can qualify). Gated on siriusUsed so it never preempts the death-3
   // reveal. The unlock COMMITS inside _beginOrbUnlockConvo before any dialogue.
-  if (_orbUnlockConvoEligible()) {
+  if (state !== 'voidfight' && _orbUnlockConvoEligible()) {
     _beginOrbUnlockConvo();
     return;
   }
-  if (siriusReviveEligible()) {
+  if (state !== 'voidfight' && siriusReviveEligible()) {
     siriusBeginRevive();
     return;
   }
@@ -29886,7 +30403,7 @@ function triggerDeath() {
   // triggerDeath (with _siriusSkipDeathImpact) to fall through to the normal
   // death screen. Mutual exclusion is automatic: this only runs when the revive
   // above did NOT fire. Apocalypse is excluded inside the eligibility check.
-  if (siriusDeathConvoEligible()) {
+  if (state !== 'voidfight' && siriusDeathConvoEligible()) {
     siriusBeginDeathConvo();
     return;
   }
@@ -30007,6 +30524,14 @@ function triggerDeath() {
     saveBeatFlags();
     treeLog('beat ' + difficulty + ' — trees unlocked');
   }
+  // "The Last Light": every run that reaches the 10:00 apocalypse advances the
+  // Void-fight unlock counter (same apocalypseDeathFlag signal as the beat-flag
+  // write above; excludes Rainbow/Ascension runs). At VOID_FIGHT_UNLOCK_COUNT
+  // survivals, reaching 10:00 branches into the held-Void arena.
+  if (!_wasAscension && apocalypseDeathFlag) {
+    apocalypseSurvivals = (apocalypseSurvivals | 0) + 1;
+    saveApocalypseSurvivals();
+  }
 
   // v1.7.0 stats: capture run-final values, compare against existing personal
   // bests (returned as isBest map for the run-summary BEST tags), then merge
@@ -30116,7 +30641,9 @@ function triggerDeath() {
     const timeBonusRow = timeBonus > 0
       ? `<div class="rs-row" style="color:rgba(100,220,255,0.9);"><span class="rs-label" style="color:rgba(100,220,255,0.75);">TIME BONUS</span><span class="rs-val"></span><span class="rs-pts" style="color:rgba(100,220,255,0.9);">+${timeBonus} pts</span></div>`
       : '';
-    const apocalypseBanner = apocalypseDeathFlag
+    const apocalypseBanner = voidFightWon
+      ? `<div style="font-family:'Orbitron',monospace;font-weight:900;letter-spacing:3px;font-size:15px;color:rgba(150,255,210,0.98);text-shadow:0 0 20px rgba(80,255,180,0.65);text-align:center;margin-bottom:8px;">THE VOID BREAKS</div>`
+      : apocalypseDeathFlag
       ? `<div style="font-family:'Orbitron',monospace;font-weight:900;letter-spacing:3px;font-size:15px;color:rgba(190,120,255,0.98);text-shadow:0 0 18px rgba(150,60,220,0.6);text-align:center;margin-bottom:8px;">CONSUMED BY THE VOID</div>`
       : '';
     // v1.7.0 dopamine pass: BEST tags next to fields where this run set a
@@ -30440,7 +30967,7 @@ function maybeSpawnBgObject() {
 }
 
 function updateBgObjects() {
-  if (state === 'playing') {
+  if (state === 'playing' || state === 'voidfight') {
     maybeSpawnBgObject();
     const ds = scrollSpeed() * 0.12 * dtScale;
     for (const o of bgObjects) o.y += ds;
@@ -30601,7 +31128,7 @@ function drawBodies() {
     // sprite kicks in once the body is fully on-screen.
     const previewAlpha = b.y < 0 ? Math.max(0, 1 + b.y / 100) : 1;
     if (previewAlpha <= 0.01) continue;
-    const isTarget = b === closestBody && (state === 'playing' || state === 'tutorial');
+    const isTarget = b === closestBody && (state === 'playing' || state === 'tutorial' || state === 'voidfight');
     const pulse = Math.sin(b.pulse)*0.3+0.7;
     const glowR = b.radius * (2.6+Math.sin(b.pulse)*0.35);
 
@@ -32346,7 +32873,7 @@ const ORB_TRAIL_CAP = 30;
 
 let _eternalAfterimageLastMs = 0; // ms-gate for the Eternal-Phantom afterimage spawn (fps-independent cadence)
 function emitOrbTrail() {
-  if (state !== 'playing') return;
+  if (state !== 'playing' && state !== 'voidfight') return;
   // Throttle emission. Was `frame % 3` (every 3rd frame) — frame-counted, so the
   // trail's particles-per-SECOND scaled with the frame cap (sparse at 30fps,
   // dense at 120). Now ms-gated (~24ms ≈ every 3rd frame at the 120fps baseline)
@@ -34126,7 +34653,7 @@ function drawPowerups() {
     // Target indicator when powerup is closest body. v1.6.4: include
     // tutorial so the ring/dashed-line shows during powerup pickup steps.
     // v2.1.0 Option-B match — same prominent indicator as the body path.
-    if (p === closestBody && (state === 'playing' || state === 'tutorial')) {
+    if (p === closestBody && (state === 'playing' || state === 'tutorial' || state === 'voidfight')) {
       const inputHeld = leftDown || rightDown;
       const ringRgb = leftDown ? '80,200,255' : rightDown ? '255,120,80' : '230,235,245';
       const baseAlpha = inputHeld ? 0.9 : 0.6;
@@ -34698,7 +35225,7 @@ let capCdLastFired = { shroud: 0, nightShade: 0, sunForge: 0, aegis: 0, eventHor
 function updateCapstoneCountdowns() {
   const container = document.getElementById('capstoneCountdowns');
   if (!container) return;
-  const visible = (state === 'playing' || state === 'paused');
+  const visible = (state === 'playing' || state === 'paused' || state === 'voidfight');
   container.classList.toggle('visible', visible);
   if (!visible) return;
   const now = Date.now();
@@ -34837,7 +35364,7 @@ function updateCapstoneCountdowns() {
 function updateBurstBar() {
   if (!burstIndicatorEl || !burstRingEl) return;
   // Only visible in gameplay.
-  const visible = (state === 'playing' || state === 'paused');
+  const visible = (state === 'playing' || state === 'paused' || state === 'voidfight');
   burstIndicatorEl.classList.toggle('visible', visible);
   if (!visible) return; // preserve burstReadyPrev across pause/death so the
                         // resume frame doesn't false-positive the cue.
@@ -34867,7 +35394,7 @@ function updateBurstBar() {
 // the stack's z-index: 4 lets it sit above the main-menu overlay (z-index: auto).
 function updateTopStackVisibility() {
   if (!topStackEl) return;
-  const visible = (state === 'playing' || state === 'paused');
+  const visible = (state === 'playing' || state === 'paused' || state === 'voidfight');
   topStackEl.classList.toggle('visible', visible);
 }
 
@@ -34887,7 +35414,7 @@ function _updatePowerupTimerCore() {
   // onto the death screen (where it would overlap the SHOP button) or any
   // other overlay state. Mirrors updateBurstBar / updateCapstoneCountdowns /
   // updateTopStackVisibility — the rest of the HUD already gates this way.
-  if (state !== 'playing' && state !== 'paused') {
+  if (state !== 'playing' && state !== 'paused' && state !== 'voidfight') {
     if (powerupTimerEl.classList.contains('visible'))
       powerupTimerEl.classList.remove('visible');
     if (ptComboEl.classList.contains('visible'))
@@ -35633,7 +36160,7 @@ function render() {
   // + motion streaks, no full-screen wash. Pixi path uses _drawPixiHyperFx().
   if (!pixiActive) drawHyperspeedFx();
 
-  if (state==='playing'||state==='dead'||state==='paused'||state==='apocalypse'||state==='devmode'||state==='tutorial'||state==='ascension_predeath'||state==='seconddeath_predeath'||state==='sirius_predeath') {
+  if (state==='playing'||state==='dead'||state==='paused'||state==='apocalypse'||state==='voidfight'||state==='devmode'||state==='tutorial'||state==='ascension_predeath'||state==='seconddeath_predeath'||state==='sirius_predeath') {
     drawBurnZones();
     drawGravityWellLines();
     drawPowerups();
@@ -35644,7 +36171,7 @@ function render() {
     // into Momentum (cooldown reduction, no visual ring).
     // Step 4: trail + player live on pixi when active.
     if (!pixiActive) drawTrail();
-    if (state==='playing'||state==='paused'||state==='apocalypse'||state==='tutorial') {
+    if (state==='playing'||state==='paused'||state==='apocalypse'||state==='voidfight'||state==='tutorial') {
       // Step 6: hyperspeed barrier on pixi overlay when active.
       if (!pixiActive) drawHyperspeedBarrier();
       // PHANTOM BLAST spectral ring (additive, around the player) before the orb.
@@ -35664,11 +36191,16 @@ function render() {
     drawDeathShards();
     drawDeathParticles();
     // Step 6: hyperspeed stack text on pixi overlay when active.
-    if (state==='playing' && !pixiActive) drawHyperStackText();
+    if ((state==='playing'||state==='voidfight') && !pixiActive) drawHyperStackText();
   }
 
   // Apocalypse visuals sit on top of the world. Step 6: pixi owns these.
   if (!pixiActive && state === 'apocalypse') drawApocalypseOverlay();
+  // "The Last Light": canvas-path Void render during the arena — just the Void
+  // (no consume tint/impact); the pixi path renders it via the sprite gate above.
+  else if (!pixiActive && state === 'voidfight' && apocalypseSun) drawApocalypseSun();
+  // "The Last Light": Void HP bar + retro direct-hit FX (2D ctx overlay, both renderers).
+  if (state === 'voidfight') drawVoidFightHud(ctx);
   // After impact, triggerDeath flips state to 'dead'. Keep the post-impact
   // black curtain up until the death screen overlay covers the canvas — this
   // avoids the world suddenly re-appearing between fade-to-black and the DOM
@@ -35779,7 +36311,7 @@ function getFrameInterval() {
   // v1.6.4: 'tutorial' counts as gameplay for FPS-cap purposes — the player
   // is actively interacting and 30 fps would feel sluggish.
   const inGameplay = state === 'playing' || state === 'paused'
-                  || state === 'apocalypse' || state === 'devmode'
+                  || state === 'apocalypse' || state === 'voidfight' || state === 'devmode'
                   || state === 'bodypreview' || state === 'tutorial'
                   // v1.10.0: the second-death theater (spinning orb, sweeping
                   // lasers, glitch rewind) needs the full frame rate to read.
@@ -35904,7 +36436,7 @@ function loop() {
 function readInput(e) {
   // v1.6.4: tutorial accepts canvas input so the player can practice
   // ATTRACT / REPEL during the relevant steps.
-  if (state!=='playing' && state!=='devmode' && state!=='tutorial') return;
+  if (state!=='playing' && state!=='devmode' && state!=='tutorial' && state!=='voidfight') return;
   const rect=canvas.getBoundingClientRect();
   leftDown=false; rightDown=false;
   const pts=e.touches||[e];
@@ -36015,6 +36547,9 @@ document.getElementById('startBtn').addEventListener('click', ()=>{
     beatDifficulty.NORMAL = false;
     beatDifficulty.HARD = false;
     beatDifficulty.EXTREME = false;
+    // "The Last Light": reset the Void-fight unlock counter on a full progress wipe.
+    apocalypseSurvivals = 0;
+    try { localStorage.removeItem('drift_apoc_survivals'); } catch {}
     for (const orb of Object.keys(orbTrees)) {
       orbTrees[orb] = freshOrbTreeState(orb);
     }
@@ -36092,6 +36627,17 @@ document.getElementById('startBtn').addEventListener('click', ()=>{
   // menu→play uses the 0.5s menu→gameplay crossfade.
   const fade = state === 'dead' ? 0.3 : 0.5;
   resetGame(); state='playing';
+  // DEV cheat: pilot name "APOCALYPSENOW" rewinds the run clock to the 10:00
+  // mark so the REAL apocalypse trigger (elapsedProgressionSeconds() >= 600 in
+  // _updateCore, L28417) fires on the next frame. This is a genuine 'playing'
+  // run with the equipped orb and NO godmode — so the escalating taunts, the
+  // survival-counter increment, the unlock-at-5 gate flip, and (once unlocked)
+  // the arena branch all fire exactly as in a real run. Repeatable: every
+  // cheated run reaches the apocalypse. REMOVE before release (with TREETEST etc.).
+  if (getUsername().toUpperCase() === 'APOCALYPSENOW') {
+    runStartTime = Date.now() - 601000;   // 601s elapsed → progression ≥ 600 next frame
+    console.log('[APOCALYPSENOW] run clock set to ~10:00 — apocalypse triggers immediately (real path)');
+  }
   if (typeof AdManager !== 'undefined') AdManager.hideBanner();
   SFX.playTrack('gameplay', fade);
   const _ov = document.getElementById('overlay');
