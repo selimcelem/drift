@@ -24950,7 +24950,7 @@ function updatePixiOverlayLayer() {
   // Apocalypse sun — complex radial gradients + 'lighter' composite + clip
   // + bezier flares. Full-screen offscreen canvas while active. The other
   // apocalypse visuals (tint + impact flashes) went to pixiScreenFillG above.
-  if ((state === 'apocalypse' || state === 'voidfight') && apocalypseSun) {
+  if ((state === 'apocalypse' || state === 'voidfight') && apocalypseSun && !_voidImploding) {
     if (!pixiApocalypseSunCanvas) {
       pixiApocalypseSunCanvas = document.createElement('canvas');
       pixiApocalypseSunCanvas.width = W;
@@ -29837,6 +29837,7 @@ let _voidWinConvoDone = false;     // defeat convo dismissed → begin the implo
 let _voidImplodeStart = 0;         // timestamp the implosion animation began
 let _voidImplodeSfxFired = false;  // one-shot guard for VOID_IMPLOSION.mp3
 let _voidShards = [];              // the smaller voids the Void splits into
+let _voidImploding = false;        // v2.4.2: during the win implosion, suppress the big-Void render via this FLAG instead of nulling apocalypseSun — many guarded paths reference it, so keeping it a valid object removes the null footgun entirely
 let _voidImplodeCx = 0, _voidImplodeCy = 0;   // implosion centre
 
 function apocalypseElapsed() {
@@ -30259,6 +30260,7 @@ function _voidFightBeginWin() {
   _voidImplodeStart = 0;
   _voidImplodeSfxFired = false;
   _voidShards = [];
+  _voidImploding = false;
   try {
     const arcBottom = apocalypseSun ? apocalypseSun.y + apocalypseSun.radius : H * 0.2;
     for (let i = 0; i < 14; i++) {
@@ -30396,7 +30398,7 @@ function _updateVoidWinCutscene(r) {
         jx: 0, jy: 0,
       });
     }
-    apocalypseSun = null;   // the big Void is gone — the shards render the collapse now
+    _voidImploding = true;  // big Void SUPPRESSED via flag (apocalypseSun stays a valid object — never null); the shards render the collapse now
     try { triggerHitstop(60); } catch {}
     screenShake = Math.max(screenShake, 22);
     return;
@@ -30439,7 +30441,7 @@ function _updateVoidWinCutscene(r) {
   }
 }
 // Renders the implosion on the 2D ctx overlay (over BOTH the pixi + canvas paths, like
-// the HP bar). STAGE 1 only — by then apocalypseSun is null so the big Void is gone.
+// the HP bar). STAGE 1 only — by then _voidImploding suppresses the big-Void render.
 function _drawVoidImplosion(c) {
   if (voidFightPhase !== 'win' || _voidWinStage !== 1) return;
   const e = (Date.now() - _voidImplodeStart) / 1000;
@@ -30796,7 +30798,7 @@ function resetApocalypse() {
   voidDmgBudget = 0;
   voidTierBudget = [0, 0, 0, 0];
   voidPushX = 0; voidPushY = 0; _voidWasHyper = false; _voidWinConvoShown = false; _voidFinalized = false; _voidPrefightDone = false;
-  _voidWinStage = 0; _voidWinConvoDone = false; _voidImplodeStart = 0; _voidImplodeSfxFired = false; _voidShards = [];
+  _voidWinStage = 0; _voidWinConvoDone = false; _voidImplodeStart = 0; _voidImplodeSfxFired = false; _voidShards = []; _voidImploding = false;
   voidDescent = 0;
   voidFightWon = false;
   voidFightEndAt = 0;
@@ -31569,16 +31571,21 @@ function drawBg() {
         try { pixiNebulaSprite.texture.baseTexture.update(); } catch {}
       }
     }
-    updatePixiBgObjects();
-    updatePixiBodyLayer();
-    updatePixiBodySpriteLayer();
-    updatePixiBodyEffectsLayer();
-    updatePixiPlayerLayer();
-    updatePixiParticleLayer();
-    updatePixiDestroyEffectsLayer();
-    updatePixiPowerupLayer();
-    updatePixiOverlayLayer();
-    updatePixiStars(); // renders the entire pixi stage
+    // v2.4.2 resilience: guard the per-layer syncs so a throw in ANY one can't skip the
+    // stage present below (updatePixiStars) — that would freeze the entire pixi scene (the
+    // "everything renders invisible" blank). A failed layer just keeps last frame's sprites.
+    try {
+      updatePixiBgObjects();
+      updatePixiBodyLayer();
+      updatePixiBodySpriteLayer();
+      updatePixiBodyEffectsLayer();
+      updatePixiPlayerLayer();
+      updatePixiParticleLayer();
+      updatePixiDestroyEffectsLayer();
+      updatePixiPowerupLayer();
+      updatePixiOverlayLayer();
+    } catch (e) { console.error('[pixi] a layer sync threw; presenting the stage anyway', e); }
+    updatePixiStars(); // ALWAYS present the stage, even if a layer sync above threw
     return;
   }
   // --- Canvas 2D fallback (unchanged from pre-pixi behavior) ---
@@ -36638,6 +36645,14 @@ function drawDeathShards() {
 // of the world is drawn on the pixi stage; the Canvas 2D paths in here
 // are skipped via `if (!pixiActive)` guards.
 function render() {
+  // v2.4.2 crash-resilience ROOT FIX: the game loop is designed to "skip the frame" on a
+  // render() throw (see loop()), but it never reset ctx — so this frame's screenShake
+  // ctx.translate below was left un-restore()d and ACCUMULATED across every skipped frame,
+  // drifting the whole scene off-screen → the "everything renders invisible" blank. Reset
+  // to the identity baseline first (#c is sized at logical W, so identity is correct — cf.
+  // the ctx.setTransform(1,0,0,1,0,0) at the cosmic homing-blade draw) so one thrown frame
+  // can never corrupt the next.
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.save();
   // Screen shake. Step 7: route shake to the pixi stage when active so the
   // entire rendered scene (bodies, player, particles, overlays) shakes in
@@ -36721,7 +36736,7 @@ function render() {
   if (!pixiActive && state === 'apocalypse') drawApocalypseOverlay();
   // "The Last Light": canvas-path Void render during the arena — just the Void
   // (no consume tint/impact); the pixi path renders it via the sprite gate above.
-  else if (!pixiActive && state === 'voidfight' && apocalypseSun) drawApocalypseSun();
+  else if (!pixiActive && state === 'voidfight' && apocalypseSun && !_voidImploding) drawApocalypseSun();
   // "The Last Light": Void HP bar + retro direct-hit FX (2D ctx overlay, both renderers).
   if (state === 'voidfight') drawVoidFightHud(ctx);
   // After impact, triggerDeath flips state to 'dead'. Keep the post-impact
@@ -36900,6 +36915,10 @@ function loop() {
     } catch (err) {
       console.error('[loop] render() threw, skipping frame', err);
       recordError('render', err);
+      // v2.4.2: actually skip the frame CLEANLY — undo render()'s top-level ctx.save() and
+      // reset the transform. Previously the leaked save + screenShake translate accumulated
+      // frame-on-frame until the whole canvas was translated off-screen (permanent blank).
+      try { ctx.restore(); ctx.setTransform(1, 0, 0, 1, 0, 0); } catch {}
     }
     // Memory pressure watchdog: every 600 frames (~10s @60fps) check the total
     // particle / ring / ripple count and force-clear if it's blown past 150.
