@@ -6098,6 +6098,18 @@ let orbTrees = {
 // per-orb crystal purchase (see treesUnlocked below). EXTREME is retained
 // because it gates the IMPOSSIBLE difficulty.
 let beatDifficulty = { NORMAL: false, HARD: false, EXTREME: false };
+// "The Last Light" v2.4: per-difficulty Void-fight WIN records, mirroring
+// beatDifficulty's persistence (localStorage 'drift_beat_void' + the PGS snapshot,
+// OR-merged). voidBeaten.EXTREME (in addition to beatDifficulty.EXTREME) unlocks
+// IMPOSSIBLE — so WINNING the Void on Extreme unlocks it (the old path fired only on
+// the apocalypse-death loss). voidWinCount drives the repeating Normal/Hard clue convos.
+let voidBeaten   = { NORMAL: false, HARD: false, EXTREME: false, IMPOSSIBLE: false };
+let voidWinCount = { NORMAL: 0, HARD: 0, EXTREME: 0, IMPOSSIBLE: 0 };
+function saveVoidBeaten() {
+  try { localStorage.setItem('drift_beat_void', JSON.stringify(voidBeaten)); } catch {}
+  try { localStorage.setItem('drift_void_wincount', JSON.stringify(voidWinCount)); } catch {}
+  pgsScheduleWrite();
+}
 
 // === "THE LAST LIGHT" — Void-fight unlock gate (Stage 1) =============
 // Persisted count of runs that REACHED the 10:00 apocalypse (the same signal
@@ -6191,6 +6203,9 @@ function loadTreeState() {
     // "The Last Light": apocalypse-survival counter (Void-fight unlock gate).
     const av = parseInt(localStorage.getItem('drift_apoc_survivals') || '0', 10);
     apocalypseSurvivals = isNaN(av) ? 0 : Math.max(0, av);
+    // v2.4: per-difficulty Void-win flags + win counts.
+    try { const vb = JSON.parse(localStorage.getItem('drift_beat_void') || '{}') || {}; voidBeaten.NORMAL = !!vb.NORMAL; voidBeaten.HARD = !!vb.HARD; voidBeaten.EXTREME = !!vb.EXTREME; voidBeaten.IMPOSSIBLE = !!vb.IMPOSSIBLE; } catch {}
+    try { const vw = JSON.parse(localStorage.getItem('drift_void_wincount') || '{}') || {}; for (const _k of Object.keys(voidWinCount)) voidWinCount[_k] = Math.max(0, vw[_k] | 0); } catch {}
   } catch {}
   // v1.6.3: load per-orb skill-tree unlock state. First-run migration from
   // pre-v1.6.3 difficulty-gate unlocks: if beatDifficulty.NORMAL was true,
@@ -11631,6 +11646,7 @@ function _lev_dischargeShock(cx, cy, radius, color, boltFrom, gain) {
   }
   if (n > 0) { try { shakeMassDestroy(n); } catch (e) {} }
   _lev_pushRing(cx, cy, radius * 0.2, radius, 360, color);
+  _voidArcProc(cx, cy, VF_LEV_DMG, VF_TIER_APEX);   // v2.4: apex direct Void damage (BRINK / MAELSTROM-final / Eye-storm discharge near the arc)
   return n;
 }
 // Eye of the Storm — a LINGERING lightning storm: 3 widening pulses over ~0.7s,
@@ -11662,10 +11678,26 @@ function _lev_tickBrink(now, dt) {
     const d = Math.hypot(b.x - player.x, b.y - player.y) - (b.radius || 0);
     if (d < gd) gd = d;
   }
+  // body-graze rate (existing): the nearest real body's edge sits in the band.
+  let rate = 0;
   if (gd > inner && gd <= outer) {
-    let rate = 0.014 * LEV_BUFF_RATE[bt];   // PASSIVE BUFF: THE DEEP/ABYSS charge the storm faster (perceptible step)
+    rate = 0.014 * LEV_BUFF_RATE[bt];   // PASSIVE BUFF: THE DEEP/ABYSS charge the storm faster (perceptible step)
     if (rankOf('brink_galvanize')) rate *= 1 + 0.5 * _lev_depth();   // Galvanize: faster yet with FATHOM held (on top)
     if (rankOf('brink_overcharge')) rate *= 1 + (outer - gd) / Math.max(1, (outer - inner));   // closer → up to ~2×
+  }
+  // v2.4 Void-graze: sitting close UNDER the descending Void also charges BRINK, at
+  // a REDUCED rate (VF_BRINK_GRAZE_MULT); real bodies keep the full rate. Take the
+  // MAX of body-graze and Void-graze so there's no double-dip.
+  if (state === 'voidfight' && voidFightPhase === 'arena' && apocalypseSun) {
+    const gdV = player.y - (apocalypseSun.y + apocalypseSun.radius);   // hull centre → arc edge (above)
+    if (gdV > inner && gdV <= outer) {
+      let vr = 0.014 * LEV_BUFF_RATE[bt] * VF_BRINK_GRAZE_MULT;
+      if (rankOf('brink_galvanize')) vr *= 1 + 0.5 * _lev_depth();
+      if (rankOf('brink_overcharge')) vr *= 1 + (outer - gdV) / Math.max(1, (outer - inner));
+      rate = Math.max(rate, vr);
+    }
+  }
+  if (rate > 0) {
     _lev_storm = Math.min(1, _lev_storm + rate * dt);
     _lev_grazeFx = 1;
     _lev_flash('graze', 'GRAZE', LEVIATHAN_PATH_COLORS.brink, 280);
@@ -11748,6 +11780,7 @@ function _lev_gorge(eyeX, eyeY, radius) {
   try { _lev_sfx('mawDevour', whole ? 0.72 : 0.45, 150); } catch (e) {}   // raised 0.5/0.3→0.72/0.45 (gorge/open yawn)
   _lev_pushRing(eyeX, eyeY, 40, radius > 0 ? radius : 380, whole ? 560 : 460, LEVIATHAN_PATH_COLORS.maw);
   if (whole) _lev_pushRing(eyeX, eyeY, 80, 280, 620, LEVIATHAN_PATH_COLORS.maw);   // second engulf ring
+  _voidArcProc(eyeX, eyeY, VF_LEV_DMG, VF_TIER_APEX);   // v2.4: apex direct Void damage (MAW gorge near the arc)
 }
 function _lev_tickMaw(now, dt) {
   if (rankOf('maw_open') < 1) return;
@@ -11800,7 +11833,7 @@ function _lev_tickMaw(now, dt) {
     b.x += (dx / d) * Math.min(d, pull);
     b.y += (dy / d) * Math.min(d, pull);
   }
-  if (crushed > 0) { try { shakeMassDestroy(crushed); } catch (e) {} _lev_flash('maw', 'DEVOUR', LEVIATHAN_PATH_COLORS.maw, 320); _lev_sfx('mawDevour', 0.32, 160); }
+  if (crushed > 0) { try { shakeMassDestroy(crushed); } catch (e) {} _lev_flash('maw', 'DEVOUR', LEVIATHAN_PATH_COLORS.maw, 320); _lev_sfx('mawDevour', 0.32, 160); _voidArcProc(eyeX, eyeY, VF_LEV_DMG, VF_TIER_APEX); }   // v2.4: apex direct Void damage (MAW devour near the arc)
 }
 
 // === 3. TIDE — a breathing ring; collapse crushes what it gathered =========
@@ -11855,6 +11888,7 @@ function _lev_tideCollapse(cx, cy, maxR, isKing, isEcho) {
   _lev_flash('tide', isKing ? 'KING TIDE' : 'TIDE', LEVIATHAN_PATH_COLORS.tide, isKing ? 0 : 400);
   try { _lev_sfx('tideCollapse', isKing ? 0.8 : 0.55, 220); } catch (e) {}   // raised 0.55/0.35→0.8/0.55 (phone-audible)
   _lev_pushRing(cx, cy, maxR, inner, 360, LEVIATHAN_PATH_COLORS.tide);
+  _voidArcProc(cx, cy, VF_LEV_DMG, VF_TIER_APEX);   // v2.4: apex direct Void damage (TIDE collapse near the arc)
 }
 function _lev_tickTide(now, dt) {
   if (rankOf('tide_breath') < 1) return;
@@ -16807,6 +16841,7 @@ function _phantomV2_spawnDeathBurst(x, y, radius, sourceTag, killerWraith) {
     });
   }
   _phantomV2_deathBursts.push({ x, y, maxR: r, startTime: now, dust });
+  _voidArcProc(x, y, VF_GHOST_DMG, VF_TIER_GHOST);   // v2.4: ghost-tier direct Void damage (Phantasm burst near the arc; the Void is not a body so the mark/curse/sever can't target it → capped, never a one-shot)
   if (_phantomV2_deathBursts.length > 16) _phantomV2_deathBursts.shift();
   // Tiny pickup-particle burst at the impact center for the "ignition" cue.
   try { emitDestroyBurst(x, y, '220,180,255'); } catch {}
@@ -19773,6 +19808,7 @@ function ghostlightBurst(x, y, rank) {
     maxR: r,
     bolts,
   }, GHOSTLIGHT_BURSTS_CAP);
+  _voidArcProc(x, y, VF_GHOST_DMG, VF_TIER_GHOST);   // v2.4: ghost-tier direct Void damage (Reaping/Ghostlight burst near the arc)
   // Small particle flash on top so the impact reads instantly.
   emitDestroyBurst(x, y, POWERUP_COLORS.ghost.rgb);
   // Queue the radius for end-of-update body sweep.
@@ -19944,6 +19980,9 @@ const PGS = (() => {
       },
       // "The Last Light": Void-fight unlock counter — grow-only (MAX) merge.
       apocalypseSurvivals: Math.max(0, apocalypseSurvivals | 0),
+      // v2.4: per-difficulty Void-win flags (OR-merged) + win counts (MAX-merged).
+      voidBeaten: { NORMAL: !!voidBeaten.NORMAL, HARD: !!voidBeaten.HARD, EXTREME: !!voidBeaten.EXTREME, IMPOSSIBLE: !!voidBeaten.IMPOSSIBLE },
+      voidWinCount: { NORMAL: voidWinCount.NORMAL | 0, HARD: voidWinCount.HARD | 0, EXTREME: voidWinCount.EXTREME | 0, IMPOSSIBLE: voidWinCount.IMPOSSIBLE | 0 },
       treesUnlocked: (() => {
         // v1.9.0-pre: enumerate ALL treesUnlocked keys rather than hard-coding
         // the 5 original orbs — otherwise new orbs (drifterV2 and any future
@@ -20010,6 +20049,8 @@ const PGS = (() => {
         budgetBonus: mergeBudgetBonus(local.budgetBonus, remote.budgetBonus),
         beatDifficulty: mergeBeat(local.beatDifficulty, remote.beatDifficulty),
         apocalypseSurvivals: Math.max(local.apocalypseSurvivals | 0, remote.apocalypseSurvivals | 0),
+        voidBeaten: mergeVoidBeaten(local.voidBeaten, remote.voidBeaten),
+        voidWinCount: mergeVoidWinCount(local.voidWinCount, remote.voidWinCount),
         treesUnlocked: mergeTreesUnlocked(local.treesUnlocked, remote.treesUnlocked),
         tutorialCompleted: !!(local.tutorialCompleted || remote.tutorialCompleted),
         rainbowOrbUsed: !!(local.rainbowOrbUsed || remote.rainbowOrbUsed),
@@ -20032,6 +20073,8 @@ const PGS = (() => {
       budgetBonus: mergeBudgetBonus(local.budgetBonus, remote.budgetBonus),
       beatDifficulty: mergeBeat(local.beatDifficulty, remote.beatDifficulty),
       apocalypseSurvivals: Math.max(local.apocalypseSurvivals | 0, remote.apocalypseSurvivals | 0),
+      voidBeaten: mergeVoidBeaten(local.voidBeaten, remote.voidBeaten),
+      voidWinCount: mergeVoidWinCount(local.voidWinCount, remote.voidWinCount),
       treesUnlocked: mergeTreesUnlocked(local.treesUnlocked, remote.treesUnlocked),
       tutorialCompleted: !!(local.tutorialCompleted || remote.tutorialCompleted),
       // v2.1.2: one-time cutscene + orb-unlock flags — OR-merged so they survive
@@ -20208,6 +20251,25 @@ const PGS = (() => {
       EXTREME: !!(a.EXTREME || b.EXTREME),
     };
   }
+  // v2.4: Void-win flags (OR across devices) + win counts (MAX across devices).
+  function mergeVoidBeaten(a, b) {
+    a = a || {}; b = b || {};
+    return {
+      NORMAL:     !!(a.NORMAL     || b.NORMAL),
+      HARD:       !!(a.HARD       || b.HARD),
+      EXTREME:    !!(a.EXTREME    || b.EXTREME),
+      IMPOSSIBLE: !!(a.IMPOSSIBLE || b.IMPOSSIBLE),
+    };
+  }
+  function mergeVoidWinCount(a, b) {
+    a = a || {}; b = b || {};
+    return {
+      NORMAL:     Math.max(a.NORMAL     | 0, b.NORMAL     | 0),
+      HARD:       Math.max(a.HARD       | 0, b.HARD       | 0),
+      EXTREME:    Math.max(a.EXTREME    | 0, b.EXTREME    | 0),
+      IMPOSSIBLE: Math.max(a.IMPOSSIBLE | 0, b.IMPOSSIBLE | 0),
+    };
+  }
   // v1.6.3: per-orb tree-unlock merge — OR across devices.
   // v1.9.0-pre: generalized over all keys (was hard-coded for 5 orbs).
   // Without this, new orbs like drifterV2 are silently dropped from the
@@ -20295,6 +20357,20 @@ const PGS = (() => {
     if (typeof payload.apocalypseSurvivals === 'number' && payload.apocalypseSurvivals >= 0) {
       apocalypseSurvivals = Math.max(apocalypseSurvivals | 0, Math.floor(payload.apocalypseSurvivals));
       try { localStorage.setItem('drift_apoc_survivals', String(apocalypseSurvivals)); } catch {}
+    }
+    // v2.4: per-difficulty Void-win flags (OR) + win counts (MAX). An EXTREME win on
+    // another device unlocks Impossible here too → refresh visibility on change.
+    if (payload.voidBeaten && typeof payload.voidBeaten === 'object') {
+      let _vbChanged = false;
+      for (const _k of Object.keys(voidBeaten)) {
+        if (payload.voidBeaten[_k] && !voidBeaten[_k]) { voidBeaten[_k] = true; _vbChanged = true; }
+      }
+      if (payload.voidWinCount && typeof payload.voidWinCount === 'object') {
+        for (const _k of Object.keys(voidWinCount)) voidWinCount[_k] = Math.max(voidWinCount[_k] | 0, payload.voidWinCount[_k] | 0);
+      }
+      try { localStorage.setItem('drift_beat_void', JSON.stringify(voidBeaten)); } catch {}
+      try { localStorage.setItem('drift_void_wincount', JSON.stringify(voidWinCount)); } catch {}
+      if (_vbChanged) { try { if (typeof refreshImpossibleVisibility === 'function') refreshImpossibleVisibility(); } catch {} }
     }
     if (payload.treesUnlocked && typeof payload.treesUnlocked === 'object') {
       for (const k of Object.keys(treesUnlocked)) {
@@ -21057,9 +21133,9 @@ const SFX = (function() {
   // Three tracks: menu / gameplay / results. Each is fetched + decoded
   // lazily on first play and cached. The seamless 2-second loop crossfade
   // and track-switch crossfades share the same source-pair machinery.
-  const MUSIC_TRACKS = ['menu', 'gameplay', 'results', 'gameplay2', 'gameplay3', 'gameplay4'];
-  const musicBuffers = { menu: null, gameplay: null, results: null, gameplay2: null, gameplay3: null, gameplay4: null };
-  const musicLoading = { menu: null, gameplay: null, results: null, gameplay2: null, gameplay3: null, gameplay4: null };
+  const MUSIC_TRACKS = ['menu', 'gameplay', 'results', 'gameplay2', 'gameplay3', 'gameplay4', 'voidfight'];
+  const musicBuffers = { menu: null, gameplay: null, results: null, gameplay2: null, gameplay3: null, gameplay4: null, voidfight: null };
+  const musicLoading = { menu: null, gameplay: null, results: null, gameplay2: null, gameplay3: null, gameplay4: null, voidfight: null };
   // Phase-based gameplay music: each phase has its own track with independent
   // source/gain chains so crossfades can ramp them against each other without
   // fighting the shared musicGain.
@@ -21097,6 +21173,8 @@ const SFX = (function() {
     mawDevour:         './assets/SFX/MAW_DEVOUR.mp3',
     tideCollapse:      './assets/SFX/TIDE_COLLAPSE.mp3',
     stormBreak:        './assets/SFX/STORM_BREAK.mp3',
+    voidType:          './assets/SFX/VOID_TYPING.mp3',     // v2.4: the Void's deeper typewriter blip (clickVoid)
+    voidImplode:       './assets/SFX/VOID_IMPLOSION.mp3',  // v2.4: win/implosion stinger — play point wired in the win-cutscene turn
   };
   const sfxBuffers = { shieldDestroy: null, novaDestroy: null, hyperspeedBarrier: null, scream: null, toothed: null, eruption: null, tentacle: null, heartbeat: null, mirror: null, lotd: null, rift: null, alarm: null };
   const sfxLoading = { shieldDestroy: null, novaDestroy: null, hyperspeedBarrier: null, scream: null, toothed: null, eruption: null, tentacle: null, heartbeat: null, mirror: null, lotd: null, rift: null, alarm: null };
@@ -22517,7 +22595,9 @@ const SFX = (function() {
   // round sub-tone so the Void reads as deeper and darker than Sirius's bright
   // square click while staying clearly part of the same dialogue voice.
   function clickVoid() {
-    safeSfx(t => { chipNote(92.50, t, 0.06, 0.16, 'sine'); });     // ~F#2
+    // v2.4: the Void's deeper typewriter blip is now the uploaded VOID_TYPING.mp3
+    // (lazy-loaded on first call via playSfxBuffer), replacing the chip-synth sub-tone.
+    try { playSfxBuffer('voidType', 0.16); } catch {}
   }
 
   // Release decoded music buffers for everything except the currently-playing
@@ -26224,7 +26304,7 @@ function addDestroyPoints() {
   // "The Last Light" (source 1): in the Void-fight arena, every minion kill chips
   // the Void's health — through the kill-rate cap (so a hyperspeed pass can't dump
   // hundreds of kills' worth at once). The HP bar is the feedback (no per-kill FX).
-  if (state === 'voidfight') _voidDamage(VF_MINION_DMG, null, null);
+  if (state === 'voidfight') _voidDamage(VF_MINION_DMG, null, null, VF_TIER_RAM);
 }
 
 // --- Combo helpers ---
@@ -26969,6 +27049,10 @@ function spawnEmpRing(x, y, isChain, depth, opts) {
     opacity: isChain ? 0.6 : 1,
     bolts,
   }, EMP_RINGS_CAP);
+  // v2.4 (Void fight): the shield-EMP couldn't reach the arc by geometry (spawns at
+  // the hull ~0.72H, dies at ~176px before the arc descends). Award apex DIRECT
+  // damage when it fires near the Void so it ACTUALLY procs — capped via _voidDamage.
+  _voidArcProc(x, y, VF_EMP_DMG, VF_TIER_APEX);
 }
 
 // Recompute the peak speed multiplier for the current stack count. Stacks
@@ -27429,6 +27513,25 @@ function applyEnvironmentForces() {
 }
 
 function applyForce() {
+  // v2.4.1 VOID POSITIONING AID (arena only) — runs FIRST, independent of whether a
+  // minion target exists. When the descended Void looms close above, REPEL becomes a
+  // PURE DOWNWARD push (no horizontal component) so the player can reliably drop below
+  // it to safety; the minion-repel's sideways "cone bend" is suppressed this frame (it
+  // was what fought the player trying to fall straight down). ATTRACT is untouched
+  // (still targets real bodies for navigation), and the rest-gravity target drops below
+  // the arc (further down) so the player isn't dragged back up into the Void.
+  let _voidSteerDown = false;
+  if (state === 'voidfight' && voidFightPhase === 'arena' && apocalypseSun && rightDown) {
+    const arcB = apocalypseSun.y + apocalypseSun.radius;
+    const gap = player.y - arcB;                       // <0 = player under/inside the arc lip
+    if (gap < H * 0.40) {                              // the Void is looming close overhead
+      const sr = Math.max(1, scrollSpeed() / 1.2);
+      const urgency = 1 + Math.max(0, (H * 0.18 - gap) / (H * 0.18));   // 1..2 as you near/enter the arc
+      player.vy += FORCE * 2.2 * (1 + (sr - 1) * 0.4) * urgency * dtScale;   // PURE DOWN — no horizontal
+      if (player.vy < 0) player.vy = 0;                // cancel upward drift so the drop is clean
+      _voidSteerDown = true;
+    }
+  }
   if (!closestBody) return;
   const dx = closestBody.x - player.x;
   const dy = closestBody.y - player.y;
@@ -27474,7 +27577,7 @@ function applyForce() {
   const f = FORCE * influence * forceMult * inputDamp;
 
   if (leftDown)  { player.vx += nx*f*dtScale; player.vy += ny*f*dtScale; }
-  if (rightDown) {
+  if (rightDown && !_voidSteerDown) {   // v2.4.1: skip the minion horizontal cone-bend while the Void-repel (pure down) owns this frame
     // Dead zone fix: when a body is above the player and the repel vector is
     // nearly vertical (would otherwise just shove the player straight down),
     // bend the direction horizontally so they actually escape sideways.
@@ -27532,10 +27635,19 @@ function applyForce() {
   let ay = 0;
   const inHyperspeed = activeEffects.hyperspeed > 0;
   const safetyMul = inHyperspeed ? 0.25 : 1;
-  if (player.y < H * 0.5) {
-    ay += 0.06 * safetyMul * ((H * 0.5 - player.y) / (H * 0.5));
+  // v2.4.1: in the arena, once the Void has descended past mid-screen the "rest"
+  // position must move BELOW the arc — otherwise this gravity drags the player UP into
+  // the Void. Target = just under the arc, clamped to a visible safe band. Outside the
+  // arena gravTarget stays H*0.5, so the math is identical to the original there.
+  let gravTarget = H * 0.5;
+  if (state === 'voidfight' && voidFightPhase === 'arena' && apocalypseSun) {
+    const arcB = apocalypseSun.y + apocalypseSun.radius;
+    gravTarget = Math.max(H * 0.5, Math.min(H * 0.86, arcB + PLAYER_R + 70));
+  }
+  if (player.y < gravTarget) {
+    ay += 0.06 * safetyMul * ((gravTarget - player.y) / Math.max(1, gravTarget));
   } else {
-    ay -= 0.015 * safetyMul * ((player.y - H * 0.5) / (H * 0.5));
+    ay -= 0.015 * safetyMul * ((player.y - gravTarget) / Math.max(1, H - gravTarget));
   }
   // Hyperspeed has three feel-phases over its active duration:
   //   LAUNCH (0-500ms): rocket-like upward boost + gentle pull to horizontal
@@ -27733,6 +27845,38 @@ function checkCollisions() {
       if (hitRight)  { lastDeathCause = 'wall_right';  return true; }
       if (hitTop)    { lastDeathCause = 'wall_top';    return true; }
       if (hitBottom) { lastDeathCause = 'wall_bottom'; return true; }
+    }
+  }
+
+  // v2.4 "The Last Light" — the descending Void is a per-state hazard. Handled
+  // here (after walls, before the hyperspeed body-immunity return below) so it
+  // works for every orb. HYPERSPEED is intentionally skipped: it PUSHES + chips
+  // the Void (in updateVoidFight) and stays non-lethal, landing the player safely
+  // below the arc. SHIELD bumps off AND fires the EMP (which chips the Void) + spends a
+  // charge, exactly like a wall-hit. GHOST just bumps (no EMP, no charge). BARE contact
+  // (no defensive state) KILLS via the Void-consume path (the tension knob).
+  if (state === 'voidfight' && voidFightPhase === 'arena' && apocalypseSun && activeEffects.hyperspeed <= 0) {
+    const arcB = apocalypseSun.y + apocalypseSun.radius;
+    if (player.y - PLAYER_R <= arcB) {
+      if (activeEffects.shield > 0 || goldenUp) {
+        // SHIELD/golden: bump off AND fire the shield-EMP exactly like a wall-hit (27716+)
+        // — the EMP's apex chip (_voidArcProc inside spawnEmpRing) damages the Void, and a
+        // charge is consumed. (v2.4.1: was a silent bump with no EMP / no damage.)
+        spawnEmpRing(player.x, player.y);
+        shakeKill({ radius: 22 });
+        triggerHitstop(40);
+        lastBulwarkEmpFlashTime = Date.now();
+        player.y = arcB + PLAYER_R + 4;                 // clamp just below the arc
+        player.vy = Math.abs(player.vy) * 0.6 + 1.5;    // bounce (mirror the top-wall formula)
+        _bulwark_shieldStackHit();                       // consume a charge, like a wall-hit
+      } else if (activeEffects.ghost > 0) {
+        player.y = arcB + PLAYER_R + 4;                 // GHOST: bump off only (no EMP, no charge)
+        player.vy = Math.abs(player.vy) * 0.6 + 1.5;
+      } else {
+        apocalypseDeathFlag = true;     // the Void consumed the player → existing consume banner + loss-unlock path
+        lastDeathCause = 'apocalypse';
+        return true;
+      }
     }
   }
 
@@ -28705,6 +28849,13 @@ function _updateCore() {
       shakeMassDestroy(pbAuraKillCount);
       triggerHitstop(40);
     }
+    // v2.4.1: PHANTOM BLAST also chips the Void when its aura reaches the arc (it's a
+    // player-centred field, never in novaRings, so _voidRingHits never saw it). Pulse a
+    // nova-tier chip (~every 15 frames) while overlapping — capped via _voidDamage.
+    if (state === 'voidfight' && voidFightPhase === 'arena' && apocalypseSun && (frame % 15 === 0)) {
+      const _arcB = apocalypseSun.y + apocalypseSun.radius;
+      if (player.y - auraR - PLAYER_R <= _arcB) _voidDamage(VF_RING_DMG, player.x, Math.max(12, _arcB), VF_TIER_NOVA);
+    }
   }
   // Phantom Blade (Wraith T3) v1.6.3 rework: tick-based blade spawns.
   // Every 6/5/4 s during active ghost or Eternal Phantom, iterate bodies
@@ -29631,19 +29782,44 @@ const VF_DESCENT_TIME      = 95;    // s — the slow lose-timer (arc top → la
 const VF_BODY_CAP = { NORMAL: 3, HARD: 4, EXTREME: 4, IMPOSSIBLE: 5 };
 function voidFightBodyCap() { return VF_BODY_CAP[difficulty] || 4; }
 // Void health — scaled by difficulty (harder = more HP = longer, harder fight).
+// v2.4 rebalance: steepened the top end so a clean run is genuinely demanded —
+// cap-saturated min TTK ≈ 42 / 52 / 67 / 81 s vs the 95 s descent (screen-cover).
+// HP = 100 / 125 / 160 / 195.
 const VF_HP_BASE = 100;
-const VF_HP_DIFF = { NORMAL: 1.0, HARD: 1.2, EXTREME: 1.4, IMPOSSIBLE: 1.65 };
+const VF_HP_DIFF = { NORMAL: 1.0, HARD: 1.25, EXTREME: 1.6, IMPOSSIBLE: 1.95 };
 // THE KILL-RATE CAP (voidfight ONLY — normal hyperspeed/orbs are untouched). A
 // token bucket: the Void loses at most VF_DMG_CAP_PER_SEC health/sec, with a
 // small burst tolerance. A 10×–20× hyperspeed pass that vaporizes hundreds of
 // minions still only spends the bucket — it clears minions (fun) but cannot
 // delete the Void instantly. Sustained damage flows at the cap; excess is dropped.
-const VF_DMG_CAP_PER_SEC   = 2.2;
-const VF_DMG_BUCKET_MAX    = VF_DMG_CAP_PER_SEC * 1.5;   // ~3.3 burst headroom
-const VF_MINION_DMG        = 0.7;   // source 1: per minion kill (drives the HP bar)
-const VF_RAM_DMG_PER_SEC   = 1.6;   // source 2: ramming the Void's underside
-const VF_RAM_HS_MULT       = 1.8;   // ram boosted while hyperspeeding (nebula/Warp identity)
-const VF_RING_DMG          = 0.55;  // source 2: a nova/EMP ring reaching the Void (once per ring)
+const VF_DMG_CAP_PER_SEC   = 2.4;   // v2.4: 2.2→2.4 (headroom for the new multi-source offense)
+const VF_DMG_BUCKET_MAX    = VF_DMG_CAP_PER_SEC * 1.5;   // ~3.6 burst headroom
+const VF_MINION_DMG        = 0.5;   // per minion/planet kill (v2.4: 0.7→0.5; Tachyon still out-kills Warp → more chips)
+const VF_RAM_DMG_PER_SEC   = 1.6;   // hyperspeed-only contact base (see VF_RAM_HS_MULT)
+const VF_RAM_HS_MULT       = 0.45;  // v2.4 HARD NERF (was 1.8): hyperspeed ram = 1.6×0.45 ≈ 0.72/s — can't solo-drain
+const VF_RING_DMG          = 0.55;  // a nova/EMP ring reaching the Void (once per ring)
+// v2.4 DIRECT-DAMAGE TIERS (the approved hierarchy: EMP/Leviathan > ghost/Phantasm
+// > hyperspeed). Every source STILL routes through the capped _voidDamage(); the
+// per-tier BYPASS reserve is what makes the hierarchy hold even under saturation —
+// when hyperspeed/kills drain the shared bucket, apex/ghost still draw from their
+// own small reserve; ram/kill/nova never do. Nothing can one-shot (max single
+// application = shared bucket 3.6 + apex reserve 1.5 ≈ 5.1 « min HP 100).
+const VF_TIER_RAM   = 0;   // hyperspeed chip + minion kill — shared bucket only (weakest / baseline)
+const VF_TIER_NOVA  = 1;   // nova rings — shared bucket only
+const VF_TIER_GHOST = 2;   // ghost / Reaping Storm / Phantasm — small bypass reserve
+const VF_TIER_APEX  = 3;   // Bulwark EMP / Leviathan — larger bypass reserve (top tier)
+const VF_TIER_BYPASS = [0, 0, 0.5, 1.0];   // per-tier reserve refill/sec (mini-bucket caps at 1.5×); index by tier
+let voidTierBudget   = [0, 0, 0, 0];       // current bypass reserve per tier (refills in the live arena)
+const VF_EMP_DMG    = 1.2;   // apex: Bulwark shield-EMP near the arc (once per ring)
+const VF_LEV_DMG    = 1.2;   // apex: a Leviathan discharge near the arc (per discharge)
+const VF_GHOST_DMG  = 0.9;   // ghost: a ghost / Reaping / Phantasm burst near the arc (mark capped here — never a one-shot)
+const VF_ARC_PROC_REACH = 240;   // how far below the arc an ability proc still "reaches" it (px)
+const VF_BRINK_GRAZE_MULT = 0.15; // Leviathan BRINK charges off the Void at 0.15× (v2.4.1: 0.4 farmed too fast — now a slow trickle); real bodies keep full rate
+// FULL VISUAL PUSH (hyperspeed dents the Void): transient offset applied to the
+// Void's drawn position, springing back each frame (voidDescent is untouched).
+const VF_PUSH_DECAY = 0.85;
+const VF_PUSH_MAX_X = 70;
+const VF_PUSH_MAX_Y = 80;
 let voidFightStart = 0;
 let voidFightPhase = 'idle';        // 'idle' | 'intro' | 'arena' | 'win' | 'lose'
 let voidHp = 0, voidHpMax = 0;      // the Void's health pool (win = drain to 0)
@@ -29652,6 +29828,11 @@ let voidDescent = 0;               // 0..1 lose progress (arc top → land)
 let voidFightWon = false;          // set on the HP-zero win; drives the results banner
 let voidFightEndAt = 0;            // win/lose resolution timestamp
 let _voidHits = [];                // retro direct-hit FX: { x, y, dmg, t }
+let voidPushX = 0, voidPushY = 0;  // v2.4 hyperspeed "dent" offset (visual; decays to 0 — voidDescent untouched)
+let _voidWasHyper = false;         // edge-detect hyperspeed end for the safe arena landing
+let _voidWinConvoShown = false;    // clue-convo guard for the current win resolution
+let _voidFinalized = false;        // one-shot: updateVoidFight's win/lose branch re-calls finalize each frame; the clue convo keeps state 'voidfight' across frames
+let _voidPrefightDone = false;     // set true when the pre-fight convo finishes → the fight (HP/descent/spawns) begins
 
 function apocalypseElapsed() {
   // "The Last Light": during the Void-fight arena the same clock drives the
@@ -29857,19 +30038,43 @@ function _positionVoidArc(r, d) {
   if (!apocalypseSun) apocalypseSun = { radius: r, y: -r, progress: 0 };
   const bottom = H * (VF_ARC_TOP_FRAC + (VF_ARC_LAND_FRAC - VF_ARC_TOP_FRAC) * Math.max(0, Math.min(1, d)));
   apocalypseSun.radius = r;
-  apocalypseSun.y = bottom - r;     // center kept above the top edge for a big radius
+  apocalypseSun.x = W / 2 + (voidPushX || 0);          // v2.4 hyperspeed dent (visual; decays to 0)
+  apocalypseSun.y = bottom - r + (voidPushY || 0);     // center kept above the top edge for a big radius
   apocalypseSun.progress = d;
 }
 
 // Apply damage to the Void THROUGH the kill-rate cap (token bucket). Excess is
 // dropped — the kills/hits still happen, they just can't dump unlimited damage.
-function _voidDamage(amount, hitX, hitY) {
+function _voidDamage(amount, hitX, hitY, tier) {
   if (state !== 'voidfight' || voidFightPhase !== 'arena' || voidHp <= 0 || !(amount > 0)) return;
-  const applied = Math.min(amount, voidDmgBudget);
-  if (applied <= 0) return;         // cap reached this window — damage dropped
+  const t = tier | 0;
+  // Shared cap first (the anti-one-shot spine — every source contends for it).
+  let applied = Math.min(amount, voidDmgBudget);
   voidDmgBudget -= applied;
+  // Per-tier BYPASS reserve covers only the REMAINDER, and only for the upper
+  // tiers — so when hyperspeed/kills have drained the shared bucket, EMP/Leviathan
+  // (apex) and ghost/Phantasm still land their hits, keeping the hierarchy intact
+  // under saturation. ram/kill/nova (tier 0-1) get nothing extra → stay weakest.
+  let rem = amount - applied;
+  if (rem > 0 && t >= 2 && voidTierBudget[t] > 0) {
+    const b = Math.min(rem, voidTierBudget[t]);
+    voidTierBudget[t] -= b;
+    applied += b;
+  }
+  if (applied <= 0) return;         // fully capped this window — damage dropped
   voidHp = Math.max(0, voidHp - applied);
   if (hitX != null) _voidHits.push({ x: hitX, y: hitY, dmg: applied, t: Date.now() });
+}
+// v2.4: award tiered DIRECT Void damage when an ability procs NEAR the descending
+// arc. The player must bring the ability up to the Void (bare contact is lethal, so
+// this is earned with a defensive state / hyperspeed). Always capped via _voidDamage.
+function _voidArcProc(x, y, dmg, tier) {
+  if (state !== 'voidfight' || voidFightPhase !== 'arena' || !apocalypseSun) return;
+  const arcB = apocalypseSun.y + apocalypseSun.radius;
+  const py = (y != null) ? y : player.y;
+  if (py - arcB <= VF_ARC_PROC_REACH) {
+    _voidDamage(dmg, (x != null ? x : player.x), Math.max(12, arcB), tier);
+  }
 }
 
 // SOURCE 2b: the first frame a nova/EMP ring's top edge reaches the Void's
@@ -29883,7 +30088,7 @@ function _voidRingHits(rings, arcBottom) {
     const ry = (ring.y != null) ? ring.y : player.y;
     if (ry - rr <= arcBottom) {
       ring._hitVoid = true;
-      _voidDamage(VF_RING_DMG, W / 2 + (Math.random() - 0.5) * W * 0.4, Math.max(12, arcBottom));
+      _voidDamage(VF_RING_DMG, W / 2 + (Math.random() - 0.5) * W * 0.4, Math.max(12, arcBottom), VF_TIER_NOVA);
     }
   }
 }
@@ -29898,8 +30103,10 @@ function updateVoidFight() {
   const t = (Date.now() - voidFightStart) / 1000;
   const r = W * VF_VOID_RADIUS_FRAC;
 
-  // --- INTRO: cinematic build-up; the Void slides from off-screen down to its
-  // held arc. Player pinned + invulnerable; physics skipped.
+  // --- INTRO: cinematic build-up; the Void slides from off-screen down to its held
+  // arc with the FULL apocalypse-grade arrival — rumble + ramping shake from the FIRST
+  // frame (was only the last 0.5s, which felt abrupt/light vs the normal apocalypse).
+  // Player pinned + invulnerable; physics skipped.
   if (t < VF_INTRO_SEC) {
     voidFightPhase = 'intro';
     const k = Math.min(1, t / 3);
@@ -29912,13 +30119,14 @@ function updateVoidFight() {
     leftDown = false; rightDown = false;
     if (bodies.length) bodies = [];
     if (powerups.length) powerups = [];
-    if (t >= 3 && !apocalypseRumbleNodes) apocalypseRumbleNodes = SFX.startApocalypseRumble();
-    if (t >= 3) screenShake = Math.max(screenShake, 5 + 9 * Math.min(1, (t - 3) / 0.5));
+    const _ap = Math.min(1, t / VF_INTRO_SEC);
+    if (!apocalypseRumbleNodes) apocalypseRumbleNodes = SFX.startApocalypseRumble();   // descent rumble from the first frame
+    screenShake = Math.max(screenShake, 6 + 16 * _ap);                                  // ramps 6 → 22 (apocalypse-grade)
     if (apocalypseRumbleNodes) {
-      apocalypseRumbleNodes.setVolume(t >= 3 ? 0.05 + 0.10 * Math.min(1, (t - 3) / 0.5) : 0.05);
+      apocalypseRumbleNodes.setVolume(0.06 + 0.26 * _ap);                               // 0.06 → 0.32 across the descent
       if (apocalypseRumbleNodes.tick) apocalypseRumbleNodes.tick();
     }
-    const heldBottom = H * VF_ARC_TOP_FRAC, p = Math.min(1, t / VF_INTRO_SEC);
+    const heldBottom = H * VF_ARC_TOP_FRAC, p = _ap;
     if (!apocalypseSun) apocalypseSun = { radius: r, y: -r, progress: 0 };
     apocalypseSun.radius = r;
     apocalypseSun.y = (-r) + ((heldBottom - r) - (-r)) * p;   // bottom edge: off-screen → held
@@ -29927,16 +30135,48 @@ function updateVoidFight() {
     return true;
   }
 
-  // First LIVE arena frame: init HP / cap bucket / descent; grace as control returns.
+  // INTRO ended → the Void SLAMS into its held position (arrival impact) and the
+  // PRE-FIGHT two-voice convo begins. The fight (HP bar, descent timer, spawns) does
+  // NOT start yet — only once the convo is dismissed (precombat → arena below).
   if (voidFightPhase === 'intro') {
+    voidFightPhase = 'precombat';
+    _voidPrefightDone = false;
+    _positionVoidArc(r, 0);                       // lock the Void at the held line
+    screenShake = Math.max(screenShake, 26);      // heavy arrival-impact punctuation
+    try { if (SFX.playApocalypseImpact) SFX.playApocalypseImpact(); } catch {}
+    // "We stop running — we fight." Sirius + the Void (established two-voice typewriter
+    // + clickVoid). On dismissal → the fight begins.
+    try {
+      dialogueStart(VOID_PREFIGHT_SCRIPT, { substitute: siriusSubstitute, onComplete: function () {
+        const _ov = document.getElementById('ascensionOverlay');
+        if (_ov) { _ov.classList.remove('visible'); _ov.classList.remove('particle-phase'); }
+        _voidPrefightDone = true;
+      } });
+    } catch (e) { _voidPrefightDone = true; }
+    return true;
+  }
+  // PRECOMBAT: the Void looms (held + rumbling) while the convo plays. World frozen,
+  // descent NOT ticking. Flip to the live fight only once the convo is dismissed.
+  if (voidFightPhase === 'precombat') {
+    player.x = W / 2; player.y = H * 0.72; player.vx = 0; player.vy = 0;
+    leftDown = false; rightDown = false;
+    if (bodies.length) bodies = [];
+    if (powerups.length) powerups = [];
+    _positionVoidArc(r, 0);
+    if (apocalypseRumbleNodes) { apocalypseRumbleNodes.setVolume(0.22); if (apocalypseRumbleNodes.tick) apocalypseRumbleNodes.tick(); }
+    if (!_voidPrefightDone) { graceEndTime = Math.max(graceEndTime, Date.now() + 200); return true; }
+    // Convo done → BEGIN THE FIGHT: HP bar appears, descent timer starts NOW, music in.
     voidFightPhase = 'arena';
     voidHpMax = VF_HP_BASE * (VF_HP_DIFF[difficulty] || 1);
     voidHp = voidHpMax;
     voidDmgBudget = VF_DMG_BUCKET_MAX;
+    voidTierBudget = [0, 0, 0, 0];
+    voidPushX = 0; voidPushY = 0; _voidWasHyper = false; _voidWinConvoShown = false; _voidFinalized = false;
     voidDescent = 0;
     voidFightWon = false;
     _voidHits.length = 0;
     graceEndTime = Math.max(graceEndTime, Date.now() + GRACE_DURATION_MS);
+    try { if (typeof SFX !== 'undefined' && SFX.playTrack) SFX.playTrack('voidfight'); } catch {}   // boss music kicks in as the fight begins
   }
 
   const dt = Math.min(0.05, (frameDt || 16) / 1000);   // bg-tab guard
@@ -29945,26 +30185,55 @@ function updateVoidFight() {
   if (voidFightPhase === 'win')  { _positionVoidArc(r, voidDescent); if (Date.now() >= voidFightEndAt) _voidFightFinalizeWin();  return true; }
   if (voidFightPhase === 'lose') { _positionVoidArc(r, 1);          if (Date.now() >= voidFightEndAt) _voidFightFinalizeLose(); return true; }
 
-  // --- LIVE ARENA: advance the descent, refill the cap bucket, apply DIRECT
-  // damage (ram + rings), position the Void, check win/lose.
+  // --- LIVE ARENA: advance the descent, refill the cap bucket + tier reserves,
+  // apply DIRECT damage (ram + rings), position the Void, check win/lose.
   voidDescent = Math.min(1, voidDescent + dt / VF_DESCENT_TIME);
   voidDmgBudget = Math.min(VF_DMG_BUCKET_MAX, voidDmgBudget + VF_DMG_CAP_PER_SEC * dt);
+  for (let _t = 2; _t < 4; _t++) voidTierBudget[_t] = Math.min(VF_TIER_BYPASS[_t] * 1.5, voidTierBudget[_t] + VF_TIER_BYPASS[_t] * dt);
+  voidPushX *= VF_PUSH_DECAY; voidPushY *= VF_PUSH_DECAY;   // hyperspeed dent springs back
   _positionVoidArc(r, voidDescent);
   if (apocalypseRumbleNodes) {
     apocalypseRumbleNodes.setVolume(0.15 + 0.15 * voidDescent);   // swells as it nears
     if (apocalypseRumbleNodes.tick) apocalypseRumbleNodes.tick();
   }
 
-  const arcBottom = apocalypseSun.y + apocalypseSun.radius;   // the visible underside
-  // SOURCE 2a — RAM: the player (or its hyperspeed barrier) touching the Void's
-  // underside chips it continuously, boosted while hyperspeeding (nebula/Warp).
+  const arcBottom = apocalypseSun.y + apocalypseSun.radius;   // the visible underside (incl. push)
+  // TIME-DRIVEN arc bottom (no push) — a STABLE reference so the recoil can't fight its
+  // own penetration test. v2.4.1 bug: testing/penetrating vs arcBottom meant that as the
+  // dent recoiled the arc UP, arcBottom dropped past the player and the push cut out, so
+  // at a low (far-descended) arc the pass "went through" and barely pushed.
+  const restBottom = H * (VF_ARC_TOP_FRAC + (VF_ARC_LAND_FRAC - VF_ARC_TOP_FRAC) * voidDescent);
+  // RAM is HYPERSPEED-ONLY (contact rework): ghost bounces, shield bumps+EMPs, bare
+  // contact KILLS — so the only contact that chips is a hyperspeed pass, hard-nerfed
+  // (~0.72/s), which also visibly PUSHES the Void.
   const hs = activeEffects.hyperspeed > 0;
-  const ramReach = PLAYER_R + (hs ? 96 : 26);
-  if (player.y - ramReach <= arcBottom) {
-    const ramFx = (frame % 4 === 0);   // rate-limit the spark FX (damage still applies every frame)
-    _voidDamage(VF_RAM_DMG_PER_SEC * (hs ? VF_RAM_HS_MULT : 1) * dt, ramFx ? player.x : null, ramFx ? Math.max(12, arcBottom) : null);
+  if (hs) {
+    const ramReach = PLAYER_R + 96;
+    if (player.y - ramReach <= restBottom) {   // test vs the REST arc, NOT the recoiled one
+      const ramFx = (frame % 4 === 0);   // rate-limit the spark FX (damage still applies every frame)
+      _voidDamage(VF_RAM_DMG_PER_SEC * VF_RAM_HS_MULT * dt, ramFx ? player.x : null, ramFx ? Math.max(12, arcBottom) : null, VF_TIER_RAM);
+      // FULL VISUAL PUSH — the max dent SCALES WITH DESCENT (was a flat 80px, invisible
+      // under the huge low arc). 80px near the top → ~360px fully descended, so the push
+      // stays decisive at ALL descent levels. Springs back via VF_PUSH_DECAY.
+      const pen = Math.max(0, restBottom - (player.y - ramReach));
+      const maxPushY = VF_PUSH_MAX_Y * (1 + voidDescent * 3.5);
+      voidPushY = Math.max(-maxPushY, voidPushY - (8 + pen * 0.6 + Math.abs(player.vy) * 1.8));   // recoil up (toward the deep)
+      voidPushX = Math.max(-VF_PUSH_MAX_X, Math.min(VF_PUSH_MAX_X, voidPushX + player.vx * 3));
+      // Keep a short safety grace alive so the bare-Void death check can't fire on
+      // the hyperspeed-landing frame (player may still be mid-arc as it ends).
+      graceEndTime = Math.max(graceEndTime, Date.now() + 220);
+    }
   }
-  // SOURCE 2b — nova / EMP rings reaching the Void.
+  // SAFE LANDING: the frame a hyperspeed pass ends, drop the player BELOW the REST arc
+  // (where it springs back to — not the recoiled position) so they're never stranded
+  // inside the Void (+ a short grace either way).
+  if (_voidWasHyper && !hs) {
+    const _safeY = restBottom + PLAYER_R + 40;
+    if (player.y < _safeY) { player.y = _safeY; if (player.vy < 0) player.vy = 0; }
+    graceEndTime = Math.max(graceEndTime, Date.now() + 260);
+  }
+  _voidWasHyper = hs;
+  // SOURCE — nova / EMP rings reaching the Void (nova tier).
   _voidRingHits(novaRings, arcBottom);
   _voidRingHits(empRings, arcBottom);
 
@@ -29997,6 +30266,8 @@ function _voidFightBeginLose() {
   bodies = []; powerups = [];
 }
 function _voidFightFinalizeWin() {
+  if (_voidFinalized) return;   // updateVoidFight's win branch re-calls this each frame; the clue convo keeps state 'voidfight'
+  _voidFinalized = true;
   if (apocalypseRumbleNodes) { try { apocalypseRumbleNodes.stop(); } catch {} apocalypseRumbleNodes = null; }
   voidFightWon = true;
   _voidMarkBeaten();
@@ -30007,20 +30278,55 @@ function _voidFightFinalizeWin() {
   triggerDeath();
 }
 function _voidFightFinalizeLose() {
+  if (_voidFinalized) return;
+  _voidFinalized = true;
   if (apocalypseRumbleNodes) { try { apocalypseRumbleNodes.stop(); } catch {} apocalypseRumbleNodes = null; }
   apocalypseDeathFlag = true;      // the Void consumed the player → the existing banner
   lastDeathCause = 'apocalypse';
   triggerDeath();
 }
-// Record a Void-fight win per difficulty. Minimal local persist for this stage;
-// full PGS cross-device sync is deferred to the victory-screen pass.
+// Record a Void-fight win per difficulty — PGS-synced (voidBeaten/voidWinCount,
+// mirroring beatDifficulty). v2.4: a WIN on EXTREME unlocks IMPOSSIBLE (sets
+// beatDifficulty.EXTREME too, so the existing gate + leaderboard tab light up),
+// replacing the old apocalypse-death-only path.
 function _voidMarkBeaten() {
-  try {
-    const m = JSON.parse(localStorage.getItem('drift_beat_void') || '{}') || {};
-    m[difficulty] = true;
-    localStorage.setItem('drift_beat_void', JSON.stringify(m));
-  } catch {}
+  if (voidBeaten[difficulty] === undefined) return;   // guard an unknown difficulty key
+  voidBeaten[difficulty] = true;
+  voidWinCount[difficulty] = (voidWinCount[difficulty] | 0) + 1;
+  if (difficulty === 'EXTREME' && !beatDifficulty.EXTREME) {
+    beatDifficulty.EXTREME = true;
+    saveBeatFlags();
+    try { if (typeof refreshImpossibleVisibility === 'function') refreshImpossibleVisibility(); } catch {}
+  }
+  saveVoidBeaten();
 }
+// v2.4 clue convos — play on a NORMAL/HARD Void WIN (repeat every win). Two voices:
+// Sirius (bright clickSecondary blip) cheers + nudges higher; THE VOID (deeper
+// clickVoid blip — see _dlgBlip) answers that this shallow defeat means nothing.
+// EXTREME is the real test — its victory beat is the existing "THE VOID BREAKS"
+// banner for now (the full win cutscene is a later turn), so it has no clue entry.
+// v2.4.1 PRE-FIGHT convo — the climactic turn from running to FIGHTING. Plays during
+// the Void's arrival (precombat phase) BEFORE the HP bar + descent timer. Two voices
+// (Sirius + THE VOID, the established two-voice typewriter + clickVoid). {player} subst.
+const VOID_PREFIGHT_SCRIPT = [
+  ['Sirius', "{player}. Ten minutes. Ten thousand years. Every time, we have run from this light."],
+  ['Sirius', 'Not tonight. Bring us about. We stop running — we FIGHT.'],
+  ['The Void', 'you would raise a fist at ME? little spark. i am the dark that waited before your first star drew breath.'],
+  ['Sirius', "Then it has never met a pilot like {player}. Everything we have — burn it into that dark."],
+  ['The Void', 'come, then. let me show you how the last light goes out.'],
+];
+const VOID_WIN_SCRIPTS = {
+  NORMAL: [
+    ['Sirius', 'You broke it, {player}! The Light holds — for tonight.'],
+    ['The Void', 'this was the shallow dark. a candle, guttering. you have not seen me.'],
+    ['Sirius', 'Hear how it sulks? Barely awake. Go deeper, {player} — wake it for real.'],
+  ],
+  HARD: [
+    ['Sirius', 'Harder this time, and still you stand. Colour me impressed, {player}.'],
+    ['The Void', 'deeper. colder. and still a sliver of the whole. the deep is patient.'],
+    ['Sirius', 'It only truly dies on EXTREME. That is where you end this — or it ends you.'],
+  ],
+};
 
 // Void HP bar + retro direct-hit FX. Drawn on the 2D ctx overlay (over both the
 // pixi and canvas paths, like the tutorial wall-flash / target rings).
@@ -30071,7 +30377,7 @@ function drawApocalypseSun(tctx = ctx) {
   const ctx = tctx;
   if (!apocalypseSun) return;
   const sun = apocalypseSun;
-  const x = W / 2, y = sun.y, r = sun.radius;
+  const x = (sun.x != null ? sun.x : W / 2), y = sun.y, r = sun.radius;
   const now = Date.now();
   const tSec = apocalypseElapsed();
 
@@ -30291,6 +30597,8 @@ function resetApocalypse() {
   voidFightPhase = 'idle';
   voidHp = 0; voidHpMax = 0;
   voidDmgBudget = 0;
+  voidTierBudget = [0, 0, 0, 0];
+  voidPushX = 0; voidPushY = 0; _voidWasHyper = false; _voidWinConvoShown = false; _voidFinalized = false; _voidPrefightDone = false;
   voidDescent = 0;
   voidFightWon = false;
   voidFightEndAt = 0;
@@ -30326,6 +30634,23 @@ function triggerDeath() {
   // state still 'voidfight', so the `state !== 'voidfight'` guards below route them
   // straight to the normal finalize (state → 'dead'), with the win/lose banner
   // handled there via voidFightWon.
+  // v2.4 "The Last Light" clue convo — on a NORMAL/HARD Void WIN play the two-voice
+  // clue (repeats every win) BEFORE the results banner, then re-enter triggerDeath
+  // (guarded by _voidWinConvoShown) to fall through to the normal finalize. Extreme
+  // wins skip this (no VOID_WIN_SCRIPTS entry) → straight to the victory banner.
+  if (state === 'voidfight' && voidFightWon && !_voidWinConvoShown) {
+    const _vws = VOID_WIN_SCRIPTS[difficulty];
+    if (_vws && _vws.length) {
+      _voidWinConvoShown = true;
+      try { SFX.playTrack(null, 0.3); } catch {}   // silence into the typewriter (mirror the other death convos)
+      dialogueStart(_vws, { substitute: siriusSubstitute, onComplete: function () {
+        const _ov = document.getElementById('ascensionOverlay');
+        if (_ov) { _ov.classList.remove('visible'); _ov.classList.remove('particle-phase'); }
+        triggerDeath();
+      } });
+      return;
+    }
+  }
   if (state !== 'voidfight' && ascensionCutsceneEligible()) {
     const _wasApoc = !!apocalypseDeathFlag;
     // Snapshot elapsed wall-clock at the moment of death so the Ascension run
@@ -36522,11 +36847,21 @@ document.getElementById('startBtn').addEventListener('click', ()=>{
       stats.perOrb[_o].kills = Math.max(stats.perOrb[_o].kills | 0, _ttKills[_o]);
     }
     saveStats();          // localStorage + PGS schedule (matches TREETEST's persisted behavior)
+    // v2.4: TREETEST now OWNS every orb outright (was: only crystals + kills, so the
+    // tester still had to buy base orbs + trigger each enhanced convo). Base orbs →
+    // unlockedOrbs; enhanced orbs → orbUnlockSeen (the SOLE source of truth, see
+    // orbRevealed), then reconcile pushes them into unlockedOrbs + saves. orbUnlockSeen
+    // is grow-only/sync-safe, so this also survives the cloud merge.
+    unlockedOrbs = ['cyan', 'cosmic', 'solar', 'nebula', 'asteroid'];
+    for (const _enh of Object.keys(ENHANCED_UNLOCK)) orbUnlockSeen[_enh] = true;
+    try { _orbUnlockReconcile(); } catch {}
+    saveUnlockedOrbs();
+    saveOrbUnlockSeen();
     // v1.6.4: TREETEST also marks tutorial complete so dev test runs skip
     // the forced first-run tutorial.
     saveTutorialCompleted(true);
     refreshActiveTreeCache();
-    console.log('[TREETEST] Crystals granted, all trees unlocked, tree state reset, base-orb kills set (cyan/cosmic/solar/asteroid 4000, nebula 5500 → all 5 unlock convos triggerable), tutorial skipped');
+    console.log('[TREETEST] Crystals granted, ALL orbs owned (5 base + 5 enhanced via orbUnlockSeen), all trees unlocked, tree state reset, base-orb kills set, tutorial skipped');
     // Fall through — the run starts normally so the tester can play a round.
   }
   // LEVIATHANTEST dev cheat REMOVED at v2.3.0 release (no production path ran through it). Leviathan is
@@ -37596,9 +37931,11 @@ let dlgShownChars = 0;
 let dlgOnComplete = null;
 let dlgSubstitute = null;
 let dlgDefaultSpeaker = '???';
+let dlgCurSpeaker = '';   // v2.4: current line's speaker — drives the per-voice blip
 let dlgTypeInterval = DLG_TYPE_INTERVAL_MS;
 
 function _dlgSetSpeaker(s) {
+  dlgCurSpeaker = s || '';
   const el = document.getElementById('ascensionSpeaker');
   if (el) el.textContent = s || '';
 }
@@ -37614,7 +37951,16 @@ function _dlgShowContinue(show) {
 // lightest existing UI tick rather than allocating new audio per letter.
 function _dlgBlip() {
   if ((dlgShownChars & 1) === 0) {
-    try { if (typeof SFX !== 'undefined' && SFX.clickSecondary) SFX.clickSecondary(); } catch {}
+    // v2.4: THE VOID speaks in its own deeper blip (clickVoid); everyone else keeps
+    // Sirius's bright clickSecondary tick. Additive — no existing dialogue uses a
+    // 'Void' speaker, so only the new clue convo changes voice.
+    const _isVoid = /void/i.test(dlgCurSpeaker || '');
+    try {
+      if (typeof SFX !== 'undefined') {
+        if (_isVoid && SFX.clickVoid) SFX.clickVoid();
+        else if (SFX.clickSecondary) SFX.clickSecondary();
+      }
+    } catch {}
   }
 }
 function _dlgLineAt(i) {
@@ -39703,7 +40049,7 @@ document.getElementById('styledConfirmNo').addEventListener('click', () => {
 // v1.6.3: gate IMPOSSIBLE difficulty + leaderboard tab behind
 // beatDifficulty.EXTREME. Called on menu refresh / orb browser refresh.
 function refreshImpossibleVisibility() {
-  const show = !!beatDifficulty.EXTREME;
+  const show = !!(beatDifficulty.EXTREME || (voidBeaten && voidBeaten.EXTREME));
   const diffBtn = document.getElementById('diffBtnImpossible');
   if (diffBtn) diffBtn.style.display = show ? '' : 'none';
   const lbTab = document.getElementById('lbDiffTabImpossible');
