@@ -6122,8 +6122,7 @@ function saveVoidBeaten() {
 // Void fight unlocks: reaching 10:00 then branches into the held-Void arena
 // (startVoidFight) instead of the consume-cutscene. Persisted exactly like
 // beatDifficulty — localStorage 'drift_apoc_survivals' + the PGS snapshot,
-// merged grow-only (MAX) across devices. Test the apocalypse/arena path
-// repeatedly with the APOCALYPSENOW pilot-name cheat (jumps a real run to 10:00).
+// merged grow-only (MAX) across devices.
 const VOID_FIGHT_UNLOCK_COUNT = 5;
 let apocalypseSurvivals = 0;
 function voidFightUnlocked() { return (apocalypseSurvivals | 0) >= VOID_FIGHT_UNLOCK_COUNT; }
@@ -20608,7 +20607,7 @@ let runStats = { totalPassed: 0, totalDestroyed: 0, pointsFromPassing: 0, points
 // Example: TIME_DILATION = 60 → 1 real second = 60 in-game seconds for
 // progression, apocalypse triggers in ~10 real seconds.
 const TIME_DILATION = 1;
-const GAME_VERSION = '2.3.1';
+const GAME_VERSION = '2.4.0';
 try {
   const vl = document.getElementById('versionLabel');
   if (vl) vl.textContent = 'v' + GAME_VERSION;
@@ -29893,9 +29892,8 @@ function apocalypseElapsed() {
 
 function startApocalypse() {
   if (state === 'apocalypse' || state === 'voidfight' || state === 'dead') return;
-  // "The Last Light": a REAL run (state 'playing' — including the APOCALYPSENOW
-  // dev cheat) at 10:00 with the fight unlocked branches into the held-Void
-  // ARENA. The devmode "TRIGGER APOCALYPSE NOW" button (state 'devmode') always
+  // "The Last Light": a REAL run (state 'playing') at 10:00 with the fight
+  // unlocked branches into the held-Void ARENA. The devmode "TRIGGER APOCALYPSE NOW" button (state 'devmode') always
   // plays the consume-cutscene and never enters the arena. The not-unlocked
   // path below is unchanged except for the new escalating Sirius taunts.
   if (state !== 'devmode' && voidFightUnlocked()) { startVoidFight(); return; }
@@ -37233,17 +37231,10 @@ document.getElementById('startBtn').addEventListener('click', ()=>{
   // menu→play uses the 0.5s menu→gameplay crossfade.
   const fade = state === 'dead' ? 0.3 : 0.5;
   resetGame(); state='playing';
-  // DEV cheat: pilot name "APOCALYPSENOW" rewinds the run clock to the 10:00
-  // mark so the REAL apocalypse trigger (elapsedProgressionSeconds() >= 600 in
-  // _updateCore, L28417) fires on the next frame. This is a genuine 'playing'
-  // run with the equipped orb and NO godmode — so the escalating taunts, the
-  // survival-counter increment, the unlock-at-5 gate flip, and (once unlocked)
-  // the arena branch all fire exactly as in a real run. Repeatable: every
-  // cheated run reaches the apocalypse. REMOVE before release (with TREETEST etc.).
-  if (getUsername().toUpperCase() === 'APOCALYPSENOW') {
-    runStartTime = Date.now() - 601000;   // 601s elapsed → progression ≥ 600 next frame
-    console.log('[APOCALYPSENOW] run clock set to ~10:00 — apocalypse triggers immediately (real path)');
-  }
+  // (v2.4.0 release: the APOCALYPSENOW dev cheat was removed. It rewound runStartTime
+  // by ~601s to force the genuine 10:00 apocalypse for testing the Void-fight unlock +
+  // arena. The REAL apocalypse path is unaffected — elapsedProgressionSeconds() >= 600
+  // in _updateCore still triggers it through normal play. TREETEST stays in by decision.)
   if (typeof AdManager !== 'undefined') AdManager.hideBanner();
   SFX.playTrack('gameplay', fade);
   const _ov = document.getElementById('overlay');
