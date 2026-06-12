@@ -23807,7 +23807,7 @@ function updatePixiBodyEffectsLayer() {
     // the targeting feedback they'll see in real gameplay.
     // v2.1.0 Option-B: neutral=white 60% (no pulse), input=cyan/red 90% with
     // 5Hz pulse. Width 2, ring +8 outside body with ±3 sine breathe.
-    if ((state === 'playing' || state === 'tutorial' || state === 'voidfight') && closestBody) {
+    if ((state === 'playing' || state === 'tutorial' || state === 'voidfight') && closestBody && !closestBody._isVoid) {   // v2.4.2: the Void target is drawn in the 2D overlay (drawVoidFightHud), so it's identical across both renderers
       const b = closestBody;
       const inputHeld = leftDown || rightDown;
       const ringRgb = leftDown ? '80,200,255' : rightDown ? '255,120,80' : '230,235,245';
@@ -23832,7 +23832,7 @@ function updatePixiBodyEffectsLayer() {
   // distracting (second-pass tone-down from initial width 2 / alpha 0.65 bump).
   if (pixiTargetLineGraphics) {
     pixiTargetLineGraphics.clear();
-    if ((state === 'playing' || state === 'tutorial' || state === 'voidfight') && closestBody && (leftDown || rightDown)) {
+    if ((state === 'playing' || state === 'tutorial' || state === 'voidfight') && closestBody && !closestBody._isVoid && (leftDown || rightDown)) {
       const b = closestBody;
       const baseColor = leftDown ? '80,200,255' : rightDown ? '255,120,80' : '230,235,245';
       const dashColor = playerInVoidRange ? '140,60,200' : baseColor;
@@ -27461,6 +27461,16 @@ function findClosest() {
     if (d < bd) { bd = d; best = p; }
   }
   // Crack fragments are obstacles, not gravity sources — excluded from targeting.
+  // v2.4.2: in the Void-fight arena the descending Void competes for "closest body" by
+  // its SURFACE distance (its centre is off-screen, so measure the arc edge straight up).
+  // It only WINS when genuinely nearer than every planet; the synthetic target sits at
+  // (player.x, arcBottom), so the normal force math is pure-vertical (attract up / repel
+  // straight DOWN — the positioning assist). A nearer planet always wins → normal dodging.
+  if (state === 'voidfight' && voidFightPhase === 'arena' && apocalypseSun) {
+    const arcB = apocalypseSun.y + apocalypseSun.radius;
+    const dVoid = Math.max(0, player.y - arcB);   // edge distance up to the arc lip (0 if at/under it)
+    if (dVoid < bd) { best = { x: player.x, y: arcB, radius: 46, _isVoid: true }; bd = dVoid; }
+  }
   closestBody = best;
 }
 
@@ -27513,25 +27523,13 @@ function applyEnvironmentForces() {
 }
 
 function applyForce() {
-  // v2.4.1 VOID POSITIONING AID (arena only) — runs FIRST, independent of whether a
-  // minion target exists. When the descended Void looms close above, REPEL becomes a
-  // PURE DOWNWARD push (no horizontal component) so the player can reliably drop below
-  // it to safety; the minion-repel's sideways "cone bend" is suppressed this frame (it
-  // was what fought the player trying to fall straight down). ATTRACT is untouched
-  // (still targets real bodies for navigation), and the rest-gravity target drops below
-  // the arc (further down) so the player isn't dragged back up into the Void.
-  let _voidSteerDown = false;
-  if (state === 'voidfight' && voidFightPhase === 'arena' && apocalypseSun && rightDown) {
-    const arcB = apocalypseSun.y + apocalypseSun.radius;
-    const gap = player.y - arcB;                       // <0 = player under/inside the arc lip
-    if (gap < H * 0.40) {                              // the Void is looming close overhead
-      const sr = Math.max(1, scrollSpeed() / 1.2);
-      const urgency = 1 + Math.max(0, (H * 0.18 - gap) / (H * 0.18));   // 1..2 as you near/enter the arc
-      player.vy += FORCE * 2.2 * (1 + (sr - 1) * 0.4) * urgency * dtScale;   // PURE DOWN — no horizontal
-      if (player.vy < 0) player.vy = 0;                // cancel upward drift so the drop is clean
-      _voidSteerDown = true;
-    }
-  }
+  // v2.4.2: the Void-down-assist is now driven by findClosest() making the Void the
+  // closestBody (by surface distance) ONLY when it is genuinely nearer than any planet —
+  // so a closer planet always gets normal full-horizontal dodging (the v2.4.1 overcorrect
+  // is gone). The synthetic Void target sits at (player.x, arcBottom), making the standard
+  // force below pure-vertical (attract up / repel straight down); the one special-case is
+  // skipping the minion "cone bend" for it (below). The rest-gravity target still drops
+  // below the arc when descended (further down).
   if (!closestBody) return;
   const dx = closestBody.x - player.x;
   const dy = closestBody.y - player.y;
@@ -27577,7 +27575,7 @@ function applyForce() {
   const f = FORCE * influence * forceMult * inputDamp;
 
   if (leftDown)  { player.vx += nx*f*dtScale; player.vy += ny*f*dtScale; }
-  if (rightDown && !_voidSteerDown) {   // v2.4.1: skip the minion horizontal cone-bend while the Void-repel (pure down) owns this frame
+  if (rightDown) {
     // Dead zone fix: when a body is above the player and the repel vector is
     // nearly vertical (would otherwise just shove the player straight down),
     // bend the direction horizontally so they actually escape sideways.
@@ -27608,7 +27606,7 @@ function applyForce() {
     //      partially-aligned the player happens to be. Mid-range dodges keep
     //      the smooth taper so the feel-pass goal isn't lost.
     let rnx = -nx, rny = -ny;
-    if (closestBody.y < player.y) {
+    if (closestBody.y < player.y && !closestBody._isVoid) {   // v2.4.2: the Void target steers pure-vertical — no sideways cone-bend
       const coneThreshold = 0.15 + (closestBody.radius - 15) * 0.01;
       const absRnx = Math.abs(rnx);
       if (absRnx < coneThreshold) {
@@ -29833,6 +29831,13 @@ let _voidWasHyper = false;         // edge-detect hyperspeed end for the safe ar
 let _voidWinConvoShown = false;    // clue-convo guard for the current win resolution
 let _voidFinalized = false;        // one-shot: updateVoidFight's win/lose branch re-calls finalize each frame; the clue convo keeps state 'voidfight' across frames
 let _voidPrefightDone = false;     // set true when the pre-fight convo finishes → the fight (HP/descent/spawns) begins
+// v2.4.2 WIN CUTSCENE (implosion finale) state.
+let _voidWinStage = 0;             // 0 = defeat convo, 1 = implosion animation
+let _voidWinConvoDone = false;     // defeat convo dismissed → begin the implosion
+let _voidImplodeStart = 0;         // timestamp the implosion animation began
+let _voidImplodeSfxFired = false;  // one-shot guard for VOID_IMPLOSION.mp3
+let _voidShards = [];              // the smaller voids the Void splits into
+let _voidImplodeCx = 0, _voidImplodeCy = 0;   // implosion centre
 
 function apocalypseElapsed() {
   // "The Last Light": during the Void-fight arena the same clock drives the
@@ -30182,7 +30187,7 @@ function updateVoidFight() {
   const dt = Math.min(0.05, (frameDt || 16) / 1000);   // bg-tab guard
 
   // --- WIN / LOSE beats: hold the world frozen for a short resolution, then finalize.
-  if (voidFightPhase === 'win')  { _positionVoidArc(r, voidDescent); if (Date.now() >= voidFightEndAt) _voidFightFinalizeWin();  return true; }
+  if (voidFightPhase === 'win')  { _updateVoidWinCutscene(r); return true; }   // v2.4.2: the implosion finale drives the win now
   if (voidFightPhase === 'lose') { _positionVoidArc(r, 1);          if (Date.now() >= voidFightEndAt) _voidFightFinalizeLose(); return true; }
 
   // --- LIVE ARENA: advance the descent, refill the cap bucket + tier reserves,
@@ -30246,17 +30251,33 @@ function _voidFightBeginWin() {
   if (voidFightPhase === 'win' || voidFightPhase === 'lose') return;
   voidFightPhase = 'win';
   voidFightWon = true;
-  voidFightEndAt = Date.now() + 1500;
+  // v2.4.2: the WIN now plays the full cutscene (defeat convo → implosion → finalize)
+  // instead of a 1.5s banner beat. Visual only — _voidFightFinalizeWin still owns the
+  // accounting/flags. Reset the cutscene state + reel the Void with an initial burst.
+  _voidWinStage = 0;
+  _voidWinConvoDone = false;
+  _voidImplodeStart = 0;
+  _voidImplodeSfxFired = false;
+  _voidShards = [];
   try {
     const arcBottom = apocalypseSun ? apocalypseSun.y + apocalypseSun.radius : H * 0.2;
     for (let i = 0; i < 14; i++) {
       emitDestroyBurst(W * (0.08 + 0.84 * (i / 13)), Math.max(16, arcBottom - 10 + (Math.random() - 0.5) * 50), 'rgba(206,150,255,1)');
     }
     deathFlashFrames = 1;
-    screenShake = Math.max(screenShake, 18);
+    screenShake = Math.max(screenShake, 20);
     if (SFX.playApocalypseImpact) SFX.playApocalypseImpact();
   } catch (e) {}
   bodies = []; powerups = [];
+  try { SFX.playTrack(null, 1.2); } catch {}   // fade the boss track; the rumble carries the tension into the convo
+  // The Void cries out in disbelief, then Sirius's payoff — THEN the implosion (stage 1).
+  try {
+    dialogueStart(VOID_DEFEAT_SCRIPT, { substitute: siriusSubstitute, onComplete: function () {
+      const _ov = document.getElementById('ascensionOverlay');
+      if (_ov) { _ov.classList.remove('visible'); _ov.classList.remove('particle-phase'); }
+      _voidWinConvoDone = true;
+    } });
+  } catch (e) { _voidWinConvoDone = true; }
 }
 function _voidFightBeginLose() {
   if (voidFightPhase === 'win' || voidFightPhase === 'lose') return;
@@ -30311,9 +30332,17 @@ function _voidMarkBeaten() {
 const VOID_PREFIGHT_SCRIPT = [
   ['Sirius', "{player}. Ten minutes. Ten thousand years. Every time, we have run from this light."],
   ['Sirius', 'Not tonight. Bring us about. We stop running — we FIGHT.'],
-  ['The Void', 'you would raise a fist at ME? little spark. i am the dark that waited before your first star drew breath.'],
+  ['The Void', 'you would raise a fist at ME? little spark. I am the dark that waited before your first star drew breath.'],
   ['Sirius', "Then it has never met a pilot like {player}. Everything we have — burn it into that dark."],
   ['The Void', 'come, then. let me show you how the last light goes out.'],
+];
+// v2.4.2 WIN-CUTSCENE defeat convo — the emotional climax: the Void cries out in
+// disbelief (violet .void-voice + clickVoid), then Sirius's proud, no-more-jokes payoff.
+// Plays on the Void's defeat (voidHp→0), BEFORE the implosion. {player} substituted.
+const VOID_DEFEAT_SCRIPT = [
+  ['The Void', 'no. NO. I am the dark BEFORE the first dawn. I do not break. I CANNOT—'],
+  ['Sirius', "Ten thousand years you've hunted this little light, {player}. Tonight it turned and bit you."],
+  ['Sirius', "That's my pilot. No more jokes. No more running. Send it back to nothing."],
 ];
 const VOID_WIN_SCRIPTS = {
   NORMAL: [
@@ -30328,10 +30357,178 @@ const VOID_WIN_SCRIPTS = {
   ],
 };
 
+// === v2.4.2 WIN CUTSCENE — the implosion finale ====================================
+// Drives the win cutscene from the 'win' phase (updateVoidFight): STAGE 0 = the defeat
+// convo (the Void held, the player eases to centre), STAGE 1 = the implosion (split →
+// suck-in → bright line + whoosh → clean space → finalize). Visual/sequence ONLY — the
+// scoring/flags stay in _voidFightFinalizeWin. r = the Void's draw radius (W*RADIUS_FRAC).
+function _updateVoidWinCutscene(r) {
+  const now = Date.now();
+  if (bodies.length) bodies = [];
+  if (powerups.length) powerups = [];
+  leftDown = false; rightDown = false; player.vx = 0; player.vy = 0;
+  // STAGE 0 — defeat convo: hold the Void where it fell; ease the player to a centred,
+  // visible spot; wait for the two-voice beat to finish.
+  if (_voidWinStage === 0) {
+    if (apocalypseSun) _positionVoidArc(r, voidDescent);
+    player.x += (W / 2 - player.x) * 0.06;
+    player.y += (H * 0.62 - player.y) * 0.06;
+    if (apocalypseRumbleNodes) { apocalypseRumbleNodes.setVolume(0.24); if (apocalypseRumbleNodes.tick) apocalypseRumbleNodes.tick(); }
+    graceEndTime = Math.max(graceEndTime, now + 200);
+    if (!_voidWinConvoDone) return;
+    // SPLIT — the Void shatters into smaller voids; the implosion begins.
+    _voidWinStage = 1;
+    _voidImplodeStart = now;
+    _voidImplodeCx = W / 2;
+    _voidImplodeCy = H * 0.40;
+    const baseY = apocalypseSun ? Math.max(60, apocalypseSun.y + apocalypseSun.radius - 30) : H * 0.30;
+    const N = 9;
+    _voidShards = [];
+    for (let i = 0; i < N; i++) {
+      const ang = (i / N) * Math.PI * 2 + i * 1.3;
+      const spread = (i - (N - 1) / 2) / N;   // -0.5 .. 0.5 across the arc
+      _voidShards.push({
+        x: W * (0.5 + spread * 0.9) + Math.cos(ang) * 40,
+        y: baseY + Math.sin(ang) * 50,
+        r: 24 + (i % 4) * 11,
+        phase: ang,
+        spin: (i % 2 ? 1 : -1) * (0.02 + (i % 3) * 0.012),
+        jx: 0, jy: 0,
+      });
+    }
+    apocalypseSun = null;   // the big Void is gone — the shards render the collapse now
+    try { triggerHitstop(60); } catch {}
+    screenShake = Math.max(screenShake, 22);
+    return;
+  }
+  // STAGE 1 — the implosion animation (timed; ~3.8s).
+  const e = (now - _voidImplodeStart) / 1000;
+  player.x += (W / 2 - player.x) * 0.08;
+  player.y += (H * 0.62 - player.y) * 0.08;
+  if (e < 0.7) {
+    // TREMBLE — heavy shake; the shards jitter where the Void fell.
+    screenShake = Math.max(screenShake, 16 + 16 * (e / 0.7));
+    if (apocalypseRumbleNodes) { apocalypseRumbleNodes.setVolume(0.30 + 0.12 * (e / 0.7)); if (apocalypseRumbleNodes.tick) apocalypseRumbleNodes.tick(); }
+    for (const s of _voidShards) { s.phase += s.spin; s.jx = Math.cos(s.phase * 6) * 4; s.jy = Math.sin(s.phase * 5) * 4; }
+  } else if (e < 2.2) {
+    // IMPLODE — the shards accelerate toward centre, shrinking + spiralling in.
+    const k = (e - 0.7) / 1.5, ease = k * k;
+    screenShake = Math.max(screenShake, 20 + 8 * k);
+    for (const s of _voidShards) {
+      s.phase += s.spin * (1 + k * 3);
+      s.x += (_voidImplodeCx - s.x) * (0.04 + ease * 0.22) + Math.cos(s.phase) * (1 - k) * 1.5;
+      s.y += (_voidImplodeCy - s.y) * (0.04 + ease * 0.22) + Math.sin(s.phase) * (1 - k) * 1.5;
+      s.r *= (1 - 0.012 - ease * 0.05);
+      s.jx = 0; s.jy = 0;
+    }
+    if (apocalypseRumbleNodes) { apocalypseRumbleNodes.setVolume(0.42 - 0.12 * k); if (apocalypseRumbleNodes.tick) apocalypseRumbleNodes.tick(); }
+  } else if (e < 3.0) {
+    // COLLAPSE CLIMAX — the bright line + point form; fire VOID_IMPLOSION.mp3 (synced).
+    if (!_voidImplodeSfxFired) {
+      _voidImplodeSfxFired = true;
+      _voidShards = [];   // the shards have collapsed into the point
+      try { if (SFX.playSfxBuffer) SFX.playSfxBuffer('voidImplode', 0.95); } catch {}
+      try { triggerHitstop(90); } catch {}
+      screenShake = Math.max(screenShake, 30);
+      deathFlashFrames = 1;
+      if (apocalypseRumbleNodes) { try { apocalypseRumbleNodes.stop(); } catch {} apocalypseRumbleNodes = null; }
+    }
+  } else {
+    // CLEAR — the dark is gone; hold the clean starfield, then route to the results.
+    if (e >= 3.8) { _voidFightFinalizeWin(); return; }
+  }
+}
+// Renders the implosion on the 2D ctx overlay (over BOTH the pixi + canvas paths, like
+// the HP bar). STAGE 1 only — by then apocalypseSun is null so the big Void is gone.
+function _drawVoidImplosion(c) {
+  if (voidFightPhase !== 'win' || _voidWinStage !== 1) return;
+  const e = (Date.now() - _voidImplodeStart) / 1000;
+  const cx = _voidImplodeCx, cy = _voidImplodeCy;
+  c.save();
+  // SHARDS — smaller voids (dark cores + violet rims + glow), spiralling inward.
+  for (const s of _voidShards) {
+    if (!s || s.r < 1) continue;
+    const x = s.x + (s.jx || 0), y = s.y + (s.jy || 0);
+    const g = c.createRadialGradient(x, y, s.r * 0.2, x, y, s.r * 1.7);
+    g.addColorStop(0, 'rgba(150,60,220,0.45)');
+    g.addColorStop(0.5, 'rgba(90,25,170,0.22)');
+    g.addColorStop(1, 'rgba(60,10,130,0)');
+    c.fillStyle = g; c.beginPath(); c.arc(x, y, s.r * 1.7, 0, 6.28); c.fill();
+    const core = c.createRadialGradient(x, y, s.r * 0.1, x, y, s.r);
+    core.addColorStop(0, '#070010'); core.addColorStop(0.78, '#2a0a4a'); core.addColorStop(1, '#b14dff');
+    c.fillStyle = core; c.beginPath(); c.arc(x, y, s.r, 0, 6.28); c.fill();
+  }
+  // Darkening implosion well at centre during the suck-in.
+  if (e >= 0.7 && e < 2.2) {
+    const k = (e - 0.7) / 1.5, rr = 230 * (1 - k) + 30;
+    const g = c.createRadialGradient(cx, cy, 0, cx, cy, rr);
+    g.addColorStop(0, 'rgba(8,0,18,' + (0.55 * k).toFixed(3) + ')');
+    g.addColorStop(1, 'rgba(8,0,18,0)');
+    c.fillStyle = g; c.beginPath(); c.arc(cx, cy, rr, 0, 6.28); c.fill();
+  }
+  // COLLAPSE — a bright horizontal line + glowing point, then a whoosh-collapse to nothing.
+  if (e >= 2.2) {
+    const ce = e - 2.2;
+    c.globalCompositeOperation = 'lighter';
+    if (ce < 0.14) {
+      const grow = Math.min(1, ce / 0.1), halfW = (W * 0.52) * grow;
+      const lg = c.createLinearGradient(cx - halfW, cy, cx + halfW, cy);
+      lg.addColorStop(0, 'rgba(220,180,255,0)');
+      lg.addColorStop(0.5, 'rgba(255,245,255,0.95)');
+      lg.addColorStop(1, 'rgba(220,180,255,0)');
+      c.fillStyle = lg; c.fillRect(cx - halfW, cy - 2.5, halfW * 2, 5);
+      const pg = c.createRadialGradient(cx, cy, 0, cx, cy, 48);
+      pg.addColorStop(0, 'rgba(255,255,255,0.98)'); pg.addColorStop(0.4, 'rgba(235,205,255,0.7)'); pg.addColorStop(1, 'rgba(200,140,255,0)');
+      c.fillStyle = pg; c.beginPath(); c.arc(cx, cy, 48, 0, 6.28); c.fill();
+    } else if (ce < 0.7) {
+      const k = (ce - 0.14) / 0.56, halfW = (W * 0.52) * (1 - k);
+      const lg = c.createLinearGradient(cx - halfW, cy, cx + halfW, cy);
+      lg.addColorStop(0, 'rgba(220,180,255,0)');
+      lg.addColorStop(0.5, 'rgba(255,248,255,' + (0.95 * (1 - k)).toFixed(3) + ')');
+      lg.addColorStop(1, 'rgba(220,180,255,0)');
+      c.fillStyle = lg; c.fillRect(cx - halfW, cy - 1.8, halfW * 2, 3.6);
+      const flare = (k < 0.45) ? (1 + k * 0.9) : Math.max(0, 1.4 * (1 - (k - 0.45) / 0.55));
+      const prr = Math.max(0.5, 44 * flare);
+      const pg = c.createRadialGradient(cx, cy, 0, cx, cy, prr + 6);
+      pg.addColorStop(0, 'rgba(255,255,255,' + (0.95 * (1 - k * 0.4)).toFixed(3) + ')');
+      pg.addColorStop(0.5, 'rgba(235,205,255,0.45)');
+      pg.addColorStop(1, 'rgba(200,140,255,0)');
+      c.fillStyle = pg; c.beginPath(); c.arc(cx, cy, prr + 6, 0, 6.28); c.fill();
+    } else if (ce < 1.0) {
+      const k = (ce - 0.7) / 0.3, a = (1 - k) * 0.85;
+      c.fillStyle = 'rgba(255,250,255,' + a.toFixed(3) + ')';
+      c.beginPath(); c.arc(cx, cy, 9 * (1 - k) + 1.5, 0, 6.28); c.fill();
+    }
+    c.globalCompositeOperation = 'source-over';
+  }
+  c.restore();
+}
+
 // Void HP bar + retro direct-hit FX. Drawn on the 2D ctx overlay (over both the
 // pixi and canvas paths, like the tutorial wall-flash / target rings).
 function drawVoidFightHud(c) {
   if (state !== 'voidfight') return;
+  // v2.4.2 win-cutscene implosion (split voids → suck-in → bright line + whoosh). No-op
+  // outside the win stage 1.
+  _drawVoidImplosion(c);
+  // v2.4.2 Void targeting indicator — when the Void is the closest "body" (the steering
+  // target set in findClosest), draw the SAME attract/repel ring + dashed line on its
+  // arc. 2D overlay so it's identical on pixi + canvas (the pixi per-body path skips _isVoid).
+  if (voidFightPhase === 'arena' && closestBody && closestBody._isVoid) {
+    const b = closestBody, held = leftDown || rightDown;
+    const rgb = leftDown ? '80,200,255' : rightDown ? '255,120,80' : '230,235,245';
+    const ringR = 78 + (held ? Math.sin(frame * 0.52) * 5 : 0);
+    c.save();
+    c.globalAlpha = held ? (0.75 + 0.15 * Math.sin(frame * 0.52)) : 0.55;
+    c.strokeStyle = 'rgba(' + rgb + ',1)'; c.lineWidth = 2.5;
+    c.beginPath(); c.arc(b.x, b.y, ringR, 0, 6.28); c.stroke();
+    if (held) {
+      c.globalAlpha = 0.4; c.lineWidth = 1.5; c.setLineDash([6, 4]);
+      c.beginPath(); c.moveTo(player.x, player.y); c.lineTo(b.x, b.y); c.stroke();
+      c.setLineDash([]);
+    }
+    c.restore();
+  }
   const now = Date.now();
   // Retro direct-hit sparks + damage ticks (fade over 0.5s).
   for (let i = _voidHits.length - 1; i >= 0; i--) {
@@ -30351,7 +30548,7 @@ function drawVoidFightHud(c) {
     c.restore();
   }
   // The Void HP bar — slim, under the arc; only during the live fight + beats.
-  if (voidHpMax > 0 && (voidFightPhase === 'arena' || voidFightPhase === 'win' || voidFightPhase === 'lose')) {
+  if (voidHpMax > 0 && (voidFightPhase === 'arena' || voidFightPhase === 'lose')) {   // v2.4.2: hide the bar during the WIN cutscene (the implosion takes over)
     const bw = Math.min(W * 0.7, 320), bh = 7;
     const bx = (W - bw) / 2, by = Math.max(10, H * VF_ARC_TOP_FRAC + 8);
     const frac = Math.max(0, voidHp / voidHpMax);
@@ -30599,6 +30796,7 @@ function resetApocalypse() {
   voidDmgBudget = 0;
   voidTierBudget = [0, 0, 0, 0];
   voidPushX = 0; voidPushY = 0; _voidWasHyper = false; _voidWinConvoShown = false; _voidFinalized = false; _voidPrefightDone = false;
+  _voidWinStage = 0; _voidWinConvoDone = false; _voidImplodeStart = 0; _voidImplodeSfxFired = false; _voidShards = [];
   voidDescent = 0;
   voidFightWon = false;
   voidFightEndAt = 0;
@@ -37936,8 +38134,14 @@ let dlgTypeInterval = DLG_TYPE_INTERVAL_MS;
 
 function _dlgSetSpeaker(s) {
   dlgCurSpeaker = s || '';
+  // v2.4.2: THE VOID speaks in the violet .void-voice (matching APOCALYPSE_EXCHANGE's
+  // per-line toggle ~29750); Sirius/others render the default cyan. Applied to BOTH the
+  // speaker label and the body text; toggled off automatically on a non-Void line.
+  const isVoid = /void/i.test(dlgCurSpeaker);
   const el = document.getElementById('ascensionSpeaker');
-  if (el) el.textContent = s || '';
+  if (el) { el.textContent = s || ''; el.classList.toggle('void-voice', isVoid); }
+  const tx = document.getElementById('ascensionText');
+  if (tx) tx.classList.toggle('void-voice', isVoid);
 }
 function _dlgSetText(s) {
   const el = document.getElementById('ascensionText');
