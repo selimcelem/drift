@@ -37147,6 +37147,15 @@ document.getElementById('startBtn').addEventListener('click', ()=>{
     // "The Last Light": reset the Void-fight unlock counter on a full progress wipe.
     apocalypseSurvivals = 0;
     try { localStorage.removeItem('drift_apoc_survivals'); } catch {}
+    // v2.4: also wipe the per-difficulty Void-win record + win counts. Without this,
+    // (a) IMPOSSIBLE stays unlocked after a "full" reset via the `|| voidBeaten.EXTREME`
+    // gate (refreshImpossibleVisibility below would re-light it), and (b) the pgsWriteNow()
+    // supersede below re-uploads the stale record to the cloud — defeating the "fully-wiped
+    // payload" promise so the next sync brings it back. Mirror apocalypseSurvivals above.
+    for (const _k of Object.keys(voidBeaten))   voidBeaten[_k] = false;
+    for (const _k of Object.keys(voidWinCount)) voidWinCount[_k] = 0;
+    try { localStorage.removeItem('drift_beat_void'); } catch {}
+    try { localStorage.removeItem('drift_void_wincount'); } catch {}
     for (const orb of Object.keys(orbTrees)) {
       orbTrees[orb] = freshOrbTreeState(orb);
     }
