@@ -5284,6 +5284,11 @@ function effectiveSpacingRadius(b) {
 // land in different zones for natural horizontal spread.
 let lastSpawnZone = -1;
 const FORCE = 0.18;
+// v2.4.x WALL-CENTERING ASSIST tunables (normal side walls). A subtle safety net that
+// nudges a PINNED player off the lethal L/R edge; yields to intentional edge-steering.
+const WALL_ASSIST_ZONE = 56;       // px from the lethal wall where the net begins (prox² keeps it negligible until very close)
+const WALL_ASSIST_FORCE = 0.11;    // base nudge (gentle; ×prox² ×yield ×scroll)
+const WALL_ASSIST_YIELD_VX = 1.3;  // toward-wall vx at which the net fully yields to a deliberate approach
 
 // --- Difficulty ---
 const DIFFICULTIES = {
@@ -22074,6 +22079,18 @@ const SFX = (function() {
     });
   }
 
+  // v2.4.x: the menacing "the Void LOCKS into place" arrival slam for the pre-fight intro.
+  // Deliberately DISTINCT from playApocalypseImpact (the consume-DEATH pop, which carries a
+  // bright bandpass noise crunch that reads as death) — this is a slow, deep sub-bass
+  // down-thud + a detuned low partial for unease, so the fight's START never sounds like a
+  // death. No noise burst.
+  function playVoidArrival() {
+    safeSfx(t => {
+      chipSweep('sine', 120, 38, t, 0.95, 0.85);        // deep settle/slam
+      chipSweep('sine', 80, 30, t + 0.05, 1.15, 0.42);  // detuned low partial — ominous tail
+    });
+  }
+
   // Low-frequency hum for the void orb. Sustained 60hz sine at low volume;
   // caller calls stop() when leaving the proximity range.
   function startVoidHum() {
@@ -22620,7 +22637,7 @@ const SFX = (function() {
   return {
     init, attract, repel, pickup, planetDestroyed, death, duckDestroys,
     comboActivate, comboDestroySound, startHyperspeedWhoosh,
-    startApocalypseRumble, playApocalypseImpact, screamShriek, startVoidHum,
+    startApocalypseRumble, playApocalypseImpact, playVoidArrival, screamShriek, startVoidHum,
     playSfxBuffer,
     phantomBladeSlash, beyondEcho, afterburnWhoosh,
     // v1.9.0 Roamer + Phantasm SFX pass
@@ -27523,6 +27540,32 @@ function applyEnvironmentForces() {
 }
 
 function applyForce() {
+  // v2.4.x WALL-CENTERING ASSIST (normal side walls) — a SUBTLE safety net that nudges the
+  // player off the lethal L/R edge ONLY when pinned in the danger zone. It scales with
+  // proximity² (negligible until very close to the wall; firm only at the fatal edge) and
+  // YIELDS to intentional edge-steering (driving toward the wall), so dodging into / hugging
+  // an edge stays free. Mid-screen play (outside the zone) is UNTOUCHED. Runs BEFORE the
+  // closestBody early-return so a pinned player is helped even with no body in range.
+  // (Horizontal — for the side walls; orthogonal to the arena's vertical down-assist.)
+  {
+    const _wallEdge = PLAYER_R + 3;   // the lethal wall x (matches checkCollisions)
+    let _aDir = 0, _prox = 0;
+    if (player.x - _wallEdge < WALL_ASSIST_ZONE) {                  // near the LEFT wall
+      _prox = Math.max(0, Math.min(1, 1 - (player.x - _wallEdge) / WALL_ASSIST_ZONE));
+      _aDir = 1;   // nudge toward centre (right)
+    } else if ((W - _wallEdge) - player.x < WALL_ASSIST_ZONE) {     // near the RIGHT wall
+      _prox = Math.max(0, Math.min(1, 1 - ((W - _wallEdge) - player.x) / WALL_ASSIST_ZONE));
+      _aDir = -1;  // nudge toward centre (left)
+    }
+    if (_aDir !== 0 && _prox > 0) {
+      const _towardWallVx = _aDir > 0 ? -player.vx : player.vx;     // >0 = the player is moving INTO the wall
+      const _yieldF = Math.max(0, 1 - Math.max(0, _towardWallVx) / WALL_ASSIST_YIELD_VX);  // fades out as they drive toward the wall
+      if (_yieldF > 0) {
+        const _sr = Math.max(1, scrollSpeed() / 1.2);              // firmer at high scroll, where the pin happens
+        player.vx += _aDir * WALL_ASSIST_FORCE * _prox * _prox * _yieldF * (0.6 + 0.4 * Math.min(_sr, 3)) * dtScale;
+      }
+    }
+  }
   // v2.4.2: the Void-down-assist is now driven by findClosest() making the Void the
   // closestBody (by surface distance) ONLY when it is genuinely nearer than any planet —
   // so a closer planet always gets normal full-horizontal dodging (the v2.4.1 overcorrect
@@ -30149,7 +30192,9 @@ function updateVoidFight() {
     _voidPrefightDone = false;
     _positionVoidArc(r, 0);                       // lock the Void at the held line
     screenShake = Math.max(screenShake, 26);      // heavy arrival-impact punctuation
-    try { if (SFX.playApocalypseImpact) SFX.playApocalypseImpact(); } catch {}
+    // v2.4.x: a DISTINCT menacing arrival slam — NOT playApocalypseImpact (that's the
+    // consume-DEATH pop; firing it here made the fight's start sound like a death).
+    try { if (SFX.playVoidArrival) SFX.playVoidArrival(); } catch {}
     // "We stop running — we fight." Sirius + the Void (established two-voice typewriter
     // + clickVoid). On dismissal → the fight begins.
     try {
@@ -30332,8 +30377,8 @@ function _voidMarkBeaten() {
 // the Void's arrival (precombat phase) BEFORE the HP bar + descent timer. Two voices
 // (Sirius + THE VOID, the established two-voice typewriter + clickVoid). {player} subst.
 const VOID_PREFIGHT_SCRIPT = [
-  ['Sirius', "{player}. Ten minutes. Ten thousand years. Every time, we have run from this light."],
-  ['Sirius', 'Not tonight. Bring us about. We stop running — we FIGHT.'],
+  ['Sirius', "{player}. Ten minutes. Ten thousand years. Every time, we have run from this dark."],
+  ['Sirius', 'Not tonight. Turn us around. We stop running — we FIGHT.'],
   ['The Void', 'you would raise a fist at ME? little spark. I am the dark that waited before your first star drew breath.'],
   ['Sirius', "Then it has never met a pilot like {player}. Everything we have — burn it into that dark."],
   ['The Void', 'come, then. let me show you how the last light goes out.'],
