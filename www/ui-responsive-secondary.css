@@ -1,0 +1,331 @@
+/* DRIFT responsive UI — secondary screens
+   Loaded after the legacy inline styles. This file deliberately changes
+   presentation only: all existing IDs, classes and JS state hooks remain. */
+
+:root {
+  --ui-panel: rgba(7, 10, 25, 0.94);
+  --ui-panel-2: rgba(12, 17, 38, 0.88);
+  --ui-line: rgba(125, 216, 255, 0.24);
+  --ui-line-strong: rgba(125, 216, 255, 0.52);
+  --ui-text: rgba(232, 243, 255, 0.92);
+  --ui-muted: rgba(178, 201, 226, 0.64);
+  --ui-accent: #7de8ff;
+  --ui-radius: 12px;
+}
+
+/* Controls must remain attached to the viewport, not to a transformed menu. */
+#settingsBtn,
+#pauseBtn {
+  position: fixed;
+  min-width: 44px;
+  min-height: 44px;
+  z-index: 45;
+}
+
+#settingsBtn { left: calc(var(--safe-left) + 16px); right: auto; }
+#pauseBtn { right: calc(var(--safe-right) + 16px); left: auto; }
+
+#guideOverlay,
+#settingsOverlay,
+#statsOverlay,
+#pauseOverlay,
+#usernameOverlay,
+#pgsPromptOverlay,
+#styledConfirm {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+  box-sizing: border-box;
+  background:
+    radial-gradient(circle at 18% 18%, rgba(76, 104, 255, 0.10), transparent 34%),
+    radial-gradient(circle at 84% 78%, rgba(158, 76, 255, 0.08), transparent 30%),
+    rgba(0, 0, 8, 0.965);
+}
+
+button:focus-visible,
+input:focus-visible {
+  outline: 2px solid var(--ui-accent);
+  outline-offset: 3px;
+}
+
+/* Compact / phone baseline. Keep the familiar single-column flow, but make
+   controls comfortably tappable and prevent landscape-height clipping. */
+#guideOverlay { padding-inline: max(16px, var(--safe-left)) max(16px, var(--safe-right)); }
+.guide-inner { width: min(100%, 390px); box-sizing: border-box; }
+#guideCanvas { width: min(100%, 320px); height: auto; aspect-ratio: 8 / 5; }
+.guide-arrow { min-width: 44px; min-height: 44px; }
+#guideReturnBtn { min-height: 46px; }
+
+#settingsOverlay,
+#pauseOverlay,
+#usernameOverlay {
+  padding-inline: max(18px, var(--safe-left)) max(18px, var(--safe-right));
+}
+
+#settingsOverlay .pause-title,
+#pauseOverlay .pause-title {
+  flex: 0 0 auto;
+  text-align: center;
+}
+
+.settings-rows { width: min(100%, 380px); }
+.toggle-opt,
+.settings-cloud-btn,
+.pause-btn,
+#usernameConfirm { min-height: 44px; }
+
+#usernameInput {
+  width: min(100%, 320px);
+  min-height: 48px;
+  box-sizing: border-box;
+}
+
+#statsBody { width: min(100%, 390px); }
+#statsOverlay .stats-section { width: 100%; }
+
+.pgs-prompt-inner,
+.styled-confirm-inner {
+  width: min(100%, 390px);
+  box-sizing: border-box;
+  border: 1px solid var(--ui-line-strong);
+  border-radius: var(--ui-radius);
+  background: var(--ui-panel);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.48), 0 0 40px rgba(81, 172, 255, 0.08);
+}
+
+#loadingContent { width: min(82vw, 420px); }
+#loadingLogo { font-size: clamp(38px, 12vw, 58px); letter-spacing: clamp(8px, 3vw, 15px); }
+#loadingBarOuter { width: min(100%, 320px); height: 8px; }
+
+@media (max-width: 699px) {
+  #settingsOverlay { overflow-y: auto; justify-content: flex-start; }
+  #settingsOverlay .pause-title { margin: max(64px, calc(var(--safe-top) + 52px)) 0 20px; }
+  #settingsOverlay .settings-rows { width: 100%; max-width: 380px; }
+  #settingsOverlay .settings-row:not(.settings-row-stack) {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 9px;
+  }
+  #settingsOverlay .settings-toggle,
+  #settingsOverlay .settings-cloud-btn { width: 100%; }
+  #settingsOverlay .toggle-opt { flex: 1; }
+  #settingsCloseBtn { width: 100%; max-width: 380px; margin-bottom: var(--safe-bottom); }
+}
+
+@media (max-height: 620px) {
+  #settingsOverlay,
+  #pauseOverlay,
+  #guideOverlay,
+  #usernameOverlay { justify-content: flex-start; }
+
+  #settingsOverlay .pause-title,
+  #pauseOverlay .pause-title { margin: 12px 0 20px; font-size: 24px; }
+  .settings-rows { gap: 14px; margin-bottom: 18px; }
+  .pause-menu { gap: 8px; }
+  .guide-inner { gap: 8px; padding-block: 4px; }
+  #guideCanvas { max-height: 32vh; width: auto; max-width: 100%; }
+}
+
+/* Tablet: centered, bounded surfaces. */
+@media (min-width: 700px) {
+  #settingsBtn,
+  #pauseBtn { top: calc(var(--safe-top) + 24px); width: 48px; height: 48px; }
+  #settingsBtn { left: calc(var(--safe-left) + 24px); }
+  #pauseBtn { right: calc(var(--safe-right) + 24px); }
+
+  .guide-inner,
+  #settingsOverlay > .settings-rows,
+  #pauseOverlay > .pause-menu,
+  #usernameOverlay > * {
+    position: relative;
+  }
+
+  .guide-inner {
+    width: min(86vw, 720px);
+    max-width: none;
+    padding: 34px;
+    border: 1px solid var(--ui-line);
+    border-radius: var(--ui-radius);
+    background: var(--ui-panel);
+    box-shadow: 0 24px 80px rgba(0,0,0,.45);
+  }
+  #guideCanvas { width: min(100%, 520px); }
+  .guide-text { max-width: 560px; font-size: 13px; }
+
+  #settingsOverlay .pause-title,
+  #pauseOverlay .pause-title { font-size: 36px; margin-bottom: 30px; }
+  .settings-rows { width: min(78vw, 600px); gap: 18px; }
+  .settings-row {
+    padding: 12px 14px;
+    border-bottom: 1px solid rgba(125,216,255,.12);
+  }
+  .settings-row-stack { padding-top: 14px; }
+  .settings-help { max-width: 520px; }
+
+  .pause-menu { width: min(64vw, 440px); display: grid; grid-template-columns: 1fr 1fr; }
+  #resumeBtn { grid-column: 1 / -1; }
+  #quitBtn { border-color: rgba(255,120,150,.32); color: rgba(255,170,190,.82); }
+
+  #statsOverlay { padding: max(42px, calc(var(--safe-top) + 24px)) 6vw max(30px, calc(var(--safe-bottom) + 20px)); }
+  #statsOverlay .stats-title { font-size: 20px; margin-bottom: 26px; }
+  #statsBody { width: min(88vw, 760px); display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  #statsOverlay .stats-section {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 18px;
+    border: 1px solid var(--ui-line);
+    border-radius: 8px;
+    background: var(--ui-panel-2);
+  }
+  #statsOverlay .stats-section-title { font-size: 11px; }
+  #statsOverlay .stats-row,
+  #statsOverlay .stats-orb-row { padding-block: 5px; }
+  #statsOverlay .stats-close { min-height: 46px; margin-top: 24px; }
+
+  .username-title { font-size: 18px; }
+  #usernameInput { width: 360px; }
+  .pgs-prompt-inner, .styled-confirm-inner { max-width: 460px; padding: 30px; }
+}
+
+/* Desktop: use the available space as a composed UI rather than a stretched
+   phone. Content remains capped for ultrawide displays. */
+@media (min-width: 1050px) and (min-height: 650px) {
+  #settingsBtn { left: calc(var(--safe-left) + 28px); }
+  #pauseBtn { right: calc(var(--safe-right) + 28px); }
+
+  #guideClose { top: calc(var(--safe-top) + 28px); right: calc(var(--safe-right) + 32px); }
+  .guide-inner {
+    width: min(84vw, 1040px);
+    display: grid;
+    grid-template-columns: minmax(480px, 1.25fr) minmax(320px, .75fr);
+    grid-template-rows: auto 1fr auto;
+    align-items: center;
+    column-gap: 48px;
+    row-gap: 20px;
+    padding: 42px 48px;
+  }
+  .guide-title { grid-column: 1 / -1; font-size: 28px; }
+  #guideCanvas { grid-column: 1; grid-row: 2 / 4; width: 100%; max-width: 620px; }
+  .guide-text { grid-column: 2; grid-row: 2; max-width: none; text-align: left; font-size: 14px; line-height: 1.8; }
+  .guide-nav { grid-column: 2; grid-row: 3; justify-self: start; }
+  #guideReturnBtn { grid-column: 1 / -1; grid-row: 4; justify-self: center; margin-top: 8px; min-width: 220px; }
+
+  #settingsOverlay {
+    display: none;
+    grid-template-columns: minmax(200px, .55fr) minmax(560px, 1fr);
+    grid-template-rows: 1fr auto;
+    gap: 22px 64px;
+    align-content: center;
+    padding: 7vh max(7vw, 70px);
+  }
+  #settingsOverlay.visible { display: grid; }
+  #settingsOverlay .pause-title {
+    align-self: start;
+    justify-self: end;
+    margin: 16px 0 0;
+    writing-mode: vertical-rl;
+    text-orientation: mixed;
+    font-size: 42px;
+    letter-spacing: 14px;
+  }
+  #settingsOverlay .settings-rows {
+    width: min(100%, 720px);
+    margin: 0;
+    padding: 24px 30px;
+    box-sizing: border-box;
+    border: 1px solid var(--ui-line);
+    border-radius: var(--ui-radius);
+    background: var(--ui-panel);
+  }
+  #settingsOverlay .settings-row { padding: 10px 12px; }
+  #settingsCloseBtn { grid-column: 2; width: min(100%, 720px); justify-self: start; }
+
+  #pauseOverlay {
+    align-items: flex-end;
+    padding: max(64px, 8vh) max(8vw, 80px);
+    background:
+      linear-gradient(90deg, rgba(0,0,8,.60), rgba(0,0,8,.95) 52%),
+      radial-gradient(circle at 24% 50%, rgba(82,101,255,.12), transparent 34%),
+      rgba(0,0,8,.94);
+  }
+  #pauseOverlay .pause-title,
+  #pauseOverlay .pause-menu,
+  #pauseOverlay #quitMsg { width: min(38vw, 520px); box-sizing: border-box; }
+  #pauseOverlay .pause-title { text-align: left; font-size: 46px; margin-bottom: 30px; }
+  #pauseOverlay .pause-menu {
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    padding: 24px;
+    border: 1px solid var(--ui-line);
+    border-radius: var(--ui-radius);
+    background: var(--ui-panel);
+  }
+  #pauseOverlay .pause-btn { padding: 15px 18px; }
+  #pauseOverlay #resumeBtn { grid-column: 1 / -1; background: rgba(100,200,255,.12); border-color: var(--ui-line-strong); }
+
+  #statsBody { width: min(88vw, 1120px); grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  #statsOverlay .stats-section:nth-child(3) { grid-row: span 2; }
+  #statsOverlay .stats-section { padding: 22px 24px; }
+  #statsOverlay .stats-row,
+  #statsOverlay .stats-orb-row { font-size: 11px; }
+
+  #usernameOverlay {
+    align-items: flex-end;
+    padding-right: max(12vw, 120px);
+    background:
+      radial-gradient(circle at 25% 50%, rgba(90,105,255,.14), transparent 30%),
+      rgba(0,0,8,.97);
+  }
+  #usernameOverlay::before {
+    content: 'IDENTIFY\\A YOURSELF';
+    white-space: pre;
+    position: absolute;
+    left: max(10vw, 100px);
+    top: 50%;
+    transform: translateY(-50%);
+    font-family: 'Orbitron', monospace;
+    font-weight: 900;
+    font-size: clamp(40px, 5vw, 76px);
+    line-height: 1.12;
+    letter-spacing: 8px;
+    color: rgba(125, 216, 255, .11);
+  }
+  .username-title,
+  #usernameInput,
+  .username-error,
+  #usernameConfirm { width: min(38vw, 430px); box-sizing: border-box; }
+  .username-title { text-align: center; }
+}
+
+@media (min-width: 1050px) and (min-height: 650px) {
+  #settingsOverlay {
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 18px;
+    padding: 6vh 7vw;
+  }
+  #settingsOverlay.visible { display: flex; }
+  #settingsOverlay .pause-title {
+    writing-mode: horizontal-tb;
+    text-orientation: mixed;
+    align-self: auto;
+    justify-self: auto;
+    margin: 0;
+    font-size: 30px;
+    letter-spacing: 10px;
+  }
+  #settingsOverlay .settings-rows,
+  #settingsCloseBtn { width: min(82vw, 880px); }
+  #settingsCloseBtn { align-self: auto; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #loadingBar, #guideOverlay, .pause-btn, .toggle-opt, .settings-cloud-btn {
+    transition-duration: .01ms !important;
+  }
+  #loadingLogo, .guide-title, .pause-title { animation: none !important; }
+}

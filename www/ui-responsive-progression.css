@@ -1,0 +1,379 @@
+/* Responsive progression and results surfaces.
+   Loaded after the legacy inline stylesheet so the existing DOM and JS wiring
+   remain the source of truth. */
+
+:root {
+  --progression-panel: rgba(8, 11, 24, 0.94);
+  --progression-panel-strong: rgba(11, 15, 31, 0.985);
+  --progression-line: rgba(126, 211, 255, 0.18);
+  --progression-text: rgba(235, 242, 255, 0.94);
+  --progression-muted: rgba(204, 218, 240, 0.58);
+  --progression-cyan: #7de8ff;
+  --progression-violet: #b99aff;
+}
+
+/* Skill tree shell */
+#treeOverlay {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  max-width: none;
+  min-height: 100dvh;
+  padding: max(18px, calc(var(--safe-top, 0px) + var(--cutout-top, 0px) + 14px))
+    max(14px, calc(var(--safe-right, 0px) + 14px))
+    max(18px, calc(var(--safe-bottom, 0px) + 14px))
+    max(14px, calc(var(--safe-left, 0px) + 14px));
+  background:
+    radial-gradient(circle at 18% 0%, rgba(74, 108, 255, 0.13), transparent 35rem),
+    radial-gradient(circle at 88% 8%, rgba(170, 85, 255, 0.1), transparent 30rem),
+    rgba(0, 2, 11, 0.985);
+}
+
+#treeOverlay > .tree-header,
+#treeOverlay > .tree-tabs,
+#treeOverlay > .tree-paths,
+#treeOverlay > .tree-capstones,
+#treeOverlay > .tree-footer {
+  width: min(100%, 1380px);
+  margin-left: auto;
+  margin-right: auto;
+  box-sizing: border-box;
+}
+
+#treeOverlay > #treePaths {
+  width: 100%;
+  max-width: 1380px;
+}
+
+.tree-header {
+  position: sticky;
+  top: -1px;
+  z-index: 2;
+  min-height: 58px;
+  padding: 8px 12px;
+  margin-bottom: 18px;
+  border: 1px solid var(--progression-line);
+  border-radius: 10px;
+  background: rgba(4, 7, 18, 0.92);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.25);
+  backdrop-filter: blur(12px);
+}
+
+.tree-title {
+  font-size: clamp(16px, 2vw, 25px);
+  letter-spacing: clamp(3px, 0.65vw, 8px);
+  color: var(--progression-text);
+}
+
+.tree-crystals {
+  flex: none;
+  padding: 9px 12px;
+  border: 1px solid rgba(125, 232, 255, 0.24);
+  border-radius: 999px;
+  background: rgba(125, 232, 255, 0.06);
+  font-size: clamp(10px, 1vw, 13px);
+}
+
+.tree-paths {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: clamp(12px, 1.5vw, 22px);
+  align-items: start;
+  margin-bottom: 22px;
+}
+
+.tree-path {
+  position: relative;
+  gap: 10px;
+  min-width: 0;
+  padding: clamp(12px, 1.5vw, 20px);
+  border: 1px solid var(--progression-line);
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(18, 23, 45, 0.78), rgba(6, 9, 21, 0.72));
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.025), 0 18px 50px rgba(0, 0, 0, 0.18);
+}
+
+.tree-path-title {
+  min-height: 32px;
+  margin-bottom: 3px;
+  padding: 2px 4px 9px;
+  border-bottom-color: rgba(185, 154, 255, 0.3);
+  color: rgba(225, 214, 255, 0.92);
+  font-size: clamp(9px, 0.95vw, 12px);
+  letter-spacing: clamp(1px, 0.24vw, 3px);
+  line-height: 1.35;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.tree-node {
+  min-height: 66px;
+  padding: 12px 14px;
+  border-color: rgba(174, 203, 255, 0.2);
+  border-radius: 8px;
+  background: rgba(7, 11, 25, 0.86);
+  box-shadow: inset 3px 0 rgba(125, 232, 255, 0.08);
+}
+
+.tree-node:hover,
+.tree-node:focus-visible {
+  outline: none;
+  border-color: rgba(125, 232, 255, 0.65);
+  background: rgba(18, 29, 52, 0.96);
+  box-shadow: inset 3px 0 var(--progression-cyan), 0 0 22px rgba(125, 232, 255, 0.1);
+  transform: translateY(-1px);
+}
+
+.tree-node.locked { filter: saturate(0.35); opacity: 0.46; }
+.tree-node.partial { box-shadow: inset 3px 0 rgba(240, 220, 120, 0.7); }
+.tree-node.frozen { box-shadow: inset 3px 0 rgba(255, 170, 90, 0.72); }
+.tree-node.maxed { box-shadow: inset 3px 0 currentColor, 0 0 14px color-mix(in srgb, currentColor 20%, transparent); }
+
+.tree-node-name {
+  color: currentColor;
+  font-size: clamp(10px, 0.88vw, 12px);
+  letter-spacing: clamp(0.8px, 0.15vw, 1.8px);
+  line-height: 1.35;
+}
+
+.tree-node-meta {
+  color: rgba(214, 226, 245, 0.64);
+  font-size: clamp(8px, 0.72vw, 10px);
+}
+
+.tree-capstones {
+  padding: 16px;
+  border: 1px solid rgba(185, 154, 255, 0.22);
+  border-radius: 12px;
+  background: rgba(70, 42, 112, 0.08);
+}
+
+.tree-capstones .tree-node {
+  flex: 1 1 190px;
+  max-width: 310px;
+}
+
+.tree-footer {
+  position: sticky;
+  bottom: -1px;
+  z-index: 2;
+  min-height: 64px;
+  padding: 10px 12px;
+  border: 1px solid var(--progression-line);
+  border-radius: 10px;
+  background: rgba(4, 7, 18, 0.94);
+  backdrop-filter: blur(12px);
+}
+
+.tree-btn {
+  min-height: 44px;
+  border-radius: 6px;
+}
+
+/* Progression dialogs */
+#treeNodeDetail,
+#treeConfirm,
+#treeGlossary,
+#styledConfirm {
+  padding: max(16px, var(--safe-top, 0px)) max(14px, var(--safe-right, 0px))
+    max(16px, var(--safe-bottom, 0px)) max(14px, var(--safe-left, 0px));
+  background: rgba(0, 2, 10, 0.86);
+}
+
+.tree-detail-inner,
+.tree-confirm-inner,
+.tree-glossary-inner,
+.styled-confirm-inner {
+  box-sizing: border-box;
+  border-radius: 12px;
+  background:
+    linear-gradient(145deg, rgba(20, 27, 51, 0.98), rgba(7, 10, 23, 0.99));
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55), inset 0 1px rgba(255, 255, 255, 0.04);
+}
+
+.tree-detail-inner {
+  width: min(100%, 620px);
+  max-width: 620px;
+  max-height: min(760px, calc(100dvh - 32px));
+  padding: clamp(18px, 3vw, 30px);
+  gap: 14px;
+}
+
+.tree-confirm-inner,
+.styled-confirm-inner { width: min(100%, 430px); max-width: 430px; padding: 24px; }
+.tree-glossary-inner { width: min(100%, 480px); max-width: 480px; padding: 24px 26px; }
+.tree-detail-title { font-size: clamp(14px, 1.5vw, 20px); line-height: 1.35; }
+.tree-detail-desc { font-size: clamp(14px, 1.1vw, 16px); line-height: 1.68; }
+.tree-detail-ranks { font-size: clamp(12px, 1vw, 14px); padding: 12px 0; }
+.tree-glossary-text { font-size: clamp(14px, 1.1vw, 16px); }
+
+/* Leaderboard and run-end hierarchy */
+#overlay.death-mode {
+  gap: 10px;
+  padding-top: max(26px, calc(var(--safe-top, 0px) + var(--cutout-top, 0px) + 18px));
+  background:
+    radial-gradient(circle at 50% 0%, rgba(78, 85, 190, 0.14), transparent 35rem),
+    rgba(0, 2, 11, 0.97);
+}
+
+#overlay.death-mode > * { flex-shrink: 0; }
+
+#runSummary {
+  box-sizing: border-box;
+  width: min(100%, 560px);
+  margin: 0;
+  padding: clamp(16px, 2.2vw, 26px);
+  border: 1px solid var(--progression-line);
+  border-radius: 12px;
+  background: var(--progression-panel);
+  font-size: clamp(9px, 0.85vw, 11px);
+  line-height: 1.65;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.24);
+}
+
+.rs-title { font-size: clamp(24px, 3vw, 38px); margin-bottom: 16px; }
+.rs-row { align-items: center; min-height: 27px; padding: 3px 0; }
+.rs-label { min-width: 0; padding-right: 10px; }
+.rs-val { flex: 0 0 64px; width: auto; color: var(--progression-text); }
+.rs-pts { flex: 0 0 82px; width: auto; }
+.rs-total { padding-top: 10px; font-size: clamp(11px, 1vw, 14px); }
+
+#deathCrystals,
+#deathCrystalTotal { margin-bottom: 0; }
+
+.lb-tabs,
+.lb-diff-tabs,
+#highscores,
+#globalScores {
+  box-sizing: border-box;
+  width: min(100%, 560px);
+  max-width: 560px;
+}
+
+.lb-tabs { margin: 8px 0 0; }
+.lb-diff-tabs { margin: 0; }
+.lb-tab,
+.lb-diff-tab { min-height: 40px; font-size: clamp(8px, 0.78vw, 10px); letter-spacing: 1.5px; }
+
+#highscores,
+#globalScores {
+  margin: 0 0 8px;
+  padding: 8px 16px;
+  border: 1px solid var(--progression-line);
+  border-radius: 10px;
+  background: var(--progression-panel);
+}
+
+.hs-row,
+.gs-row { min-height: 36px; align-items: center; padding: 3px 4px; font-size: clamp(10px, 0.9vw, 12px); }
+.hs-rank,
+.gs-rank { flex: 0 0 30px; }
+.hs-val { margin-left: auto; }
+.hs-diff,
+.gs-diff { min-width: 74px; }
+.gs-status { min-height: 80px; display: grid; place-items: center; }
+
+#leaderboardReturnBtn { min-width: min(100%, 280px); min-height: 46px; }
+
+#deathActions {
+  width: min(100%, 560px);
+  justify-content: center;
+  margin: 4px 0 10px;
+}
+
+#deathActions > *,
+#overlay.death-mode #startBtn,
+#overlay.death-mode #shopBtn {
+  flex: 1 1 180px;
+  min-height: 50px;
+  margin: 0;
+}
+
+@media (max-width: 700px) {
+  #treeOverlay { padding-left: 10px; padding-right: 10px; }
+  .tree-header { min-height: 50px; padding: 6px 8px; }
+  .tree-title { max-width: 66%; font-size: 14px; letter-spacing: 3px; }
+  .tree-crystals { padding: 7px 9px; }
+  .tree-paths { gap: 6px; }
+  .tree-path { gap: 7px; padding: 7px 5px; border-radius: 8px; }
+  .tree-path-title { min-height: 29px; padding-bottom: 6px; font-size: clamp(7px, 2.2vw, 9px); }
+  .tree-node { min-height: 58px; padding: 9px 7px; border-radius: 6px; }
+  .tree-node-name { font-size: clamp(8px, 2.35vw, 10px); letter-spacing: 0.6px; }
+  .tree-node-meta { font-size: clamp(7px, 2vw, 8.5px); letter-spacing: 0.3px; }
+  .tree-footer { gap: 7px; padding: 8px; }
+  .tree-footer .tree-btn { flex: 1 1 0; min-width: 0; padding: 7px 5px; font-size: 8px; letter-spacing: 1px; }
+  .tree-detail-actions { grid-template-columns: 1fr; }
+  .tree-detail-actions .tree-btn { min-height: 44px; }
+  .tree-confirm-inner .tree-detail-actions { grid-template-columns: 1fr 1fr !important; }
+  #runSummary { padding: 15px 12px; }
+  .rs-title { font-size: 23px; }
+  .rs-row { min-height: 25px; }
+  .rs-val { flex-basis: 42px; }
+  .rs-pts { flex-basis: 64px; font-size: 7.5px; }
+  .rs-best { font-size: 7px; padding: 0 2px; margin-left: 1px; }
+  #highscores, #globalScores { padding: 6px 8px; }
+  .hs-diff, .gs-diff { min-width: 55px; }
+  #deathActions { flex-wrap: wrap; }
+}
+
+@media (min-width: 701px) and (max-width: 1050px) {
+  #treeOverlay { padding-left: 22px; padding-right: 22px; }
+  .tree-paths { gap: 12px; }
+  .tree-path { padding: 12px; }
+  .tree-node { min-height: 62px; }
+}
+
+@media (min-width: 1051px) {
+  #treeOverlay { padding-left: clamp(32px, 5vw, 90px); padding-right: clamp(32px, 5vw, 90px); }
+  #treeOverlay > #treePaths {
+    grid-template-columns: repeat(3, minmax(220px, 300px));
+    justify-content: center;
+  }
+
+  /* A desktop results screen should read as a composed card, not a narrow
+     phone column stretched through empty space. */
+  #overlay.death-mode #runSummary,
+  #overlay.death-mode .lb-tabs,
+  #overlay.death-mode .lb-diff-tabs,
+  #overlay.death-mode #highscores,
+  #overlay.death-mode #globalScores,
+  #overlay.death-mode #deathActions { width: min(640px, 72vw); max-width: 640px; }
+}
+
+/* Menu leaderboard gets a viewport composition on desktop instead of staying
+   inside the intentionally phone-sized gameplay wrapper. */
+#overlay.leaderboard-mode {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100dvh;
+  max-width: none;
+  padding: max(24px, calc(var(--safe-top, 0px) + 18px))
+    max(20px, calc(var(--safe-right, 0px) + 18px))
+    max(24px, calc(var(--safe-bottom, 0px) + 18px))
+    max(20px, calc(var(--safe-left, 0px) + 18px));
+  overflow-y: auto;
+  background: rgba(0, 2, 11, 0.985);
+}
+
+#overlay.leaderboard-mode .title-word { font-size: clamp(48px, 6vw, 86px); }
+#overlay.leaderboard-mode .lb-tabs,
+#overlay.leaderboard-mode .lb-diff-tabs,
+#overlay.leaderboard-mode #highscores,
+#overlay.leaderboard-mode #globalScores { width: min(90vw, 760px); max-width: 760px; }
+#overlay.leaderboard-mode #highscores,
+#overlay.leaderboard-mode #globalScores { min-height: 180px; }
+#overlay.leaderboard-mode #leaderboardReturnBtn { width: min(90vw, 360px); min-height: 48px; }
+
+@media (max-height: 620px) and (orientation: landscape) {
+  #treeOverlay { padding-top: 8px; padding-bottom: 8px; }
+  .tree-header { position: static; min-height: 44px; margin-bottom: 8px; }
+  .tree-footer { position: static; }
+  .tree-node { min-height: 52px; }
+  .tree-detail-inner { max-height: calc(100dvh - 16px); }
+  #overlay.death-mode { padding-top: 14px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tree-node { transition: none; }
+  .tree-node:hover, .tree-node:focus-visible { transform: none; }
+}

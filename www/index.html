@@ -3184,6 +3184,8 @@
     letter-spacing: 0.5px;
   }
 </style>
+<link rel="stylesheet" href="ui-responsive-secondary.css">
+<link rel="stylesheet" href="ui-responsive-progression.css">
 <link rel="stylesheet" href="ui-responsive.css">
 </head>
 <body>
@@ -40000,6 +40002,7 @@ function restartFromPause() {
 
 function goToMainMenu() {
   state = 'idle';
+  document.getElementById('overlay')?.classList.remove('leaderboard-mode');
   // v1.10.0: defensively abort any in-flight second-death cutscene (cancels its
   // timers + dialogue, hides the overlay). The one-time flag was already locked
   // when the cutscene began, so it can't re-trigger regardless.
@@ -41265,6 +41268,7 @@ function openLeaderboardFromMenu() {
   document.getElementById('overlay').classList.remove('menu-mode');
   document.getElementById('overlay').classList.remove('resume-visible');
   document.getElementById('overlay').classList.remove('death-mode');
+  document.getElementById('overlay').classList.add('leaderboard-mode');
   document.getElementById('resumeRunBtn').style.display = 'none';
   document.getElementById('resumeRunInfo').style.display = 'none';
   // Show the leaderboard pieces.
@@ -43875,6 +43879,30 @@ initPixiStars();
 preloadAll();
 updateLoadingProgress();
 loop();
+
+// Local-only UI QA entry point. This bypasses the asset loader after the full
+// game has initialized so automated viewport screenshots can inspect the real
+// branch UI without waiting for audio/image decoding. It has no effect on
+// GitHub Pages, Capacitor builds, or ordinary localhost playtests.
+const uiQaMode = new URLSearchParams(location.search).get('uiqa');
+if ((location.hostname === '127.0.0.1' || location.hostname === 'localhost') && uiQaMode) {
+  setTimeout(() => {
+    startAfterGesture();
+    const username = document.getElementById('usernameOverlay');
+    if (username) username.style.display = 'none';
+    if (uiQaMode === 'guide') document.getElementById('guideBtn')?.click();
+    else if (uiQaMode === 'settings') document.getElementById('settingsBtn')?.click();
+    else if (uiQaMode === 'stats') openStatsOverlay();
+    else if (uiQaMode === 'tree') openTreeOverlay(activeOrb);
+    else if (uiQaMode === 'leaderboard') openLeaderboardFromMenu();
+    else if (uiQaMode === 'username') showUsernamePrompt();
+    else if (uiQaMode === 'confirm') showStyledConfirm('CONFIRM', 'Responsive layout verification.', 'CONFIRM', 'CANCEL', () => {});
+    else if (uiQaMode === 'pause') {
+      const pause = document.getElementById('pauseOverlay');
+      if (pause) pause.style.display = 'flex';
+    }
+  }, 150);
+}
 </script>
 </body>
 </html>

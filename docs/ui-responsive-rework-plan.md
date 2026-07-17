@@ -6,13 +6,13 @@
 
 | Field | Value |
 |---|---|
-| Status | Phase 1 in progress — responsive foundations and playable main menu started |
+| Status | Phase 1–6 integrated on branch — full responsive UI playtest pass |
 | Production branch | `main` |
 | Planned work branch | `ui/responsive-rework` |
 | Game UI source | `www/index.html` |
 | Last updated | 2026-07-18 |
-| Last completed phase | Interactive HTML prototype and first responsive branch stylesheet |
-| Next action | Playtest the real main menu at compact and wide sizes, then migrate shared modals and guide/settings |
+| Last completed phase | Main menu, guide, settings, stats, pause, skill trees, leaderboard/results and shared overlays integrated |
+| Next action | Complete a natural gameplay/death loop playtest, fix runtime-only issues, then prepare the branch for user review |
 
 ## Objective
 
@@ -412,6 +412,25 @@ Do not assume uncommitted files from another machine are available. End each mea
 ## Session log
 
 Add new entries above older entries. Each entry should state the branch, last commit, completed work, verification, unresolved issues and exact next action.
+
+### 2026-07-18 — End-to-end responsive integration
+
+- Branch: `ui/responsive-rework`
+- Completed:
+  - Audited all user-facing UI states and their real triggers.
+  - Added responsive secondary-screen styling for loading, guide, settings, stats, pause, username, cloud and confirmation states.
+  - Added responsive progression styling for skill trees, node dialogs, leaderboard, run summary and death actions.
+  - Promoted desktop menu and leaderboard surfaces to viewport coordinates while retaining the capped portrait gameplay field.
+  - Fixed the desktop settings control anchoring and composed the right-side main-menu action stack without large grid gaps.
+  - Added a localhost-only `?uiqa=` harness for menu, guide, settings, stats, tree, leaderboard, pause, username and confirmation screenshots.
+  - Added an intentional desktop frame/background treatment around the portrait gameplay field.
+- Verification:
+  - Captured real branch screens at 1920×1080, 1366×768, 1024×768 and compact widths.
+  - Manually reviewed main menu, guide, settings, stats, skill tree, leaderboard, pause, username and confirmation output.
+  - Corrected desktop leaderboard coordinate space and compact settings overflow found by the matrix.
+- Remaining:
+  - Natural gameplay, resume, tutorial, narrative and death-result sequences still need runtime playthrough verification because their content depends on gameplay state.
+  - Android physical-device verification remains required before release.
 
 ### 2026-07-18 — Playable branch migration started
 

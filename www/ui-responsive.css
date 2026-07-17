@@ -21,6 +21,20 @@
   --ui-content-max: 1440px;
 }
 
+@media (min-width: 1024px) {
+  body {
+    background:
+      radial-gradient(circle at 50% 45%, rgba(44, 69, 142, 0.16), transparent 30%),
+      radial-gradient(circle at 20% 15%, rgba(132, 68, 220, 0.08), transparent 24%),
+      #00000a;
+  }
+
+  #gameWrapper {
+    border-radius: 8px;
+    box-shadow: 0 0 0 1px rgba(126, 232, 255, 0.13), 0 24px 90px rgba(0, 0, 0, 0.72), 0 0 70px rgba(72, 91, 190, 0.10);
+  }
+}
+
 button:focus-visible,
 [role="button"]:focus-visible,
 input:focus-visible {
@@ -82,6 +96,8 @@ input:focus-visible {
     border-radius: 999px;
     background: var(--ui-panel);
     z-index: 4;
+    width: auto;
+    max-width: none;
   }
 
   #overlay.menu-mode .version-label {
@@ -206,6 +222,7 @@ input:focus-visible {
   }
 
   #settingsBtn {
+    left: auto;
     top: var(--ui-safe-top);
     right: var(--ui-safe-right);
     width: 42px;
@@ -213,6 +230,65 @@ input:focus-visible {
     border: 1px solid var(--ui-line);
     border-radius: 50%;
     background: var(--ui-panel);
+  }
+}
+
+/* Absolutely positioned grid children otherwise use their assigned grid area
+   as the containing block. Reset placement so percentage/calc offsets resolve
+   against the viewport menu layer itself. */
+@media (min-width: 1024px) {
+  #overlay.menu-mode #difficultySelect,
+  #overlay.menu-mode #resumeRunBtn,
+  #overlay.menu-mode #resumeRunInfo,
+  #overlay.menu-mode #startBtn,
+  #overlay.menu-mode #guideBtn,
+  #overlay.menu-mode #leaderboardBtn,
+  #overlay.menu-mode .controls-hint {
+    grid-column: auto;
+    grid-row: auto;
+    justify-self: auto;
+    align-self: auto;
+  }
+}
+
+/* Desktop command stack. These controls are promoted to the viewport along
+   with the menu overlay, while the gameplay canvas remains intentionally
+   capped. Keeping the stack explicitly composed avoids grid-row expansion
+   from the much taller orb browser. */
+@media (min-width: 1024px) {
+  #overlay.menu-mode #difficultySelect,
+  #overlay.menu-mode #resumeRunBtn,
+  #overlay.menu-mode #resumeRunInfo,
+  #overlay.menu-mode #startBtn,
+  #overlay.menu-mode #guideBtn,
+  #overlay.menu-mode #leaderboardBtn,
+  #overlay.menu-mode .controls-hint {
+    position: absolute;
+    right: clamp(32px, 4vw, 80px);
+    width: min(35vw, 670px);
+    max-width: 670px;
+    margin: 0;
+    transform: none;
+  }
+
+  #overlay.menu-mode #difficultySelect { top: 24%; }
+  #overlay.menu-mode #startBtn { top: calc(24% + 62px); }
+  #overlay.menu-mode #guideBtn { top: calc(24% + 146px); }
+  #overlay.menu-mode #leaderboardBtn { top: calc(24% + 208px); }
+  #overlay.menu-mode .controls-hint { top: calc(24% + 274px); }
+
+  #overlay.menu-mode.resume-visible #resumeRunBtn { top: calc(24% + 62px); }
+  #overlay.menu-mode.resume-visible #resumeRunInfo { top: calc(24% + 126px); }
+  #overlay.menu-mode.resume-visible #startBtn { top: calc(24% + 174px); }
+  #overlay.menu-mode.resume-visible #guideBtn { top: calc(24% + 258px); }
+  #overlay.menu-mode.resume-visible #leaderboardBtn { top: calc(24% + 320px); }
+  #overlay.menu-mode.resume-visible .controls-hint { top: calc(24% + 386px); }
+
+  #settingsBtn {
+    position: fixed !important;
+    top: max(16px, env(safe-area-inset-top)) !important;
+    left: auto !important;
+    right: max(16px, env(safe-area-inset-right)) !important;
   }
 }
 
@@ -303,7 +379,8 @@ input:focus-visible {
     overflow-x: clip;
     overflow-y: auto;
     grid-template-columns: minmax(0, 3fr) minmax(340px, 2fr);
-    grid-template-rows: auto auto minmax(0, 1fr) auto auto auto auto auto auto;
+    grid-template-rows: repeat(9, auto);
+    align-content: center;
   }
 
   #overlay.menu-mode > * {
@@ -319,6 +396,7 @@ input:focus-visible {
 
   #overlay.menu-mode #orbBrowser {
     grid-row: 3 / 10;
+    align-self: center;
     overflow: visible;
   }
 
@@ -343,5 +421,20 @@ input:focus-visible {
     grid-column: 2;
     grid-row: 9;
     margin: 4px 0 0;
+  }
+}
+
+@media (min-width: 1024px) {
+  #overlay.menu-mode #difficultySelect,
+  #overlay.menu-mode #resumeRunBtn,
+  #overlay.menu-mode #resumeRunInfo,
+  #overlay.menu-mode #startBtn,
+  #overlay.menu-mode #guideBtn,
+  #overlay.menu-mode #leaderboardBtn,
+  #overlay.menu-mode .controls-hint {
+    grid-column: auto;
+    grid-row: auto;
+    justify-self: auto;
+    align-self: auto;
   }
 }
