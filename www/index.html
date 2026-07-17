@@ -3192,6 +3192,7 @@
 <link rel="stylesheet" href="ui-responsive-desktop-redesign.css">
 <link rel="stylesheet" href="ui-responsive-hud-redesign.css">
 <link rel="stylesheet" href="ui-responsive-overlays-redesign.css">
+<link rel="stylesheet" href="ui-menu-v2.css">
 </head>
 <body>
 <div id="debugOverlay"></div>
@@ -3258,12 +3259,6 @@
     <div class="subtitle">gravity surfing</div>
     <div class="pilot-display" id="pilotDisplay"></div>
     <div class="version-label" id="versionLabel"></div>
-    <div id="difficultySelect">
-      <button class="diff-btn selected" data-diff="NORMAL">NORMAL</button>
-      <button class="diff-btn" data-diff="HARD">HARD</button>
-      <button class="diff-btn" data-diff="EXTREME">EXTREME</button>
-      <button class="diff-btn" data-diff="IMPOSSIBLE" id="diffBtnImpossible" style="display:none">IMPOSSIBLE</button>
-    </div>
     <div id="orbCrystalBalance">💎 0</div>
     <div id="orbBrowser">
       <div class="orb-nav">
@@ -3276,6 +3271,27 @@
       <div id="orbTrailRow"></div>
       <div id="orbDots"></div>
       <div id="orbAction"></div>
+    </div>
+    <div id="menuActions">
+      <div class="menu-actions-label">SELECT DIFFICULTY</div>
+      <div id="difficultySelect">
+        <button class="diff-btn selected" data-diff="NORMAL">NORMAL</button>
+        <button class="diff-btn" data-diff="HARD">HARD</button>
+        <button class="diff-btn" data-diff="EXTREME">EXTREME</button>
+        <button class="diff-btn" data-diff="IMPOSSIBLE" id="diffBtnImpossible" style="display:none">IMPOSSIBLE</button>
+      </div>
+      <button id="resumeRunBtn" style="display:none"></button>
+      <div id="resumeRunInfo" style="display:none"></div>
+      <button id="startBtn">ENTER THE VOID</button>
+      <div class="menu-nav-row">
+        <button id="guideBtn">GUIDE</button>
+        <button id="leaderboardBtn">LEADERBOARD</button>
+      </div>
+      <div class="controls-hint" id="controlsHint">
+        <span>LEFT</span> — pull toward nearest body<br>
+        <span>RIGHT</span> — push away from nearest body<br>
+        thread the cosmos. don't get absorbed.
+      </div>
     </div>
     <div id="deathScore"></div>
     <div id="runSummary"></div>
@@ -3293,16 +3309,6 @@
     </div>
     <div id="highscores"></div>
     <div id="globalScores"></div>
-    <div class="controls-hint" id="controlsHint">
-      <span>LEFT</span> — pull toward nearest body<br>
-      <span>RIGHT</span> — push away from nearest body<br>
-      thread the cosmos. don't get absorbed.
-    </div>
-    <button id="resumeRunBtn" style="display:none"></button>
-    <div id="resumeRunInfo" style="display:none"></div>
-    <button id="startBtn">ENTER THE VOID</button>
-    <button id="guideBtn">GUIDE</button>
-    <button id="leaderboardBtn">LEADERBOARD</button>
     <button id="leaderboardReturnBtn">RETURN</button>
     <div id="deathActions">
       <button id="shopBtn">SHOP</button>
@@ -43895,7 +43901,14 @@ if ((location.hostname === '127.0.0.1' || location.hostname === 'localhost') && 
     startAfterGesture();
     const username = document.getElementById('usernameOverlay');
     if (username) username.style.display = 'none';
-    if (uiQaMode === 'guide') document.getElementById('guideBtn')?.click();
+    if (uiQaMode === 'resume-menu') {
+      const resumeButton = document.getElementById('resumeRunBtn');
+      const resumeInfo = document.getElementById('resumeRunInfo');
+      document.getElementById('overlay')?.classList.add('resume-visible');
+      if (resumeButton) { resumeButton.style.display = 'block'; resumeButton.textContent = 'RESUME RUN'; }
+      if (resumeInfo) { resumeInfo.style.display = 'block'; resumeInfo.textContent = 'EXTREME · 00:55 survived · 2546 pts'; }
+    }
+    else if (uiQaMode === 'guide') document.getElementById('guideBtn')?.click();
     else if (uiQaMode === 'settings') document.getElementById('settingsBtn')?.click();
     else if (uiQaMode === 'stats') openStatsOverlay();
     else if (uiQaMode === 'tree') openTreeOverlay(activeOrb);

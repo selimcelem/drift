@@ -420,12 +420,15 @@ Add new entries above older entries. Each entry should state the branch, last co
   - The prior pass improved viewport containment but retained too much of the legacy phone presentation and repeated button styling.
   - Desktop pause and settings chrome could overlap, and the pause panel inherited the portrait game wrapper's coordinate space.
 - Completed:
+  - Replaced the fragile menu grid-row positioning with a real `#menuActions` command panel in the game HTML; saved-run and new-run states now share a deliberate hierarchy without spacer rows.
+  - Added a localhost `?uiqa=resume-menu` state so the saved-run composition is verified directly instead of inferred from an empty-profile menu.
   - Added a redesigned compact menu with an orb/loadout card, segmented difficulty control, prominent run CTA, paired navigation and differentiated button states.
   - Added a tablet two-panel dashboard and rebuilt the desktop menu as a real viewport command deck with a compact action rhythm.
   - Rebuilt pause, settings and confirmation overlays as centered, bounded surfaces; modal state now hides corner controls.
   - Restyled guide, statistics, skill trees, leaderboard and result states with a shared DRIFT telemetry/card language.
   - Added mobile horizontal skill-tree lanes, safe-area handling and short-height desktop/phone adjustments.
 - Verification:
+  - Rendered the saved-run menu at 1920×1080, 1366×768 and 492×923 after the structural change; verified tight desktop action grouping and separate mobile header/loadout/action regions.
   - Rendered and reviewed menu, pause, guide, settings, stats, tree, leaderboard, confirmation and username states at 1920×1080, 1024×768 and compact capture widths.
   - Corrected guide grid ordering, settings implicit-column drift, duplicate compact leaderboard controls and compact navigation text overflow found during QA.
 - Remaining:

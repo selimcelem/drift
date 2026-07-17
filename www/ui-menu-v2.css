@@ -1,0 +1,217 @@
+/* Main menu v2. The menu now has a real action group in the markup, so its
+   hierarchy and spacing no longer depend on unrelated grid rows. */
+#overlay.menu-mode #menuActions {
+  box-sizing: border-box;
+}
+
+#overlay.leaderboard-mode #menuActions,
+#overlay.death-mode #menuActions {
+  display: none !important;
+}
+
+#overlay.menu-mode #menuActions > *,
+#overlay.menu-mode #menuActions .menu-nav-row > * {
+  box-sizing: border-box;
+}
+
+#overlay.menu-mode .menu-actions-label {
+  color: rgba(126, 232, 255, .52);
+  font: 700 8px/1 'Space Mono', monospace;
+  letter-spacing: .22em;
+}
+
+#overlay.menu-mode .menu-nav-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+@media (min-width: 1024px) {
+  #overlay.menu-mode {
+    grid-template-columns: minmax(460px, 1.12fr) minmax(420px, .88fr) !important;
+    grid-template-rows: auto auto minmax(0, 1fr) !important;
+    column-gap: clamp(64px, 7vw, 128px) !important;
+    row-gap: 12px !important;
+    padding: clamp(48px, 6vh, 76px) clamp(56px, 7vw, 132px) clamp(38px, 5vh, 64px) !important;
+  }
+
+  #overlay.menu-mode .title-word { grid-column: 1 !important; grid-row: 1 !important; }
+  #overlay.menu-mode .subtitle { grid-column: 1 !important; grid-row: 2 !important; }
+  #overlay.menu-mode #orbBrowser {
+    grid-column: 1 !important;
+    grid-row: 3 !important;
+    align-self: center !important;
+  }
+
+  #overlay.menu-mode #menuActions {
+    position: static !important;
+    grid-column: 2 !important;
+    grid-row: 1 / 4 !important;
+    align-self: center !important;
+    justify-self: center !important;
+    display: flex !important;
+    flex-direction: column;
+    gap: 10px;
+    width: min(100%, 620px);
+    padding: clamp(20px, 2vw, 30px);
+    border: 1px solid rgba(126, 216, 255, .20);
+    border-radius: 18px;
+    background: linear-gradient(155deg, rgba(15, 21, 48, .88), rgba(6, 9, 25, .94));
+    box-shadow: 0 28px 90px rgba(0, 0, 0, .34), inset 0 1px rgba(255, 255, 255, .04);
+  }
+
+  #overlay.menu-mode #menuActions #difficultySelect,
+  #overlay.menu-mode #menuActions #resumeRunBtn,
+  #overlay.menu-mode #menuActions #resumeRunInfo,
+  #overlay.menu-mode #menuActions #startBtn,
+  #overlay.menu-mode #menuActions #guideBtn,
+  #overlay.menu-mode #menuActions #leaderboardBtn,
+  #overlay.menu-mode #menuActions .controls-hint {
+    position: static !important;
+    inset: auto !important;
+    grid-column: auto !important;
+    grid-row: auto !important;
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    transform: none !important;
+  }
+
+  #overlay.menu-mode #menuActions #difficultySelect { order: 1; }
+  #overlay.menu-mode #menuActions #resumeRunBtn { order: 2; }
+  #overlay.menu-mode #menuActions #resumeRunInfo { order: 3; }
+  #overlay.menu-mode #menuActions #startBtn { order: 4; }
+  #overlay.menu-mode #menuActions .menu-nav-row { order: 5; }
+  #overlay.menu-mode #menuActions .controls-hint { order: 6; }
+  #overlay.menu-mode #menuActions .menu-actions-label { order: 0; }
+
+  #overlay.menu-mode #resumeRunBtn {
+    min-height: 62px !important;
+    border-color: rgba(255, 190, 102, .56) !important;
+    background: linear-gradient(110deg, rgba(125, 69, 28, .82), rgba(91, 47, 137, .86)) !important;
+    color: #ffe0a8 !important;
+    box-shadow: inset 0 1px rgba(255,255,255,.13), 0 10px 26px rgba(114, 63, 36, .20) !important;
+  }
+
+  #overlay.menu-mode #resumeRunInfo {
+    padding: 0 8px 4px !important;
+    color: rgba(255, 199, 117, .74) !important;
+    text-align: left !important;
+  }
+
+  #overlay.menu-mode #startBtn { min-height: 72px !important; }
+  #overlay.menu-mode #guideBtn,
+  #overlay.menu-mode #leaderboardBtn { min-height: 50px !important; }
+  #overlay.menu-mode .controls-hint { padding-top: 5px; }
+}
+
+@media (min-width: 1024px) and (max-height: 820px) {
+  #overlay.menu-mode { padding-block: 30px !important; }
+  #overlay.menu-mode #menuActions { gap: 8px; padding: 18px 22px; }
+  #overlay.menu-mode #startBtn { min-height: 60px !important; }
+  #overlay.menu-mode #resumeRunBtn { min-height: 54px !important; }
+  #overlay.menu-mode .controls-hint { display: none !important; }
+}
+
+@media (max-width: 1023px) {
+  #overlay.menu-mode {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 10px !important;
+    padding: max(68px, calc(env(safe-area-inset-top) + 58px)) max(14px, env(safe-area-inset-right)) max(18px, env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left)) !important;
+  }
+
+  #overlay.menu-mode .title-word {
+    flex: none;
+    margin: 0 !important;
+    font-size: clamp(45px, 14vw, 66px) !important;
+  }
+  #overlay.menu-mode .subtitle { flex: none; margin: -4px 0 2px !important; }
+  #overlay.menu-mode .pilot-display { flex: none; align-self: flex-start; }
+
+  #overlay.menu-mode #orbBrowser {
+    flex: none;
+    order: 4;
+    max-width: 560px;
+    margin-inline: auto !important;
+  }
+
+  #overlay.menu-mode #menuActions {
+    flex: none;
+    order: 5;
+    display: flex !important;
+    flex-direction: column;
+    gap: 9px;
+    width: min(100%, 560px);
+    margin-inline: auto;
+    padding: 12px;
+    border: 1px solid rgba(126, 216, 255, .17);
+    border-radius: 16px;
+    background: rgba(7, 11, 28, .76);
+  }
+
+  #overlay.menu-mode #menuActions #difficultySelect,
+  #overlay.menu-mode #menuActions #resumeRunBtn,
+  #overlay.menu-mode #menuActions #resumeRunInfo,
+  #overlay.menu-mode #menuActions #startBtn,
+  #overlay.menu-mode #menuActions #guideBtn,
+  #overlay.menu-mode #menuActions #leaderboardBtn,
+  #overlay.menu-mode #menuActions .controls-hint {
+    position: static !important;
+    inset: auto !important;
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    transform: none !important;
+  }
+
+  #overlay.menu-mode .menu-actions-label { display: none; }
+  #overlay.menu-mode #resumeRunBtn {
+    min-height: 56px !important;
+    border-color: rgba(255, 190, 102, .58) !important;
+    background: linear-gradient(115deg, rgba(132, 72, 27, .84), rgba(87, 47, 139, .88)) !important;
+    color: #ffe0ab !important;
+  }
+  #overlay.menu-mode #resumeRunInfo {
+    padding: 0 6px 2px !important;
+    color: rgba(255, 197, 112, .75) !important;
+    text-align: left !important;
+  }
+  #overlay.menu-mode #startBtn { min-height: 62px !important; }
+  #overlay.menu-mode .controls-hint { display: none !important; }
+
+  #orbCrystalBalance {
+    position: fixed !important;
+    top: max(14px, env(safe-area-inset-top)) !important;
+    right: calc(max(14px, env(safe-area-inset-right)) + 50px) !important;
+    z-index: 300 !important;
+  }
+  #settingsBtn {
+    display: flex !important;
+    position: fixed !important;
+    top: max(14px, env(safe-area-inset-top)) !important;
+    right: max(12px, env(safe-area-inset-right)) !important;
+    z-index: 301 !important;
+  }
+}
+
+@media (max-width: 599px) {
+  #overlay.menu-mode #orbPreview,
+  #overlay.menu-mode #orbPreviewCanvas {
+    width: clamp(128px, 34vw, 166px) !important;
+    height: clamp(128px, 34vw, 166px) !important;
+  }
+  #overlay.menu-mode #orbBrowser { padding: 10px 12px !important; }
+  #overlay.menu-mode #menuActions { padding: 10px; gap: 8px; }
+  #overlay.menu-mode .menu-nav-row { gap: 8px; }
+}
+
+@media (max-width: 599px) and (max-height: 780px) {
+  #overlay.menu-mode { padding-top: max(58px, calc(env(safe-area-inset-top) + 50px)) !important; gap: 7px !important; }
+  #overlay.menu-mode .title-word { font-size: 42px !important; }
+  #overlay.menu-mode #orbPreview,
+  #overlay.menu-mode #orbPreviewCanvas { width: 112px !important; height: 112px !important; }
+  #overlay.menu-mode #orbDesc { display: none; }
+  #overlay.menu-mode #startBtn { min-height: 54px !important; }
+}

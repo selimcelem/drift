@@ -46,7 +46,7 @@ body:has(#settingsOverlay.visible) #settingsBtn,
 body:has(#settingsOverlay.visible) #pauseBtn,
 body:has(#guideOverlay:not(.hidden)) #settingsBtn,
 body:has(#statsOverlay.visible) #settingsBtn,
-body:has(#treeOverlay:not(.hidden)) #settingsBtn,
+body:has(#treeOverlay.visible) #settingsBtn,
 body:has(#overlay.leaderboard-mode) #settingsBtn,
 body:has(#overlay.death-mode) #settingsBtn {
   opacity: 0 !important;
