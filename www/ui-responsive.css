@@ -285,3 +285,63 @@ input:focus-visible {
     right: var(--ui-safe-right);
   }
 }
+
+/* Wide-layout containment fix.
+   The legacy overlay is absolutely constrained on all four sides. Combining
+   that constraint with a capped width allowed the grid's intrinsic width to
+   become horizontally scrollable in Chromium. Make the migrated menu an
+   explicit viewport layer and keep every grid child inside its track. */
+@media (min-width: 1024px) {
+  #overlay.menu-mode {
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    max-width: none;
+    height: 100dvh;
+    min-height: 0;
+    margin: 0;
+    overflow-x: clip;
+    overflow-y: auto;
+    grid-template-columns: minmax(0, 3fr) minmax(340px, 2fr);
+    grid-template-rows: auto auto minmax(0, 1fr) auto auto auto auto auto auto;
+  }
+
+  #overlay.menu-mode > * {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  #overlay.menu-mode .title-word,
+  #overlay.menu-mode .subtitle {
+    overflow: visible;
+    white-space: nowrap;
+  }
+
+  #overlay.menu-mode #orbBrowser {
+    grid-row: 3 / 10;
+    overflow: visible;
+  }
+
+  #overlay.menu-mode #resumeRunBtn { grid-row: 3; align-self: end; }
+  #overlay.menu-mode #resumeRunInfo { grid-row: 4; }
+  #overlay.menu-mode #startBtn { grid-row: 5; }
+
+  #overlay.menu-mode #guideBtn,
+  #overlay.menu-mode #skillTreesBtn,
+  #overlay.menu-mode #leaderboardBtn {
+    grid-column: 2;
+    justify-self: stretch;
+    width: 100%;
+    transform: none;
+  }
+
+  #overlay.menu-mode #guideBtn { grid-row: 6; }
+  #overlay.menu-mode #skillTreesBtn { grid-row: 7; }
+  #overlay.menu-mode #leaderboardBtn { grid-row: 8; }
+
+  #overlay.menu-mode .controls-hint {
+    grid-column: 2;
+    grid-row: 9;
+    margin: 4px 0 0;
+  }
+}

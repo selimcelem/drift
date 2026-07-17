@@ -434,6 +434,12 @@ Add new entries above older entries. Each entry should state the branch, last co
 - Next action:
   - Playtest the real branch menu at phone and desktop sizes, fix any live-state layout issues, then migrate guide/settings and shared modal foundations.
 
+#### Wide-menu correction
+
+- A 1920×1080 Chrome playtest showed the initial grid overflowing horizontally inside the legacy absolutely constrained overlay.
+- Corrected the wide menu to use an explicit fixed viewport layer, zero-minimum grid tracks, clipped horizontal overflow and dedicated rows for each real navigation action.
+- Removed transform-based button placement from the effective wide layout.
+
 ### 2026-07-18 — Branch created and interactive prototype started
 
 - Branch: `ui/responsive-rework`
