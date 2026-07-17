@@ -1,5 +1,51 @@
 /* Main menu v2. The menu now has a real action group in the markup, so its
    hierarchy and spacing no longer depend on unrelated grid rows. */
+#gameWrapper:has(#overlay.menu-mode:not(.hidden)) {
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+#gameWrapper:has(#overlay.menu-mode:not(.hidden)) > #c,
+#gameWrapper:has(#overlay.menu-mode:not(.hidden)) > #pixiCanvas {
+  opacity: 0 !important;
+  visibility: hidden !important;
+}
+
+#overlay.menu-mode {
+  background:
+    radial-gradient(circle at 16% 22%, rgba(118, 82, 255, .14), transparent 27rem),
+    radial-gradient(circle at 82% 72%, rgba(28, 166, 255, .10), transparent 31rem),
+    radial-gradient(circle, rgba(189, 217, 255, .52) 0 1px, transparent 1.4px) 17px 23px / 137px 113px,
+    radial-gradient(circle, rgba(132, 169, 225, .32) 0 1px, transparent 1.5px) 61px 11px / 211px 173px,
+    linear-gradient(115deg, #02030d, #030513 54%, #02040e) !important;
+}
+
+#overlay.menu-mode #orbBrowser .orb-nav {
+  display: grid !important;
+  grid-template-columns: 52px minmax(0, 1fr) 52px;
+  align-items: center;
+  justify-items: center;
+  width: 100% !important;
+  max-width: 100% !important;
+  margin-inline: auto !important;
+}
+
+#overlay.menu-mode #orbPreview {
+  grid-column: 2;
+  justify-self: center;
+  align-self: center;
+  margin: 0 !important;
+}
+
+#overlay.menu-mode #orbPreviewCanvas {
+  display: block !important;
+  margin: 0 auto !important;
+}
+
+#overlay.menu-mode #orbPrev { grid-column: 1; justify-self: start; }
+#overlay.menu-mode #orbNext { grid-column: 3; justify-self: end; }
+
 #overlay.menu-mode #menuActions {
   box-sizing: border-box;
 }
