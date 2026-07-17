@@ -1,0 +1,152 @@
+/* Final wide-screen composition. This layer deliberately replaces the
+   earlier migration positioning with a cohesive desktop command deck. */
+#gameWrapper:has(#overlay.menu-mode:not(.hidden)) #hintLeft,
+#gameWrapper:has(#overlay.menu-mode:not(.hidden)) #hintRight {
+  opacity: 0 !important;
+  visibility: hidden !important;
+}
+
+@media (min-width: 1024px) {
+  #overlay.menu-mode {
+    position: fixed !important;
+    inset: 0 !important;
+    display: grid !important;
+    grid-template-columns: minmax(430px, 1.15fr) minmax(380px, .85fr) !important;
+    grid-template-rows: auto auto auto auto auto auto minmax(0, 1fr) !important;
+    gap: 10px clamp(48px, 6vw, 112px) !important;
+    align-content: center !important;
+    width: 100vw !important;
+    max-width: none !important;
+    height: 100dvh !important;
+    padding: clamp(72px, 8vh, 104px) clamp(48px, 7vw, 128px) clamp(40px, 6vh, 72px) !important;
+    overflow: auto !important;
+    background:
+      linear-gradient(90deg, rgba(2,3,12,.3) 0 52%, rgba(8,11,29,.54) 52% 100%),
+      radial-gradient(circle at 26% 48%, rgba(71,120,255,.10), transparent 27%);
+  }
+
+  #overlay.menu-mode .title-word {
+    grid-column: 1 !important;
+    grid-row: 1 !important;
+    align-self: end !important;
+    margin: 0 !important;
+    font-size: clamp(72px, 7vw, 118px) !important;
+    line-height: .86 !important;
+    letter-spacing: .22em !important;
+  }
+
+  #overlay.menu-mode .subtitle {
+    grid-column: 1 !important;
+    grid-row: 2 !important;
+    margin: 0 !important;
+  }
+
+  #overlay.menu-mode #orbBrowser {
+    grid-column: 1 !important;
+    grid-row: 3 / 8 !important;
+    align-self: center !important;
+    width: min(100%, 680px) !important;
+    margin: 0 auto !important;
+  }
+
+  #overlay.menu-mode #difficultySelect,
+  #overlay.menu-mode #resumeRunBtn,
+  #overlay.menu-mode #resumeRunInfo,
+  #overlay.menu-mode #startBtn,
+  #overlay.menu-mode #guideBtn,
+  #overlay.menu-mode #leaderboardBtn,
+  #overlay.menu-mode .controls-hint {
+    position: static !important;
+    inset: auto !important;
+    grid-column: 2 !important;
+    width: 100% !important;
+    max-width: 620px !important;
+    min-width: 0 !important;
+    margin: 0 !important;
+    transform: none !important;
+    justify-self: center !important;
+  }
+
+  #overlay.menu-mode #difficultySelect { grid-row: 2 !important; }
+  #overlay.menu-mode #resumeRunBtn { grid-row: 3 !important; }
+  #overlay.menu-mode #resumeRunInfo { grid-row: 4 !important; }
+  #overlay.menu-mode #startBtn { grid-row: 3 !important; }
+  #overlay.menu-mode.resume-visible #startBtn { grid-row: 5 !important; }
+  #overlay.menu-mode #guideBtn { grid-row: 4 !important; }
+  #overlay.menu-mode.resume-visible #guideBtn { grid-row: 6 !important; }
+  #overlay.menu-mode #leaderboardBtn { grid-row: 5 !important; }
+  #overlay.menu-mode.resume-visible #leaderboardBtn { grid-row: 7 !important; }
+  #overlay.menu-mode .controls-hint { grid-row: 6 !important; }
+  #overlay.menu-mode.resume-visible .controls-hint { display: none !important; }
+
+  #overlay.menu-mode #startBtn,
+  #overlay.menu-mode #resumeRunBtn {
+    min-height: 68px !important;
+    border: 1px solid #70ddff !important;
+    border-radius: 14px !important;
+    background: linear-gradient(110deg, rgba(23,112,166,.82), rgba(76,46,170,.88)) !important;
+    box-shadow: inset 0 1px rgba(255,255,255,.16), 0 12px 36px rgba(52,108,255,.18) !important;
+    color: #dff8ff !important;
+    font-size: clamp(17px, 1.45vw, 22px) !important;
+    letter-spacing: .14em !important;
+  }
+
+  #overlay.menu-mode #guideBtn,
+  #overlay.menu-mode #leaderboardBtn {
+    min-height: 52px !important;
+    padding: 0 22px !important;
+    border: 1px solid rgba(142,170,232,.28) !important;
+    border-radius: 12px !important;
+    background: linear-gradient(180deg, rgba(19,25,52,.92), rgba(10,14,34,.94)) !important;
+    box-shadow: inset 0 1px rgba(255,255,255,.04) !important;
+    color: #bdc8e5 !important;
+  }
+
+  #overlay.menu-mode #startBtn:hover,
+  #overlay.menu-mode #resumeRunBtn:hover {
+    filter: brightness(1.16);
+    transform: translateY(-2px) !important;
+  }
+
+  #overlay.menu-mode #guideBtn:hover,
+  #overlay.menu-mode #leaderboardBtn:hover {
+    border-color: rgba(126,232,255,.65) !important;
+    color: #f5fbff !important;
+    transform: translateY(-1px) !important;
+  }
+
+  #settingsBtn,
+  #pauseBtn {
+    position: fixed !important;
+    top: max(18px, env(safe-area-inset-top)) !important;
+    width: 46px !important;
+    height: 46px !important;
+    border-radius: 14px !important;
+    background: rgba(10,15,35,.9) !important;
+    border: 1px solid rgba(126,232,255,.3) !important;
+    z-index: 120 !important;
+  }
+
+  #settingsBtn { right: max(18px, env(safe-area-inset-right)) !important; left: auto !important; }
+  #pauseBtn { right: max(18px, env(safe-area-inset-right)) !important; left: auto !important; }
+
+  /* Settings is menu chrome; pause is gameplay chrome. Never show both. */
+  body:has(#pauseBtn.visible) #settingsBtn { display: none !important; }
+  #pauseOverlay.visible ~ #settingsBtn { display: none !important; }
+}
+
+@media (min-width: 1024px) and (max-height: 850px) {
+  #overlay.menu-mode {
+    padding: 48px clamp(36px, 5vw, 72px) 28px !important;
+  }
+  #overlay.menu-mode .title-word { font-size: clamp(62px, 6.4vw, 88px) !important; }
+  #overlay.menu-mode #orbPreview,
+  #overlay.menu-mode #orbPreviewCanvas {
+    width: clamp(190px, 23vw, 250px) !important;
+    height: clamp(190px, 23vw, 250px) !important;
+  }
+  #overlay.menu-mode #orbName { margin-top: 6px !important; font-size: 25px !important; }
+  #overlay.menu-mode #orbDesc { margin-block: 1px !important; }
+  #overlay.menu-mode #orbTrailRow,
+  #overlay.menu-mode #orbDots { margin-block: 2px !important; }
+}

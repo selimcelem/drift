@@ -1,0 +1,361 @@
+/* DRIFT screen redesign: guide, statistics, progression, and run results.
+   Presentation only. Existing IDs/classes remain the behavioural contract. */
+
+:root {
+  --dr-bg: #02030b;
+  --dr-surface: rgba(10, 14, 32, .94);
+  --dr-surface-hi: rgba(18, 24, 50, .92);
+  --dr-cyan: #68dcff;
+  --dr-violet: #916cff;
+  --dr-pink: #ff6fae;
+  --dr-gold: #ffd36b;
+  --dr-line: rgba(104, 220, 255, .25);
+  --dr-copy: #e9f3ff;
+  --dr-muted: #8fa4bf;
+  --dr-cut: polygon(0 12px, 12px 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%);
+}
+
+/* Shared full-screen atmosphere. */
+#guideOverlay,
+#statsOverlay,
+#treeOverlay,
+#overlay.death-mode,
+#overlay.leaderboard-mode {
+  background:
+    linear-gradient(rgba(104,220,255,.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(104,220,255,.025) 1px, transparent 1px),
+    radial-gradient(circle at 12% 8%, rgba(95,76,255,.19), transparent 32rem),
+    radial-gradient(circle at 90% 88%, rgba(0,190,255,.10), transparent 28rem),
+    var(--dr-bg);
+  background-size: 44px 44px, 44px 44px, auto, auto, auto;
+}
+
+#guideOverlay::before,
+#statsOverlay::before,
+#treeOverlay::before,
+#overlay.death-mode::before,
+#overlay.leaderboard-mode::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background: linear-gradient(transparent 50%, rgba(0,0,0,.10) 50%);
+  background-size: 100% 4px;
+  opacity: .34;
+}
+
+#guideOverlay > *, #statsOverlay > *, #treeOverlay > *,
+#overlay.death-mode > *, #overlay.leaderboard-mode > * { position: relative; z-index: 1; }
+
+/* GUIDE — an actual mission briefing, not a canvas floating on black. */
+.guide-inner {
+  padding: 22px;
+  border: 1px solid var(--dr-line);
+  clip-path: var(--dr-cut);
+  background: linear-gradient(145deg, rgba(20,27,58,.96), rgba(6,9,23,.97));
+  box-shadow: 0 28px 90px rgba(0,0,0,.56), inset 0 1px rgba(255,255,255,.06);
+}
+
+.guide-inner::before {
+  content: "FLIGHT MANUAL  /  DRIFT SYSTEMS";
+  display: block;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(104,220,255,.15);
+  color: rgba(104,220,255,.58);
+  font: 700 8px/1 'Space Mono', monospace;
+  letter-spacing: 2px;
+}
+
+.guide-title {
+  margin: 0;
+  color: var(--dr-copy);
+  font-size: clamp(20px, 5.5vw, 32px);
+  letter-spacing: clamp(4px, 1.4vw, 9px);
+  text-shadow: 0 0 24px rgba(104,220,255,.25);
+}
+
+#guideCanvas {
+  box-sizing: border-box;
+  border: 1px solid rgba(104,220,255,.2);
+  clip-path: var(--dr-cut);
+  background: radial-gradient(circle, rgba(22,32,66,.72), rgba(2,4,14,.92));
+  box-shadow: inset 0 0 42px rgba(44,90,190,.12);
+}
+
+.guide-text {
+  color: #c4d3e7;
+  font-size: 12px;
+  line-height: 1.75;
+  text-wrap: pretty;
+}
+
+.guide-nav { gap: 16px; }
+.guide-arrow, #guideReturnBtn {
+  border: 1px solid rgba(104,220,255,.35);
+  clip-path: var(--dr-cut);
+  background: linear-gradient(135deg, rgba(29,49,87,.78), rgba(20,17,56,.78));
+  color: var(--dr-cyan);
+  box-shadow: inset 0 1px rgba(255,255,255,.07);
+}
+.guide-arrow { width: 48px; height: 46px; padding: 0; }
+.guide-dot { width: 20px; height: 3px; border-radius: 0; background: rgba(143,164,191,.28); }
+.guide-dot.active { width: 32px; background: linear-gradient(90deg, var(--dr-cyan), var(--dr-violet)); box-shadow: 0 0 10px var(--dr-cyan); }
+#guideReturnBtn { min-width: 180px; padding: 13px 28px; }
+#guideClose { border-radius: 0; border-color: rgba(104,220,255,.35); background: rgba(7,11,27,.86); }
+
+/* STATISTICS — telemetry dashboard. */
+#statsOverlay { gap: 0; }
+#statsOverlay .stats-title {
+  width: min(100%, 980px);
+  box-sizing: border-box;
+  margin: 0 auto 18px;
+  padding: 0 0 14px;
+  border-bottom: 1px solid var(--dr-line);
+  color: var(--dr-copy);
+  font-size: clamp(22px, 5vw, 36px);
+  letter-spacing: clamp(5px, 1vw, 10px);
+  text-align: left;
+}
+#statsOverlay .stats-title::after {
+  content: "  // PILOT TELEMETRY";
+  color: rgba(104,220,255,.5);
+  font: 700 8px 'Space Mono', monospace;
+  letter-spacing: 2px;
+}
+#statsBody { align-items: stretch; }
+#statsOverlay .stats-section {
+  position: relative;
+  padding: 18px !important;
+  border: 1px solid rgba(104,220,255,.17) !important;
+  border-left: 3px solid rgba(104,220,255,.55) !important;
+  clip-path: var(--dr-cut);
+  background: linear-gradient(150deg, rgba(16,22,47,.94), rgba(7,10,24,.94)) !important;
+  box-shadow: 0 14px 38px rgba(0,0,0,.24);
+}
+#statsOverlay .stats-section:nth-child(2n) { border-left-color: rgba(145,108,255,.65) !important; }
+#statsOverlay .stats-section-title {
+  margin-bottom: 12px;
+  padding-bottom: 9px;
+  color: var(--dr-gold);
+  border-bottom-color: rgba(255,211,107,.2);
+}
+#statsOverlay .stats-row, #statsOverlay .stats-orb-row {
+  min-height: 25px;
+  border-bottom: 1px solid rgba(255,255,255,.035);
+}
+#statsOverlay .stats-row .stats-label { color: var(--dr-muted); }
+#statsOverlay .stats-row .stats-val { color: var(--dr-copy); }
+#statsOverlay .stats-close {
+  min-width: 220px;
+  min-height: 48px;
+  clip-path: var(--dr-cut);
+  border-color: rgba(104,220,255,.4);
+  background: linear-gradient(120deg, rgba(30,75,119,.5), rgba(60,34,130,.5));
+}
+
+/* SKILL TREES — three power conduits with visible progression states. */
+#treeOverlay { gap: 0; }
+.tree-header {
+  clip-path: var(--dr-cut);
+  border-color: rgba(104,220,255,.25);
+  background: linear-gradient(100deg, rgba(15,25,54,.97), rgba(12,9,34,.97));
+}
+.tree-title::after {
+  content: "  /  ACTIVE SYSTEMS";
+  color: rgba(104,220,255,.45);
+  font: 700 8px 'Space Mono', monospace;
+  letter-spacing: 2px;
+}
+.tree-crystals { border-radius: 0; clip-path: var(--dr-cut); }
+.tree-paths { counter-reset: drift-path; }
+.tree-path {
+  counter-increment: drift-path;
+  overflow: hidden;
+  border-radius: 0;
+  clip-path: var(--dr-cut);
+  background: linear-gradient(165deg, rgba(19,27,57,.92), rgba(5,8,21,.96));
+}
+.tree-path::before {
+  content: "0" counter(drift-path);
+  position: absolute;
+  top: 9px;
+  right: 13px;
+  color: rgba(104,220,255,.15);
+  font: 700 28px/1 'Orbitron', monospace;
+}
+.tree-path:nth-child(2) { background: linear-gradient(165deg, rgba(31,21,66,.92), rgba(7,6,22,.96)); }
+.tree-path:nth-child(3) { background: linear-gradient(165deg, rgba(20,35,54,.92), rgba(5,8,20,.96)); }
+.tree-path-title { position: relative; z-index: 1; color: var(--dr-copy); border-bottom-color: rgba(104,220,255,.23); }
+.tree-node {
+  position: relative;
+  overflow: hidden;
+  border-radius: 0;
+  clip-path: polygon(0 7px, 7px 0, 100% 0, 100% 100%, 0 100%);
+  background: linear-gradient(90deg, rgba(12,18,39,.98), rgba(9,12,27,.98));
+  transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease;
+}
+.tree-node::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0;
+  height: 2px;
+  background: linear-gradient(90deg, currentColor, transparent 70%);
+  opacity: .42;
+}
+.tree-node.locked::after { opacity: .08; }
+.tree-node.maxed { background: linear-gradient(90deg, color-mix(in srgb, currentColor 12%, #07101d), rgba(7,13,27,.98)); }
+.tree-capstones {
+  clip-path: var(--dr-cut);
+  border-radius: 0;
+  background: linear-gradient(90deg, rgba(66,40,112,.22), rgba(15,21,50,.75), rgba(66,40,112,.22));
+}
+.tree-footer { clip-path: var(--dr-cut); border-radius: 0; }
+.tree-btn {
+  border-radius: 0;
+  clip-path: var(--dr-cut);
+  background: linear-gradient(130deg, rgba(24,42,75,.72), rgba(24,18,57,.72));
+}
+.tree-detail-inner, .tree-confirm-inner, .tree-glossary-inner {
+  border-radius: 0;
+  clip-path: var(--dr-cut);
+  border-left: 3px solid var(--dr-cyan);
+}
+
+/* LEADERBOARDS / DEATH — results console with clear ranking hierarchy. */
+#overlay.death-mode, #overlay.leaderboard-mode { align-items: center; }
+#overlay.death-mode .title-word, #overlay.leaderboard-mode .title-word {
+  margin: 0 0 2px;
+  color: var(--dr-copy);
+  text-shadow: 0 0 30px rgba(145,108,255,.28);
+}
+#overlay.death-mode .subtitle, #overlay.leaderboard-mode .subtitle { color: rgba(104,220,255,.5); }
+#runSummary {
+  border-radius: 0;
+  clip-path: var(--dr-cut);
+  border-left: 3px solid var(--dr-pink);
+  background: linear-gradient(145deg, rgba(22,24,52,.96), rgba(7,10,23,.97));
+}
+.rs-title { color: var(--dr-copy); letter-spacing: 6px; }
+.rs-row { border-bottom: 1px solid rgba(255,255,255,.045); }
+.rs-total { color: var(--dr-gold); }
+.lb-tabs, .lb-diff-tabs { gap: 6px; }
+.lb-tab, .lb-diff-tab {
+  border: 1px solid rgba(104,220,255,.16) !important;
+  border-radius: 0 !important;
+  clip-path: polygon(0 7px, 7px 0, 100% 0, 100% 100%, 0 100%);
+  background: rgba(9,13,29,.9);
+}
+.lb-tab.active, .lb-diff-tab.active {
+  color: var(--dr-copy) !important;
+  border-color: rgba(104,220,255,.55) !important;
+  background: linear-gradient(110deg, rgba(35,78,119,.58), rgba(69,39,134,.58)) !important;
+  box-shadow: inset 0 -2px var(--dr-cyan), 0 0 18px rgba(104,220,255,.1);
+}
+#highscores, #globalScores {
+  overflow: hidden;
+  border-radius: 0;
+  clip-path: var(--dr-cut);
+  background: linear-gradient(150deg, rgba(15,21,44,.96), rgba(6,9,21,.97));
+}
+.hs-row, .gs-row { border-bottom: 1px solid rgba(255,255,255,.055); }
+.hs-row:first-child, .gs-row:first-child { color: var(--dr-gold); background: rgba(255,211,107,.035); }
+.hs-rank, .gs-rank { color: var(--dr-cyan); font-weight: 700; }
+#leaderboardReturnBtn, #deathActions > *, #overlay.death-mode #startBtn, #overlay.death-mode #shopBtn {
+  clip-path: var(--dr-cut);
+  border-radius: 0;
+  background: linear-gradient(120deg, rgba(30,78,120,.66), rgba(70,37,139,.66));
+}
+
+/* Phone is deliberately redesigned too: edge-to-edge consoles and swipeable
+   tree lanes instead of the old narrow stack shrunk into the viewport. */
+@media (max-width: 700px) {
+  #guideOverlay { padding-inline: 12px; }
+  #guideOverlay .guide-inner {
+    width: calc(100vw - 24px) !important;
+    max-width: calc(100vw - 24px) !important;
+    min-width: 0;
+  }
+  #guideOverlay #guideCanvas { min-width: 0; max-width: 100%; }
+
+  #guideOverlay { padding: max(54px, calc(var(--safe-top) + 42px)) 10px max(10px, var(--safe-bottom)); }
+  .guide-inner { width: 100%; max-width: 430px; padding: 18px 14px 14px; gap: 12px; }
+  .guide-inner::before { font-size: 7px; }
+  .guide-title { font-size: 21px; }
+  #guideCanvas { width: 100%; max-height: 31dvh; object-fit: contain; }
+  .guide-text { min-height: 4.8em; font-size: 11px; line-height: 1.6; }
+  .guide-nav { width: 100%; justify-content: space-between; }
+  #guideReturnBtn { width: 100%; }
+
+  #statsOverlay { padding: max(56px, calc(var(--safe-top) + 44px)) 10px max(12px, var(--safe-bottom)); }
+  #statsOverlay .stats-title { font-size: 22px; }
+  #statsOverlay .stats-title::after { display: block; margin-top: 7px; }
+  #statsBody { display: grid; grid-template-columns: 1fr; gap: 10px; width: 100%; }
+  #statsOverlay .stats-section { width: 100%; margin: 0; padding: 14px !important; }
+  #statsOverlay .stats-close { position: sticky; bottom: 0; width: 100%; margin-top: 12px; }
+
+  #treeOverlay { padding: max(10px, var(--safe-top)) 0 max(10px, var(--safe-bottom)); }
+  #treeOverlay > .tree-header { width: calc(100% - 20px); }
+  .tree-header { margin-bottom: 10px; }
+  .tree-title::after { display: block; margin-top: 5px; }
+  #treeOverlay > #treePaths {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: min(82vw, 340px);
+    grid-template-columns: none;
+    justify-content: start;
+    gap: 10px;
+    width: 100%;
+    max-width: none;
+    padding: 0 10px 10px;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    scrollbar-width: thin;
+  }
+  .tree-path { scroll-snap-align: center; padding: 12px 10px; gap: 8px; }
+  .tree-path-title { min-height: 34px; font-size: 9px; }
+  .tree-node { min-height: 61px; padding: 10px; }
+  #treeOverlay > .tree-capstones, #treeOverlay > .tree-footer { width: calc(100% - 20px); }
+  .tree-capstones { padding: 10px; }
+  .tree-footer { position: sticky; padding: 8px; }
+
+  #overlay.death-mode, #overlay.leaderboard-mode { padding-inline: 10px; }
+  #overlay.death-mode .title-word, #overlay.leaderboard-mode .title-word { font-size: 38px; letter-spacing: 9px; }
+  #runSummary, #highscores, #globalScores, .lb-tabs, .lb-diff-tabs, #deathActions { width: 100%; }
+  #runSummary { padding: 14px 12px; }
+  .lb-tabs, .lb-diff-tabs { max-width: none; }
+  .lb-tab, .lb-diff-tab { min-height: 42px; font-size: 7px; letter-spacing: .8px; }
+  .lb-tabs, .lb-diff-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .lb-tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .lb-tab, .lb-diff-tab { min-width: 0; padding-inline: 2px; }
+  #highscores, #globalScores { padding: 5px 7px; }
+  #leaderboardReturnBtn { width: 100%; }
+}
+
+@media (min-width: 701px) and (max-width: 1100px) {
+  .guide-inner { width: min(92vw, 780px); }
+  #statsBody { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  #treeOverlay > #treePaths { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+@media (min-width: 1101px) {
+  .guide-inner {
+    grid-template-rows: auto auto minmax(0, 1fr) auto auto !important;
+  }
+  .guide-inner::before { grid-column: 1 / -1; grid-row: 1; }
+  .guide-title { grid-column: 1 / -1 !important; grid-row: 2 !important; }
+  #guideCanvas { grid-column: 1 !important; grid-row: 3 / 5 !important; }
+  .guide-text { grid-column: 2 !important; grid-row: 3 !important; }
+  .guide-nav { grid-column: 2 !important; grid-row: 4 !important; }
+  #guideReturnBtn { grid-column: 1 / -1 !important; grid-row: 5 !important; }
+
+  .guide-inner { min-height: min(680px, 82dvh); }
+  #statsBody { width: min(92vw, 980px); grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  #statsOverlay .stats-section:first-child { grid-column: span 2; }
+  #overlay.leaderboard-mode #highscores,
+  #overlay.leaderboard-mode #globalScores { min-height: 300px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tree-node { transition: none; }
+}

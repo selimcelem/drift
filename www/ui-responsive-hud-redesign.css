@@ -1,0 +1,63 @@
+/* Gameplay HUD: compact instrumentation around a clear play corridor. */
+#topStack.visible {
+  left: 50%;
+  right: auto;
+  width: min(calc(100% - 28px), 270px);
+  padding: 8px 12px 9px;
+  transform: translateX(-50%);
+  box-sizing: border-box;
+  border: 1px solid rgba(112, 218, 255, .18);
+  border-top: 0;
+  border-radius: 0 0 13px 13px;
+  background: linear-gradient(180deg, rgba(8, 13, 32, .88), rgba(6, 9, 23, .62));
+  box-shadow: 0 12px 32px rgba(0, 0, 0, .26), inset 0 -1px rgba(133, 221, 255, .05);
+}
+
+#topStack #scoreRow { padding: 0 28px; }
+#topStack #score { color: #f5fbff; text-shadow: 0 0 14px rgba(100, 215, 255, .72); }
+#topStack #runTimer { color: rgba(199, 226, 255, .86); font-size: 12px; }
+#topStack #streakDisplay { color: #ffd36b; }
+
+#powerupTimer.visible {
+  padding: 7px 13px 9px;
+  border: 1px solid rgba(115, 219, 255, .18);
+  border-radius: 12px;
+  background: rgba(7, 11, 27, .78);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .28);
+}
+
+#powerupTimer .pt-bar { height: 5px; background: rgba(169, 200, 235, .13); }
+
+#burstIndicator,
+#capstoneCountdowns {
+  padding: 8px;
+  border: 1px solid rgba(115, 219, 255, .14);
+  border-radius: 14px;
+  background: rgba(7, 11, 27, .72);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .24);
+}
+
+#burstIndicator .burst-ring,
+.cap-cd-ring { width: 34px !important; height: 34px !important; }
+
+#hintLeft,
+#hintRight {
+  padding: 7px 9px;
+  border: 1px solid rgba(136, 189, 229, .10);
+  border-radius: 999px;
+  background: rgba(5, 8, 20, .42);
+}
+
+@media (max-width: 599px) {
+  #topStack.visible { top: calc(var(--safe-top) + var(--cutout-top, 0px) + 4px); }
+  #hintLeft, #hintRight { bottom: calc(var(--safe-bottom) + 92px); font-size: 9px; }
+  #burstIndicator { right: calc(var(--safe-right) + 10px); }
+  #capstoneCountdowns { left: calc(var(--safe-left) + 10px); }
+}
+
+@media (min-width: 1024px) {
+  #pauseBtn.visible {
+    left: min(calc(100vw - 64px), calc(50vw + 157px)) !important;
+    right: auto !important;
+  }
+}

@@ -6,13 +6,13 @@
 
 | Field | Value |
 |---|---|
-| Status | Phase 1–6 integrated on branch — full responsive UI playtest pass |
+| Status | Full visual migration in progress — responsive containment alone did not meet the redesign brief |
 | Production branch | `main` |
 | Planned work branch | `ui/responsive-rework` |
 | Game UI source | `www/index.html` |
 | Last updated | 2026-07-18 |
-| Last completed phase | Main menu, guide, settings, stats, pause, skill trees, leaderboard/results and shared overlays integrated |
-| Next action | Complete a natural gameplay/death loop playtest, fix runtime-only issues, then prepare the branch for user review |
+| Last completed phase | New component language integrated across menu, guide, settings, stats, pause, progression, leaderboards and shared overlays |
+| Next action | Complete rendered viewport QA and a natural gameplay/death loop before presenting the branch for review |
 
 ## Objective
 
@@ -412,6 +412,25 @@ Do not assume uncommitted files from another machine are available. End each mea
 ## Session log
 
 Add new entries above older entries. Each entry should state the branch, last commit, completed work, verification, unresolved issues and exact next action.
+
+### 2026-07-18 — Full visual redesign migration reopened
+
+- Branch: `ui/responsive-rework`
+- Reason reopened:
+  - The prior pass improved viewport containment but retained too much of the legacy phone presentation and repeated button styling.
+  - Desktop pause and settings chrome could overlap, and the pause panel inherited the portrait game wrapper's coordinate space.
+- Completed:
+  - Added a redesigned compact menu with an orb/loadout card, segmented difficulty control, prominent run CTA, paired navigation and differentiated button states.
+  - Added a tablet two-panel dashboard and rebuilt the desktop menu as a real viewport command deck with a compact action rhythm.
+  - Rebuilt pause, settings and confirmation overlays as centered, bounded surfaces; modal state now hides corner controls.
+  - Restyled guide, statistics, skill trees, leaderboard and result states with a shared DRIFT telemetry/card language.
+  - Added mobile horizontal skill-tree lanes, safe-area handling and short-height desktop/phone adjustments.
+- Verification:
+  - Rendered and reviewed menu, pause, guide, settings, stats, tree, leaderboard, confirmation and username states at 1920×1080, 1024×768 and compact capture widths.
+  - Corrected guide grid ordering, settings implicit-column drift, duplicate compact leaderboard controls and compact navigation text overflow found during QA.
+- Remaining:
+  - Complete a natural gameplay/death sequence and physical Android verification before any merge proposal.
+  - Compact headless Chrome enforces a wider internal layout viewport than its cropped screenshot; final phone verification must use an actual responsive browser/device viewport.
 
 ### 2026-07-18 — End-to-end responsive integration
 

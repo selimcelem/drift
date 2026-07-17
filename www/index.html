@@ -3187,6 +3187,11 @@
 <link rel="stylesheet" href="ui-responsive-secondary.css">
 <link rel="stylesheet" href="ui-responsive-progression.css">
 <link rel="stylesheet" href="ui-responsive.css">
+<link rel="stylesheet" href="ui-responsive-mobile-redesign.css">
+<link rel="stylesheet" href="ui-responsive-screens-redesign.css">
+<link rel="stylesheet" href="ui-responsive-desktop-redesign.css">
+<link rel="stylesheet" href="ui-responsive-hud-redesign.css">
+<link rel="stylesheet" href="ui-responsive-overlays-redesign.css">
 </head>
 <body>
 <div id="debugOverlay"></div>
@@ -43886,7 +43891,7 @@ loop();
 // GitHub Pages, Capacitor builds, or ordinary localhost playtests.
 const uiQaMode = new URLSearchParams(location.search).get('uiqa');
 if ((location.hostname === '127.0.0.1' || location.hostname === 'localhost') && uiQaMode) {
-  setTimeout(() => {
+  {
     startAfterGesture();
     const username = document.getElementById('usernameOverlay');
     if (username) username.style.display = 'none';
@@ -43903,9 +43908,9 @@ if ((location.hostname === '127.0.0.1' || location.hostname === 'localhost') && 
     }
     else if (uiQaMode === 'pause') {
       const pause = document.getElementById('pauseOverlay');
-      if (pause) pause.style.display = 'flex';
+      if (pause) pause.classList.add('visible');
     }
-  }, 150);
+  }
 }
 </script>
 </body>

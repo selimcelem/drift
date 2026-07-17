@@ -1,0 +1,299 @@
+/* DRIFT mobile + tablet interface redesign.
+   Presentation only: the existing HTML IDs and JavaScript state hooks remain
+   authoritative. This layer intentionally stops below the desktop breakpoint. */
+
+@media (max-width: 1023px) {
+  :root {
+    --mobile-surface: rgba(10, 14, 32, .9);
+    --mobile-surface-raised: rgba(16, 21, 47, .96);
+    --mobile-stroke: rgba(132, 213, 255, .24);
+    --mobile-accent: #75dcff;
+    --mobile-violet: #9b73ff;
+  }
+
+  /* Common tactile language. Primary, navigation and destructive controls no
+     longer look like repetitions of the same transparent rectangle. */
+  button {
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+
+  #overlay.menu-mode {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-auto-rows: max-content;
+    align-content: start;
+    align-items: center;
+    justify-items: stretch;
+    gap: 8px 10px !important;
+    min-height: 100dvh;
+    width: 100%;
+    padding: max(15px, env(safe-area-inset-top)) max(14px, env(safe-area-inset-right)) max(18px, env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left));
+    background:
+      radial-gradient(circle at 50% 29%, rgba(83, 102, 255, .12), transparent 34%),
+      linear-gradient(180deg, rgba(1, 2, 12, .12), rgba(1, 2, 12, .7));
+    box-sizing: border-box;
+    overflow-x: clip;
+    overflow-y: auto;
+    scrollbar-width: none;
+  }
+  #overlay.menu-mode::-webkit-scrollbar { display: none; }
+  #overlay.menu-mode > * { min-width: 0; }
+
+  #overlay.menu-mode .title-word,
+  #overlay.menu-mode .subtitle,
+  #overlay.menu-mode .pilot-display,
+  #overlay.menu-mode .version-label,
+  #overlay.menu-mode #difficultySelect,
+  #overlay.menu-mode #orbCrystalBalance,
+  #overlay.menu-mode #orbBrowser,
+  #overlay.menu-mode .controls-hint,
+  #overlay.menu-mode #resumeRunBtn,
+  #overlay.menu-mode #resumeRunInfo,
+  #overlay.menu-mode #startBtn { grid-column: 1 / -1; }
+
+  #overlay.menu-mode .title-word {
+    order: initial;
+    margin: 4px 0 0;
+    font-size: clamp(42px, 14vw, 68px);
+    line-height: .9;
+    letter-spacing: clamp(7px, 3vw, 14px);
+    text-align: center;
+    filter: drop-shadow(0 0 24px rgba(111, 100, 255, .2));
+  }
+  #overlay.menu-mode .subtitle {
+    margin: 0 0 2px;
+    font-size: 8px;
+    letter-spacing: .38em;
+    text-align: center;
+  }
+
+  #overlay.menu-mode .pilot-display {
+    justify-self: start;
+    width: auto;
+    margin: 2px 0 0;
+    padding: 7px 10px;
+    border: 1px solid var(--mobile-stroke);
+    border-radius: 999px;
+    background: rgba(7, 12, 29, .76);
+    text-decoration: none;
+    text-align: left;
+  }
+  #overlay.menu-mode .version-label { display: none; }
+
+  #overlay.menu-mode #orbCrystalBalance {
+    position: absolute;
+    top: max(15px, env(safe-area-inset-top));
+    right: calc(max(14px, env(safe-area-inset-right)) + 49px);
+    width: auto;
+    padding: 8px 11px;
+    border: 1px solid var(--mobile-stroke);
+    border-radius: 999px;
+    background: rgba(7, 12, 29, .88);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, .22);
+    z-index: 5;
+  }
+  #settingsBtn {
+    position: fixed !important;
+    top: max(14px, env(safe-area-inset-top)) !important;
+    right: max(13px, env(safe-area-inset-right)) !important;
+    left: auto !important;
+    width: 42px;
+    height: 42px;
+    border: 1px solid var(--mobile-stroke);
+    border-radius: 50%;
+    background: rgba(9, 14, 33, .92);
+    box-shadow: 0 8px 26px rgba(0, 0, 0, .3);
+  }
+
+  #overlay.menu-mode #difficultySelect {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(60px, 1fr));
+    width: 100%;
+    margin: 5px 0 0;
+    padding: 4px;
+    border: 1px solid rgba(132, 213, 255, .18);
+    border-radius: 13px;
+    background: rgba(7, 10, 25, .88);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.025);
+  }
+  #overlay.menu-mode .diff-btn {
+    min-width: 0;
+    min-height: 42px;
+    padding: 0 3px;
+    border: 0;
+    border-radius: 9px;
+    color: rgba(208, 218, 242, .55);
+    font-size: clamp(7px, 2.35vw, 10px);
+    letter-spacing: .08em;
+  }
+  #overlay.menu-mode .diff-btn.selected {
+    color: #f8fbff;
+    background: linear-gradient(135deg, rgba(53, 146, 202, .52), rgba(108, 66, 207, .58));
+    box-shadow: inset 0 0 0 1px rgba(126, 228, 255, .62), 0 5px 18px rgba(61, 133, 255, .18);
+  }
+
+  /* The orb chooser is now a deliberate card, visually separating loadout
+     choice from the launch controls below it. */
+  #overlay.menu-mode #orbBrowser {
+    width: 100%;
+    margin: 0;
+    padding: 9px 12px 11px;
+    border: 1px solid rgba(132, 213, 255, .16);
+    border-radius: 18px;
+    background:
+      radial-gradient(circle at 50% 32%, rgba(92, 102, 255, .12), transparent 42%),
+      rgba(7, 10, 25, .7);
+    box-shadow: 0 16px 44px rgba(0, 0, 0, .22), inset 0 1px 0 rgba(255,255,255,.025);
+    box-sizing: border-box;
+  }
+  #overlay.menu-mode .orb-nav { width: 100%; }
+  #overlay.menu-mode #orbPreview,
+  #overlay.menu-mode #orbPreviewCanvas {
+    width: clamp(132px, 35vw, 178px) !important;
+    height: clamp(132px, 35vw, 178px) !important;
+  }
+  #overlay.menu-mode .orb-arrow {
+    width: 46px;
+    height: 46px;
+    border: 1px solid rgba(132, 213, 255, .2);
+    border-radius: 50%;
+    background: rgba(18, 24, 51, .8);
+    color: var(--mobile-accent);
+  }
+  #overlay.menu-mode #orbName { margin-top: -5px; font-size: clamp(21px, 6vw, 29px); }
+  #overlay.menu-mode #orbDesc { max-width: 330px; margin: 2px auto; color: rgba(204, 219, 244, .68); }
+  #overlay.menu-mode #orbDots { margin: 4px 0; }
+  #overlay.menu-mode #orbAction button {
+    min-height: 42px;
+    border-radius: 10px;
+    background: rgba(17, 25, 53, .9);
+  }
+
+  #overlay.menu-mode .controls-hint { display: none; }
+  #overlay.menu-mode:not(.leaderboard-mode) #lbTabs,
+  #overlay.menu-mode:not(.leaderboard-mode) #lbDiffTabs,
+  #overlay.menu-mode:not(.leaderboard-mode) #highscores,
+  #overlay.menu-mode:not(.leaderboard-mode) #globalScores,
+  #overlay.menu-mode:not(.leaderboard-mode) #leaderboardReturnBtn {
+    display: none !important;
+  }
+  #overlay.menu-mode #resumeRunInfo { margin: -3px 0 2px; }
+
+  #overlay.menu-mode #startBtn,
+  #overlay.menu-mode #resumeRunBtn {
+    width: 100%;
+    min-height: 58px;
+    margin: 0;
+    padding: 13px 18px;
+    border: 1px solid rgba(124, 231, 255, .84);
+    border-radius: 14px;
+    background: linear-gradient(120deg, rgba(25, 119, 175, .72), rgba(92, 48, 183, .82));
+    color: #e8faff;
+    font-size: clamp(13px, 3.6vw, 17px);
+    letter-spacing: .13em;
+    box-shadow: 0 10px 30px rgba(69, 92, 255, .22), inset 0 1px 0 rgba(255,255,255,.14);
+  }
+  #overlay.menu-mode #resumeRunBtn {
+    border-color: rgba(255, 194, 111, .65);
+    background: linear-gradient(120deg, rgba(154, 88, 31, .66), rgba(102, 57, 142, .72));
+  }
+
+  #overlay.menu-mode #guideBtn,
+  #overlay.menu-mode #leaderboardBtn {
+    width: 100%;
+    min-height: 48px;
+    margin: 0;
+    padding: 10px 8px;
+    border: 1px solid rgba(153, 173, 221, .2);
+    border-radius: 12px;
+    background: rgba(15, 20, 44, .88);
+    color: rgba(226, 234, 255, .84);
+    font-size: clamp(8px, 2.2vw, 10px);
+    letter-spacing: .08em;
+    white-space: nowrap;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.025);
+  }
+  #overlay.menu-mode #guideBtn { grid-column: 1; }
+  #overlay.menu-mode #leaderboardBtn { grid-column: 2; }
+
+  /* Shared modal surfaces follow the same card-and-accent system. */
+  .pause-btn,
+  #guideReturnBtn,
+  #settingsCloseBtn,
+  #leaderboardReturnBtn,
+  #usernameConfirm {
+    min-height: 48px;
+    border-radius: 12px !important;
+    border-color: rgba(132, 213, 255, .24) !important;
+    background: rgba(17, 23, 49, .92) !important;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.035);
+  }
+  #resumeBtn,
+  #guideReturnBtn,
+  #settingsCloseBtn,
+  #usernameConfirm {
+    border-color: rgba(117, 220, 255, .55) !important;
+    background: linear-gradient(120deg, rgba(32, 109, 157, .5), rgba(79, 50, 156, .58)) !important;
+    color: #e9faff !important;
+  }
+  #quitBtn { border-color: rgba(255, 100, 142, .35) !important; color: #ffabc0 !important; }
+
+  #pauseBtn {
+    position: fixed !important;
+    top: max(14px, env(safe-area-inset-top)) !important;
+    right: max(13px, env(safe-area-inset-right)) !important;
+    left: auto !important;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: rgba(9, 14, 33, .9);
+  }
+  #pauseOverlay .pause-menu { width: min(100%, 390px); gap: 10px; }
+}
+
+/* Phones use a compact composition but retain 44px+ targets. */
+@media (max-width: 599px) {
+  #overlay.menu-mode { padding-top: max(12px, env(safe-area-inset-top)); }
+  #overlay.menu-mode .pilot-display { font-size: 8px; }
+  #overlay.menu-mode #orbBrowser { padding-block: 7px 9px; }
+  #overlay.menu-mode #orbTrailRow { margin-block: 1px; }
+}
+
+/* Short phones prioritize play/loadout without falling back to the legacy
+   appearance. The orb card remains recognisable and the screen scrolls. */
+@media (max-width: 599px) and (max-height: 740px) {
+  #overlay.menu-mode { gap: 6px 8px !important; }
+  #overlay.menu-mode .title-word { font-size: 40px; margin-top: 0; }
+  #overlay.menu-mode .subtitle { display: none; }
+  #overlay.menu-mode #orbPreview,
+  #overlay.menu-mode #orbPreviewCanvas { width: 112px !important; height: 112px !important; }
+  #overlay.menu-mode #orbDesc { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+}
+
+/* Tablets use their width: the orb/loadout card and launch controls become a
+   balanced two-panel dashboard instead of an enlarged phone column. */
+@media (min-width: 600px) and (max-width: 1023px) {
+  #overlay.menu-mode {
+    grid-template-columns: minmax(280px, 1.08fr) minmax(260px, .92fr);
+    grid-template-rows: auto auto auto auto auto auto 1fr;
+    column-gap: clamp(20px, 4vw, 42px) !important;
+    row-gap: 12px !important;
+    align-content: center;
+    padding-inline: clamp(28px, 6vw, 72px);
+  }
+  #overlay.menu-mode .title-word,
+  #overlay.menu-mode .subtitle { grid-column: 1; text-align: center; }
+  #overlay.menu-mode .pilot-display { grid-column: 1; justify-self: center; }
+  #overlay.menu-mode #orbBrowser { grid-column: 1; grid-row: 4 / span 5; }
+  #overlay.menu-mode #difficultySelect { grid-column: 2; grid-row: 2; }
+  #overlay.menu-mode #resumeRunBtn { grid-column: 2; grid-row: 3; }
+  #overlay.menu-mode #resumeRunInfo { grid-column: 2; grid-row: 4; }
+  #overlay.menu-mode #startBtn { grid-column: 2; grid-row: 5; }
+  #overlay.menu-mode #guideBtn { grid-column: 2; grid-row: 6; }
+  #overlay.menu-mode #leaderboardBtn { grid-column: 2; grid-row: 7; }
+  #overlay.menu-mode #orbPreview,
+  #overlay.menu-mode #orbPreviewCanvas { width: clamp(170px, 25vw, 230px) !important; height: clamp(170px, 25vw, 230px) !important; }
+  #overlay.menu-mode #guideBtn,
+  #overlay.menu-mode #leaderboardBtn { min-height: 52px; }
+}

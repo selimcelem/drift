@@ -1,0 +1,250 @@
+/* DRIFT responsive overlay redesign
+   Pause, settings and confirmation surfaces share one viewport coordinate
+   system. This file intentionally loads after the legacy responsive layers. */
+
+:root {
+  --ov-bg: rgba(1, 2, 12, .91);
+  --ov-panel: linear-gradient(145deg, rgba(13, 20, 46, .94), rgba(5, 8, 24, .97));
+  --ov-line: rgba(105, 205, 255, .26);
+  --ov-line-hot: rgba(105, 215, 255, .72);
+  --ov-copy: rgba(218, 236, 255, .78);
+  --ov-cyan: #66d9ff;
+  --ov-violet: #9872ff;
+  --ov-radius: 14px;
+}
+
+/* Corner controls belong to gameplay/menu, never above an open modal. */
+#pauseOverlay,
+#settingsOverlay,
+#statsOverlay,
+#usernameOverlay,
+#pgsPromptOverlay,
+#styledConfirm,
+#treeConfirm,
+#treeNodeDetail,
+#treeGlossary {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+}
+
+#pauseOverlay,
+#settingsOverlay {
+  z-index: 120;
+  border-radius: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  background:
+    radial-gradient(circle at 50% 36%, rgba(91, 80, 255, .15), transparent 34rem),
+    linear-gradient(rgba(0, 3, 15, .86), rgba(0, 1, 9, .96));
+}
+
+body:has(#pauseOverlay.visible) #settingsBtn,
+body:has(#settingsOverlay.visible) #settingsBtn,
+body:has(#settingsOverlay.visible) #pauseBtn,
+body:has(#guideOverlay:not(.hidden)) #settingsBtn,
+body:has(#statsOverlay.visible) #settingsBtn,
+body:has(#treeOverlay:not(.hidden)) #settingsBtn,
+body:has(#overlay.leaderboard-mode) #settingsBtn,
+body:has(#overlay.death-mode) #settingsBtn {
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
+#pauseOverlay.visible {
+  display: grid;
+  grid-template-columns: minmax(0, 520px);
+  grid-auto-rows: max-content;
+  place-content: center;
+  justify-items: stretch;
+  gap: 18px;
+  padding: max(28px, calc(env(safe-area-inset-top) + 18px))
+    max(18px, calc(env(safe-area-inset-right) + 18px))
+    max(28px, calc(env(safe-area-inset-bottom) + 18px))
+    max(18px, calc(env(safe-area-inset-left) + 18px));
+}
+
+#pauseOverlay .pause-title,
+#settingsOverlay .pause-title {
+  width: auto;
+  margin: 0;
+  text-align: center;
+  font-size: clamp(27px, 4vw, 48px);
+  line-height: 1;
+  letter-spacing: clamp(7px, 1.1vw, 14px);
+}
+
+#pauseOverlay .pause-menu {
+  width: 100%;
+  padding: clamp(14px, 2.5vw, 24px);
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  box-sizing: border-box;
+  border: 1px solid var(--ov-line);
+  border-radius: var(--ov-radius);
+  background: var(--ov-panel);
+  box-shadow: 0 24px 90px rgba(0, 0, 0, .52), inset 0 1px rgba(255, 255, 255, .025);
+}
+
+#pauseOverlay .pause-btn,
+#settingsOverlay .pause-btn,
+.styled-confirm-btn,
+.tree-confirm-btn {
+  min-height: 48px;
+  padding: 13px 16px;
+  border: 1px solid var(--ov-line);
+  border-radius: 8px;
+  background: rgba(25, 39, 78, .28);
+  color: var(--ov-copy);
+  letter-spacing: 2px;
+  transition: border-color .18s, background .18s, color .18s, transform .18s;
+}
+
+#pauseOverlay .pause-btn:hover,
+#pauseOverlay .pause-btn:focus-visible,
+#settingsOverlay .pause-btn:hover,
+.styled-confirm-btn:hover,
+.tree-confirm-btn:hover {
+  border-color: var(--ov-line-hot);
+  background: linear-gradient(115deg, rgba(44, 145, 207, .20), rgba(104, 66, 210, .22));
+  color: white;
+  box-shadow: 0 0 22px rgba(75, 181, 255, .12);
+}
+
+#pauseOverlay #resumeBtn {
+  grid-column: 1 / -1;
+  min-height: 58px;
+  color: #bcefff;
+  border-color: rgba(100, 220, 255, .64);
+  background: linear-gradient(110deg, rgba(25, 143, 196, .28), rgba(91, 56, 195, .34));
+}
+
+#pauseOverlay #menuBtn { border-color: rgba(168, 145, 255, .34); }
+#pauseOverlay #quitBtn { color: rgba(255, 177, 193, .82); border-color: rgba(255, 101, 137, .28); }
+#pauseOverlay #quitMsg { width: 100%; margin: 0; }
+
+/* Settings is a proper bounded screen, not a stretched list. */
+#settingsOverlay.visible {
+  display: grid;
+  grid-template-columns: minmax(0, 720px);
+  grid-auto-rows: max-content;
+  place-content: center;
+  justify-items: stretch;
+  gap: 18px;
+  padding: max(28px, calc(env(safe-area-inset-top) + 18px))
+    max(18px, calc(env(safe-area-inset-right) + 18px))
+    max(28px, calc(env(safe-area-inset-bottom) + 18px))
+    max(18px, calc(env(safe-area-inset-left) + 18px));
+}
+
+#settingsOverlay .settings-rows {
+  width: 100%;
+  margin: 0;
+  padding: clamp(16px, 3vw, 28px);
+  gap: 8px;
+  border: 1px solid var(--ov-line);
+  border-radius: var(--ov-radius);
+  background: var(--ov-panel);
+  box-shadow: 0 24px 90px rgba(0, 0, 0, .52);
+  box-sizing: border-box;
+}
+
+#settingsOverlay > .pause-title,
+#settingsOverlay > .settings-rows,
+#settingsOverlay > #settingsCloseBtn {
+  grid-column: 1 !important;
+  justify-self: stretch !important;
+}
+
+#settingsOverlay > #settingsCloseBtn {
+  max-width: 720px;
+  margin: 0;
+}
+
+#settingsOverlay .settings-row {
+  min-height: 48px;
+  padding: 9px 10px;
+  gap: 16px;
+  border-bottom: 1px solid rgba(120, 207, 255, .09);
+  box-sizing: border-box;
+}
+
+#settingsOverlay .settings-row:last-child { border-bottom: 0; }
+#settingsOverlay .settings-row-stack { gap: 9px; }
+#settingsOverlay .settings-label { color: rgba(174, 228, 255, .9); }
+#settingsOverlay .settings-help { color: rgba(174, 205, 232, .58); }
+#settingsCloseBtn { width: 100%; }
+
+/* Confirmations use a consistent compact card while retaining their JS APIs. */
+#styledConfirm,
+#treeConfirm,
+#treeNodeDetail,
+#treeGlossary,
+#pgsPromptOverlay {
+  z-index: 180;
+  place-content: center;
+  padding: max(20px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
+    max(20px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  background: rgba(0, 2, 12, .86);
+}
+
+.styled-confirm-inner,
+.tree-confirm-inner,
+#pgsPromptOverlay > div {
+  width: min(100%, 480px);
+  border: 1px solid var(--ov-line-hot);
+  border-radius: var(--ov-radius);
+  background: var(--ov-panel);
+  box-shadow: 0 30px 100px rgba(0, 0, 0, .66), 0 0 36px rgba(88, 158, 255, .10);
+}
+
+@media (max-width: 699px) {
+  #pauseOverlay.visible,
+  #settingsOverlay.visible {
+    place-content: start center;
+    padding-top: max(28px, calc(env(safe-area-inset-top) + 22px));
+  }
+
+  #pauseOverlay .pause-title,
+  #settingsOverlay .pause-title {
+    margin-top: clamp(6px, 5vh, 42px);
+    font-size: clamp(25px, 9vw, 34px);
+  }
+
+  #pauseOverlay .pause-menu {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  #pauseOverlay #resumeBtn { grid-column: auto; }
+
+  #settingsOverlay .settings-rows { padding: 12px; }
+  #settingsOverlay .settings-row,
+  #settingsOverlay .settings-row:not(.settings-row-stack) {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+  #settingsOverlay .settings-toggle,
+  #settingsOverlay .settings-cloud-btn { width: 100%; }
+  #settingsOverlay .toggle-opt { flex: 1 1 0; padding-inline: 5px; }
+}
+
+@media (max-height: 680px) and (min-width: 700px) {
+  #pauseOverlay.visible,
+  #settingsOverlay.visible { place-content: start center; }
+  #pauseOverlay .pause-title,
+  #settingsOverlay .pause-title { font-size: 27px; margin-top: 4px; }
+  #pauseOverlay .pause-menu { padding: 13px; }
+  #pauseOverlay .pause-btn { min-height: 42px; padding-block: 9px; }
+  #settingsOverlay .settings-rows { padding: 12px 18px; }
+  #settingsOverlay .settings-row { min-height: 40px; padding-block: 5px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #pauseOverlay *, #settingsOverlay * { animation: none !important; transition: none !important; }
+}
