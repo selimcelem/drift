@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>DRIFT responsive UI prototype</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="fixes.css">
+</head>
+<body>
+  <div class="prototype-bar" aria-label="Prototype navigation">
+    <strong>DRIFT UI PROTOTYPE</strong>
+    <nav>
+      <button class="prototype-tab active" data-screen="menu">Main menu</button>
+      <button class="prototype-tab" data-screen="guide">Guide</button>
+      <button class="prototype-tab" data-screen="settings">Settings</button>
+      <button class="prototype-tab" data-screen="trees">Skill trees</button>
+    </nav>
+    <a href="../../" target="_blank">Open current game ↗</a>
+  </div>
+
+  <main id="prototype">
+    <section class="screen menu-screen active" data-screen="menu">
+      <div class="starfield" aria-hidden="true"></div>
+      <header class="game-header">
+        <button class="pilot-chip" type="button"><span class="pilot-mark">D</span><span><b>PILOT</b><small>tap to rename</small></span></button>
+        <div class="resource-row"><span class="crystal">◆</span><b>0</b><button class="icon-button" type="button" data-open="settings" aria-label="Settings">⚙</button></div>
+      </header>
+
+      <div class="menu-layout">
+        <section class="orb-stage" aria-label="Selected orb">
+          <div class="brand"><h1>DRIFT</h1><p>gravity surfing</p></div>
+          <div class="orb-wrap">
+            <button class="orb-arrow" id="orbPrev" aria-label="Previous orb">‹</button>
+            <div class="orb" aria-hidden="true"><i></i><i></i><i></i></div>
+            <button class="orb-arrow" id="orbNext" aria-label="Next orb">›</button>
+          </div>
+          <div class="orb-copy"><span class="eyebrow">SELECTED ORB</span><h2 id="orbName">DRIFTER</h2><p id="orbDesc">Balanced. Equal powerup chances.</p></div>
+          <div class="orb-dots" id="orbDots" aria-label="Orb position"></div>
+        </section>
+
+        <section class="menu-actions">
+          <div class="difficulty-block">
+            <span class="eyebrow">DIFFICULTY</span>
+            <div class="segmented" role="group" aria-label="Difficulty">
+              <button class="selected">NORMAL</button><button>HARD</button><button>EXTREME</button><button>IMPOSSIBLE</button>
+            </div>
+          </div>
+          <button class="primary-action" type="button"><span>ENTER THE VOID</span><small>start a new run</small></button>
+          <div class="nav-grid">
+            <button data-open="guide"><span class="nav-icon">?</span><span>GUIDE</span></button>
+            <button data-open="trees"><span class="nav-icon">✦</span><span>SKILL TREES</span></button>
+            <button><span class="nav-icon">⌁</span><span>LEADERBOARD</span></button>
+            <button data-open="settings"><span class="nav-icon">⚙</span><span>SETTINGS</span></button>
+          </div>
+          <p class="controls-copy"><b>LEFT</b> — pull toward nearest body · <b>RIGHT</b> — push away<br>thread the cosmos. don't get absorbed.</p>
+        </section>
+      </div>
+    </section>
+
+    <section class="screen content-screen" data-screen="guide">
+      <header class="screen-header"><button class="back" data-open="menu">←</button><div><span class="eyebrow">FIELD MANUAL</span><h1>GUIDE</h1></div><span id="guideProgress">1 / 6</span></header>
+      <div class="guide-layout">
+        <nav class="chapter-rail" id="chapterRail" aria-label="Guide chapters"></nav>
+        <article class="guide-content">
+          <div class="guide-visual" id="guideVisual" aria-hidden="true"><div class="mini-orb"></div><span class="force left">← ATTRACT</span><span class="force right">REPEL →</span></div>
+          <span class="eyebrow" id="guideChapter">CHAPTER 1</span>
+          <h2 id="guideTitle">CONTROLS</h2>
+          <p id="guideText"></p>
+          <footer><button id="guidePrev">← PREVIOUS</button><button class="primary" id="guideNext">NEXT →</button></footer>
+        </article>
+      </div>
+    </section>
+
+    <section class="screen content-screen" data-screen="settings">
+      <header class="screen-header"><button class="back" data-open="menu">←</button><div><span class="eyebrow">PREFERENCES</span><h1>SETTINGS</h1></div><span class="save-state">SAVED</span></header>
+      <div class="settings-layout">
+        <nav class="settings-rail" aria-label="Settings sections"><button class="active">AUDIO</button><button>DISPLAY</button><button>ACCOUNT</button><button>STATS</button></nav>
+        <div class="settings-content">
+          <section class="setting-group"><h2>AUDIO</h2>
+            <div class="setting-row"><div><b>MUSIC</b><small>Background soundtrack</small></div><div class="segmented compact"><button class="selected">ON</button><button>OFF</button></div></div>
+            <div class="setting-row"><div><b>SFX</b><small>Gameplay and interface sounds</small></div><div class="segmented compact"><button class="selected">ON</button><button>OFF</button></div></div>
+          </section>
+          <section class="setting-group"><h2>DISPLAY</h2>
+            <div class="setting-row stacked"><div><b>FRAME RATE</b><small>Choose battery life or smoother motion</small></div><div class="segmented"><button>30</button><button class="selected">60</button><button>120</button><button>ADAPT</button></div></div>
+            <div class="setting-row stacked"><div><b>RENDER QUALITY</b><small>Lower quality runs cooler and saves battery</small></div><div class="segmented"><button>BATTERY</button><button class="selected">BALANCED</button><button>HIGH</button></div></div>
+          </section>
+          <section class="setting-group slim"><div class="setting-row"><div><b>CLOUD SAVE</b><small>Save progress across supported devices</small></div><button class="secondary">SIGN IN</button></div><div class="setting-row"><div><b>STATS</b><small>View lifetime run statistics</small></div><button class="secondary">OPEN</button></div></section>
+        </div>
+      </div>
+    </section>
+
+    <section class="screen content-screen trees-screen" data-screen="trees">
+      <header class="screen-header"><button class="back" data-open="menu">←</button><div><span class="eyebrow">DRIFTER</span><h1>SKILL TREES</h1></div><span><span class="crystal">◆</span> 0</span></header>
+      <div class="trees-layout">
+        <aside class="tree-legend"><h2>DRIFTER</h2><p>Balanced. Equal powerup chances.</p><div class="legend-row"><i class="state owned"></i>OWNED</div><div class="legend-row"><i class="state available"></i>AVAILABLE</div><div class="legend-row"><i class="state locked"></i>LOCKED</div><button class="secondary">RESPEC TREE</button></aside>
+        <div class="tree-canvas" id="treeCanvas" aria-label="Drifter skill tree">
+          <svg viewBox="0 0 720 520" role="img" aria-label="Three branching skill paths">
+            <g class="links"><path d="M360 70 L180 180 L120 310 M180 180 L240 310 M360 70 L360 190 L310 320 M360 190 L420 320 M360 70 L540 180 L490 310 M540 180 L600 310"/></g>
+            <g class="nodes">
+              <g class="node capstone selected" transform="translate(360 70)" data-title="RAINBOW RUN" data-desc="The Drifter capstone. Complete the connected paths to unlock it."><circle r="34"/><text y="6">✦</text></g>
+              <g class="node owned" transform="translate(180 180)" data-title="GRAVITY WELL" data-desc="Improve the Drifter's attraction control."><circle r="27"/><text y="5">✓</text></g>
+              <g class="node available" transform="translate(360 190)" data-title="BURST CONTROL" data-desc="Strengthen the Drifter's unique burst path."><circle r="27"/><text y="5">+</text></g>
+              <g class="node locked" transform="translate(540 180)" data-title="COMBO PATH" data-desc="Unlock the prerequisite node first."><circle r="27"/><text y="5">◇</text></g>
+              <g class="node owned" transform="translate(120 310)" data-title="DEEP PULL" data-desc="Further improves attraction strength."><circle r="24"/><text y="5">✓</text></g>
+              <g class="node available" transform="translate(240 310)" data-title="CLOSE ORBIT" data-desc="A purchasable Drifter path node."><circle r="24"/><text y="5">+</text></g>
+              <g class="node available" transform="translate(310 320)" data-title="QUICK CHARGE" data-desc="A purchasable burst path node."><circle r="24"/><text y="5">+</text></g>
+              <g class="node locked" transform="translate(420 320)" data-title="DEAD CENTER" data-desc="A later radial-selection upgrade."><circle r="24"/><text y="5">◇</text></g>
+              <g class="node locked" transform="translate(490 310)" data-title="PAIR COMBO" data-desc="Requires the previous combo node."><circle r="24"/><text y="5">◇</text></g>
+              <g class="node locked" transform="translate(600 310)" data-title="STREAK PATH" data-desc="Requires the previous combo node."><circle r="24"/><text y="5">◇</text></g>
+            </g>
+          </svg>
+          <div class="tree-hint">Drag to pan · Pinch or wheel to zoom</div>
+        </div>
+        <aside class="node-detail" id="nodeDetail"><span class="eyebrow">SELECTED NODE</span><h2>RAINBOW RUN</h2><p>The Drifter capstone. Complete the connected paths to unlock it.</p><dl><div><dt>STATUS</dt><dd>LOCKED</dd></div><div><dt>COST</dt><dd>—</dd></div></dl><button class="primary" disabled>UPGRADE</button><button class="secondary">RESPEC NODE</button></aside>
+      </div>
+    </section>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>

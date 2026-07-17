@@ -6,13 +6,13 @@
 
 | Field | Value |
 |---|---|
-| Status | Planning |
+| Status | Phase 0 in progress — interactive prototype started |
 | Production branch | `main` |
 | Planned work branch | `ui/responsive-rework` |
 | Game UI source | `www/index.html` |
 | Last updated | 2026-07-18 |
-| Last completed phase | Initial concept audit |
-| Next action | Commit this plan to `main`, create the work branch, then complete the exact UI/state inventory |
+| Last completed phase | Living plan committed to `main`; feature branch created |
+| Next action | Review the interactive HTML prototype, then complete the exact UI/state inventory and baseline captures |
 
 ## Objective
 
@@ -413,6 +413,25 @@ Do not assume uncommitted files from another machine are available. End each mea
 
 Add new entries above older entries. Each entry should state the branch, last commit, completed work, verification, unresolved issues and exact next action.
 
+### 2026-07-18 — Branch created and interactive prototype started
+
+- Branch: `ui/responsive-rework`
+- Base commit: `28cb4f2` (`docs(ui): add responsive rework plan`)
+- Completed:
+  - Committed the living plan to `main` and created the feature branch from it.
+  - Added `mockups/ui-prototype/`, an interactive responsive HTML/CSS prototype separate from the production game.
+  - Added real main-menu labels, shipped orb names/descriptions, the six real guide chapters, real settings, and the existing skill-tree actions.
+  - Added compact, medium and wide responsive layouts plus direct hash links for each prototype screen.
+- Verification:
+  - Rendered the prototype at 1366 × 768 and 412 × 915.
+  - Confirmed the current game remains untouched and available alongside the prototype.
+- Unresolved:
+  - Skill-tree example node names still need a complete source-of-truth pass before implementation.
+  - Resume-run, leaderboard, stats, gameplay HUD, pause and result screens are not yet included in the interactive prototype.
+  - Exact UI/state inventory is not yet complete.
+- Next action:
+  - Review the main menu, guide, settings and responsive skill-tree structure in the prototype; record requested changes before transferring any design into `www/index.html`.
+
 ### 2026-07-18 — Planning and concept audit
 
 - Branch: `main`
@@ -432,4 +451,3 @@ Add new entries above older entries. Each entry should state the branch, last co
   - Mockup commit/storage decision remains open.
 - Next action:
   - Commit this document to `main`, decide whether to include the mockups, then create `ui/responsive-rework` and complete Phase 0 inventory.
-

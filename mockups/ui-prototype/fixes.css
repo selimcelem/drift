@@ -1,0 +1,13 @@
+body { overflow-x: hidden; }
+
+.nav-grid button,
+.nav-grid span,
+.resource-row { min-width: 0; }
+
+@media (max-width: 680px) {
+  .menu-actions,
+  .nav-grid { width: 100%; min-width: 0; }
+  .nav-grid button { overflow: hidden; }
+  .nav-grid button span:last-child { font-size: 8px; white-space: nowrap; }
+  .segmented { max-width: 100%; }
+}
