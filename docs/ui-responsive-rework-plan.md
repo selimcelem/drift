@@ -6,13 +6,13 @@
 
 | Field | Value |
 |---|---|
-| Status | Phase 0 in progress — interactive prototype started |
+| Status | Phase 1 in progress — responsive foundations and playable main menu started |
 | Production branch | `main` |
 | Planned work branch | `ui/responsive-rework` |
 | Game UI source | `www/index.html` |
 | Last updated | 2026-07-18 |
-| Last completed phase | Living plan committed to `main`; feature branch created |
-| Next action | Review the interactive HTML prototype, then complete the exact UI/state inventory and baseline captures |
+| Last completed phase | Interactive HTML prototype and first responsive branch stylesheet |
+| Next action | Playtest the real main menu at compact and wide sizes, then migrate shared modals and guide/settings |
 
 ## Objective
 
@@ -412,6 +412,27 @@ Do not assume uncommitted files from another machine are available. End each mea
 ## Session log
 
 Add new entries above older entries. Each entry should state the branch, last commit, completed work, verification, unresolved issues and exact next action.
+
+### 2026-07-18 — Playable branch migration started
+
+- Branch: `ui/responsive-rework`
+- Starting commit: `2347c2c` (`feat(ui): add responsive HTML prototype`)
+- Completed:
+  - Added `www/ui-responsive.css` and loaded it after the legacy embedded stylesheet.
+  - Added shared responsive tokens, safe-area variables, visible keyboard focus and reduced-motion handling.
+  - Reworked the real main menu into a wide two-column composition at 1024px and above.
+  - Refined compact phone sizing and action reachability below 600px.
+  - Preserved all real element IDs and JavaScript behavior; this is a visual/layout layer only.
+- Verification:
+  - Confirmed the stylesheet is served from the local branch build.
+  - Confirmed the HTML change only adds the branch stylesheet after legacy CSS.
+  - `git diff --check` passes.
+- Unresolved:
+  - Clean headless sessions still stop on the existing 76% loading state, so visual confirmation of the live menu requires a normal playtest session.
+  - Tablet-specific tuning between 600px and 1023px still uses the legacy layout pending playtest.
+  - Guide, settings, skill trees, gameplay HUD and result screens have not yet migrated into the playable game.
+- Next action:
+  - Playtest the real branch menu at phone and desktop sizes, fix any live-state layout issues, then migrate guide/settings and shared modal foundations.
 
 ### 2026-07-18 — Branch created and interactive prototype started
 
