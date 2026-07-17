@@ -43897,6 +43897,10 @@ if ((location.hostname === '127.0.0.1' || location.hostname === 'localhost') && 
     else if (uiQaMode === 'leaderboard') openLeaderboardFromMenu();
     else if (uiQaMode === 'username') showUsernamePrompt();
     else if (uiQaMode === 'confirm') showStyledConfirm('CONFIRM', 'Responsive layout verification.', 'CONFIRM', 'CANCEL', () => {});
+    else if (uiQaMode === 'gameplay') {
+      saveTutorialCompleted(true);
+      document.getElementById('startBtn')?.click();
+    }
     else if (uiQaMode === 'pause') {
       const pause = document.getElementById('pauseOverlay');
       if (pause) pause.style.display = 'flex';

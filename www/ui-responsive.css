@@ -21,6 +21,15 @@
   --ui-content-max: 1440px;
 }
 
+/* Gameplay must always win over any layout mode retained on the overlay.
+   These flags protect the hidden state from the more specific desktop
+   menu/grid selectors below while its fade transition completes. */
+#overlay.hidden {
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
 @media (min-width: 1024px) {
   body {
     background:
