@@ -49,6 +49,12 @@ This is a UI and responsive-layout project. Existing gameplay rules, progression
   - Natural playthrough QA for every orb/skin, combination effect, death/result transition and pause/resume path.
   - Physical Android and iPad testing for safe areas, touch targets, performance and haptics.
 
+### Phone follow-up corrections
+
+- Replaced `:has()`-only skill-tree currency suppression with explicit open/close state handling for older Android WebViews.
+- Matched the Settings Close button's border-box width to the phone settings card.
+- Made Pause available during the first-run tutorial and taught Resume to return to the tutorial state.
+
 ## Ground truth and constraints
 
 - The game and its UI currently live primarily in the single file `www/index.html`.

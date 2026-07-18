@@ -38253,7 +38253,9 @@ function tutorialBegin(difficultyKey) {
   document.getElementById('overlay').classList.add('hidden');
   const _to = document.getElementById('tutorialOverlay');
   if (_to) _to.classList.remove('visible');
-  pauseBtn.classList.remove('visible'); // can't pause mid-tutorial
+  // The tutorial is still an in-run experience. Keep Pause available on
+  // phones as well as desktop so first-time players are never trapped in it.
+  pauseBtn.classList.add('visible');
   // Music: keep menu music until the tutorial completes; crossfade to gameplay
   // happens in tutorialFinish.
   tutorialEnterStep(0);
@@ -40076,8 +40078,10 @@ function _sdGlitchOverlay(intensity) {
 // removed — the death screen's normal "+N crystals" line already shows
 // the payout, so the separate pop-up was redundant.
 
+let pauseReturnState = 'playing';
 function pauseGame() {
-  if (state !== 'playing') return;
+  if (state !== 'playing' && state !== 'tutorial') return;
+  pauseReturnState = state;
   state = 'paused';
   leftDown = false; rightDown = false;
   SFX.pauseMusic();
@@ -40094,7 +40098,8 @@ function pauseGame() {
 
 function resumeGame() {
   if (state !== 'paused') return;
-  state = 'playing';
+  state = pauseReturnState === 'tutorial' ? 'tutorial' : 'playing';
+  pauseReturnState = 'playing';
   SFX.resumeMusic();
   if (runPauseStart) applyPauseDeltaShift(Date.now() - runPauseStart);
   runPauseStart = 0;
@@ -42321,6 +42326,10 @@ function openTreeOverlay(orbKey) {
   if (!treeUnlocked(treeUiCurrentOrb)) return;
   renderTreeOverlay();
   document.getElementById('treeOverlay').classList.add('visible');
+  // Do not rely on :has() support to suppress the menu currency badge. Older
+  // Android WebViews can otherwise place it directly over treeCrystals.
+  const menuBalance = document.getElementById('orbCrystalBalance');
+  if (menuBalance) menuBalance.style.visibility = 'hidden';
   // v1.6.4 perf: duck menu music — see openSettings rationale.
   if (state === 'idle') { try { SFX.pauseMusic(); } catch {} }
 }
@@ -42332,7 +42341,10 @@ function closeTreeOverlay() {
   // Crystal balance may have changed from tree purchases — reflect it on the
   // main menu so players don't see stale HUD after closing the tree screen.
   const cb = document.getElementById('orbCrystalBalance');
-  if (cb) cb.textContent = '💎 ' + formatCrystals(totalCrystals);
+  if (cb) {
+    cb.textContent = '💎 ' + formatCrystals(totalCrystals);
+    cb.style.visibility = '';
+  }
   // Keep the shop's orb browser (costs vs crystals) in sync too.
   if (typeof refreshOrbBrowser === 'function') {
     try { refreshOrbBrowser(); } catch {}

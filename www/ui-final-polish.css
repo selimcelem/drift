@@ -45,6 +45,15 @@ body:has(#overlay.death-mode) #orbCrystalBalance {
   display: none !important;
 }
 
+/* Keep the settings action aligned with the actual settings card. Some phone
+   engines otherwise add its border/padding outside the declared width. */
+#settingsOverlay > #settingsCloseBtn {
+  width: 100% !important;
+  max-width: 380px !important;
+  box-sizing: border-box !important;
+  align-self: center !important;
+}
+
 /* Fullscreen progression should use the display, not preserve 200px mobile
    columns at the left edge. All custom trees use .dv2-tree-col. */
 @media (min-width: 1100px) {
