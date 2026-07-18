@@ -54,6 +54,7 @@ This is a UI and responsive-layout project. Existing gameplay rules, progression
 - Replaced `:has()`-only skill-tree currency suppression with explicit open/close state handling for older Android WebViews.
 - Matched the Settings Close button's border-box width to the phone settings card.
 - Made Pause available during the first-run tutorial and taught Resume to return to the tutorial state.
+- Removed the extra Hyperspeed three-streak pickup mark and Shield semicircle accent after physical-phone review; the shared activation glow remains.
 
 ## Ground truth and constraints
 

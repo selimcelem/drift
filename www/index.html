@@ -25748,17 +25748,11 @@ function drawActivationCues() {
       }
     } else {
       ctx.lineWidth = 2;
-      if (v.key === 'shield') {
-        ctx.beginPath(); ctx.arc(0, 0, r * 0.68, Math.PI * 0.12, Math.PI * 0.88); ctx.stroke();
-      } else if (v.key === 'nova') {
+      if (v.key === 'nova') {
         for (let i = 0; i < 8; i++) {
           const a = i * Math.PI / 4;
           ctx.beginPath(); ctx.moveTo(Math.cos(a) * r * 0.48, Math.sin(a) * r * 0.48);
           ctx.lineTo(Math.cos(a) * r * 0.78, Math.sin(a) * r * 0.78); ctx.stroke();
-        }
-      } else if (v.key === 'hyperspeed') {
-        for (const dx of [-8, 0, 8]) {
-          ctx.beginPath(); ctx.moveTo(dx, r * 0.48); ctx.lineTo(dx, -r * 0.62); ctx.stroke();
         }
       } else if (v.key === 'ghost') {
         ctx.globalAlpha *= 0.75;
