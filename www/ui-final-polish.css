@@ -1,0 +1,102 @@
+/* Cross-screen corrections found during breakpoint and state QA. */
+
+/* The clipped top-left / bottom-right silhouette was too aggressive for
+   interactive controls. Panels may keep angled framing; buttons do not. */
+button { clip-path: none !important; }
+
+@media (max-width: 1023px) {
+  #overlay.menu-mode .pilot-display {
+    align-self: center !important;
+    justify-self: center !important;
+    text-align: center !important;
+  }
+
+  #overlay.menu-mode .menu-nav-row > #guideBtn,
+  #overlay.menu-mode .menu-nav-row > #leaderboardBtn {
+    grid-column: auto !important;
+    grid-row: auto !important;
+    justify-self: stretch !important;
+  }
+
+  body:has(#pauseBtn.visible) #settingsBtn {
+    display: none !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+  }
+
+  #pauseBtn.visible {
+    display: flex !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    top: max(14px, env(safe-area-inset-top)) !important;
+    right: max(12px, env(safe-area-inset-right)) !important;
+    left: auto !important;
+    z-index: 302 !important;
+  }
+}
+
+body:has(#guideOverlay:not(.hidden)) #orbCrystalBalance,
+body:has(#settingsOverlay.visible) #orbCrystalBalance,
+body:has(#statsOverlay.visible) #orbCrystalBalance,
+body:has(#treeOverlay.visible) #orbCrystalBalance,
+body:has(#pauseOverlay.visible) #orbCrystalBalance,
+body:has(#overlay.leaderboard-mode) #orbCrystalBalance,
+body:has(#overlay.death-mode) #orbCrystalBalance {
+  display: none !important;
+}
+
+/* Fullscreen progression should use the display, not preserve 200px mobile
+   columns at the left edge. All custom trees use .dv2-tree-col. */
+@media (min-width: 1100px) {
+  #treeOverlay {
+    padding-inline: clamp(36px, 5vw, 96px) !important;
+  }
+
+  #treeOverlay > .tree-header,
+  #treeOverlay > #treePaths,
+  #treeOverlay > .tree-capstones,
+  #treeOverlay > .tree-footer {
+    width: min(92vw, 1500px) !important;
+    max-width: 1500px !important;
+  }
+
+  #treeOverlay > #treePaths {
+    justify-content: center !important;
+    justify-items: stretch;
+    overflow-x: visible !important;
+    overflow-y: visible !important;
+    max-height: none !important;
+    min-height: 590px;
+    gap: clamp(30px, 4vw, 72px) !important;
+  }
+
+  #treeOverlay .tree-path {
+    min-width: 0;
+    padding: 20px;
+    border: 1px solid rgba(110, 210, 255, .14);
+    background: linear-gradient(165deg, rgba(16, 23, 50, .78), rgba(6, 9, 23, .62));
+  }
+
+  #treeOverlay .tree-node {
+    min-height: 70px;
+    padding: 13px 14px;
+  }
+
+  #treeOverlay .tree-node-name { font-size: 12px; }
+  #treeOverlay .tree-node-meta { font-size: 10px; }
+
+  #treeOverlay .dv2-tree-col {
+    transform: scale(1.38);
+    transform-origin: top center;
+    margin: 0 34px 165px !important;
+  }
+}
+
+@media (min-width: 1600px) and (min-height: 900px) {
+  #treeOverlay > #treePaths { min-height: 670px; }
+  #treeOverlay .dv2-tree-col {
+    transform: scale(1.5);
+    margin-inline: 48px !important;
+    margin-bottom: 220px !important;
+  }
+}

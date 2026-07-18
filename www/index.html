@@ -3193,6 +3193,8 @@
 <link rel="stylesheet" href="ui-responsive-hud-redesign.css">
 <link rel="stylesheet" href="ui-responsive-overlays-redesign.css">
 <link rel="stylesheet" href="ui-menu-v2.css">
+<link rel="stylesheet" href="ui-final-polish.css">
+<link rel="stylesheet" href="ui-gameplay-minimal.css">
 </head>
 <body>
 <div id="debugOverlay"></div>
@@ -3318,7 +3320,7 @@
     <button id="guideClose" aria-label="Close">✕</button>
     <div class="guide-inner">
       <div id="guideTitle" class="guide-title">CONTROLS</div>
-      <canvas id="guideCanvas" width="320" height="200"></canvas>
+      <canvas id="guideCanvas" width="640" height="400"></canvas>
       <div id="guideText" class="guide-text"></div>
       <div class="guide-nav">
         <button class="guide-arrow" id="guidePrev" aria-label="Previous">◀</button>
@@ -20704,6 +20706,15 @@ let novaRings = [];
 let screenShake = 0;
 const SCREEN_SHAKE_CAP = 40;
 const SCREEN_SHAKE_DECAY_PER_SEC = 60; // matches the old 60fps frame-counter
+// Short, event-level haptics complement the visual impact on Android without
+// buzzing for routine movement or every destroyed body. Desktop browsers and
+// devices without vibration support simply ignore this.
+function impactHaptic(pattern) {
+  try {
+    if (document.visibilityState !== 'visible' || !navigator.vibrate) return;
+    navigator.vibrate(pattern);
+  } catch {}
+}
 function addShake(value) {
   if (value <= 0) return;
   screenShake = Math.min(SCREEN_SHAKE_CAP, Math.max(screenShake, value));
@@ -20739,6 +20750,7 @@ function shakeBurst(orb) {
           : orb === 'nebula'   ? 6
           : 6;
   addShake(v);
+  impactHaptic(18);
 }
 function shakeCombo(_comboKey, isFresh) {
   // Fresh activation gets a thump; refresh is quieter — the combo's
@@ -20746,6 +20758,7 @@ function shakeCombo(_comboKey, isFresh) {
   // shakes via shakeMassDestroy on kill loops.
   // v1.7.0: bumped (was 5/1).
   addShake(isFresh ? 7 : 2);
+  if (isFresh) impactHaptic(10);
 }
 function shakeCapstone(capstone) {
   // v1.7.0: bumped values across the board.
@@ -20768,6 +20781,7 @@ function shakePlayerDeath(cause) {
   // v1.7.0: bumped (was 14/35).
   const v = (cause === 'apocalypse') ? 38 : 18;
   addShake(v);
+  impactHaptic(cause === 'apocalypse' ? [28, 32, 55] : [22, 28, 38]);
 }
 
 // Hitstop primitive — physics gate. update() returns early while
@@ -20782,6 +20796,12 @@ function triggerHitstop(ms) {
 }
 
 let pickupParticles = [];
+// Short, gameplay-only activation punctuation. This complements persistent
+// effect rendering without adding another HUD element. The cap and lifetime
+// keep rapid proc chains readable and cheap on mobile GPUs.
+let activationCues = [];
+const ACTIVATION_CUE_CAP = 10;
+const ACTIVATION_CUE_LIFE_MS = 620;
 // v1.6.3 visual pass: Salvage (Bulwark Opportunism T1) crystal sparkles.
 // Each entry {x, y, vx, vy, startTime, maxLifeMs}; life = 1 - age/maxLife.
 let salvageSparkles = [];
@@ -20903,6 +20923,7 @@ function cleanupEffects() {
   if (destroyEffects.length > DESTROY_EFFECTS_CAP) destroyEffects = destroyEffects.slice(destroyEffects.length - DESTROY_EFFECTS_CAP);
   if (crackFragments.length > CRACK_FRAGMENTS_CAP) crackFragments = crackFragments.slice(crackFragments.length - CRACK_FRAGMENTS_CAP);
   if (pickupParticles.length > PICKUP_PART_CAP) pickupParticles = pickupParticles.slice(pickupParticles.length - PICKUP_PART_CAP);
+  if (activationCues.length > ACTIVATION_CUE_CAP) activationCues = activationCues.slice(activationCues.length - ACTIVATION_CUE_CAP);
   // Gradient cache grows by (radius, mouthT) bucket combinations as new bodies
   // spawn. Unbounded it would slowly accumulate over a long run; wipe it when
   // it crosses 200 entries. Cached gradients are cheap to rebuild on demand.
@@ -25677,6 +25698,78 @@ function emitPickupParticles(x, y, type) {
   trimParticles();
 }
 
+function emitActivationCue(kind, key, x, y, isRefresh) {
+  const combo = kind === 'combo' ? COMBO_DEFS[key] : null;
+  const power = kind === 'powerup' ? POWERUP_COLORS[key] : null;
+  pushCapped(activationCues, {
+    kind, key, x, y,
+    rgb: combo ? combo.color : (power ? power.rgb : '150,225,255'),
+    startTime: Date.now(),
+    maxLifeMs: isRefresh ? 360 : ACTIVATION_CUE_LIFE_MS,
+    refresh: !!isRefresh,
+  }, ACTIVATION_CUE_CAP);
+}
+
+function drawActivationCues() {
+  if (!activationCues.length) return;
+  const now = Date.now();
+  activationCues = activationCues.filter(v => now - v.startTime < v.maxLifeMs);
+  for (const v of activationCues) {
+    const t = Math.max(0, Math.min(1, (now - v.startTime) / v.maxLifeMs));
+    const ease = 1 - Math.pow(1 - t, 3);
+    const fade = Math.pow(1 - t, 1.5);
+    const r = v.kind === 'combo' ? 24 + ease * 74 : 18 + ease * 38;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.translate(v.x, v.y);
+    const glow = ctx.createRadialGradient(0, 0, 0, 0, 0, r * 0.72);
+    glow.addColorStop(0, `rgba(${v.rgb},${0.28 * fade})`);
+    glow.addColorStop(1, `rgba(${v.rgb},0)`);
+    ctx.fillStyle = glow;
+    ctx.beginPath(); ctx.arc(0, 0, r * 0.72, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = `rgba(${v.rgb},${0.9 * fade})`;
+    ctx.lineWidth = v.kind === 'combo' ? 2.4 : 1.7;
+    ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.stroke();
+
+    if (v.kind === 'combo') {
+      const spin = t * Math.PI * 1.35;
+      ctx.lineWidth = 3.1;
+      for (let i = 0; i < 4; i++) {
+        const a = spin + i * Math.PI / 2;
+        ctx.beginPath(); ctx.arc(0, 0, r * 0.72, a, a + 0.48); ctx.stroke();
+      }
+      if (!v.refresh) {
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.globalAlpha = Math.min(1, t * 5) * fade;
+        ctx.fillStyle = COMBO_DEFS[v.key]?.labelColor || `rgba(${v.rgb},1)`;
+        ctx.font = '700 10px "Orbitron", monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(COMBO_DEFS[v.key]?.name || 'COMBO', 0, -30 - ease * 16);
+      }
+    } else {
+      ctx.lineWidth = 2;
+      if (v.key === 'shield') {
+        ctx.beginPath(); ctx.arc(0, 0, r * 0.68, Math.PI * 0.12, Math.PI * 0.88); ctx.stroke();
+      } else if (v.key === 'nova') {
+        for (let i = 0; i < 8; i++) {
+          const a = i * Math.PI / 4;
+          ctx.beginPath(); ctx.moveTo(Math.cos(a) * r * 0.48, Math.sin(a) * r * 0.48);
+          ctx.lineTo(Math.cos(a) * r * 0.78, Math.sin(a) * r * 0.78); ctx.stroke();
+        }
+      } else if (v.key === 'hyperspeed') {
+        for (const dx of [-8, 0, 8]) {
+          ctx.beginPath(); ctx.moveTo(dx, r * 0.48); ctx.lineTo(dx, -r * 0.62); ctx.stroke();
+        }
+      } else if (v.key === 'ghost') {
+        ctx.globalAlpha *= 0.75;
+        ctx.beginPath(); ctx.arc(-r * 0.18, 0, r * 0.58, -1.2, 1.2); ctx.stroke();
+        ctx.beginPath(); ctx.arc(r * 0.18, 0, r * 0.58, 1.94, 4.34); ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
+}
+
 // v1.6.3 visual pass: Salvage sparkle spawner. Emits a tiny cyan diamond
 // that drifts upward and fades out over ~700 ms. Capped to avoid runaway
 // growth at high kill rates (rank-3 Salvage procs 10% per destroy).
@@ -26525,10 +26618,12 @@ function _activateCombo_default(key, x, y) {
     // Eternal Phantom takes precedence over Spectral Rush for the label — its
     // ghost timer is longer and defines the dominant effect.
     lastComboLabel = (key === 'hyperspeed_ghost' && activeCombos.ghost_ghost) ? 'ghost_ghost' : key;
+    emitActivationCue('combo', key, player.x, player.y, true);
     shakeCombo(key, false); // refresh — almost silent
     return;
   }
   lastComboLabel = (key === 'hyperspeed_ghost' && activeCombos.ghost_ghost) ? 'ghost_ghost' : key;
+  emitActivationCue('combo', key, player.x, player.y, false);
   shakeCombo(key, true);    // fresh activation
   triggerHitstop(30);        // brief pause so the combo lands with weight
   // v1.7.0 stats: count fresh combo activations only (refresh path returns
@@ -27242,6 +27337,10 @@ function activatePowerup(type, x, y) {
     }
   }
 
+  // Natural singles get their own compact signature. A combo draws its larger
+  // pair cue inside activateCombo instead, avoiding two overlapping rings.
+  if (!key) emitActivationCue('powerup', type, player.x, player.y, false);
+
   // The new pickup always activates its own individual effect timer, and
   // the combo (if any) stacks on top with a fresh activation.
   rawActivate(type, x, y);
@@ -27405,6 +27504,7 @@ function resetGame(isResume) {
   hitstopUntil = 0;
   empRings = [];
   pickupParticles = [];
+  activationCues = [];
   salvageSparkles = [];
   twilightEchoVisuals = [];
   butterflyEffectVisuals = [];
@@ -34904,6 +35004,11 @@ function drawPlayer(tctx = ctx) {
   }, ctx);
   ctx.fillStyle = core; ctx.beginPath(); ctx.arc(0,0,PLAYER_R,0,6.28); ctx.fill();
 
+  // Mirror the menu preview's identity marks in play at a deliberately subtle
+  // scale. This improves recognition without expanding the collision read or
+  // competing with shield/ghost/powerup state effects.
+  drawOrbIdentity(ctx, activeOrb, 0, 0, PLAYER_R, performance.now() / 1000, ghostAlpha * 0.9);
+
   // v1.7.0 polish r6: BULWARK ELECTRIC BALL — when Tectonic is equipped,
   // overlay the orb with a glowing greyish-white electric sphere featuring
   // crackling arcs that regenerate every ~80 ms. Shield/fortress states
@@ -36774,6 +36879,7 @@ function render() {
       if (!pixiActive) drawPlayer();
     }
     drawPickupParticles();
+    drawActivationCues();
     drawSalvageSparkles();
     drawTwilightEchoVisuals();
     drawButterflyEffectVisuals();
@@ -40630,6 +40736,95 @@ function drawTeaseOrbPreview(cw, ch, color) {
   g.fillText('?', cx, cy + 2);
   g.restore();
 }
+
+// A small, shared identity pass for the orb core. Historically every menu
+// preview was the same radial-gradient ball with a different tint, making the
+// roster (and especially its upgraded forms) hard to distinguish at a glance.
+// These marks use only each shipped orb's existing visual language; they do
+// not imply new abilities. The helper is intentionally cheap enough to reuse
+// on the gameplay player sprite.
+function drawOrbIdentity(ctx, orbKey, x, y, r, t, alpha) {
+  const a = alpha == null ? 1 : alpha;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.globalAlpha *= a;
+  ctx.lineCap = 'round';
+
+  if (orbKey === 'cyan' || orbKey === 'drifterV2') {
+    // Drifter: balanced, precise latitude bands; the enhanced orb breathes.
+    const pulse = orbKey === 'drifterV2' ? 0.72 + Math.sin(t * 2.2) * 0.18 : 0.72;
+    ctx.strokeStyle = `rgba(225,252,255,${pulse})`;
+    ctx.lineWidth = Math.max(0.65, r * 0.075);
+    for (const yy of [-0.34, 0.28]) {
+      ctx.beginPath();
+      ctx.ellipse(0, r * yy, r * 0.72, r * 0.18, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    if (orbKey === 'drifterV2') {
+      ctx.strokeStyle = 'rgba(185,150,255,0.75)';
+      ctx.beginPath(); ctx.arc(0, 0, r * 1.22, t * 0.8, t * 0.8 + 1.9); ctx.stroke();
+    }
+  } else if (orbKey === 'cosmic' || orbKey === 'phantomV2') {
+    // Phantom: an eclipsed/crescent core with a drifting spectral filament.
+    ctx.fillStyle = 'rgba(18,8,36,0.48)';
+    ctx.beginPath(); ctx.arc(r * 0.28, r * 0.04, r * 0.72, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = orbKey === 'phantomV2'
+      ? 'rgba(225,190,255,0.9)' : 'rgba(215,175,255,0.72)';
+    ctx.lineWidth = Math.max(0.7, r * 0.09);
+    ctx.beginPath();
+    ctx.arc(-r * 0.06, 0, r * 0.68, -1.15 + Math.sin(t) * 0.08, 1.2);
+    ctx.stroke();
+  } else if (orbKey === 'solar' || orbKey === 'helios') {
+    // Inferno/Helios: rotating corona rays, hotter and denser for Helios.
+    const rays = orbKey === 'helios' ? 10 : 8;
+    ctx.strokeStyle = orbKey === 'helios' ? 'rgba(255,248,190,0.9)' : 'rgba(255,215,120,0.78)';
+    ctx.lineWidth = Math.max(0.65, r * 0.07);
+    for (let i = 0; i < rays; i++) {
+      const q = i * Math.PI * 2 / rays + t * (orbKey === 'helios' ? 0.32 : 0.2);
+      const inner = r * 0.72, outer = r * (0.94 + 0.1 * Math.sin(t * 3 + i));
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(q) * inner, Math.sin(q) * inner);
+      ctx.lineTo(Math.cos(q) * outer, Math.sin(q) * outer);
+      ctx.stroke();
+    }
+  } else if (orbKey === 'nebula' || orbKey === 'tachyon') {
+    // Warp/Tachyon: compressed speed bands; Tachyon carries a violet split.
+    ctx.strokeStyle = 'rgba(220,248,255,0.8)';
+    ctx.lineWidth = Math.max(0.65, r * 0.075);
+    for (const xx of [-0.42, 0, 0.42]) {
+      ctx.beginPath();
+      ctx.moveTo(r * xx, -r * (0.64 + Math.abs(xx) * 0.2));
+      ctx.lineTo(r * xx, r * (0.64 + Math.abs(xx) * 0.2));
+      ctx.stroke();
+    }
+    if (orbKey === 'tachyon') {
+      ctx.strokeStyle = 'rgba(220,165,255,0.85)';
+      ctx.beginPath(); ctx.moveTo(-r * 0.62, r * 0.22); ctx.lineTo(r * 0.62, -r * 0.22); ctx.stroke();
+    }
+  } else if (orbKey === 'asteroid') {
+    // Bulwark: angular plates and a central fault line.
+    ctx.strokeStyle = 'rgba(245,240,225,0.66)';
+    ctx.lineWidth = Math.max(0.7, r * 0.075);
+    ctx.beginPath();
+    ctx.moveTo(-r * 0.7, -r * 0.18); ctx.lineTo(-r * 0.18, -r * 0.62);
+    ctx.lineTo(r * 0.58, -r * 0.3); ctx.lineTo(r * 0.7, r * 0.35);
+    ctx.lineTo(r * 0.05, r * 0.68); ctx.lineTo(-r * 0.7, -r * 0.18);
+    ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-r * 0.12, -r * 0.58); ctx.lineTo(r * 0.08, r * 0.62); ctx.stroke();
+  } else if (orbKey === 'leviathan') {
+    // Leviathan: layered maelstrom arcs with a dark abyssal eye.
+    ctx.strokeStyle = 'rgba(190,255,235,0.72)';
+    ctx.lineWidth = Math.max(0.7, r * 0.08);
+    for (let i = 0; i < 3; i++) {
+      ctx.beginPath();
+      ctx.arc(0, 0, r * (0.32 + i * 0.22), t * 0.35 + i * 1.8, t * 0.35 + i * 1.8 + 2.3);
+      ctx.stroke();
+    }
+    ctx.fillStyle = 'rgba(0,25,35,0.7)';
+    ctx.beginPath(); ctx.arc(0, 0, r * 0.2, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.restore();
+}
 function drawOrbPreview() {
   const cw = orbPreviewCanvas.width, ch = orbPreviewCanvas.height;
   orbPreviewCtx.clearRect(0, 0, cw, ch);
@@ -40747,6 +40942,10 @@ function drawOrbPreview() {
   orbPreviewCtx.fillStyle = core;
   orbPreviewCtx.beginPath(); orbPreviewCtx.arc(cx, cy, 20, 0, 6.28); orbPreviewCtx.fill();
   orbPreviewCtx.restore();
+
+  // Signature surface marks keep each shipped orb readable even before its
+  // cosmetic trail has unlocked. The trail remains the larger motion cue.
+  drawOrbIdentity(orbPreviewCtx, key, cx, cy, 20, t, 0.95);
 
   // v1.7.0 polish r6: Bulwark + Tectonic preview gets the electric-ball
   // overlay on top of the core so the menu shows the same look as gameplay.
@@ -41193,7 +41392,10 @@ function guideLoop() {
   const t = (performance.now() - guideStartTs) / 1000;
   guideCtx.clearRect(0, 0, guideCanvas.width, guideCanvas.height);
   const page = GUIDE_PAGES[guidePageIdx];
+  guideCtx.save();
+  guideCtx.scale(guideCanvas.width / 320, guideCanvas.height / 200);
   try { page.draw(guideCtx, t); } catch {}
+  guideCtx.restore();
   guideRafId = requestAnimationFrame(guideLoop);
 }
 
@@ -41552,15 +41754,24 @@ function drawGuidePowerups(ctx, t) {
 
   // Central PAIR pill.
   ctx.save();
-  const pillW = 64, pillH = 20;
-  ctx.globalAlpha = 0.75 + 0.2 * linkPulse;
-  ctx.fillStyle = 'rgba(20,18,36,0.85)';
-  ctx.strokeStyle = `rgba(255,220,120,${0.6 + 0.35 * linkPulse})`;
-  ctx.lineWidth = 1.2;
-  ctx.beginPath(); ctx.roundRect(mx - pillW / 2, my - pillH / 2, pillW, pillH, 5);
+  const pillW = 106, pillH = 30;
+  ctx.globalAlpha = 1;
+  ctx.shadowColor = `rgba(255,210,90,${0.38 + 0.25 * linkPulse})`;
+  ctx.shadowBlur = 13;
+  ctx.fillStyle = 'rgba(5,7,18,0.97)';
+  ctx.strokeStyle = `rgba(255,224,130,${0.78 + 0.2 * linkPulse})`;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.roundRect(mx - pillW / 2, my - pillH / 2, pillW, pillH, 8);
   ctx.fill(); ctx.stroke();
+  ctx.shadowBlur = 0;
   ctx.restore();
-  guideLabel(ctx, 'PAIR = COMBO', mx, my + 1, 'rgba(255,220,120,0.95)', 9);
+  ctx.save();
+  ctx.font = '700 11px "Space Mono", monospace';
+  ctx.fillStyle = '#ffe49a';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('PAIR  +  COMBO', mx, my + 1);
+  ctx.restore();
 }
 
 function drawGuideScoring(ctx, t) {
@@ -43908,7 +44119,14 @@ if ((location.hostname === '127.0.0.1' || location.hostname === 'localhost') && 
       if (resumeButton) { resumeButton.style.display = 'block'; resumeButton.textContent = 'RESUME RUN'; }
       if (resumeInfo) { resumeInfo.style.display = 'block'; resumeInfo.textContent = 'EXTREME · 00:55 survived · 2546 pts'; }
     }
-    else if (uiQaMode === 'guide') document.getElementById('guideBtn')?.click();
+    else if (uiQaMode === 'guide' || uiQaMode === 'guide-powerups') {
+      document.getElementById('guideBtn')?.click();
+      if (uiQaMode === 'guide-powerups') {
+        guidePageIdx = 1;
+        guideStartTs = performance.now();
+        refreshGuidePage();
+      }
+    }
     else if (uiQaMode === 'settings') document.getElementById('settingsBtn')?.click();
     else if (uiQaMode === 'stats') openStatsOverlay();
     else if (uiQaMode === 'tree') openTreeOverlay(activeOrb);

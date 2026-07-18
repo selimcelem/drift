@@ -12,7 +12,7 @@
 | Game UI source | `www/index.html` |
 | Last updated | 2026-07-18 |
 | Last completed phase | New component language integrated across menu, guide, settings, stats, pause, progression, leaderboards and shared overlays |
-| Next action | Complete rendered viewport QA and a natural gameplay/death loop before presenting the branch for review |
+| Next action | Playtest the current branch checkpoint across natural gameplay, death and progression loops; iterate from player feedback |
 
 ## Objective
 
@@ -25,6 +25,29 @@ Rework DRIFT's existing HTML game UI so it remains comfortable and visually inte
 - Touch, mouse, keyboard and, where supported, controller input.
 
 This is a UI and responsive-layout project. Existing gameplay rules, progression, persistence and monetization behavior must remain unchanged unless a separate decision is recorded in this document.
+
+## 2026-07-18 checkpoint - responsive polish, orb identity and game feel
+
+- Branch: `ui/responsive-rework`; `main` remains untouched.
+- Responsive/UI corrections:
+  - Stabilized Guide and Leaderboard placement across the tablet-to-desktop breakpoint.
+  - Centered the pilot selector in portrait and restored the Pause control during portrait gameplay.
+  - Removed decorative cut corners from buttons.
+  - Removed boxed timer, cooldown, burst and hint surfaces from gameplay to preserve the playfield.
+  - Centered and enlarged all three fullscreen skill trees and removed the duplicated crystal balance.
+  - Increased Guide canvas resolution and rebuilt the powerup pairing illustration for legibility.
+- Visual/game-feel pass:
+  - Added distinct rendered identities for Drifter, Phantom, Inferno, Warp, Bulwark and Leviathan families while retaining their unlockable trail variants.
+  - Added capped, short-lived activation cues for individual powerups, fresh combinations and refreshes.
+  - Added selective haptic feedback for combinations, burst, death and apocalypse events.
+  - Audited existing shake and hit-stop behavior; retained its current proportional values to avoid obscuring incoming hazards.
+- Verification:
+  - Reviewed portrait gameplay at 492px and fullscreen skill trees at 1920x1080.
+  - Reviewed menu behavior at 900px and 1100px, plus Guide powerups at 1920px.
+  - Inline JavaScript compiles successfully and `git diff --check` passes.
+- Still required before release:
+  - Natural playthrough QA for every orb/skin, combination effect, death/result transition and pause/resume path.
+  - Physical Android and iPad testing for safe areas, touch targets, performance and haptics.
 
 ## Ground truth and constraints
 
