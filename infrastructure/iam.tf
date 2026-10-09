@@ -64,6 +64,16 @@ resource "aws_iam_role_policy" "github_actions" {
         Effect   = "Allow"
         Action   = "iam:*"
         Resource = "arn:aws:iam::${var.aws_account_id}:role/drift-*"
+      },
+      {
+        Effect   = "Allow"
+        Action   = "ssm:*"
+        Resource = "arn:aws:ssm:eu-west-1:${var.aws_account_id}:parameter/drift/*"
+      },
+      {
+        Effect   = "Allow"
+        Action   = "ssm:DescribeParameters"
+        Resource = "*"
       }
     ]
   })
