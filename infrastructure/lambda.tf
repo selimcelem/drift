@@ -62,7 +62,7 @@ resource "aws_lambda_function" "submit_score" {
   filename         = data.archive_file.submit_score.output_path
   source_code_hash = data.archive_file.submit_score.output_base64sha256
   handler          = "index.handler"
-  runtime          = "nodejs20.x"
+  runtime          = "nodejs22.x"
   role             = aws_iam_role.lambda_exec.arn
   timeout          = 10
 }
@@ -72,7 +72,7 @@ resource "aws_lambda_function" "get_leaderboard" {
   filename         = data.archive_file.get_leaderboard.output_path
   source_code_hash = data.archive_file.get_leaderboard.output_base64sha256
   handler          = "index.handler"
-  runtime          = "nodejs20.x"
+  runtime          = "nodejs22.x"
   role             = aws_iam_role.lambda_exec.arn
   timeout          = 10
 }
